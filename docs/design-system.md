@@ -141,8 +141,42 @@ lists the words that stay in code and never reach a screen.
 | `Modal` / `Drawer` | overlays (8 local Modals existed) | new overlay variants |
 | `PageHeaderV2` (+`InHubContextV2`) | page titles; hub demotion built in | |
 
+**v2 — four more, and no more** (design handoff `00` §06):
+
+| Schema | Use it for | Never |
+|---|---|---|
+| `EmployeeCard` | one digital employee, **reporting work** — state, three stats, last action *or* why it stopped | a card that lists its configuration |
+| `DecisionCard` | one thing waiting on a human: what, who prepared it, why it stopped, how long, 2–3 real choices | `QueueCard` (superseded; nothing imported it) |
+| `FilterBar` | every list and report — presets, facets, search, saved views | a bespoke filter row per page |
+| `SetupChecklist` | "hired but unfinished" — what's missing, why, one button, an honest estimate | `EmptyState` (a half-built thing is not an empty one) |
+
+⚠ `EmployeeCard` takes **already-translated words**, never an enum — see
+`src/design/statusVocabulary.ts`. ⚠ `DecisionCard`'s `nudge` slot is what stops
+the queue being a treadmill: it tells the owner how to stop seeing this class of
+decision at all.
+
+⚠ **No width variant props.** All four reflow on their own width using
+`grid-cols-dt-*` auto-fit and wrapping rows, so the same card works in a page
+grid, a narrow column and a drawer. The handoff asked for container queries;
+Tailwind 3.4 here has no container-query plugin and adding a build dependency to
+avoid `flex-wrap` was not worth it. If it ever lands, these become `@container`
+without touching a call site.
+
 A screen needing a genuinely new schema: add it HERE with a row in this table —
 never inline. That's how the catalog grows without drifting.
+
+### Seeing them — the schema gallery
+
+`?dtpreview=1` on the dev server (`src/design/SchemaGallery.tsx`, **dev only** —
+the branch is compiled out of production). Every schema on one page, no session
+needed, which is the only way to check a new one at all three widths before it
+reaches a real screen.
+
+It paid for itself on its first run, catching three things invisible in source:
+`--dt-card-min` at the handoff's 380px silently costing the third employee
+column (1138px available, 1172 needed — corrected to 360), `Chip` rendering a
+whole sentence at 11px, and an `EmployeeCard` stat label truncating to "closed
+without…". **Add a section here when you add a schema.**
 
 ## 3. Page templates — every screen declares one
 | Template | Shape | Scrolling |

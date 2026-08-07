@@ -25,10 +25,26 @@ function CrashFallback() {
   );
 }
 
+// Schema gallery at ?dtpreview=1 — DEV ONLY, and deliberately so.
+//
+// Every design-system component can be seen in one place without a signed-in
+// session, which is the only way to check a new schema at 1024/1280/1536
+// before it reaches a real screen. It earned its keep immediately: it caught
+// --dt-card-min at 380px silently costing the third employee column, a chip
+// rendering a whole sentence at 11px, and a stat label truncating to "closed
+// without…". None of the three is visible from the source.
+//
+// `import.meta.env.DEV` is a compile-time constant, so the import and the
+// branch are both dropped from the production bundle.
+const previewing = import.meta.env.DEV && new URLSearchParams(window.location.search).has('dtpreview');
+const SchemaPreview = React.lazy(() => import('./design/SchemaGallery'));
+
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <SentryErrorBoundary fallback={<CrashFallback />}>
-      <App />
+      {previewing
+        ? <React.Suspense fallback={null}><SchemaPreview /></React.Suspense>
+        : <App />}
     </SentryErrorBoundary>
   </React.StrictMode>
 );

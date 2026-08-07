@@ -41,7 +41,12 @@ const CHIP_TONE: Record<Tone, string> = {
 export function Chip({ tone = 'neutral', dot, pulse, children, className = '' }:
   { tone?: Tone; dot?: boolean; pulse?: boolean; children: React.ReactNode; className?: string }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full border ${CHIP_TONE[tone]} ${className}`}>
+    // 12px floor (v2). Was text-[11px] — and a chip is not always a one-word
+    // badge: DecisionCard's staleness slot puts "Nothing's happened in 5 days"
+    // in one, and the floor rule exists precisely so a SENTENCE never renders
+    // below 12. Fixed on the primitive rather than at the call sites, which
+    // lifts every chip in the app in one line.
+    <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full border ${CHIP_TONE[tone]} ${className}`}>
       {dot && <span className={`w-1.5 h-1.5 rounded-full bg-current ${pulse ? 'animate-pulse' : ''}`} />}
       {children}
     </span>
@@ -325,6 +330,185 @@ export function PageHeaderV2({ title, subtitle, actions }:
         {subtitle && <p className="text-sm text-dt-support mt-1 max-w-3xl">{subtitle}</p>}
       </div>
       {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   v2 SCHEMAS — four, and no more (design handoff 00 §06)
+   Everything else composes from the primitives above. Each has a row in the
+   catalog table in docs/design-system.md §2, per that document's own rule.
+
+   ⚠ 12px IS THE TYPE FLOOR HERE. The v1 primitives above still carry
+   text-[10px] and text-[11px] labels; lifting those touches every screen at
+   once and gets done with eyes on the result. New code starts correct.
+
+   ⚠ NO VARIANT PROPS FOR WIDTH. The handoff asks for container queries so one
+   card works in a page grid, a narrow column and a drawer. Tailwind 3.4 here
+   has no container-query plugin, and adding a build dependency to avoid
+   writing `flex-wrap` is a poor trade — these use intrinsic layout instead:
+   wrapping rows and auto-fit grids that reflow on their own width. Same
+   outcome, no new build surface. If the plugin ever lands, these become
+   @container without changing a call site.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── EmployeeCard — one digital employee, reporting work rather than config ─
+   Avatar · name · live state · one-clause role · up to three stat cells ·
+   what it last did OR why it stopped · a state-specific action.
+
+   `blockedReason` is deliberately not just another `detail`: when an employee
+   has stopped, why it stopped is the most important sentence on the card and
+   it takes the warning tone. When it is working, the same slot carries its
+   last action in muted text. One slot, two meanings, driven by state. */
+export function EmployeeCard({ avatar, name, state, role, stats, lastAction, blockedReason, actions, onOpen }: {
+  avatar?: React.ReactNode;
+  name: React.ReactNode;
+  /** Already-translated words — see src/design/statusVocabulary.ts. Never an enum. */
+  state?: { label: string; tone?: Tone };
+  /** One clause. "Customer support · answering chat & email" */
+  role?: React.ReactNode;
+  stats?: Array<{ label: string; value: React.ReactNode }>;
+  lastAction?: React.ReactNode;
+  /** When present this wins: a stopped employee's reason outranks its history. */
+  blockedReason?: React.ReactNode;
+  actions?: React.ReactNode;
+  onOpen?: () => void;
+}) {
+  return (
+    <article className="rounded-xl border border-dt-border bg-dt-card p-5 min-w-0 flex flex-col gap-3">
+      <div className="flex items-start gap-3 min-w-0">
+        {avatar}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            {onOpen
+              ? <button onClick={onOpen} className="text-[15px] font-semibold text-dt-title hover:text-dt-accent-text transition-colors truncate">{name}</button>
+              : <span className="text-[15px] font-semibold text-dt-title truncate">{name}</span>}
+            {state && <Chip tone={state.tone ?? 'neutral'} dot>{state.label}</Chip>}
+          </div>
+          {role && <p className="text-[13px] text-dt-support mt-0.5">{role}</p>}
+        </div>
+      </div>
+
+      {/* auto-fit, so three cells become two and then one without a prop */}
+      {stats && stats.length > 0 && (
+        <dl className="grid grid-cols-dt-tiles gap-dt-tight">
+          {stats.map((s, i) => (
+            <div key={i} className="rounded-lg bg-dt-inset px-3 py-2 min-w-0">
+              {/* ⚠ The label WRAPS; it does not truncate. Measured at the design
+                  target, three cells leave ~78px and "closed without you" needs
+                  100 — truncating rendered it as "closed without…", which is
+                  worse than two lines. Only the VALUE truncates: values are
+                  short by construction, labels are chosen by the caller. */}
+              <dt className="text-xs text-dt-muted leading-tight">{s.label}</dt>
+              <dd className="text-sm font-semibold text-dt-title truncate mt-0.5">{s.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+
+      {blockedReason
+        ? <p className="text-[13px] text-dt-warn">{blockedReason}</p>
+        : lastAction ? <p className="text-[13px] text-dt-muted">{lastAction}</p> : null}
+
+      {actions && <div className="flex items-center gap-2 flex-wrap mt-auto pt-1">{actions}</div>}
+    </article>
+  );
+}
+
+/* ── DecisionCard — one thing waiting on a human ────────────────────────────
+   What it is · who prepared it and why they stopped · how long it has waited ·
+   two or three real choices. Replaces QueueCard, which nothing imports.
+
+   `nudge` is the pattern that makes this queue shrink: "you have approved
+   every Meridian renewal for two years — let Marcus send these himself". A
+   queue that never teaches you how to make it shorter is a treadmill. */
+export function DecisionCard({ tone = 'warn', title, detail, meta, stale, actions, nudge }: {
+  tone?: Tone;
+  title: React.ReactNode;
+  /** Who prepared it, and why they stopped. Plain sentences. */
+  detail?: React.ReactNode;
+  /** "Waiting 2 hours · Marcus · renewal invoice" — already in English. */
+  meta?: React.ReactNode;
+  /** Only when something has genuinely gone quiet. Not an SLA countdown. */
+  stale?: React.ReactNode;
+  actions?: React.ReactNode;
+  nudge?: React.ReactNode;
+}) {
+  const edge = { ok: 'border-l-dt-ok', warn: 'border-l-dt-warn', danger: 'border-l-dt-danger',
+                 info: 'border-l-dt-info', neutral: 'border-l-dt-neutral', accent: 'border-l-dt-accent' }[tone];
+  return (
+    <article className={`rounded-xl border border-dt-border border-l-2 ${edge} bg-dt-card p-5 min-w-0`}>
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="text-[15px] font-semibold text-dt-title min-w-0">{title}</h3>
+        {stale && <span className="shrink-0"><Chip tone="warn">{stale}</Chip></span>}
+      </div>
+      {detail && <p className="text-sm text-dt-support mt-1.5">{detail}</p>}
+      {meta && <p className="text-xs text-dt-muted mt-2">{meta}</p>}
+      {actions && <div className="flex items-center gap-2 flex-wrap mt-4">{actions}</div>}
+      {nudge && <p className="text-[13px] text-dt-accent-text mt-3 pt-3 border-t border-dt-border">{nudge}</p>}
+    </article>
+  );
+}
+
+/* ── FilterBar — one implementation for every list and report ───────────────
+   Date presets · facets · search · saved views. Built as SLOTS rather than a
+   config object: every list in this app filters on something different, and a
+   schema that tries to own the filter LOGIC ends up with a prop per page. */
+export function FilterBar({ presets, facets, search, views, className = '' }: {
+  /** Usually Chips or small Buttons — 7 days / 30 days / this year. */
+  presets?: React.ReactNode;
+  facets?: React.ReactNode;
+  search?: React.ReactNode;
+  views?: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`flex items-center gap-dt-tight flex-wrap rounded-xl border border-dt-border bg-dt-panel px-4 py-2.5 ${className}`}>
+      {presets && <div className="flex items-center gap-1.5 flex-wrap">{presets}</div>}
+      {facets && <div className="flex items-center gap-1.5 flex-wrap">{facets}</div>}
+      {search && <div className="min-w-[180px] max-w-dt-field flex-1">{search}</div>}
+      {views && <div className="flex items-center gap-1.5 ml-auto shrink-0">{views}</div>}
+    </div>
+  );
+}
+
+/* ── SetupChecklist — "hired, but not finished" ─────────────────────────────
+   What is missing · why that matters · ONE button · an honest time estimate.
+
+   EmptyState cannot say this: an unfinished employee is not an empty list, it
+   is a thing half-built, and the difference matters to whoever has to finish
+   it. Done items are struck through rather than hidden — progress is the
+   reason anyone continues. */
+export function SetupChecklist({ title, why, items, action, estimate }: {
+  title: React.ReactNode;
+  /** Why finishing this matters, in one sentence. */
+  why?: React.ReactNode;
+  items: Array<{ label: React.ReactNode; done?: boolean }>;
+  action?: React.ReactNode;
+  /** Plain and believable — "about 5 minutes". An estimate nobody trusts is
+   *  worse than none at all. */
+  estimate?: React.ReactNode;
+}) {
+  const left = items.filter((i) => !i.done).length;
+  return (
+    <div className="rounded-xl border border-dt-warn-border bg-dt-warn-soft p-5 min-w-0">
+      <h3 className="text-[15px] font-semibold text-dt-title">{title}</h3>
+      {why && <p className="text-[13px] text-dt-support mt-1">{why}</p>}
+      <ul className="mt-3 space-y-1.5">
+        {items.map((it, i) => (
+          <li key={i} className="flex items-start gap-2 text-[13px]">
+            <span className={it.done ? 'text-dt-ok' : 'text-dt-muted'} aria-hidden>{it.done ? '✓' : '○'}</span>
+            <span className={it.done ? 'text-dt-muted line-through' : 'text-dt-body'}>{it.label}</span>
+          </li>
+        ))}
+      </ul>
+      {(action || estimate) && (
+        <div className="flex items-center gap-3 flex-wrap mt-4">
+          {action}
+          {estimate && <span className="text-xs text-dt-muted">{estimate}</span>}
+        </div>
+      )}
+      <p className="sr-only">{left} step{left === 1 ? '' : 's'} remaining</p>
     </div>
   );
 }

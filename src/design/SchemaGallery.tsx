@@ -1,0 +1,95 @@
+// The schema gallery — every design-system component, on one page, with no
+// signed-in session required. Reached at ?dtpreview=1 in DEV ONLY (see
+// main.tsx); the branch and this import are dropped from production builds.
+//
+// This is where a new schema gets checked at 1024/1280/1536 before it reaches
+// a real screen. Add a section here when you add a schema.
+import React from 'react';
+import {
+  EmployeeCard, DecisionCard, FilterBar, SetupChecklist,
+  Button, Chip, PanelCard, INPUT_CLS,
+} from './primitives';
+
+const Avatar = ({ letter, tone }: { letter: string; tone: string }) => (
+  <div className={`w-10 h-10 rounded-full grid place-items-center text-sm font-semibold shrink-0 ${tone}`}>{letter}</div>
+);
+
+export default function SchemaPreview() {
+  return (
+    <div className="min-h-screen bg-dt-page text-dt-body p-dt-gutter">
+      <div className="max-w-dt-content mx-auto space-y-8">
+        <h1 className="text-2xl font-semibold text-dt-title">v2 schemas</h1>
+
+        <PanelCard title="EmployeeCard — working, blocked, not started">
+          <div className="grid grid-cols-dt-cards gap-dt">
+            <EmployeeCard
+              avatar={<Avatar letter="S" tone="bg-dt-ok-soft text-dt-ok" />}
+              name="Sophie" state={{ label: 'Working', tone: 'ok' }}
+              role="Customer support · answering chat & email"
+              stats={[
+                { label: 'handled today', value: '142' },
+                { label: 'closed without you', value: '96%' },
+                { label: 'avg reply', value: '1.2m' },
+              ]}
+              lastAction="Last: replied to Meridian Group about a failed login — 4 minutes ago."
+              actions={<><Button kind="secondary" size="sm">Open Sophie&rsquo;s file</Button><Button kind="ghost" size="sm">Ask her to change something</Button></>}
+              onOpen={() => {}}
+            />
+            <EmployeeCard
+              avatar={<Avatar letter="M" tone="bg-dt-warn-soft text-dt-warn" />}
+              name="Marcus" state={{ label: 'Blocked', tone: 'warn' }}
+              role="Billing &amp; renewals · invoices and payment chasing"
+              stats={[
+                { label: 'handled today', value: '31' },
+                { label: 'waiting on you', value: '2' },
+                { label: 'invoiced today', value: '$24k' },
+              ]}
+              blockedReason="Stopped: an invoice for $15,600 is over the $500 limit you set. He can't send it without you."
+              actions={<><Button kind="primary" size="sm">Unblock Marcus</Button><Button kind="ghost" size="sm">Open his file</Button></>}
+              onOpen={() => {}}
+            />
+            <SetupChecklist
+              title="Nadia is hired but hasn't started"
+              why="She needs a knowledge source and one playbook before she can take any work."
+              items={[
+                { label: 'Job described', done: true },
+                { label: 'A knowledge source to answer from' },
+                { label: 'One playbook to follow' },
+              ]}
+              action={<Button kind="primary" size="sm">Finish setting Nadia up</Button>}
+              estimate="about 5 minutes"
+            />
+          </div>
+        </PanelCard>
+
+        <PanelCard title="DecisionCard — with a nudge, and gone quiet">
+          <div className="space-y-3">
+            <DecisionCard
+              title="Send a $15,600 invoice to Meridian Group"
+              detail="Marcus prepared it for their annual renewal. It's over the $500 limit you set, so he stopped."
+              meta="Waiting 2 hours · Marcus · renewal invoice"
+              actions={<><Button kind="primary" size="sm">Approve &amp; send</Button><Button kind="secondary" size="sm">See the invoice</Button><Button kind="ghost" size="sm">Don&rsquo;t</Button></>}
+              nudge="You've approved every Meridian renewal for two years. Let Marcus send these himself →"
+            />
+            <DecisionCard
+              title="Approve a knowledge fix"
+              stale="Nothing's happened in 5 days"
+              detail="Sophie wrote an answer for “what's your refund window”, which 14 people have asked and nobody could answer."
+              meta="Waiting 5 days · Sophie · new knowledge"
+              actions={<><Button kind="primary" size="sm">Read &amp; publish</Button><Button kind="secondary" size="sm">Edit first</Button></>}
+            />
+          </div>
+        </PanelCard>
+
+        <PanelCard title="FilterBar">
+          <FilterBar
+            presets={<><Chip tone="accent">30 days</Chip><Chip>7 days</Chip><Chip>90 days</Chip><Chip>This year</Chip></>}
+            facets={<Button kind="secondary" size="sm">Everyone ⌄</Button>}
+            search={<input className={INPUT_CLS} placeholder="Search…" />}
+            views={<Button kind="ghost" size="sm">Saved views</Button>}
+          />
+        </PanelCard>
+      </div>
+    </div>
+  );
+}

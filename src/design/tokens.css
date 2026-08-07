@@ -62,7 +62,13 @@
   /* ── Grid ────────────────────────────────────────────────────────────── */
   --dt-gap:        16px;
   --dt-gap-tight:  10px;
-  --dt-card-min:   380px;   /* auto-fit minimum — drops a column on its own  */
+  /* auto-fit minimum — drops a column on its own.
+     ⚠ 360, not the 380 the handoff specifies. Measured at the design target:
+     a card grid inside a PanelCard gets 1138px, and 3×380 + 2×16 needs 1172 —
+     34px short, so the three-across employee row the mock draws came out as
+     two. The largest value that fits is 368; 360 is the round number below it
+     and leaves room for a scrollbar. Cards still fit their content at 360. */
+  --dt-card-min:   360px;
   --dt-kpi-min:    220px;
   --dt-tile-min:   96px;
 
