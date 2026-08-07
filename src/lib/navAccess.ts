@@ -124,6 +124,20 @@ const PAGE_ACCESS: Partial<Record<Page, UserRole[]>> = {
   // ── Support configuration ─────────────────────────────────────────────────
   support_command_center: MANAGE,
   support_triage_rules: MANAGE,
+  // ⚠ THE THIRD PAGE MISSING FROM THIS MAP, and it failed differently from the
+  // other two. Calls is not a Sidebar item — it is a TAB on the Support hub,
+  // and tabs navigate through handleSetPage, which only moves if canAccessPage
+  // says yes. Absent from here, that check returned DENY for everyone, so the
+  // tab rendered, took the click, and did nothing at all. No error, no
+  // navigation. A dead tab is harder to notice than a dead sidebar entry
+  // because it looks like the page just failed to load.
+  //
+  // MANAGE, matching the two tabs beside it. The page only reads —
+  // listVoiceCalls and listOrphanVoiceMessages, no writes — and voice_messages
+  // is tenant-scoped in RLS with no role condition, so this tier is a product
+  // judgement rather than a constraint: call transcripts are oversight
+  // material, and Overview and Rules are already at this level.
+  support_calls: MANAGE,
 
   // ── Workforce analytics and evaluation ────────────────────────────────────
   intelligence_performance: MANAGE,
@@ -152,6 +166,32 @@ const PAGE_ACCESS: Partial<Record<Page, UserRole[]>> = {
   onboarding_architect: ADMIN,
   settings: ADMIN,
   users: ADMIN,
+  // ── ORGANISATION — the SECOND page found missing from this map ────────────
+  //
+  // Routed in App.tsx, listed in the Sidebar, present in the Page union — and
+  // absent from here, which defaults to DENY. The Sidebar filters by this map,
+  // so "Organisation" rendered for nobody at all, exactly as "My Profile" did
+  // below. Two instances now: adding a page means touching FOUR places, and
+  // three of them fail loudly while this one fails silently.
+  //
+  // ⚠ ADMIN, not MANAGE, and the reason is worth keeping. This page's writes
+  // do not go through RPCs — they are direct table writes, so the gate is RLS:
+  //
+  //     org_units, org_unit_members, set_de_org_unit   owner/admin/MANAGER
+  //     work_assignment_rules, approval_authority      owner/admin
+  //
+  // A tenant_manager could therefore do the org-chart half and would be
+  // refused on the routing rules and approval authority — and an RLS refusal
+  // on a table write comes back from PostgREST as SUCCESS with zero rows
+  // changed. Not an error message: a save button that looks like it worked.
+  // That is the same failure that hid the broken "who pays" radio for months.
+  //
+  // So the page sits at the level of the strictest thing on it, matching its
+  // two Sidebar neighbours. The cost is that a manager cannot edit the org
+  // tree even though RLS would allow it; if that capability is wanted, the fix
+  // is MANAGE here PLUS gating the rules and authority tabs to admin — not
+  // MANAGE alone, which would buy silent no-ops.
+  organisation: ADMIN,
   // ⚠ YOUR OWN RECORD — everyone, deliberately, including read_only.
   //
   // This was MISSING, and default-DENY meant the Sidebar filtered "My Profile"

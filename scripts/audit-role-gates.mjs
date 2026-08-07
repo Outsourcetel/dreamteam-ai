@@ -505,7 +505,34 @@ if (COMPARED.n < FLOOR) {
   console.error('A clean result from too few comparisons is not a clean result. The scan is broken.');
   process.exit(2);
 }
+// ── the nav map itself ───────────────────────────────────────────────────
+//
+// ⚠⚠ THREE PAGES WENT MISSING FROM PAGE_ACCESS AND NOBODY NOTICED.
+//
+// Adding a page means touching four places: the Page union, the App.tsx route,
+// the Sidebar or a tab bar, and PAGE_ACCESS. The first three fail loudly — a
+// type error, a blank screen, a missing link. PAGE_ACCESS fails SILENTLY,
+// because canAccessPage defaults to DENY:
+//
+//   my_profile     in the Sidebar, filtered out ⇒ invisible to every role,
+//                  including the owner who asked for it
+//   organisation   the same, found only because the render-site resolver
+//                  started reporting the files it had skipped
+//   support_calls  worse — a TAB, not a Sidebar item. Tabs navigate through
+//                  handleSetPage, which moves only if canAccessPage agrees, so
+//                  the tab rendered, took the click and did NOTHING. No error,
+//                  no navigation, nothing to report to support.
+//
+// Three of a kind is a pattern, not luck. This is cheap; leave it in.
+const navGaps = [];
+{
+  const sidebar = FILES['src/components/Sidebar.tsx'] || '';
+  const offered = new Set([...sidebar.matchAll(/page:\s*'([a-z_]+)'/g)].map((m) => m[1]));
+  for (const p of offered) if (!(p in pageRoles)) navGaps.push(`${p} (Sidebar)`);
+  for (const p of Object.keys(compOfPage)) if (!(p in pageRoles) && !offered.has(p)) navGaps.push(`${p} (routed/tab)`);
+}
 console.log(`role-gated functions: ${rows.length}   (self-aware, subject always allowed: ${selfAware})`);
+console.log(`pages offered in the UI but missing from PAGE_ACCESS: ${navGaps.length}${navGaps.length ? '  ⇒ ' + navGaps.join(', ') : ''}`);
 console.log(`controls compared against their action's gate: ${COMPARED.n}   (pages ${COMPARED.pages}, components ${COMPARED.components})`);
 // ⚠ Name the files that were skipped. A component whose render site the
 // resolver cannot find is indistinguishable from one nobody renders, and
@@ -523,4 +550,4 @@ for (const f of findings) {
 }
 if (!findings.length) console.log('  none — every gated action reached from the UI sits behind a role check');
 
-if (STRICT && findings.length) process.exit(1);
+if (STRICT && (findings.length || navGaps.length)) process.exit(1);
