@@ -36,6 +36,7 @@ import {
 import {
   Button, Chip, PanelCard, StatTile, EmptyState, TabBar, Banner, TimelineStep, type Tone,
 } from '../../design/primitives';
+import { say, DE_STATUS } from '../../design/statusVocabulary';
 import {
   listRoleArchetypes, applyRoleKitToEmployee,
   type RoleArchetype, type AppliedRoleKit,
@@ -81,16 +82,36 @@ const DECISION_CHIP: Record<InquiryDecisionKind, { label: string; tone: Tone }> 
 // old keys survive only as ?tab= aliases below — never as tabs.
 type FileTab = 'today' | 'operating' | 'record' | 'performance' | 'workbench'
   | 'profile' | 'trust' | 'governance';
-const FILE_TABS: { key: FileTab; label: string }[] = [
-  { key: 'today', label: 'Work' },
-  { key: 'operating', label: 'How I operate' },
-  { key: 'record', label: 'Record' },
-  { key: 'performance', label: 'Performance' },
-  { key: 'workbench', label: 'Workbench' },
-  { key: 'profile', label: 'Profile & Capabilities' },
-  { key: 'trust', label: 'Trust & Autonomy' },
-  { key: 'governance', label: 'Governance' },
+// ════════════════════════════════════════════════════════════════════════
+// EIGHT TABS BECOME FOUR (design handoff 05).
+//
+// Eight tabs on one person is a filing system, not a record. An owner asks
+// four things about an employee: what is it doing, is it any good, how does
+// it work, and what has it been through.
+//
+//   Work           today + workbench
+//   Performance    performance
+//   How it works   operating + profile + trust
+//   Record         record + governance
+//
+// ⚠ ALL EIGHT KEYS STILL RESOLVE. ?tab= deep links are handed out by the
+// roster, by the Command Centre and by RecordTab's own openTab() — and
+// TAB_ALIASES already exists because stale links were landing nowhere once
+// before. Collapsing the keys would break the same thing a second time.
+//
+// ⚠ The handoff also lists a "Specialist tools" tab, "appears only when
+// is_specialist". There is no such tab and no such column: the specialist
+// role was retired in migration 611 and its surface removed. Nothing to do.
+const TAB_GROUPS: { key: FileTab; label: string; members: FileTab[] }[] = [
+  { key: 'today', label: 'Work', members: ['today', 'workbench'] },
+  { key: 'performance', label: 'Performance', members: ['performance'] },
+  { key: 'operating', label: 'How it works', members: ['operating', 'profile', 'trust'] },
+  { key: 'record', label: 'Record', members: ['record', 'governance'] },
 ];
+const FILE_TABS = TAB_GROUPS.map(({ key, label }) => ({ key, label }));
+/** Which of the four a key belongs to — falls back to Work so an unknown
+ *  ?tab= lands on something real rather than a page with no content. */
+const groupOf = (t: FileTab) => TAB_GROUPS.find(g => g.members.includes(t)) ?? TAB_GROUPS[0];
 // Stale deep links keep landing somewhere sensible — aliases, not errors.
 const TAB_ALIASES: Record<string, FileTab> = { capabilities: 'profile', development: 'performance' };
 
@@ -1215,12 +1236,12 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
           <p className="text-sm text-dt-support mt-0.5">{de.name !== name ? `${de.name} · ` : ''}{de.department} · {de.category}</p>
           <p className="text-xs text-dt-muted mt-1 max-w-2xl">{de.description}</p>
           {/* docs/17 C6 — the dossier line (Reznikov design language, dt tokens). */}
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-dt-faint mt-2">
-            FILE {de.id.slice(0, 8)} · STATUS: {de.status === 'active' ? 'OPERATIONAL' : de.status.toUpperCase()} · TRUST: {(de.trust_level ?? '—').toUpperCase()} · DEPT: {(de.department ?? '—').toUpperCase()}
+          <p className="font-mono text-xs uppercase tracking-[0.18em] text-dt-muted mt-2">
+            FILE {de.id.slice(0, 8)}{de.department ? ` · ${de.department}` : ''}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Chip tone={STATUS_TONE[de.status] ?? 'neutral'} dot pulse={de.status === 'active'}>{de.status}</Chip>
+          {(() => { const w = say(DE_STATUS, de.status); return <Chip tone={w.tone} dot pulse={de.status === 'active'} title={w.means}>{w.label}</Chip>; })()}
           <Chip tone={TRUST_TONE[de.trust_level] ?? 'neutral'}>{de.trust_level}</Chip>
           {healthMeta && <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${healthMeta.color}`}>{healthMeta.label}</span>}
           {gate?.gated && <Chip tone="warn">records gate</Chip>}
@@ -1251,17 +1272,29 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
 
       <TabBar
         tabs={FILE_TABS}
-        active={activeTab} onSelect={selectTab} />
+        active={groupOf(activeTab).key} onSelect={selectTab} />
 
-      {activeTab === 'today' && <WorkTab de={de} setPage={setPage} />}
-      {activeTab === 'operating' && <OperatingModelPanel de={de} setPage={setPage} />}
-      {activeTab === 'record' && <RecordTab de={de} setPage={setPage} openTab={selectTab} />}
-      {activeTab === 'performance' && (currentTenant?.id
+      {groupOf(activeTab).key === 'today' && (
+        <>
+          <WorkTab de={de} setPage={setPage} />
+          <DeWorkbenchPanel deId={de.id} />
+        </>
+      )}
+      {groupOf(activeTab).key === 'performance' && (currentTenant?.id
         ? <PerformanceTab de={de} tenantId={currentTenant.id} />
         : <p className="text-sm text-dt-muted py-8 text-center">Performance needs a live workspace.</p>)}
-      {activeTab === 'workbench' && <DeWorkbenchPanel deId={de.id} />}
-      {['profile', 'trust', 'governance'].includes(activeTab) && (
-        <DeProfileSections de={de} section={activeTab as DeProfileSectionKey} setPage={setPage} onUpdated={onDeUpdated} />
+      {groupOf(activeTab).key === 'operating' && (
+        <>
+          <OperatingModelPanel de={de} setPage={setPage} />
+          <DeProfileSections de={de} section="profile" setPage={setPage} onUpdated={onDeUpdated} />
+          <DeProfileSections de={de} section="trust" setPage={setPage} onUpdated={onDeUpdated} />
+        </>
+      )}
+      {groupOf(activeTab).key === 'record' && (
+        <>
+          <RecordTab de={de} setPage={setPage} openTab={selectTab} />
+          <DeProfileSections de={de} section="governance" setPage={setPage} onUpdated={onDeUpdated} />
+        </>
       )}
     </div>
   );
