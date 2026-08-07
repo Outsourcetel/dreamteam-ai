@@ -1,3 +1,4 @@
+import { useIsTenantAdmin } from '../../../lib/useRoleGate';
 import React, { useState, useEffect } from 'react'
 import { Modal } from '../../../design/primitives'
 import { useAuth } from '../../../context/AuthContext'
@@ -46,6 +47,11 @@ const SCOPE_META: Record<'workspace' | 'department' | 'employee', { label: strin
 }
 
 function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
+  // guardrail_rules is owner/admin in RLS; this page is MANAGE, so a
+  // manager could add a rule, toggle one, or install the starter set and
+  // watch nothing happen. Reading the rules stays open — knowing what the
+  // guardrails ARE is most of the value of this page.
+  const canEditGuardrails = useIsTenantAdmin();
   const [rules, setRules] = useState<GuardrailRule[]>([])
   const [loading, setLoading] = useState(true)
   const [missingTables, setMissingTables] = useState(false)
@@ -179,7 +185,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
           title="No guardrails yet"
           body="Install a sensible starter set — a $10K invoice approval threshold, blocked legal-commitment phrases, a blocked legal-advice topic, and a 20% discount cap. You can edit or deactivate any of them."
           primaryLabel={busy ? 'Installing…' : 'Install starter guardrails'}
-          onPrimary={() => { if (!busy) void run(() => installStarterGuardrails()) }}
+          onPrimary={() => { if (!busy && canEditGuardrails) void run(() => installStarterGuardrails()) }}
           secondaryLabel="Add a custom rule"
           onSecondary={() => setShowAdd(true)}
         />
@@ -211,7 +217,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                 className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/30 border border-indigo-700/50 transition-colors">
                 {showGovAI ? 'Close assistant' : '✨ Set up with AI'}
               </button>
-              <button onClick={() => setShowAdd(v => !v)}
+              <button disabled={!canEditGuardrails} onClick={() => setShowAdd(v => !v)}
                 className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">
                 + Add rule
               </button>
@@ -295,7 +301,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                       <td className={td}><SeverityBadge severity={r.severity} /></td>
                       <td className={`${td} text-xs text-indigo-400 font-mono`}>v{r.version}</td>
                       <td className={td}>
-                        <Toggle enabled={r.active} disabled={busy}
+                        <Toggle enabled={r.active} disabled={busy || !canEditGuardrails}
                           onChange={(v) => void run(() => updateGuardrailRule(r, { active: v }))} />
                       </td>
                       <td className={`${td} text-right`}>
@@ -402,7 +408,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
             <div className="flex justify-end gap-2 mt-5">
               <button onClick={() => setShowAdd(false)}
                 className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors">Cancel</button>
-              <button onClick={submitAdd} disabled={busy || !form.rule.trim() || scopeIncomplete}
+              <button onClick={submitAdd} disabled={busy || !canEditGuardrails || !form.rule.trim() || scopeIncomplete}
                 className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white transition-colors">
                 {busy ? 'Saving…' : 'Add rule'}
               </button>

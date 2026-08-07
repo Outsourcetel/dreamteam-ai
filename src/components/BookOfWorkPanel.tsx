@@ -4,6 +4,7 @@
 // own work, the way you'd brief a new hire: "watch the renewal dates", "flag
 // accounts whose health drops", "review the book every week". Each watcher the
 // 5-minute engine matches opens a case the employee then works.
+import { useIsTenantAdmin } from '../lib/useRoleGate';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   listWatchers, createWatcher, updateWatcher, setWatcherActive, deleteWatcher, describeWatcher,
@@ -111,6 +112,11 @@ function ResponseWindowFields({
 }
 
 export default function BookOfWorkPanel({ deId }: { deId: string }) {
+  // work_watchers is owner/admin in RLS — and RLS is where this one lives,
+  // because these are direct table writes with no function in front of
+  // them. Two of the three (toggle, delete) do not read the result back,
+  // so a refusal would have arrived as a successful-looking no-op.
+  const canEditWatchers = useIsTenantAdmin();
   const [watchers, setWatchers] = useState<WorkWatcher[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -219,7 +225,7 @@ export default function BookOfWorkPanel({ deId }: { deId: string }) {
       <div className="flex items-center gap-2 mb-2">
         <p className="text-[11px] uppercase tracking-wide text-dt-muted">Book of Work — how it finds its own work</p>
         {!adding && (
-          <button onClick={() => { setAdding(true); setError(null); }}
+          <button disabled={!canEditWatchers} onClick={() => { setAdding(true); setError(null); }}
             className="ml-auto text-[11px] text-indigo-400 hover:text-indigo-300">+ Add a way to find work</button>
         )}
       </div>
@@ -312,7 +318,7 @@ export default function BookOfWorkPanel({ deId }: { deId: string }) {
           )}
 
           <div className="flex items-center gap-2">
-            <button onClick={() => void submit()} disabled={busy || !label.trim()}
+            <button onClick={() => void submit()} disabled={busy || !canEditWatchers || !label.trim()}
               className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
               {busy ? 'Saving…' : 'Add'}
             </button>
@@ -338,12 +344,12 @@ export default function BookOfWorkPanel({ deId }: { deId: string }) {
                 <span className="text-sm text-dt-body">{w.label}</span>
                 <div className="ml-auto flex items-center gap-2 shrink-0">
                   {KIND_TAKES_RESPONSE_WINDOW(w.kind) && editing !== w.id && (
-                    <button onClick={() => beginEdit(w)} disabled={busy}
+                    <button onClick={() => beginEdit(w)} disabled={busy || !canEditWatchers}
                       className="text-[10px] text-dt-muted hover:text-indigo-300">response time</button>
                   )}
-                  <button onClick={() => void run(() => setWatcherActive(w.id, !w.active))} disabled={busy}
+                  <button onClick={() => void run(() => setWatcherActive(w.id, !w.active))} disabled={busy || !canEditWatchers}
                     className="text-[10px] text-dt-muted hover:text-amber-300">{w.active ? 'pause' : 'resume'}</button>
-                  <button onClick={() => void run(() => deleteWatcher(w.id))} disabled={busy}
+                  <button onClick={() => void run(() => deleteWatcher(w.id))} disabled={busy || !canEditWatchers}
                     className="text-[10px] text-dt-faint hover:text-rose-300">remove</button>
                 </div>
               </div>
@@ -359,7 +365,7 @@ export default function BookOfWorkPanel({ deId }: { deId: string }) {
                     unit={edUnit} amount={edAmount} date={edDate}
                     onUnit={setEdUnit} onAmount={setEdAmount} onDate={setEdDate} />
                   <div className="flex items-center gap-2">
-                    <button onClick={() => void saveWindow(w)} disabled={busy}
+                    <button onClick={() => void saveWindow(w)} disabled={busy || !canEditWatchers}
                       className="text-xs px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
                       {busy ? 'Saving…' : 'Save'}
                     </button>

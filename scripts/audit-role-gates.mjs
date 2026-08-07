@@ -191,6 +191,118 @@ for (const r of rows) {
   needsGate.set(r.proname, roles);
 }
 
+// ── THE SECOND SURFACE: writes that go straight to a table ───────────────
+//
+// ⚠⚠ EVERYTHING ABOVE READS pg_proc, SO IT CANNOT SEE THIS AT ALL. The
+// Organisation page has no gated function anywhere — it calls
+// `.from('org_units').insert(…)` and the permission lives in an RLS POLICY.
+// The checker was silent about that page and the silence looked like coverage.
+//
+// ⚠⚠ AND THIS SURFACE FAILS WORSE THAN THE OTHER ONE. A refused RPC raises;
+// PostgREST reports an RLS-denied write as SUCCESS with zero rows changed. No
+// error reaches the UI, so the button appears to work and the change is simply
+// not there. That is how the "who pays" radio stayed broken — it wrote to a
+// table whose RLS allowed SELECT only, and every save reported success.
+//
+// ⚠ PERMISSIVE POLICIES OR TOGETHER. If any permissive policy covering a
+// command has no role condition, the write is NOT role-restricted, and a
+// second policy naming roles does not narrow it. Treating each policy alone
+// would invent a requirement that does not exist — and it handles the self
+// case for free: `profiles` UPDATE has "Platform admins manage all profiles"
+// OR "Users can update own profile", the second of which names no role, so
+// the pair correctly resolves to "not a role question".
+const policies = await sql(`
+  select tablename, policyname, permissive, cmd,
+         coalesce(with_check, '') as check_expr, coalesce(qual, '') as using_expr
+  from pg_policies where schemaname = 'public' and cmd <> 'SELECT'`);
+
+const policyRoles = (expr) => {
+  const m = (expr.match(/auth_has_tenant_role\s*\(\s*ARRAY\s*\[([^\]]*)\]/i) || [])[1];
+  if (m) return m.replace(/['\s]|::text/g, '').split(',').filter(Boolean);
+  return /can_admin_tenant/i.test(expr) ? ['tenant_owner', 'tenant_admin'] : null;
+};
+/** Synthetic action name, so table writes flow through the same comparison,
+ *  the same viewer resolution and the same reporting as an rpc. */
+const tableAction = (t, cmd) => `${t}.${cmd.toLowerCase()}`;
+
+// ⚠ RESTRICTIVE policies AND on top and can only narrow. All eleven in this
+// database are DE-scope (`de_id IS NULL OR can_access_de(de_id)`) and carry no
+// role condition, so they change nothing today — but say so out loud if that
+// ever stops being true rather than quietly ignoring them.
+const restrictiveWithRole = policies.filter((p) => p.permissive !== 'PERMISSIVE' && policyRoles(p.check_expr || p.using_expr));
+if (restrictiveWithRole.length) {
+  console.error(`NOTE: ${restrictiveWithRole.length} RESTRICTIVE policies now carry a role condition ` +
+    `(${[...new Set(restrictiveWithRole.map((p) => p.tablename))].join(', ')}). They AND with the permissive ` +
+    'set, so the effective requirement is NARROWER than reported below.');
+}
+
+for (const cmd of ['INSERT', 'UPDATE', 'DELETE']) {
+  for (const t of new Set(policies.map((p) => p.tablename))) {
+    const covering = policies.filter((p) => p.tablename === t && p.permissive === 'PERMISSIVE' && (p.cmd === 'ALL' || p.cmd === cmd));
+    if (!covering.length) continue;
+    const union = new Set();
+    let open = false;
+    for (const p of covering) {
+      const r = policyRoles(p.check_expr || p.using_expr);
+      if (!r) { open = true; break; }
+      r.forEach((x) => union.add(x));
+    }
+    if (open || !union.size) continue;
+    needsGate.set(tableAction(t, cmd), [...union]);
+  }
+}
+
+// ── SELF-TEST for the policy reader, pinned in BOTH directions ───────────
+//
+// The dangerous mistake here is not missing a gate, it is INVENTING one: read
+// a single policy in isolation and you will report a requirement the database
+// does not have, then "fix" a working control by taking it away from people
+// who were entitled to it. So pin an open table and a self-policy table as
+// firmly as the gated one.
+{
+  const PIN = [
+    ['connectors.update', 'tenant_owner,tenant_admin'],   // one policy, role-gated
+    ['activity_events.insert', null],                     // tenant scope only — not a role question
+    ['profiles.update', null],                            // "Platform admins…" OR "Users can update own
+                                                          //  profile"; the second names no role, so the
+                                                          //  pair is not a role gate at all
+  ];
+  for (const [name, want] of PIN) {
+    const got = needsGate.has(name) ? needsGate.get(name).join(',') : null;
+    if (got !== want) {
+      console.error(`SELF-TEST FAILED: ${name} → ${got === null ? 'not gated' : got}, expected ${want === null ? 'not gated' : want}`);
+      process.exit(2);
+    }
+  }
+  console.error(`policy reader ok — ${[...needsGate.keys()].filter((k) => k.includes('.')).length} role-gated table writes, ` +
+    'open and self-policy tables correctly excluded\n');
+}
+
+/** Table writes in a body, as synthetic action names. `.upsert` is an insert
+ *  for policy purposes; the chained call may sit on the next line. */
+function tableWrites(body) {
+  const out = new Set();
+  for (const m of body.matchAll(/\.from\(\s*['"]([a-z0-9_]+)['"]\s*\)\s*(?:\r?\n\s*)*\.(insert|update|upsert|delete)\b/g)) {
+    const name = tableAction(m[1], m[2] === 'upsert' ? 'INSERT' : m[2]);
+    if (needsGate.has(name)) out.add(name);
+  }
+  return out;
+}
+
+// The lib wrappers again, this time for table writes. A second pass because
+// needsGate has to exist first — `createUnit` is no more visible from a page
+// than `setDeIdentity` is, and 33 of these stand between the UI and a policy.
+for (const [f, src] of Object.entries(FILES)) {
+  if (!f.startsWith('src/lib/')) continue;
+  const re = /export\s+(?:async\s+)?(?:function\s+([A-Za-z0-9_]+)|const\s+([A-Za-z0-9_]+)\s*[:=])/g;
+  const marks = []; let m;
+  while ((m = re.exec(src)) !== null) marks.push({ name: m[1] || m[2], at: m.index });
+  for (let i = 0; i < marks.length; i++) {
+    const body = src.slice(marks[i].at, marks[i + 1] ? marks[i + 1].at : src.length);
+    for (const a of tableWrites(body)) (wrappers[marks[i].name] ||= []).push(a);
+  }
+}
+
 // ── who can OPEN the page this control sits on? ──────────────────────────
 //
 // ⚠ Without this the checker cries wolf. A control needing owner/admin on a
@@ -294,7 +406,25 @@ function viewersOf(file, depth = 0) {
     const body = FILES[from] || '';
     // Rendered under ANY of the names this importer bound to the file.
     if (!names.some((n) => new RegExp(`<${n}[\\s/>]`).test(body))) continue;
-    const up = viewersOf(from, depth + 1);
+    // ⚠⚠ A TAB CHILD IS NOT AS WIDE AS ITS HUB. Four support pages share one
+    // hub component, and one of them (the Inbox) is ALL_TENANT — so taking the
+    // hub's widest tier handed ALL_TENANT to the Triage Rules page, which is
+    // MANAGE, and reported four roles as refused that can never open it. The
+    // hub renders each child under `{tab === 'support_triage_rules' && …}`,
+    // and handleSetPage will not move to a tab the role cannot open, so the
+    // guard IS the tier. Read it rather than inheriting.
+    //
+    // The "widest" rule is still right for the hub file itself — it really
+    // does serve all four — which is why this reads the render site instead of
+    // changing that rule.
+    let viaTab = null;
+    for (const n of names) {
+      for (const m of body.matchAll(new RegExp(`(?:tab|page|currentPage)\\s*===\\s*'([a-z_]+)'[^<]{0,80}<${n}[\\s/>]`, 'g'))) {
+        const roles = pageRoles[m[1]];
+        if (roles && (!viaTab || roles.length > viaTab.length)) viaTab = roles;
+      }
+    }
+    const up = viaTab || viewersOf(from, depth + 1);
     if (up.length > widest.length) widest = up;
   }
   return widest;
@@ -358,6 +488,7 @@ function controlsMissingGate(src, wrapperMap) {
     for (const n of needsGate.keys()) {
       if (body.includes(`rpc('${n}'`) || body.includes(`rpc("${n}"`)) acts.add(n);
     }
+    for (const a of tableWrites(body)) acts.add(a);   // …and writes straight to a table
     // …and through a lib wrapper, which the direct-rpc scan alone cannot see.
     for (const [fn, rpcs] of Object.entries(wrapperMap)) {
       if (!new RegExp(`\\b${fn}\\s*\\(`).test(body)) continue;
@@ -438,14 +569,29 @@ function controlsMissingGate(src, wrapperMap) {
     // instruments failed exactly that way — one compared nothing and reported
     // success. The total is asserted at the end.
     const guarded = isGate(tag) || insideGate(i);
+    const seen = new Set();
     for (const h of handlers.values()) {
       if (h.comp !== compAt(line)) continue;                       // scope, not name
       if (!new RegExp(`\\b${h.name}\\s*[(}]`).test(tag)) continue;
-      for (const a of h.acts) {
-        COMPARED.n++;
-        COMPARED[COMPARED.area]++;
-        if (!guarded) out.push({ action: a, line: line + 1, via: h.name });
-      }
+      for (const a of h.acts) seen.add(a);
+    }
+    // ⚠ NOT EVERY CONTROL GOES THROUGH A NAMED HANDLER.
+    //     onClick={() => void run(() => deleteWatcher(w.id))}
+    // reaches the lib wrapper straight from the tag, so the handler map — which
+    // only knows `const x = …` declarations — never sees it. A negative test
+    // caught this: I removed that button's gate and the checker shrugged.
+    for (const [fn, acts] of Object.entries(wrapperMap)) {
+      if (!new RegExp(`\\b${fn}\\s*\\(`).test(tag)) continue;
+      for (const a of acts) if (needsGate.has(a)) seen.add(a);
+    }
+    for (const a of tableWrites(tag)) seen.add(a);
+    for (const n of needsGate.keys()) {
+      if (tag.includes(`rpc('${n}'`) || tag.includes(`rpc("${n}"`)) seen.add(n);
+    }
+    for (const a of seen) {
+      COMPARED.n++;
+      COMPARED[COMPARED.area]++;
+      if (!guarded) out.push({ action: a, line: line + 1 });
     }
   }
   return out;
@@ -472,6 +618,7 @@ for (const [f, src] of Object.entries(FILES)) {
   for (const name of needsGate.keys()) {
     if (src.includes(`rpc('${name}'`) || src.includes(`rpc("${name}"`)) hit.add(name);
   }
+  for (const a of tableWrites(src)) hit.add(a);
   for (const [fn, rpcs] of Object.entries(wrappers)) {
     if (!new RegExp(`\\b${fn}\\s*\\(`).test(src)) continue;
     for (const n of rpcs) if (needsGate.has(n)) hit.add(n);

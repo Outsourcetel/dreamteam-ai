@@ -109,6 +109,11 @@ const selectCls = 'bg-dt-page border border-dt-border-strong rounded-lg text-xs 
 // ── Connect wizard ────────────────────────────────────────────────
 
 function ConnectWizard({ onClose, onDone, onCustom, reconnect }: { onClose: () => void; onDone: (msg: string) => void; onCustom: () => void; reconnect?: Connector }) {
+  // ⚠ The connectors table is owner/admin in RLS while this page is MANAGE,
+  // so connecting, disconnecting and removing a system were all offered to
+  // a tenant_manager and none of them would have worked. Two of the three
+  // never read the row back, so they would have reported success.
+  const canManageConnectors = useIsTenantAdmin();
   // Category FIRST (what kind of system), provider second (which brand).
   // On reconnect, prefill from the existing connector and jump straight to credentials.
   const [category, setCategory] = useState<SystemCategory | null>(reconnect?.category ?? null);
@@ -371,7 +376,7 @@ function ConnectWizard({ onClose, onDone, onCustom, reconnect }: { onClose: () =
                 <button disabled={busy} onClick={onClose} className="flex-1 px-3 py-2 rounded-lg bg-dt-panel text-dt-support hover:bg-dt-panel text-xs transition-colors disabled:opacity-50">
                   Cancel
                 </button>
-                <button disabled={busy} onClick={() => void submit()} className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs transition-colors disabled:opacity-50">
+                <button disabled={busy || !canManageConnectors} onClick={() => void submit()} className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs transition-colors disabled:opacity-50">
                   {busy ? 'Testing…' : meta!.implemented ? 'Test & Save' : 'Register (no adapter yet)'}
                 </button>
               </div>
@@ -791,6 +796,7 @@ function LearnedToolsPanel({ onToast }: { onToast: (m: string) => void }) {
 }
 
 export default function LiveConnectorsPage() {
+  const canManageConnectors = useIsTenantAdmin();
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [reconnectTarget, setReconnectTarget] = useState<Connector | null>(null);
   // W4-R: grants + DE names for the per-card access line (read-only view of
@@ -1165,7 +1171,7 @@ export default function LiveConnectorsPage() {
                       </button>
                     )}
                     {c.status === 'connected' ? (
-                      <button disabled={isBusy} onClick={() => void doDisconnect(c)} className="px-3 py-1.5 rounded-lg text-xs text-red-400 border border-red-500/30 hover:bg-red-600/20 disabled:opacity-50 transition-colors">
+                      <button disabled={isBusy || !canManageConnectors} onClick={() => void doDisconnect(c)} className="px-3 py-1.5 rounded-lg text-xs text-red-400 border border-red-500/30 hover:bg-red-600/20 disabled:opacity-50 transition-colors">
                         Disconnect
                       </button>
                     ) : (
@@ -1173,7 +1179,7 @@ export default function LiveConnectorsPage() {
                         <button disabled={isBusy} onClick={() => { setReconnectTarget(c); setShowConnect(true); }} className="px-3 py-1.5 rounded-lg text-xs text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/20 disabled:opacity-50 transition-colors">
                           Reconnect
                         </button>
-                        <button disabled={isBusy} onClick={() => void doRemove(c)} className="px-3 py-1.5 rounded-lg text-xs text-red-400 border border-red-500/30 hover:bg-red-600/20 disabled:opacity-50 transition-colors">
+                        <button disabled={isBusy || !canManageConnectors} onClick={() => void doRemove(c)} className="px-3 py-1.5 rounded-lg text-xs text-red-400 border border-red-500/30 hover:bg-red-600/20 disabled:opacity-50 transition-colors">
                           Remove
                         </button>
                       </>

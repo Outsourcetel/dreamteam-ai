@@ -8,6 +8,7 @@
 // SAFETY: guardrails are the un-toggleable core. A human edits them here;
 // the AI assistant (next) may only PROPOSE changes for approval, never
 // flip one off. Every add/edit/toggle is audited by guardrailApi.
+import { useIsTenantAdmin } from '../lib/useRoleGate';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   listGuardrailRules, addGuardrailRule, updateGuardrailRule,
@@ -36,6 +37,9 @@ interface Props {
 }
 
 export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant = 'embedded' }: Props) {
+  // guardrail_rules is owner/admin in RLS. This panel is embedded in several
+  // places, so it cannot rely on its host being admin-only.
+  const canEditGuardrails = useIsTenantAdmin();
   const [rules, setRules] = useState<GuardrailRule[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -195,7 +199,7 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
                 <span className="text-dt-muted">— {describe(r)}</span>
                 {inherited
                   ? <span className="ml-auto text-[10px] text-dt-faint">workspace-wide</span>
-                  : <button onClick={() => void run(() => updateGuardrailRule(r, { active: !r.active }))} disabled={busy}
+                  : <button onClick={() => void run(() => updateGuardrailRule(r, { active: !r.active }))} disabled={busy || !canEditGuardrails}
                       className={`ml-auto text-[10px] ${r.active ? 'text-dt-muted hover:text-amber-300' : 'text-emerald-400 hover:text-emerald-300'}`}>
                       {r.active ? 'pause' : 'resume'}
                     </button>}
@@ -207,7 +211,7 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
       )}
 
       {!adding ? (
-        <button onClick={() => setAdding(true)} className="text-[11px] text-indigo-400 hover:text-indigo-300">
+        <button onClick={() => setAdding(true)} disabled={!canEditGuardrails} className="text-[11px] text-indigo-400 hover:text-indigo-300 disabled:opacity-50">
           + Add a guardrail{scope !== 'workspace' ? ` for ${entityLabel}` : ''}
         </button>
       ) : (
@@ -227,7 +231,7 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
               <option value="blocking">Block</option>
               <option value="warning">Warn</option>
             </select>
-            <button onClick={submit} disabled={busy || !name.trim()}
+            <button onClick={submit} disabled={busy || !canEditGuardrails || !name.trim()}
               className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">Add</button>
             <button onClick={() => setAdding(false)} className="text-xs text-dt-muted hover:text-dt-support">Cancel</button>
           </div>

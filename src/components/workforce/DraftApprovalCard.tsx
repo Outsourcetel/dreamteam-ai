@@ -1,3 +1,4 @@
+import { useIsTenantAdmin } from '../../lib/useRoleGate';
 import React, { useState } from 'react';
 import { WorkforceAction, approveWorkforceAction } from '../../lib/workforceApi';
 import { CheckCircle, XCircle, Loader } from './icons';
@@ -7,6 +8,12 @@ interface DraftApprovalCardProps {
 }
 
 export function DraftApprovalCard({ action }: DraftApprovalCardProps) {
+  // ⚠ Not the same case as approving a human task. That routes through
+  // decide_human_task, which refuses with a reason worth reading, and is
+  // deliberately left open. This writes workforce_actions directly, and its
+  // RLS policy is named "Admins can approve actions" — a refusal here says
+  // nothing at all, and without .single() it would not even say that.
+  const canApproveDrafts = useIsTenantAdmin();
   const [isApproving, setIsApproving] = useState(false);
   const [approved, setApproved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,7 +63,7 @@ export function DraftApprovalCard({ action }: DraftApprovalCardProps) {
       <div className="flex gap-1 mt-2">
         <button
           onClick={handleApprove}
-          disabled={isApproving}
+          disabled={isApproving || !canApproveDrafts}
           className="flex-1 px-2 py-1 bg-green-600 hover:bg-green-700 disabled:bg-slate-600 text-white rounded text-xs transition flex items-center justify-center gap-1"
         >
           {isApproving ? (

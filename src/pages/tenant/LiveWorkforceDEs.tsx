@@ -1,3 +1,4 @@
+import { useIsTenantManager } from '../../lib/useRoleGate';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabase';
@@ -1212,6 +1213,11 @@ function DelegationPanel({ de }: { de: DigitalEmployee }) {
 interface ConsultableRow { target_de_id: string; name: string; grant_kind: string }
 
 function ColleaguesHelpPanel({ de }: { de: DigitalEmployee }) {
+  // de_consultation_grants is owner/admin in RLS — deciding which employee
+  // may ask another for help is a permissions act. The toggle does not read
+  // the row back, so a refusal would have looked like a successful flip
+  // that silently reverted on the next load.
+  const canEditGrants = useCanManageDe();
   const [consultable, setConsultable] = useState<ConsultableRow[]>([]);
   const [asRequester, setAsRequester] = useState<DEConsultationGrant[] | null>(null);
   const [asTarget, setAsTarget] = useState<DEConsultationGrant[]>([]);
@@ -1301,7 +1307,7 @@ function ColleaguesHelpPanel({ de }: { de: DigitalEmployee }) {
               {asRequester.map(g => (
                 <div key={g.id} className="flex items-center justify-between rounded-lg bg-dt-inset px-3 py-1.5 text-xs">
                   <span className="text-dt-support">{nameById[g.target_de_id] || 'Unknown'} <span className="text-dt-faint">· {g.category}</span></span>
-                  <button onClick={() => toggleGrant(g)} disabled={busy} className={`text-[10px] px-2 py-0.5 rounded ${g.active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-dt-panel text-dt-muted'}`}>
+                  <button onClick={() => toggleGrant(g)} disabled={busy || !canEditGrants} className={`text-[10px] px-2 py-0.5 rounded ${g.active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-dt-panel text-dt-muted'}`}>
                     {g.active ? 'active' : 'inactive'}
                   </button>
                 </div>
@@ -1321,7 +1327,7 @@ function ColleaguesHelpPanel({ de }: { de: DigitalEmployee }) {
               </select>
               <div className="flex justify-end gap-2">
                 <button onClick={() => setShowAdd(false)} disabled={busy} className="text-[11px] px-2 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel">Cancel</button>
-                <button onClick={addGrant} disabled={busy} className="text-[11px] px-2 py-1 rounded-lg bg-teal-600 hover:bg-teal-500 text-white">{busy ? 'Adding…' : 'Add grant'}</button>
+                <button onClick={addGrant} disabled={busy || !canEditGrants} className="text-[11px] px-2 py-1 rounded-lg bg-teal-600 hover:bg-teal-500 text-white">{busy ? 'Adding…' : 'Add grant'}</button>
               </div>
             </div>
           ) : (
@@ -4186,6 +4192,11 @@ export function DeTrustAutonomySection({ de, setPage, onUpdated }: {
  *  links. Replaces the inert Operating Charter (its assignment table FK'd the
  *  empty legacy `playbooks` table and had no runtime consumer). */
 function AttachedProceduresPanel({ deId, setPage }: { deId: string; setPage: (p: Page) => void }) {
+  // Attaching or detaching a procedure writes playbook_definitions, which
+  // RLS gives to owner/admin/manager. Seeing WHICH procedures an employee
+  // follows is worth leaving open — it is half of understanding what it
+  // does — so only the two bindings are held back.
+  const canBindProcedures = useIsTenantManager();
   const [defs, setDefs] = useState<PlaybookDefinition[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -4230,7 +4241,7 @@ function AttachedProceduresPanel({ deId, setPage }: { deId: string; setPage: (p:
                   <span className="text-sm text-dt-body flex-1 truncate">{d.name}</span>
                   <span className="text-[11px] text-dt-muted">v{d.version} · {Array.isArray(d.steps) ? d.steps.length : 0} steps</span>
                   <button onClick={() => setPage('systems_playbooks')} className="text-xs text-indigo-400 hover:text-indigo-300">Open in builder</button>
-                  <button disabled={busy} onClick={() => void act(() => setDefinitionDeBinding(d.id, null))}
+                  <button disabled={busy || !canBindProcedures} onClick={() => void act(() => setDefinitionDeBinding(d.id, null))}
                     className="text-xs text-dt-muted hover:text-rose-300 disabled:opacity-40">Detach</button>
                 </div>
               ))}
@@ -4242,7 +4253,7 @@ function AttachedProceduresPanel({ deId, setPage }: { deId: string; setPage: (p:
               <option value="">Attach an existing procedure…</option>
               {unbound.map(d => <option key={d.id} value={d.id}>{d.name} ({d.status}){d.de_id ? ' — attached elsewhere' : ''}</option>)}
             </select>
-            <button disabled={busy || !pick} onClick={() => void act(async () => { await setDefinitionDeBinding(pick, deId); setPick(''); })}
+            <button disabled={busy || !canBindProcedures || !pick} onClick={() => void act(async () => { await setDefinitionDeBinding(pick, deId); setPick(''); })}
               className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">Attach</button>
           </div>
         </>

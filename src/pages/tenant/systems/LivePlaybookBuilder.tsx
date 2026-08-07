@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useIsTenantAdmin } from '../../../lib/useRoleGate';
+import { useIsTenantAdmin, useIsTenantManager } from '../../../lib/useRoleGate';
 import { Modal } from '../../../design/primitives';
 import { PageHeader, th, td } from '../../../components/ui';
 import type { Page } from '../../../types';
@@ -1609,6 +1609,10 @@ function LivingDocument({ definitionId, steps, runs, publishedDefs, onDecided }:
 }
 
 export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) => void }) {
+  // playbook_definitions is owner/admin/MANAGER in RLS — wider than the
+  // admin gate this file already uses elsewhere, so Archive gets its own
+  // hook rather than borrowing that one and quietly narrowing it.
+  const canEditPlaybooks = useIsTenantManager();
   const [defs, setDefs] = useState<PlaybookDefinition[]>([]);
   const [runs, setRuns] = useState<PlaybookRun[]>([]);
   const [accounts, setAccounts] = useState<CustomerAccount[]>([]);
@@ -1737,7 +1741,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
                   className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
                   {selectedDef.status === 'published' ? `Edit (next publish → v${selectedDef.version + 1})` : 'Edit draft'}
                 </button>
-                <button onClick={() => void archive(selectedDef)} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border text-dt-muted hover:text-rose-300 hover:border-rose-800 transition-colors">Archive</button>
+                <button onClick={() => void archive(selectedDef)} disabled={!canEditPlaybooks} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border text-dt-muted hover:text-rose-300 hover:border-rose-800 transition-colors disabled:opacity-50">Archive</button>
               </div>
             </div>
             {selectedDef.description && <p className="text-sm text-dt-support mb-3">{selectedDef.description}</p>}

@@ -1,3 +1,4 @@
+import { useIsTenantAdmin } from '../../../lib/useRoleGate';
 import React, { useEffect, useState } from 'react';
 import { Drawer } from '../../../design/primitives';
 import AISessionPanel from '../../../components/AISessionPanel';
@@ -105,6 +106,10 @@ const LIVE_STATUS_META: Record<KnowledgeGapCluster['status'], { label: string; c
 // Ledger-3: tune the detection policy from the product (RLS already permits
 // tenant writes, mig 070). Plain-language labels; saves per-row.
 function GapPolicyPanel({ policies, onSaved }: { policies: KnowledgeGapPolicy[]; onSaved: () => void }) {
+  // knowledge_gap_policies is owner/admin in RLS, and updateGapPolicy does
+  // not read the row back — so on a KNOWLEDGE-tier page a manager or the
+  // knowledge specialist would have saved a policy that never changed.
+  const canEditGapPolicy = useIsTenantAdmin();
   const [open, setOpen] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, { floor: string; size: string; window: string; sim: string }>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -147,7 +152,7 @@ function GapPolicyPanel({ policies, onSaved }: { policies: KnowledgeGapPolicy[];
                 <input value={d.size} onChange={e => set('size', e.target.value)} className={inp} /><span>+ similar misses within</span>
                 <input value={d.window} onChange={e => set('window', e.target.value)} className={inp} /><span>days (similarity ≥</span>
                 <input value={d.sim} onChange={e => set('sim', e.target.value)} className={inp} /><span>)</span>
-                <button disabled={busyId === p.id} onClick={() => void save(p)}
+                <button disabled={busyId === p.id || !canEditGapPolicy} onClick={() => void save(p)}
                   className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-muted disabled:opacity-50">
                   {busyId === p.id ? '…' : 'Save'}
                 </button>

@@ -1,3 +1,4 @@
+import { useIsTenantAdmin } from '../../../lib/useRoleGate';
 import React, { useMemo, useState } from 'react';
 import { Modal } from '../../../design/primitives';
 import {
@@ -370,6 +371,10 @@ export function ConnectFromTemplateModal({ template, onClose, onDone }: {
   onClose: () => void;
   onDone: (msg: string) => void;
 }) {
+  // connectFromTemplate inserts a connectors row — owner/admin in RLS —
+  // while this page is MANAGE. Building and saving a TEMPLATE is a different
+  // act from CONNECTING one with it, and only the second is gated here.
+  const canManageConnectors = useIsTenantAdmin();
   const [displayName, setDisplayName] = useState('');
   const [vars, setVars] = useState<Record<string, string>>({});
   const [secrets, setSecrets] = useState<Record<string, string>>({});
@@ -438,7 +443,7 @@ export function ConnectFromTemplateModal({ template, onClose, onDone }: {
           {err && <p className="text-xs text-red-300 mt-3">{err}</p>}
           <div className="flex gap-3 mt-5">
             <button disabled={busy} onClick={onClose} className="flex-1 px-3 py-2 rounded-lg bg-dt-panel text-dt-support hover:bg-dt-panel text-xs disabled:opacity-50">Cancel</button>
-            <button disabled={busy} onClick={() => void submit()} className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs disabled:opacity-50">{busy ? 'Testing…' : 'Test & Save'}</button>
+            <button disabled={busy || !canManageConnectors} onClick={() => void submit()} className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs disabled:opacity-50">{busy ? 'Testing…' : 'Test & Save'}</button>
           </div>
     </Modal>
   );

@@ -1,3 +1,4 @@
+import { useIsTenantAdmin } from '../../../lib/useRoleGate';
 import React, { useState, useEffect, useCallback } from 'react';
 import type { Page } from '../../../types';
 import {
@@ -132,6 +133,10 @@ function ToolPicker({ tools, onCancel, onRegister, busy }: {
 }
 
 function ServerCard({ s, onChanged }: { s: McpServer; onChanged: () => void }) {
+  // An MCP server IS a connector row, so registering tools and
+  // disconnecting are owner/admin writes on a MANAGE page. Reading which
+  // servers and tools exist stays open.
+  const canManageConnectors = useIsTenantAdmin();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -184,7 +189,7 @@ function ServerCard({ s, onChanged }: { s: McpServer; onChanged: () => void }) {
         : <Chip tone={s.connector.status === 'connected' ? 'ok' : 'neutral'}>{String(s.connector.status).toUpperCase()}</Chip>}
       actions={
         <div className="flex items-center gap-2">
-          <Button kind="secondary" size="sm" disabled={busy} onClick={() => void readTools()}>
+          <Button kind="secondary" size="sm" disabled={busy || !canManageConnectors} onClick={() => void readTools()}>
             {busy ? 'Reading…' : s.tools.length ? 'Re-read tools' : 'Read tools'}
           </Button>
           {s.tools.length > 0 && (
@@ -192,7 +197,7 @@ function ServerCard({ s, onChanged }: { s: McpServer; onChanged: () => void }) {
               {open ? 'Hide' : `${s.tools.length} tool${s.tools.length === 1 ? '' : 's'}`}
             </Button>
           )}
-          <Button kind="secondary" size="sm" disabled={busy} onClick={() => void remove()}>Disconnect</Button>
+          <Button kind="secondary" size="sm" disabled={busy || !canManageConnectors} onClick={() => void remove()}>Disconnect</Button>
         </div>
       }
     >
@@ -229,6 +234,7 @@ function ServerCard({ s, onChanged }: { s: McpServer; onChanged: () => void }) {
 }
 
 function ConnectForm({ onDone }: { onDone: () => void }) {
+  const canManageConnectors = useIsTenantAdmin();
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [token, setToken] = useState('');
@@ -270,7 +276,7 @@ function ConnectForm({ onDone }: { onDone: () => void }) {
       </div>
       {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
       <div className="mt-3">
-        <Button kind="primary" size="sm" disabled={busy} onClick={() => void submit()}>
+        <Button kind="primary" size="sm" disabled={busy || !canManageConnectors} onClick={() => void submit()}>
           {busy ? 'Connecting…' : 'Connect'}
         </Button>
       </div>
