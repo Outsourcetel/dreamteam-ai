@@ -816,6 +816,7 @@ function attemptLine(a: DEDevelopmentAttempt, outcomes: DEImprovementOutcome[]):
 }
 
 export function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
+  const canManage = useCanManageDe();
   const [items, setItems] = useState<DEDevelopmentItem[] | null>(null);
   const [outcomes, setOutcomes] = useState<DEImprovementOutcome[]>([]);
   const [scanning, setScanning] = useState(false);
@@ -880,7 +881,7 @@ export function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
       {err && <div className="mb-3 rounded-lg border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{err}</div>}
 
       <div className="flex gap-2 mb-3">
-        <button onClick={scan} disabled={scanning} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors disabled:opacity-50">
+        <button onClick={scan} disabled={scanning || !canManage} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors disabled:opacity-50">
           {scanning ? 'Scanning…' : 'Scan for development needs'}
         </button>
         <button onClick={() => setShowAdd(s => !s)} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors">
@@ -894,7 +895,7 @@ export function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
             className="w-full rounded-lg bg-dt-card border border-dt-border px-2 py-1.5 text-xs text-white" />
           <div className="flex justify-end gap-2">
             <button onClick={() => setShowAdd(false)} disabled={busy} className="text-[11px] px-2 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel">Cancel</button>
-            <button onClick={addManual} disabled={busy} className="text-[11px] px-2 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white">{busy ? 'Adding…' : 'Add item'}</button>
+            <button onClick={addManual} disabled={busy || !canManage} className="text-[11px] px-2 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white">{busy ? 'Adding…' : 'Add item'}</button>
           </div>
         </div>
       )}
@@ -912,10 +913,10 @@ export function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
                 </div>
                 <div className="flex gap-1 flex-shrink-0">
                   {item.status === 'proposed' && (
-                    <button onClick={() => setStatus(item.id, 'in_progress')} disabled={busy} className="text-[10px] px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 hover:bg-sky-500/25">Start</button>
+                    <button onClick={() => setStatus(item.id, 'in_progress')} disabled={busy || !canManage} className="text-[10px] px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 hover:bg-sky-500/25">Start</button>
                   )}
-                  <button onClick={() => setStatus(item.id, 'completed')} disabled={busy} className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25">Complete</button>
-                  <button onClick={() => setStatus(item.id, 'dismissed')} disabled={busy} className="text-[10px] px-2 py-0.5 rounded bg-dt-panel text-dt-muted hover:bg-dt-panel">Dismiss</button>
+                  <button onClick={() => setStatus(item.id, 'completed')} disabled={busy || !canManage} className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25">Complete</button>
+                  <button onClick={() => setStatus(item.id, 'dismissed')} disabled={busy || !canManage} className="text-[10px] px-2 py-0.5 rounded bg-dt-panel text-dt-muted hover:bg-dt-panel">Dismiss</button>
                 </div>
               </div>
               {/* A PIP is a formal plan with a deadline and a written consequence
@@ -973,6 +974,7 @@ export function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
 // retirement with real dependency checks (Wave 2, migration 110). ──
 
 function EditDEModal({ de, onClose, onSaved }: { de: DigitalEmployee; onClose: () => void; onSaved: (de: DigitalEmployee) => void }) {
+  const canManage = useCanManageDe();
   const [name, setName] = useState(de.name);
   const [personaName, setPersonaName] = useState(de.persona_name ?? '');
   const [description, setDescription] = useState(de.description);
@@ -1027,7 +1029,7 @@ function EditDEModal({ de, onClose, onSaved }: { de: DigitalEmployee; onClose: (
         </label>
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors disabled:opacity-50">Cancel</button>
-          <button onClick={save} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50">{busy ? 'Saving…' : 'Save changes'}</button>
+          <button onClick={save} disabled={busy || !canManage} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50">{busy ? 'Saving…' : 'Save changes'}</button>
         </div>
       </div>
     </Modal>
@@ -1035,6 +1037,7 @@ function EditDEModal({ de, onClose, onSaved }: { de: DigitalEmployee; onClose: (
 }
 
 function RetireDEModal({ de, onClose, onRetired }: { de: DigitalEmployee; onClose: () => void; onRetired: (de: DigitalEmployee) => void }) {
+  const canManage = useCanManageDe();
   const [readiness, setReadiness] = useState<RetirementReadiness | null>(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1084,7 +1087,7 @@ function RetireDEModal({ de, onClose, onRetired }: { de: DigitalEmployee; onClos
         </label>
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors disabled:opacity-50">Cancel</button>
-          <button onClick={confirm} disabled={busy || !readiness?.ready} className="text-xs px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-colors disabled:opacity-50">{busy ? 'Retiring…' : 'Retire this employee'}</button>
+          <button onClick={confirm} disabled={busy || !readiness?.ready || !canManage} className="text-xs px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-colors disabled:opacity-50">{busy ? 'Retiring…' : 'Retire this employee'}</button>
         </div>
       </div>
     </Modal>
@@ -1106,6 +1109,7 @@ const TASK_STATUS_STYLE: Record<string, string> = {
 // T1.2: human view of cross-DE delegation — tasks assigned to / by this DE,
 // plus an owner/admin "assign a task" control (the RPC rejects non-admins).
 function DelegationPanel({ de }: { de: DigitalEmployee }) {
+  const canManage = useCanManageDe();
   const [inbound, setInbound] = useState<DETaskRequest[] | null>(null);
   const [outbound, setOutbound] = useState<DETaskRequest[] | null>(null);
   const [roster, setRoster] = useState<DigitalEmployee[]>([]);
@@ -1161,7 +1165,7 @@ function DelegationPanel({ de }: { de: DigitalEmployee }) {
           </select>
           <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Task title" className="w-full bg-dt-panel border border-dt-border rounded px-2 py-1 text-xs text-dt-body" />
           <textarea value={context} onChange={e => setContext(e.target.value)} placeholder="Context (optional)" rows={2} className="w-full bg-dt-panel border border-dt-border rounded px-2 py-1 text-xs text-dt-body" />
-          <button onClick={() => void assign()} disabled={busy || !toId || !title.trim()} className="text-[11px] px-2.5 py-1 rounded bg-indigo-600 text-white disabled:opacity-50">Assign</button>
+          <button onClick={() => void assign()} disabled={busy || !toId || !title.trim() || !canManage} className="text-[11px] px-2.5 py-1 rounded bg-indigo-600 text-white disabled:opacity-50">Assign</button>
           <p className="text-[10px] text-dt-faint">Only workspace owners/admins can assign. The colleague picks it up as their own tracked task under their own governance.</p>
         </div>
       )}
@@ -1432,6 +1436,7 @@ function ConsultationsAuditPanel({ de }: { de: DigitalEmployee }) {
 }
 
 function DeGovernancePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (de: DigitalEmployee) => void }) {
+  const canManage = useCanManageDe();
   const [history, setHistory] = useState<DEConfigHistoryEntry[] | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [modal, setModal] = useState<'edit' | 'retire' | null>(null);
@@ -1502,7 +1507,7 @@ function DeGovernancePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: 
       {!retired && (
         <div className="mt-4 pt-4 border-t border-dt-border">
           <label className="flex items-center gap-2 text-xs text-dt-support">
-            <input type="checkbox" checked={!!de.is_supervisor} disabled={supBusy}
+            <input type="checkbox" checked={!!de.is_supervisor} disabled={supBusy || !canManage}
               onChange={(e) => void toggleSupervisor(e.target.checked)} />
             <span className="font-semibold text-dt-title">Supervisor / router</span>
           </label>
@@ -1833,6 +1838,7 @@ const MODEL_LABELS: Record<string, string> = {
 // Customer send mode — draft-for-approval vs auto-send for external chat
 // replies. Reads/writes the DE's external_reply_mode (the channel obeys it).
 function DeReplyModePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: DigitalEmployee) => void }) {
+  const canManage = useCanManageDe();
   const [mode, setMode] = useState<'draft' | 'auto'>(de.external_reply_mode === 'auto' ? 'auto' : 'draft');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1892,7 +1898,7 @@ function DeReplyModePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
           <button
             key={o.key}
             onClick={() => void choose(o.key)}
-            disabled={busy}
+            disabled={busy || !canManage}
             className={`text-left rounded-xl border p-4 transition-colors disabled:opacity-60 ${mode === o.key ? (o.key === 'auto' ? 'border-emerald-500/60 bg-emerald-500/10' : 'border-indigo-500/60 bg-indigo-500/10') : 'border-dt-border bg-dt-inset hover:border-dt-border-strong'}`}
           >
             <div className="flex items-center gap-2">
@@ -2032,6 +2038,7 @@ function DeAnswerSafeguardsPanel({ de }: { de: DigitalEmployee }) {
 }
 
 function DeModelPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: DigitalEmployee) => void }) {
+  const canManage = useCanManageDe();
   const [models, setModels] = useState<Array<{ model_id: string; input_price_per_million: number; output_price_per_million: number }>>([]);
   const [selected, setSelected] = useState(de.model_id || 'claude-sonnet-5');
   const [busy, setBusy] = useState(false);
@@ -2079,7 +2086,7 @@ function DeModelPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: D
             </option>
           ))}
         </select>
-        <button onClick={() => void save()} disabled={busy || selected === (de.model_id || 'claude-sonnet-5')}
+        <button onClick={() => void save()} disabled={busy || !canManage || selected === (de.model_id || 'claude-sonnet-5')}
           className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
           {busy ? 'Saving…' : 'Save'}
         </button>
@@ -2249,12 +2256,12 @@ export function DeKpisPanel({ de }: { de: DigitalEmployee }) {
         <div className="mb-3 rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-3 space-y-2">
           <p className="text-xs text-dt-support">Record a value for <span className="font-medium">{reading.name}</span></p>
           <div className="flex items-center gap-2">
-            <input type="number" value={readingValue} autoFocus
+            <input type="number" value={readingValue} autoFocus disabled={!canManage}
               onChange={e => setReadingValue(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') void saveReading(); }}
               placeholder="Value"
               className="w-32 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
-            <button onClick={() => void saveReading()} disabled={busy || readingValue.trim() === ''}
+            <button onClick={() => void saveReading()} disabled={busy || !canManage || readingValue.trim() === ''}
               className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">Save</button>
             <button onClick={() => setReading(null)} className="text-xs text-dt-muted hover:text-dt-support">Cancel</button>
           </div>
@@ -2279,7 +2286,7 @@ export function DeKpisPanel({ de }: { de: DigitalEmployee }) {
         </select>
         <input type="number" value={target} disabled={busy || !canManage} onChange={e => setTarget(e.target.value)} placeholder="Target"
           className="w-24 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
-        <button onClick={add} disabled={busy || target.trim() === '' || !selected}
+        <button onClick={add} disabled={busy || !canManage || target.trim() === '' || !selected}
           className="text-xs px-3 py-1.5 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body disabled:opacity-40">
           Add KPI
         </button>
@@ -2309,7 +2316,7 @@ export function DeKpisPanel({ de }: { de: DigitalEmployee }) {
             <p className="text-[10px] text-dt-faint">Saved as <code>{slugifyKey(newLabel)}</code></p>
           )}
           <div className="flex gap-2">
-            <button onClick={() => void defineMetric()} disabled={busy || !newLabel.trim()}
+            <button onClick={() => void defineMetric()} disabled={busy || !canManage || !newLabel.trim()}
               className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">Create</button>
             <button onClick={() => { setDefining(false); setNewLabel(''); setNewUnit(''); }}
               className="text-xs text-dt-muted hover:text-dt-support">Cancel</button>
@@ -2985,7 +2992,7 @@ function TeamsPanel() {
             className="w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
           <input type="text" value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="Purpose (optional)"
             className="w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
-          <button onClick={() => void createTeam()} disabled={busy || !name.trim()}
+          <button onClick={() => void createTeam()} disabled={busy || !canManage || !name.trim()}
             className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
             Create team
           </button>
@@ -3044,7 +3051,7 @@ function TeamsPanel() {
                       <option key={d.id} value={d.id}>{d.name}</option>
                     ))}
                   </select>
-                  <button onClick={() => addMember(team.id)} disabled={busy || !addDe[team.id]}
+                  <button onClick={() => addMember(team.id)} disabled={busy || !canManage || !addDe[team.id]}
                     className="text-xs px-3 py-1.5 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body disabled:opacity-40">
                     Add
                   </button>

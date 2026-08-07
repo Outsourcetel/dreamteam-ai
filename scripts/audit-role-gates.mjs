@@ -251,10 +251,153 @@ function viewersOf(file, depth = 0) {
   return widest;
 }
 
+// ── inside a PARTIALLY gated file ────────────────────────────────────────
+//
+// ⚠⚠ The check below is file-level: one mention of a gate and the whole file
+// is trusted. That hid six controls in LiveWorkforceDEs.tsx, which is ~4,200
+// lines holding eleven components that each declare their own `canManage`.
+// Wiring one component's buttons silenced the checker for the other ten.
+//
+// ⚠ Proximity to the rpc() call is the WRONG test. Those lines are handler
+// BODIES; the button that calls the handler is often fifty lines away and
+// perfectly gated. My first attempt reported nine of these as bare and every
+// one was a false alarm. The right question is: for each handler that reaches
+// a role-gated action, is every control invoking it behind a gate?
+//
+// ⚠ Handler names collide — `save` is declared in six components here — so a
+// name-keyed map merges unrelated bodies and invents findings. Handlers are
+// therefore scoped to the component they are declared in.
+const COMPARED = { n: 0 };
+function controlsMissingGate(src, wrapperMap) {
+  const L = src.split(/\r?\n/);
+  // ⚠⚠ DERIVE the gate names from this file rather than hard-coding them.
+  //
+  // GATE_RE lists idioms I knew about when I wrote it. The moment I gated a
+  // control with `const canDecideCandidates = useIsTenantAdmin()` the tag-level
+  // test stopped recognising it and reported my own fix as the bug — the fourth
+  // time in this work that a detector failed to learn a new idiom. Anything
+  // bound from a use*Is/use*Can hook is a gate, whatever it is called, so read
+  // the bindings instead of guessing the names.
+  const local = [...src.matchAll(/const\s+([a-zA-Z0-9_]+)\s*=\s*(use(?:Is|Can)[A-Za-z0-9_]*)\s*\(/g)].map((m) => m[1]);
+  const localRe = local.length ? new RegExp('\\b(?:' + local.join('|') + ')\\b') : null;
+  const isGate = (s) => GATE_RE.test(s) || (localRe !== null && localRe.test(s));
+  // Component boundaries: a top-level `function Name(` at column 0.
+  const bounds = [];
+  L.forEach((l, i) => { if (/^function [A-Z][A-Za-z0-9_]*\s*[({]/.test(l)) bounds.push(i); });
+  const compAt = (line) => {
+    let lo = 0;
+    for (const b of bounds) { if (b <= line) lo = b; else break; }
+    return lo;
+  };
+  // Handlers, keyed by "componentStart:name" so two `save`s never merge.
+  const handlers = new Map();
+  for (let i = 0; i < L.length; i++) {
+    const m = L[i].match(/^(\s+)const ([a-zA-Z0-9_]+)\s*=\s*(?:async\s*)?(?:\(|function)/);
+    if (!m) continue;
+    const stop = new RegExp('^' + m[1] + '(?:const |function |export )');
+    let body = '';
+    for (let j = i + 1; j < L.length && j - i < 120; j++) {
+      if (j > i + 1 && stop.test(L[j])) break;
+      body += L[j] + '\n';
+    }
+    const acts = new Set();
+    for (const n of needsGate.keys()) {
+      if (body.includes(`rpc('${n}'`) || body.includes(`rpc("${n}"`)) acts.add(n);
+    }
+    // …and through a lib wrapper, which the direct-rpc scan alone cannot see.
+    for (const [fn, rpcs] of Object.entries(wrapperMap)) {
+      if (!new RegExp(`\\b${fn}\\s*\\(`).test(body)) continue;
+      for (const n of rpcs) if (needsGate.has(n)) acts.add(n);
+    }
+    if (acts.size) handlers.set(compAt(i) + ':' + m[2], { name: m[2], acts: [...acts], comp: compAt(i) });
+  }
+  if (!handlers.size) return [];
+  // ⚠ A control is ALSO gated when an ANCESTOR withholds it —
+  //     {canDecide && ( <button onClick={decide}/> )}
+  //     {!isAdmin ? null : ( <form/> )}
+  // — which is the better fix in most cases, because a control that cannot
+  // work is usually better absent than greyed out. Judging the tag alone
+  // reported four controls I had just gated that way as ungated. An
+  // instrument that reports the FIX as the BUG is the failure mode to watch:
+  // it is the same shape as the self-test that had to be flipped after the
+  // Employee File work.
+  const gatedSpans = [];
+  for (let i = 0; i < src.length; i++) {
+    if (src[i] !== '{') continue;
+    const head = src.slice(i + 1, i + 200);
+    // ⚠ Read the WHOLE condition chain, not the first clause. `{pending.length
+    // > 0 && canDecide && (` stops a non-greedy `(&&|\?)` at the first `&&`,
+    // leaving `pending.length > 0` — no gate token — so the checker reported
+    // four controls I had just gated. Anchor on `&& (` or `?` instead.
+    const cond = head.match(/^([^{}]*?)(?:&&\s*\(|\?)/);
+    if (!cond || !isGate(cond[1])) continue;
+    // ⚠⚠ A FUNCTION BODY IS NOT A JSX CONDITIONAL. A component opening
+    //     { const canManage = useCanManageDe(); const [x] = useState(a ? b : c);
+    // matches the pattern above — a gate name, then a `?` — so the whole
+    // component body was treated as withheld and EVERY control inside it went
+    // silent. Adding the hook to seven components made two real findings
+    // vanish, which is the worst failure a checker can have: it got quieter
+    // the more code it was asked to judge. A JSX condition is one expression
+    // and never contains a statement.
+    if (/;|\bconst\b|\blet\b|\breturn\b|\bfunction\b|=>/.test(cond[1])) continue;
+    let d = 1, j = i + 1;
+    for (; j < src.length && d > 0; j++) {
+      if (src[j] === '{') d++; else if (src[j] === '}') d--;
+    }
+    gatedSpans.push([i, j]);
+  }
+  const insideGate = (pos) => gatedSpans.some(([a, b]) => pos > a && pos < b);
+  // Every JSX opening tag carrying a handler prop, read brace-aware so a tag
+  // spanning lines is judged whole — otherwise `disabled={… !canManage}` on
+  // the following line reads as absent.
+  const out = [];
+  for (let i = 0; i < src.length; i++) {
+    // ⚠ Only real HTML controls. `<SystemCard onChange={() => loadCfg(id)}/>`
+    // is a callback handed to a CHILD, not a control the user can press, and
+    // the child is examined on its own — counting it reported three refresh
+    // callbacks on Browser Operator as dead buttons.
+    if (src[i] !== '<' || !/[a-z]/.test(src[i + 1] || '')) continue;
+    let d = 0, j = i + 1;
+    for (; j < src.length; j++) {
+      const c = src[j];
+      if (c === '{') d++; else if (c === '}') d--; else if (c === '>' && d === 0) break;
+    }
+    const tag = src.slice(i, j + 1);
+    if (!/on[A-Z][a-zA-Z]+\s*=/.test(tag)) continue;
+    const line = src.slice(0, i).split('\n').length - 1;
+    // Count the comparison BEFORE judging it. `0 findings from 0 comparisons`
+    // is indistinguishable from a clean sweep, and both of my earlier
+    // instruments failed exactly that way — one compared nothing and reported
+    // success. The total is asserted at the end.
+    const guarded = isGate(tag) || insideGate(i);
+    for (const h of handlers.values()) {
+      if (h.comp !== compAt(line)) continue;                       // scope, not name
+      if (!new RegExp(`\\b${h.name}\\s*[(}]`).test(tag)) continue;
+      for (const a of h.acts) {
+        COMPARED.n++;
+        if (!guarded) out.push({ action: a, line: line + 1, via: h.name });
+      }
+    }
+  }
+  return out;
+}
+
 for (const [f, src] of Object.entries(FILES)) {
   if (!f.startsWith('src/pages/') && !f.startsWith('src/components/')) continue;
   const comp = path.basename(f).replace(/\.tsx?$/, '');
-  if (GATE_RE.test(src) || gatedByProp.has(comp)) continue;
+  if (GATE_RE.test(src) || gatedByProp.has(comp)) {
+    // Partially gated: look at the controls rather than trusting the file.
+    const viewers = viewersOf(f);
+    if (!viewers.length) continue;
+    for (const c of controlsMissingGate(src, wrappers)) {
+      const allowed = needsGate.get(c.action) || [];
+      const refused = viewers.filter((v) => !allowed.includes(v));
+      if (refused.length) {
+        findings.push({ action: c.action, file: `${f}:${c.line}`, needs: allowed.join('/'), refused: refused.join(', ') });
+      }
+    }
+    continue;
+  }
   const hit = new Set();
   for (const name of needsGate.keys()) {
     if (src.includes(`rpc('${name}'`) || src.includes(`rpc("${name}"`)) hit.add(name);
@@ -274,9 +417,34 @@ for (const [f, src] of Object.entries(FILES)) {
   }
 }
 
+// ⚠⚠ ASSERT THE NUMBER OF COMPARISONS, NOT JUST THE NUMBER OF FINDINGS.
+// Two earlier instruments reported a clean sweep having examined nothing —
+// one because a shell-mangled regex matched no function, one because it only
+// looked at direct call sites on pages that delegate. A floor turns "I found
+// nothing" into "I looked at N things and found nothing", which are not the
+// same claim. Never delete it.
+//
+// Set well below the current count (63) on purpose. The floor is here to catch
+// a scan that has BROKEN — zero, or single digits — not to police ordinary
+// refactoring. A floor set just under today's number would abort the build the
+// first time someone merged two panels, and a check that cries wolf gets
+// deleted, which is how the drift it guards against got here.
+const FLOOR = 40;
+if (COMPARED.n < FLOOR) {
+  console.error(`ABORT: only ${COMPARED.n} control/action pairs compared (floor ${FLOOR}).`);
+  console.error('A clean result from too few comparisons is not a clean result. The scan is broken.');
+  process.exit(2);
+}
 console.log(`role-gated functions: ${rows.length}   (self-aware, subject always allowed: ${selfAware})`);
+console.log(`controls compared against their action's gate: ${COMPARED.n}`);
 console.log(`UI call sites offering a gated action with no role check: ${findings.length}\n`);
-for (const f of findings) console.log(`  ${f.action}  ←  ${f.file}`);
+// Print what it needs and who it refuses. Without those two columns the
+// report says a control is wrong but not how to fix it, and the wrong hook
+// (admin where manager is allowed) removes a capability someone really had.
+for (const f of findings) {
+  console.log(`  ${f.action}  ←  ${f.file}`);
+  console.log(`      needs ${f.needs}   ·   refuses ${f.refused}`);
+}
 if (!findings.length) console.log('  none — every gated action reached from the UI sits behind a role check');
 
 if (STRICT && findings.length) process.exit(1);

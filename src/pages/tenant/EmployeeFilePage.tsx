@@ -14,6 +14,7 @@ import {
   type DeWorkMetrics, type DeContractMetric,
 } from '../../lib/api';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useIsTenantAdmin } from '../../lib/useRoleGate';
 import { useEmployeeFileDeId, EMPLOYEE_FILE_PATH } from '../../lib/employeeFileRoute';
 import {
   getDeExecutionLog, getDeExperience, getDeAgenticRuns, getAgenticRunMessages,
@@ -166,6 +167,10 @@ function ObjectiveCheckIns({ objectiveId }: { objectiveId: string }) {
 }
 
 function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => void }) {
+  // upsert_de_objective is owner/admin; the Employee File is ALL_TENANT.
+  // Reading what an employee is working towards is for everyone; setting it
+  // is not. The list stays; the Add/Edit/Done controls go.
+  const canManage = useIsTenantAdmin();
   const [work, setWork] = useState<WorkItemRow[] | null>(null);
   const [objectives, setObjectives] = useState<ObjectiveRow[]>([]);
   const [activity, setActivity] = useState<DEActivityRow[]>([]);
@@ -326,8 +331,8 @@ function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => v
           Workbench→Work). The Done button is the only brake on an objective
           waking forever, so it lives on the everyday surface. */}
       <PanelCard title="Open objectives"
-        actions={<Button kind="ghost" size="sm" onClick={() => { setObjOpen(true); setObjEditId(null); setObjTitle(''); setObjPriority(3); }}>+ Set an objective</Button>}>
-        {objOpen && (
+        actions={!canManage ? undefined : <Button kind="ghost" size="sm" onClick={() => { setObjOpen(true); setObjEditId(null); setObjTitle(''); setObjPriority(3); }}>+ Set an objective</Button>}>
+        {objOpen && canManage && (
           <div className="mb-3 rounded-lg border border-dt-border-strong bg-dt-page/70 p-3 space-y-2">
             <input value={objTitle} onChange={e => setObjTitle(e.target.value)} autoFocus
               placeholder="What should this employee be working towards?"
@@ -370,13 +375,17 @@ function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => v
                       {wakesOpen[o.id] ? 'Hide check-ins' : 'Why?'}
                     </button>
                   )}
-                  <button onClick={() => { setObjOpen(true); setObjEditId(o.id); setObjTitle(o.title); setObjPriority(o.priority || 3); }}
-                    className="text-[10px] text-dt-faint hover:text-indigo-300">Edit</button>
-                  {/* This list is already filtered to open | in_progress | blocked
-                      (the statuses de_objectives can actually hold while live), so
-                      every row gets the Done brake. */}
-                  <button onClick={() => void handleCloseObjective(o)}
-                    className="text-[10px] text-dt-faint hover:text-emerald-300">Done</button>
+                  {canManage && (
+                    <>
+                      <button onClick={() => { setObjOpen(true); setObjEditId(o.id); setObjTitle(o.title); setObjPriority(o.priority || 3); }}
+                        className="text-[10px] text-dt-faint hover:text-indigo-300">Edit</button>
+                      {/* This list is already filtered to open | in_progress | blocked
+                          (the statuses de_objectives can actually hold while live), so
+                          every row gets the Done brake. */}
+                      <button onClick={() => void handleCloseObjective(o)}
+                        className="text-[10px] text-dt-faint hover:text-emerald-300">Done</button>
+                    </>
+                  )}
                 </div>
                 {o.attention_flag && wakesOpen[o.id] && <ObjectiveCheckIns objectiveId={o.id} />}
               </div>

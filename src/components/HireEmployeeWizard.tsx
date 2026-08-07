@@ -350,8 +350,11 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
               )}
 
               <div className="flex gap-3">
-                <button onClick={doTeachAndRehearse}
-                  className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors">
+                {/* advance_de_lifecycle is owner/admin, like the two buttons
+                    earlier in this wizard. This one was missed when they were
+                    gated — the whole point of the checker. */}
+                <button onClick={doTeachAndRehearse} disabled={!isTenantAdmin}
+                  className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors disabled:opacity-40">
                   {answeredCount > 0 ? `Teach ${persona} & run the rehearsal` : 'Run the rehearsal'}
                 </button>
                 {answeredCount === 0 && draft.study.questions.length > 0 && (
