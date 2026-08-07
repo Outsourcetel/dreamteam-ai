@@ -38,15 +38,20 @@ const CHIP_TONE: Record<Tone, string> = {
   neutral: 'bg-dt-neutral-soft text-dt-neutral border-dt-neutral-border',
   accent: 'bg-dt-accent-soft text-dt-accent-text border-dt-accent/30',
 };
-export function Chip({ tone = 'neutral', dot, pulse, children, className = '' }:
-  { tone?: Tone; dot?: boolean; pulse?: boolean; children: React.ReactNode; className?: string }) {
+export function Chip({ tone = 'neutral', dot, pulse, children, className = '', title }:
+  // `title` because a status word often needs one clause of explanation and
+  // the chip is where the word lives — statusVocabulary.ts carries a `means`
+  // for exactly this ("Set up and ready, with nothing to do yet", so `idle`
+  // stops reading like a fault). Without it, call sites wrap the label in a
+  // <span title> inside the chip, which had already happened once.
+  { tone?: Tone; dot?: boolean; pulse?: boolean; children: React.ReactNode; className?: string; title?: string }) {
   return (
     // 12px floor (v2). Was text-[11px] — and a chip is not always a one-word
     // badge: DecisionCard's staleness slot puts "Nothing's happened in 5 days"
     // in one, and the floor rule exists precisely so a SENTENCE never renders
     // below 12. Fixed on the primitive rather than at the call sites, which
     // lifts every chip in the app in one line.
-    <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full border ${CHIP_TONE[tone]} ${className}`}>
+    <span title={title} className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full border ${CHIP_TONE[tone]} ${className}`}>
       {dot && <span className={`w-1.5 h-1.5 rounded-full bg-current ${pulse ? 'animate-pulse' : ''}`} />}
       {children}
     </span>
@@ -365,8 +370,10 @@ export function PageHeaderV2({ title, subtitle, actions }:
 export function EmployeeCard({ avatar, name, state, role, stats, lastAction, blockedReason, actions, onOpen }: {
   avatar?: React.ReactNode;
   name: React.ReactNode;
-  /** Already-translated words — see src/design/statusVocabulary.ts. Never an enum. */
-  state?: { label: string; tone?: Tone };
+  /** Already-translated words — see src/design/statusVocabulary.ts. Never an enum.
+   *  `means` becomes the tooltip: "Waiting" is clearer with "set up and ready,
+   *  with nothing to do yet" behind it. */
+  state?: { label: string; tone?: Tone; means?: string };
   /** One clause. "Customer support · answering chat & email" */
   role?: React.ReactNode;
   stats?: Array<{ label: string; value: React.ReactNode }>;
@@ -385,7 +392,7 @@ export function EmployeeCard({ avatar, name, state, role, stats, lastAction, blo
             {onOpen
               ? <button onClick={onOpen} className="text-[15px] font-semibold text-dt-title hover:text-dt-accent-text transition-colors truncate">{name}</button>
               : <span className="text-[15px] font-semibold text-dt-title truncate">{name}</span>}
-            {state && <Chip tone={state.tone ?? 'neutral'} dot>{state.label}</Chip>}
+            {state && <Chip tone={state.tone ?? 'neutral'} dot title={state.means}>{state.label}</Chip>}
           </div>
           {role && <p className="text-[13px] text-dt-support mt-0.5">{role}</p>}
         </div>

@@ -204,9 +204,9 @@ function statusBadge(status: TaskStatus) {
 // at the queue, not the underlying table.
 function stalledBadge(tier: StalenessEscalation['tier']) {
   if (tier === 'breach') {
-    return <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/40" title="Past the breach threshold — this has gone stale for longer than policy allows.">⏱ STALLED · OVERDUE</span>;
+    return <Chip tone="danger" title="Past the breach threshold — this has gone stale for longer than policy allows.">Nothing has happened in too long</Chip>;
   }
-  return <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-300 border border-orange-500/30" title="Past the warning threshold — nothing has happened on this in a while.">⏱ STALLED</span>;
+  return <Chip tone="warn" title="Past the warning threshold — nothing has happened on this in a while.">Gone quiet</Chip>;
 }
 
 /** N4 (founder decision, block 4): ONE queue, work blockers first.
@@ -217,16 +217,27 @@ function stalledBadge(tier: StalenessEscalation['tier']) {
  *  them actually moves the work item. Nothing is hidden; the queue simply opens
  *  where the consequence is. */
 type Scope = 'work' | 'chat' | 'all';
-const WORK_TABLES = ['de_work_items', 'de_objectives'];
 // A phone call is a conversation. Callback tasks (mig 577) belong beside chat
 // escalations rather than under "Everything" — landing only there would have
 // left a caller who was PROMISED a callback invisible on the tab people
 // actually open, which is the defect mig 577 exists to fix.
 const CONVERSATION_TABLES = ['de_conversations', 'voice_messages'];
+// ⚠ "Work that's stuck" is the CATCH-ALL, not a second allow-list.
+//
+// Both scopes used to be allow-lists, so anything whose related_table was in
+// neither — or null — appeared ONLY under "Both". Measured on the founder's
+// workspace: 32 stuck + 1 question, but 38 in total. FIVE approvals reachable
+// only by clicking the third tab, in a queue whose own comment two lines up
+// promises "nothing is hidden".
+//
+// An allow-list on both sides means every future table type silently joins
+// them. The two views ask "is my workforce stuck?" and "did somebody ask a
+// question?", and anything that is not a question IS stuck work — so that side
+// takes everything left over and the counts always reconcile.
 const inScope = (t: DBHumanTask, s: Scope) =>
   s === 'all' ? true
-    : s === 'work' ? WORK_TABLES.includes(String(t.related_table ?? ''))
-    : CONVERSATION_TABLES.includes(String(t.related_table ?? ''));
+    : s === 'chat' ? CONVERSATION_TABLES.includes(String(t.related_table ?? ''))
+    : !CONVERSATION_TABLES.includes(String(t.related_table ?? ''));
 
 const FILTERS: { id: TaskType | 'all'; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -562,8 +573,8 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   return (
     <div className="p-6">
       <PageHeader
-        title="Human Tasks"
-        subtitle="The human command queue — approvals, reviews, escalations, and overrides raised by your Digital Employees"
+        title="Waiting on you"
+        subtitle="Your employees have stopped on each of these and can't continue until you decide."
       />
 
       {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
@@ -575,7 +586,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
       ) : tasks.length === 0 ? (
         <LiveEmptyState
           icon="✋"
-          title="No human tasks yet"
+          title="Nothing is waiting on you"
           body="When a Digital Employee needs a human decision — like approving a renewal invoice over $10K — it shows up here."
           primaryLabel="Go to Renewal & Expansion"
           onPrimary={() => setPage('entity_customer_renewal')}
@@ -633,9 +644,9 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
           <div className="mb-4">
             <TabBar<Scope>
               tabs={[
-                { key: 'work', label: 'Blocking work', badge: scopeCount('work') > 0 ? <Chip tone="warn">{scopeCount('work')}</Chip> : undefined },
-                { key: 'chat', label: 'From conversations', badge: scopeCount('chat') > 0 ? <Chip tone="neutral">{scopeCount('chat')}</Chip> : undefined },
-                { key: 'all', label: 'Everything', badge: scopeCount('all') > 0 ? <Chip tone="neutral">{scopeCount('all')}</Chip> : undefined },
+                { key: 'work', label: "Work that's stuck", badge: scopeCount('work') > 0 ? <Chip tone="warn">{scopeCount('work')}</Chip> : undefined },
+                { key: 'chat', label: 'Questions people asked', badge: scopeCount('chat') > 0 ? <Chip tone="neutral">{scopeCount('chat')}</Chip> : undefined },
+                { key: 'all', label: 'Both', badge: scopeCount('all') > 0 ? <Chip tone="neutral">{scopeCount('all')}</Chip> : undefined },
               ]}
               active={scope}
               onSelect={setScope}
@@ -667,23 +678,25 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
             ))}
           </div>
 
-          {/* Filters */}
+          {/* One control, not seven. The six type chips that used to sit here
+              were the human_tasks taxonomy — Approvals, Reviews, Escalations,
+              Overrides, Feedback, Checklists — and an owner does not think in
+              those. The scope row above is the split that matters: is my
+              workforce stuck, or did somebody ask a question? */}
           <div className="flex items-center gap-2 mb-4 flex-wrap">
-            {FILTERS.map(f => (
+            {filter !== 'all' && (
               <button
-                key={f.id}
-                onClick={() => setFilter(f.id)}
-                className={`px-3 py-1.5 rounded-full text-xs transition-colors ${filter === f.id ? 'bg-indigo-600 text-white' : 'bg-dt-card border border-dt-border text-dt-support hover:text-dt-body'}`}
-              >
-                {f.label}
+                onClick={() => setFilter('all')}
+                className="px-3 py-1.5 rounded-full text-xs bg-dt-accent-soft border border-dt-accent/30 text-dt-accent-text hover:brightness-110 transition-colors">
+                {FILTERS.find(f => f.id === filter)?.label ?? filter} · clear ✕
               </button>
-            ))}
+            )}
             <div className="flex-1" />
             <button
               onClick={() => setStalledOnly(v => !v)}
               className={`px-3 py-1.5 rounded-full text-xs transition-colors ${stalledOnly ? 'bg-orange-500/20 text-orange-300 border border-orange-500/40' : 'bg-dt-card border border-dt-border text-dt-support hover:text-dt-body'}`}
             >
-              ⏱ Stalled work only{stalledCount > 0 ? ` (${stalledCount})` : ''}
+              Gone quiet only{stalledCount > 0 ? ` (${stalledCount})` : ''}
             </button>
           </div>
 

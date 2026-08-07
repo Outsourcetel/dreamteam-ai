@@ -274,7 +274,7 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
                 </div>
               }
               name={de.persona_name || de.name}
-              state={{ label: state.label, tone: state.tone }}
+              state={{ label: state.label, tone: state.tone, means: state.means }}
               role={`${de.department || de.category} · ${de.description || 'No description yet.'}`}
               stats={cells}
               /* ⚠ Says which it is. "0 handled" and "nothing recorded" look the
