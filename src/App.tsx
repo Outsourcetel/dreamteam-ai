@@ -54,101 +54,17 @@ import { VendorOverviewPage, VendorSourcingPage, VendorContractsPage, VendorMana
 import { WorkforceOverviewPage, WorkforceTalentPage, WorkforceOnboardingPage, WorkforceDevelopmentPage, WorkforcePayrollPage } from './pages/tenant/entity/WorkforcePages';
 import OutcomesPage from './pages/tenant/outcome/LiveOutcomesPage';
 import type { Page, PlatformPage } from './types';
+import { PAGE_TO_URL, URL_TO_PAGE } from './lib/pageRoutes';
 
 // Live tenants get the real onboarding workspace (migration 022);
 // demo companies keep the co-pilot design preview.
 const CustomerOnboardingRoute = ({ setPage }: { setPage?: (p: Page) => void }) => <CustomerOnboardingLive setPage={setPage} />;
 
-// ── URL ↔ Page mapping ──────────────────────────────────────────
-// Record<Page, string> (not Record<string, string>) so adding a new Page
-// without a URL mapping is a compile error, not a silently-dead nav link —
-// an unmapped page used to make URLSync bounce every click straight back.
-const PAGE_TO_URL: Record<Page, string> = {
-  platform_home:                '/platform',
-  platform_tenants:             '/platform/tenants',
-  platform_team:                '/platform/team',
-  platform_security:            '/platform/security',
-  platform_health:              '/platform/health',
-  platform_revenue:             '/platform/revenue',
-  dashboard:              '/dashboard',
-  users:                  '/users',
-  organisation:                 '/organisation',
-  my_profile:                   '/my-profile',
-  settings:               '/settings',
-  eu_chat:                '/chat',
-  // Entities
-  entity_customer:            '/customer',
-  entity_customer_bd:         '/customer/bd',
-  entity_customer_sales:      '/customer/sales',
-  entity_customer_onboarding: '/customer/onboarding',
-  entity_customer_support:    '/customer/support',
-  entity_customer_success:    '/customer/success',
-  entity_customer_renewal:    '/customer/renewal',
-  entity_commercial_continuity: '/customer/continuity',
-  entity_vendor:              '/vendor',
-  entity_vendor_sourcing:     '/vendor/sourcing',
-  entity_vendor_contracts:    '/vendor/contracts',
-  entity_vendor_management:   '/vendor/management',
-  entity_workforce:           '/workforce-entity',
-  entity_workforce_talent:    '/workforce-entity/talent',
-  entity_workforce_onboarding:'/workforce-entity/onboarding',
-  entity_workforce_development:'/workforce-entity/development',
-  entity_workforce_payroll:   '/workforce-entity/payroll',
-  // Outcomes
-  outcomes:           '/outcomes',
-  outcome_revenue:    '/outcomes/revenue',
-  outcome_delivery:   '/outcomes/delivery',
-  outcome_financial:  '/outcomes/financial',
-  outcome_risk:       '/outcomes/risk',
-  // Workforce (DEs)
-  workforce_des:       '/workforce/des',
-  workforce_de_file:   '/workforce/employee',
-  workforce_chat:      '/workforce/chat',
-  // Knowledge
-  knowledge_library:   '/knowledge/library',
-  knowledge_ingestion: '/knowledge/ingestion',
-  knowledge_gaps:      '/knowledge/gaps',
-  knowledge_quality:   '/knowledge/quality',
-  knowledge_permissions: '/knowledge/permissions',
-  // Systems
-  systems_connectors: '/systems/connectors',
-  systems_mcp: '/systems/mcp',
-  systems_playbooks:  '/systems/playbooks',
-  // Operations
-  ops_human_tasks: '/ops/tasks',
-  ops_activity:    '/ops/activity',
-  ops_de_activity: '/ops/de-activity',
-  support_command_center: '/support/command-center',
-  support_triage_rules: '/support/triage-rules',
-  support_inbox: '/support/inbox',
-  support_calls: '/support/calls',
-  browser_operator: '/autonomy/browser-operator',
-  // Intelligence
-  intelligence_performance: '/intelligence/performance',
-  intelligence_learning:    '/intelligence/learning',
-  intelligence_evals:       '/intelligence/proving-ground',
-  intelligence_insights:    '/intelligence/insights',
-  // Governance
-  gov_compliance: '/governance/compliance',
-  gov_audit:      '/governance/audit',
-  gov_security:   '/governance/security',
-  gov_trust:      '/governance/trust',
-  gov_data_access: '/governance/data-access',
-  gov_identity_inventory: '/governance/identity-credentials',
-  // Setup
-  company_setup:  '/setup',
-  onboarding_architect: '/setup/quick-start',
-};
-
-const URL_TO_PAGE: Record<string, Page> = Object.fromEntries(
-  Object.entries(PAGE_TO_URL).map(([page, url]) => [url, page as Page])
-);
-
 // Syncs the auth-context page state with the browser URL bidirectionally.
 // This lets every existing component keep calling setPage('entity_customer_support')
 // while the browser URL stays updated and the back button works.
 function URLSync() {
-  const { currentPage, handleSetPage } = useAuth();
+  const { currentPage, handleSetPage, authedUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -163,26 +79,55 @@ function URLSync() {
   // regardless of timing.
   const lastSynced = useRef<{ page: string; pathname: string } | null>(null);
 
-  useEffect(() => {
-    if (lastSynced.current?.page === currentPage && lastSynced.current?.pathname === location.pathname) {
-      return;
-    }
+  // ── The page a cold URL asked for, held until currentPage AGREES ────────
+  //
+  // ⚠ ASKING IS NOT AGREEING, AND THIS IS WHERE THAT COST A DEEP LINK.
+  // The URL→page adoption used to be a one-shot guarded by `lastSynced ===
+  // null`, spent the moment the deep link was REQUESTED. StrictMode runs
+  // every effect body twice per commit, so the second run found the shot
+  // spent and currentPage still on `dashboard` — the setState from the first
+  // run had not landed yet — and fell through to the page→URL direction
+  // below, which rewrote /workforce/employee?de=<id> to /dashboard. The id
+  // went with it. The page state then caught up and the URL came back, minus
+  // the query, so the employee file opened with no employee to show.
+  //
+  // Holding the request until the page state actually matches makes every
+  // ordering question moot: double invocation, a slow auth resolve, and a
+  // late setCurrentPage from anywhere else all resolve to the same place.
+  const pendingDeepLink = useRef<Page | null>(URL_TO_PAGE[window.location.pathname] ?? null);
+  const deepLinkTries = useRef(0);
 
-    // First mount with a mapped deep-link URL: the URL wins over the default
-    // page state. Without this, the page→URL direction below runs first and
-    // bounces every cold deep link (or refresh) to the default page's URL —
-    // the "/autonomy/browser-operator lands on /dashboard" bug.
-    if (lastSynced.current === null) {
-      const deepLink = URL_TO_PAGE[location.pathname];
-      if (deepLink && deepLink !== currentPage) {
-        lastSynced.current = { page: deepLink, pathname: location.pathname };
-        handleSetPage(deepLink);
-        return;
+  useEffect(() => {
+    const wanted = pendingDeepLink.current;
+    if (wanted) {
+      if (currentPage === wanted) {
+        // Landed. Record it as synced so the page→URL direction below agrees
+        // and leaves the URL — query and all — exactly as the user opened it.
+        pendingDeepLink.current = null;
+        lastSynced.current = { page: wanted, pathname: location.pathname };
+      } else if (URL_TO_PAGE[location.pathname] !== wanted) {
+        pendingDeepLink.current = null;          // they navigated on; stop holding
+      } else if (deepLinkTries.current++ < 12) {
+        // handleSetPage refuses silently in two different moods. Without a
+        // user it means "not yet" — wait for authedUser (a dep) to bring us
+        // back. With one it is canAccessPage saying no, which is permanent,
+        // so stop holding and let the URL correct itself to a page they can
+        // actually open. The bound is a backstop against an outside force
+        // resetting the page every pass; nothing known does, but a spin here
+        // would be a hung boot rather than a wrong URL.
+        if (!handleSetPage(wanted) && authedUser) pendingDeepLink.current = null;
+        else return;                             // ⚠ hold the URL while pending
+      } else {
+        pendingDeepLink.current = null;
       }
     }
 
+    if (lastSynced.current?.page === currentPage && lastSynced.current?.pathname === location.pathname) return;
+
     const target = PAGE_TO_URL[currentPage];
     if (target && location.pathname !== target) {
+      // Dropping location.search here is correct: the query belonged to the
+      // pathname we are leaving. Nothing carries it because nothing should.
       lastSynced.current = { page: currentPage, pathname: target };
       navigate(target, { replace: true });
       return;
@@ -204,7 +149,9 @@ function URLSync() {
     }
 
     lastSynced.current = { page: currentPage, pathname: location.pathname };
-  }, [currentPage, location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+    // authedUser is a dep so a deep link refused during boot gets retried the
+    // moment sign-in lands, instead of sitting on an unsynced URL forever.
+  }, [currentPage, location.pathname, authedUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return null;
 }

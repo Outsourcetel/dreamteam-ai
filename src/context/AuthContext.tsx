@@ -10,6 +10,7 @@ import {
 import { checkMyAccountStatus, startPlatformRemoteAccess, endPlatformRemoteAccess, getTenantSessionPolicy, checkMyIpAllowed } from '../lib/api';
 import type { AuthUser, Tenant, Page, UserRole } from '../types';
 import { canAccessPage } from '../lib/navAccess';
+import { URL_TO_PAGE } from '../lib/pageRoutes';
 import type { CompanyProfile, CompanyId } from '../data/companies';
 import { setGodModeTenantIdOverride } from '../lib/customerApi';
 
@@ -94,7 +95,10 @@ interface AuthContextValue {
   completePasswordRecovery: (newPassword: string) => Promise<{ ok: boolean; error?: string }>;
   handleLogin: (u: AuthUser) => Promise<void>;
   handleLogout: () => Promise<void>;
-  handleSetPage: (p: Page) => void;
+  /** Returns whether the page actually moved. It refuses silently in two
+   *  cases — no signed-in user yet, and a page outside this role's access —
+   *  and URLSync has to tell those apart. See the body. */
+  handleSetPage: (p: Page) => boolean;
   setSidebarCollapsed: (v: boolean) => void;
   setGodModeSession: (s: GodModeSession | null) => void;
   refreshTenant: () => Promise<void>;
@@ -219,6 +223,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Only a genuine, successfully-fetched profile row with a null
       // tenant_id counts as "needs setup" — see profileHasNoTenant comment.
       setProfileHasNoTenant(!!profile && !profile.tenant_id);
+
+      // ⚠ A DEEP LINK IS NOT A LANDING. This runs on every cold load, and it
+      // used to pick a landing page without ever looking at the URL. Opening
+      // /workforce/employee?de=<id> fresh went: URLSync adopts the deep link →
+      // this lands on `dashboard` a beat later and clobbers it → URLSync, one
+      // -shot spent, rewrites the URL to /dashboard and the ?de= dies with it.
+      // The employee file then rendered with no employee. Refreshing ANY page
+      // had the same shape; the employee file was just where it was visible,
+      // because it is the one page whose identity lives in the query string.
+      //
+      // The URL wins. URLSync owns the adoption (it checks access), so this
+      // only has to keep its hands off. First-login bookkeeping stays with the
+      // branch that uses it, or a deep link would silently burn the one visit
+      // to Company Setup a new owner gets.
+      if (URL_TO_PAGE[window.location.pathname]) return;
+
       const isPlatform = ['dt_super_admin','dt_god_access','dt_support','dt_billing'].includes(au.role) || layer === 'platform';
       if (isPlatform) {
         setCurrentPage('platform_home');
@@ -557,13 +577,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const handleSetPage = (p: Page) => {
-    if (!authedUser) return;
+  // ⚠ RETURNS WHETHER IT ACTED. The two refusals below look identical to a
+  // caller that ignores the result, and they mean opposite things: "not yet"
+  // versus "never". URLSync mistook the first for the second and rewrote the
+  // URL to the default page mid-boot, taking the deep link's ?de= with it.
+  const handleSetPage = (p: Page): boolean => {
+    if (!authedUser) return false;   // not ready — ask again once auth lands
     // Both axes: role tier first, then the DE reporting line (docs/29). The
     // relations are undefined until the first resync tick, which is safe —
     // canAccessPage treats absent as none, so this can only open up once they
     // load, never close something that was already open.
-    if (canAccessPage(authedUser.role, p, authedUser.layer, authedUser.deRelations)) setCurrentPage(p);
+    if (!canAccessPage(authedUser.role, p, authedUser.layer, authedUser.deRelations)) return false;
+    setCurrentPage(p);
+    return true;
   };
 
   const refreshTenant = async () => {

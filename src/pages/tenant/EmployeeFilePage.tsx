@@ -1170,7 +1170,13 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
   const [tab, setTab] = useState<FileTab>(() => {
     const raw = new URLSearchParams(location.search).get('tab');
     const t = raw ? (TAB_ALIASES[raw] ?? raw) : null;
-    return t && FILE_TABS.some(x => x.key === t) ? (t as FileTab) : 'today';
+    // ⚠ WHITELIST AGAINST THE MEMBERS, NOT THE FOUR GROUP KEYS. FILE_TABS is
+    // now the four visible groups, so checking it here rejected every link to
+    // a key that became a member — ?tab=trust, ?tab=profile, ?tab=governance,
+    // ?tab=workbench — and silently dropped them all onto Work. That is the
+    // exact "stale links landing nowhere" TAB_ALIASES exists to prevent, and
+    // the collapse to four reintroduced it one comment below the warning.
+    return t && TAB_GROUPS.some(g => g.members.includes(t as FileTab)) ? (t as FileTab) : 'today';
   });
   // Tab clicks mirror into ?tab= with replace (no back-button tab history).
   // Same-tick navigate + URLSync's pathname-only reconciliation means the
