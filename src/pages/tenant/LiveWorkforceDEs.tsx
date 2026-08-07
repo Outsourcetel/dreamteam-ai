@@ -35,6 +35,7 @@ import { DeCertificationPanel, DeCompliancePanel } from './DeWorkbench';
 import ResponsiblePeoplePanel from '../../components/de/ResponsiblePeoplePanel';
 import DEActionDials from '../../components/de/DEActionDials';
 import { PanelCard, Button, Chip, EntityRow, Banner, EmptyState, Drawer, Field, Modal, INPUT_CLS } from '../../design/primitives';
+import { say, DE_STATUS } from '../../design/statusVocabulary';
 import {
   listDigitalEmployees, createDigitalEmployee, updateDigitalEmployee, getDEConfigHistory,
   checkDeRetirementReadiness, retireDigitalEmployee,
@@ -177,7 +178,7 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
 
   return (
     <PanelCard
-      title="Your Digital Employees"
+      title="Your workforce"
       actions={!adding && (
         <>
           {/* Retiring an employee used to leave it in this list forever,
@@ -217,7 +218,7 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
         </Modal>
       )}
       <p className="text-xs text-dt-muted mb-4">
-        Every Digital Employee working for {des.length > 0 ? 'your company' : 'you'} today. Each one is configured independently below —
+        Everyone working for {des.length > 0 ? 'your company' : 'you'} today. Each one is set up independently below —
         data access, playbooks, and trust build up the same way for every department.
       </p>
 
@@ -237,9 +238,9 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
             titleExtra={de.persona_name ? <span className="text-xs text-dt-muted">— {de.name}</span> : undefined}
             chips={
               <>
-                <Chip tone={de.status === 'active' ? 'ok' : 'neutral'}>{de.status}</Chip>
+                {(() => { const w = say(DE_STATUS, de.status); return <Chip tone={w.tone} dot={de.status === 'active'} pulse={de.status === 'active'}><span title={w.means}>{w.label}</span></Chip>; })()}
                 {health[de.id] && (
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${DE_HEALTH_LABELS[health[de.id].state]?.color}`}>
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${DE_HEALTH_LABELS[health[de.id].state]?.color}`}>
                     {DE_HEALTH_LABELS[health[de.id].state]?.label ?? health[de.id].state}
                   </span>
                 )}
