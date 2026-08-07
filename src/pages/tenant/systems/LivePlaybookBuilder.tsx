@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useIsTenantAdmin, useIsTenantManager } from '../../../lib/useRoleGate';
-import { Modal } from '../../../design/primitives';
-import { PageHeader, th, td } from '../../../components/ui';
+// Straight from the design system now, not via components/ui — that shim only
+// ever re-exported PageHeaderV2 and TH under older names, and the last table
+// on this page became step cards, so th/td have no remaining call site here.
+import { Modal, Button, Chip, PageHeaderV2 as PageHeader } from '../../../design/primitives';
 import type { Page } from '../../../types';
 import { CustomerApiError, listAccounts } from '../../../lib/customerApi';
 import type { CustomerAccount } from '../../../lib/customerApi';
@@ -11,6 +13,7 @@ import { listPublishedVersions } from '../../../lib/onboardingApi';
 import type { TemplateVersion } from '../../../lib/onboardingApi';
 import type { PlaybookRun, RunStep } from '../../../lib/playbookApi';
 import {
+  RETIRED_PRIMITIVES,
   PRIMITIVE_REGISTRY, TEMPLATE_VARS, UPDATE_WHITELIST, DECISION_OPERATORS, BRANCH_PRIMITIVES,
   validateStepsClient, listDefinitions, createDefinition, updateDefinition,
   publishDefinition, startDefinitionRun, previewRun, uploadPlaybookMedia, getPlaybookMediaUrlByAssetId,
@@ -1633,6 +1636,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
   const [schedules, setSchedules] = useState<PlaybookSchedule[]>([]);
   const [eventRules, setEventRules] = useState<PlaybookEventRule[]>([]);
   const [fires, setFires] = useState<PlaybookTriggerFire[]>([]);
+  const [publishingId, setPublishingId] = useState<string | null>(null);
 
   const refresh = async () => {
     try {
@@ -1686,6 +1690,20 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
     setSelectedDefId(null);
     await refresh();
     setToast(`"${def.name}" archived`);
+  };
+
+  // Publish straight from the card. The server does the validating, so a
+  // refusal comes back as structured errors rather than an exception — say
+  // WHICH step is wrong, because "Publish failed" sends you hunting.
+  const publishFromCard = async (id: string, name: string) => {
+    setPublishingId(id); setError(null);
+    try {
+      const res = await publishDefinition(id);
+      if (res.published) { await refresh(); setToast(`Published “${name}” — v${res.version}. It is live from now on.`); }
+      else if (res.errors?.length) setError(`“${name}” can't be published yet: ${res.errors.map(e => e.message).join('; ')}`);
+      else setError(res.error ?? `“${name}” could not be published.`);
+    } catch (err) { setError((err as Error).message); }
+    finally { setPublishingId(null); }
   };
 
   const onDrafted = async (r: DraftResult) => {
@@ -1844,38 +1862,104 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
             {defs.filter(d => d.status !== 'archived').length === 0 ? (
               <p className="px-5 py-6 text-xs text-dt-muted">No playbooks yet — build your first from typed step primitives. Guardrails and human gates are enforced by the server on every run.</p>
             ) : (
-              <table className="w-full text-sm">
-                <thead className="bg-dt-inset">
-                  <tr>
-                    <th className={th}>Playbook</th><th className={th}>Key</th><th className={th}>Status</th>
-                    <th className={th}>Version</th><th className={th}>Steps</th><th className={th}>Trigger</th><th className={th}>Runs</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {defs.filter(d => d.status !== 'archived').map(d => (
-                    <tr key={d.id} onClick={() => setSelectedDefId(d.id)}
-                      className="border-t border-dt-border hover:bg-dt-panel cursor-pointer transition-colors">
-                      <td className={`${td} text-dt-body font-medium`}>{d.name}</td>
-                      <td className={`${td} text-xs font-mono text-dt-muted`}>{d.key}</td>
-                      <td className={td}>{statusChip(d.status)}</td>
-                      <td className={`${td} text-xs font-mono text-dt-support`}>{d.status === 'published' ? `v${d.version}` : '—'}</td>
-                      <td className={`${td} text-xs text-dt-support`}>{d.steps.length}{d.steps.some(s => s.key === 'human_approval') ? ' · human gate' : ''}</td>
-                      <td className={`${td} text-xs text-dt-muted`}>
-                        <span className="flex flex-wrap gap-1">
-                          {schedules.filter(s => s.definition_id === d.id && s.active).map(s => (
-                            <span key={s.id} className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-300 whitespace-nowrap">⏰ {describeSchedule(s)}</span>
-                          ))}
-                          {eventRules.filter(r => r.definition_id === d.id && r.active).map(r => (
-                            <span key={r.id} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 whitespace-nowrap">⚡ {describeEventRule(r)}</span>
-                          ))}
-                          {!schedules.some(s => s.definition_id === d.id && s.active) && !eventRules.some(r => r.definition_id === d.id && r.active) && 'manual'}
-                        </span>
-                      </td>
-                      <td className={`${td} text-xs text-dt-support`}>{runs.filter(r => r.definition_id === d.id).length}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              // ── A playbook is its STEPS (handoff 07) ────────────────────
+              // Was a seven-column table: Playbook · Key · Status · Version ·
+              // Steps · Trigger · Runs. "Steps" was the NUMBER of steps, so
+              // the one thing that says what a playbook actually does — the
+              // steps themselves — was the one thing the row didn't show.
+              //
+              // ⚠ AND THE PAUSE WAS WRONG. The old cell appended "· human
+              // gate" when a step key was literally `human_approval`. Three
+              // primitives carry gate: true — human_approval, generate_invoice
+              // and checklist — so a playbook that stops before raising an
+              // invoice claimed to stop for nobody. The flag has been on
+              // PrimitiveMeta all along with no UI reading it; it is the most
+              // useful fact on the card, so it is now a chip per step.
+              <div className="divide-y divide-dt-border">
+                {defs.filter(d => d.status !== 'archived').map(d => {
+                  const meta = (k: string) => PRIMITIVE_REGISTRY.find(p => p.key === k);
+                  const sched = schedules.filter(s => s.definition_id === d.id && s.active);
+                  const evts = eventRules.filter(r => r.definition_id === d.id && r.active);
+                  const runCount = runs.filter(r => r.definition_id === d.id).length;
+                  const deadSteps = d.steps.filter(s => !PRIMITIVE_REGISTRY.some(p => p.key === s.key)).length;
+                  const when = sched.length ? `Runs ${describeSchedule(sched[0])}`
+                    : evts.length ? `Runs ${describeEventRule(evts[0])}`
+                    : d.status === 'published' ? 'Runs when someone starts it'
+                    : 'Nobody is following it yet';
+                  return (
+                    <div key={d.id} className="px-5 py-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button onClick={() => setSelectedDefId(d.id)}
+                              className="text-sm font-semibold text-dt-title hover:underline text-left">{d.name}</button>
+                            {statusChip(d.status)}
+                            {d.status === 'published' && <span className="text-xs font-mono text-dt-muted">v{d.version}</span>}
+                          </div>
+                          {d.description && <p className="text-xs text-dt-support mt-1 max-w-2xl">{d.description}</p>}
+                          <p className="text-xs text-dt-muted mt-0.5">
+                            {[when,
+                              d.intended_de_name ? `Assigned to ${d.intended_de_name}` : 'Not assigned to anyone',
+                              runCount ? `${runCount} ${runCount === 1 ? 'run' : 'runs'}` : null,
+                            ].filter(Boolean).join(' · ')}
+                          </p>
+                          {deadSteps > 0 && (
+                            <p className="text-xs text-dt-danger mt-1.5">
+                              {deadSteps === d.steps.length
+                                ? 'None of these steps can run. Starting this does nothing and still reports success.'
+                                : `${deadSteps} of these ${d.steps.length} steps can't run and are skipped without failing the playbook.`}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Button size="sm" onClick={() => setSelectedDefId(d.id)}>
+                            {d.status === 'draft' ? 'Edit' : 'Open'}
+                          </Button>
+                          {/* Publishing validates SERVER-side (playbook-execute
+                              action:'publish') and returns its refusals, so this
+                              cannot ship a playbook the Builder would have
+                              blocked — the button just saves the detour. */}
+                          {d.status === 'draft' && canEditPlaybooks && (
+                            <Button kind="primary" size="sm" disabled={publishingId === d.id}
+                              onClick={() => void publishFromCard(d.id, d.name)}>
+                              {publishingId === d.id ? 'Publishing…' : 'Publish it'}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                      <ol className="mt-3 space-y-1">
+                        {/* ⚠ A STEP THE RUNTIME HAS NO CASE FOR IS MARKED HERE.
+                            PRIMITIVE_REGISTRY and playbook-execute's dispatch
+                            switch hold exactly the same 19 keys in both
+                            directions, so "absent from the registry" is a
+                            truthful proxy for "the run will skip it".
+                            playbook-execute's `default:` sets
+                              skipped: unknown primitive "<key>"
+                            and does NOT fail the run — so without this the
+                            playbook reports completed having done nothing, and
+                            the only place the owner could ever find out is a
+                            run's step detail. Nine definitions in this
+                            workspace are built entirely from such steps. */}
+                        {d.steps.map((s, i) => {
+                          const known = !!meta(s.key);
+                          const retired = RETIRED_PRIMITIVES[s.key];
+                          const dead = !known;
+                          return (
+                            <li key={i} className="flex items-center gap-2 text-xs min-w-0">
+                              <span className="w-5 h-5 rounded bg-dt-inset text-dt-muted flex items-center justify-center shrink-0 text-xs">{i + 1}</span>
+                              <span className={`truncate ${dead ? 'text-dt-muted line-through' : 'text-dt-body'}`}>
+                                {retired || s.label || meta(s.key)?.label || s.key}
+                              </span>
+                              {dead && <Chip tone="danger" title="The runtime has no step of this kind, so every run skips it without failing.">skipped every run</Chip>}
+                              {meta(s.key)?.gate && <Chip tone="warn">stops for you</Chip>}
+                            </li>
+                          );
+                        })}
+                      </ol>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
 

@@ -99,9 +99,23 @@ export const PRIMITIVE_REGISTRY: PrimitiveMeta[] = [
   { key: 'log_activity', label: 'Log activity', gate: false, group: 'work',
     defaultParams: { text_template: 'Playbook completed for {{account.name}} — invoice {{invoice.amount}}' },
     description: 'Writes a line to the activity feed. Supports templates.' },
-  { key: 'consult_specialist', label: 'Consult specialist', gate: false, group: 'work',
-    defaultParams: { profile_key: 'technical', question_template: 'Review this run for {{account.name}} — any technical risks?', min_confidence: 60, on_low: 'escalate' },
-    description: 'Consults a Specialist (Technical v1) server-side. Recorded in the consultation log. Below the confidence floor → escalate to a human or continue (your choice). Dormant LLM → step skipped honestly.' },
+  // ⚠ `consult_specialist` WAS HERE AND COULD NOT RUN. Migration 611 retired
+  // the specialist role and DROPPED the `specialists` table — to_regclass says
+  // it is gone. playbook-execute has no case for the key either, so its main
+  // switch fell to `default:` and marked the step
+  //     skipped: unknown primitive "consult_specialist"
+  // A step that silently skips is worse than one that fails: the run reports
+  // completed having quietly not done the review someone put in the playbook
+  // deliberately. One live definition of 100 still contains it.
+  //
+  // Removing it from the palette stops the UI minting new ones. It does NOT
+  // stop the three server-side paths that still emit it — playbook-draft's
+  // prompt, playbook-amend's AMEND_PRIMITIVES, and connector-hub's generated
+  // "Accuracy check" step — and those need a deploy, so they are the founder's
+  // call, not a side effect of a design pass.
+  //
+  // PrimitiveKey deliberately still LISTS the key: definitions holding one
+  // must keep loading, and RETIRED_PRIMITIVES below is how they get named.
   { key: 'instruction', label: 'Instruction', gate: false, group: 'guide',
     defaultParams: { title: 'Before you continue', body_md: '', media: [] },
     description: 'Explains something to whoever is reading the playbook — text, images, or video, embedded right in the step. Feeds later "Consult specialist" steps as context once the specialist brain is activated.' },
@@ -138,6 +152,14 @@ export const PRIMITIVE_REGISTRY: PrimitiveMeta[] = [
   { key: 'complete', label: 'Complete', gate: false, group: 'work', defaultParams: {},
     description: 'Marks the run completed. Required final step.' },
 ];
+
+/** Keys that exist in saved definitions but can no longer run. They are OUT of
+ *  PRIMITIVE_REGISTRY so nobody can add another, and named here so a playbook
+ *  still holding one says what happened instead of showing a raw key — the
+ *  owner would otherwise never learn the step is quietly skipped every run. */
+export const RETIRED_PRIMITIVES: Record<string, string> = {
+  consult_specialist: 'Consult specialist — retired, this step is skipped',
+};
 
 export const TEMPLATE_VARS = [
   { token: '{{account.name}}', meaning: 'The served record\'s name (after a Check account step)' },

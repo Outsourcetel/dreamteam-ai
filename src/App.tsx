@@ -33,7 +33,7 @@ import OrganisationPage from './pages/tenant/OrganisationPage';
 import MyProfilePage from './pages/tenant/MyProfilePage';
 import EndUserChatPage from './pages/portal/EndUserChatPage';
 import LiveConnectorsPage from './pages/tenant/systems/LiveConnectorsPage';
-import PlaybooksPage from './pages/tenant/systems/PlaybooksPage';
+import LivePlaybookBuilder from './pages/tenant/systems/LivePlaybookBuilder';
 import McpServersPage from './pages/tenant/systems/McpServersPage';
 import HumanTasksPage from './pages/tenant/ops/HumanTasksPage';
 import ActivityPage from './pages/tenant/ops/ActivityPage';
@@ -424,7 +424,7 @@ function AppShell() {
       case 'systems_mcp':
         return <McpServersPage setPage={handleSetPage} />;
       case 'systems_playbooks':
-        return <PlaybooksPage setPage={handleSetPage} />;
+        return <LivePlaybookBuilder setPage={handleSetPage} />;
       // ── Operations ────────────────────────────────────────────
       case 'ops_human_tasks':
         return <HumanTasksPage setPage={handleSetPage} />;

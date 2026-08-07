@@ -11,7 +11,7 @@ import { useAuth } from '../../context/AuthContext';
 import LiveWorkforceDEs from './LiveWorkforceDEs';
 import DEActivityPage from './ops/DEActivityPage';
 import { PerformancePage } from './intelligence/IntelligencePages';
-import ProvingGroundPage from './intelligence/ProvingGroundPage';
+import LiveProvingGround from './intelligence/LiveProvingGround';
 import SelfLearningPage from './intelligence/SelfLearningPage';
 import OutcomeStatement from '../../components/OutcomeStatement';
 
@@ -101,7 +101,7 @@ const WorkforceHubPage = ({ tab, setPage }: { tab: Page; setPage: (p: Page) => v
         )}
         {active.key === 'intelligence_evals' && (
           <>
-            {may('intelligence_evals') && <ProvingGroundPage setPage={setPage} />}
+            {may('intelligence_evals') && <LiveProvingGround />}
             {may('intelligence_learning') && <SelfLearningPage setPage={setPage} />}
           </>
         )}
