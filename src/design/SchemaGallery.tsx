@@ -7,7 +7,7 @@
 import React from 'react';
 import {
   EmployeeCard, DecisionCard, FilterBar, SetupChecklist,
-  Button, Chip, PanelCard, INPUT_CLS,
+  Button, Chip, PanelCard, INPUT_CLS, StatTile, DetailTile, TableScroll, TH, TD,
 } from './primitives';
 import { Sidebar } from '../components/Sidebar';
 import { AuthProvider } from '../context/AuthContext';
@@ -99,6 +99,33 @@ export default function SchemaPreview() {
                 collapsed setCollapsed={() => {}} onLogout={() => {}} />
             </div>
           </AuthProvider>
+        </PanelCard>
+
+        <PanelCard title="v1 primitives at the 12px floor">
+          {/* StatTile, DetailTile and TH carried 10–11px labels. A table is
+              where lifting a column header can actually cost width, so one
+              lives here to be measured rather than assumed. */}
+          <div className="grid grid-cols-dt-kpis gap-dt mb-4">
+            <StatTile label="handled today" value="4,180" sub="+18% on last month" />
+            <StatTile label="closed without a human" value="91%" tone="ok" />
+            <StatTile label="came to you" value="376" tone="warn" sub="most were the $500 limit" />
+          </div>
+          <div className="grid grid-cols-dt-tiles gap-dt-tight mb-4">
+            <DetailTile label="reports to"><span className="text-sm text-dt-body">Bilal Khan</span></DetailTile>
+            <DetailTile label="started"><span className="text-sm text-dt-body">4 Aug</span></DetailTile>
+          </div>
+          <TableScroll>
+            <table className="w-full">
+              <thead><tr>
+                <th className={TH}>Customer</th><th className={TH}>Handled by</th>
+                <th className={TH}>Closed without a human</th><th className={TH}>Rating</th><th className={TH}>Closed</th>
+              </tr></thead>
+              <tbody>
+                <tr><td className={TD}>Meridian Group</td><td className={TD}>Sophie</td><td className={TD}>96%</td><td className={TD}>4.7</td><td className={TD}>10:04</td></tr>
+                <tr><td className={TD}>Apex Systems</td><td className={TD}>Sophie</td><td className={TD}>96%</td><td className={TD}>4.7</td><td className={TD}>Yesterday</td></tr>
+              </tbody>
+            </table>
+          </TableScroll>
         </PanelCard>
 
         <PanelCard title="FilterBar">

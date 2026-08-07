@@ -80,9 +80,9 @@ export function StatTile({ label, value, sub, tone, icon, onClick }:
   const inner = (
     <>
       {icon && <div className={`text-base mb-2 ${tone === 'warn' ? 'text-dt-warn' : 'text-dt-support'}`}>{icon}</div>}
-      <div className="text-[10px] uppercase tracking-wide text-dt-muted mb-1">{label}</div>
+      <div className="text-xs uppercase tracking-wide text-dt-muted mb-1">{label}</div>
       <div className={`text-xl font-semibold ${v}`}>{value}</div>
-      {sub && <div className="text-[11px] text-dt-muted mt-0.5">{sub}</div>}
+      {sub && <div className="text-xs text-dt-muted mt-0.5">{sub}</div>}
     </>
   );
   if (onClick) {
@@ -95,7 +95,7 @@ export function StatTile({ label, value, sub, tone, icon, onClick }:
 export function DetailTile({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-dt-border bg-dt-card px-4 py-3 min-w-0">
-      <div className="text-[10px] uppercase tracking-wide text-dt-muted mb-1">{label}</div>
+      <div className="text-xs uppercase tracking-wide text-dt-muted mb-1">{label}</div>
       {children}
     </div>
   );
@@ -153,7 +153,7 @@ export function TimelineStep({ n, action, detail, at }:
         <div className="text-sm text-dt-body">{action}</div>
         {detail && <div className="text-xs text-dt-support mt-0.5">{detail}</div>}
       </div>
-      {at && <span className="text-[11px] text-dt-muted shrink-0">{at}</span>}
+      {at && <span className="text-xs text-dt-muted shrink-0">{at}</span>}
     </li>
   );
 }
@@ -209,7 +209,7 @@ export function TabBar<T extends string>({ tabs, active, onSelect }:
 
 /* ── Data tables — COMPACT density (founder profile: calm cards, dense data)
    Wrap wide tables in <TableScroll> so the PAGE never scrolls sideways. ─── */
-export const TH = 'py-2 px-3 text-[11px] uppercase tracking-wide text-dt-muted font-medium text-left whitespace-nowrap';
+export const TH = 'py-2 px-3 text-xs uppercase tracking-wide text-dt-muted font-medium text-left whitespace-nowrap';
 export const TD = 'py-2 px-3 text-sm text-dt-body';
 export function TableScroll({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return <div className={`overflow-x-auto rounded-xl border border-dt-border ${className}`}>{children}</div>;
@@ -339,9 +339,11 @@ export function PageHeaderV2({ title, subtitle, actions }:
    Everything else composes from the primitives above. Each has a row in the
    catalog table in docs/design-system.md §2, per that document's own rule.
 
-   ⚠ 12px IS THE TYPE FLOOR HERE. The v1 primitives above still carry
-   text-[10px] and text-[11px] labels; lifting those touches every screen at
-   once and gets done with eyes on the result. New code starts correct.
+   ⚠ 12px IS THE TYPE FLOOR, and the v1 primitives above now meet it too:
+   Chip, StatTile, DetailTile, TimelineStep and TH were carrying 10–11px
+   labels. Lifted 2026-08-07 and checked in the schema gallery at all three
+   widths — nothing reflowed, because these are labels above or beside their
+   values, not table columns competing for width.
 
    ⚠ NO VARIANT PROPS FOR WIDTH. The handoff asks for container queries so one
    card works in a page grid, a narrow column and a drawer. Tailwind 3.4 here
