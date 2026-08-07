@@ -21,6 +21,7 @@
     "test:isolation": "vitest run tests/tenant-isolation.test.ts",
     "test:invariants": "vitest run tests/knowledge-acl-invariants.test.ts",
     "migrate:status": "node scripts/migration-status.mjs",
+    "audit:role-gates": "node scripts/audit-role-gates.mjs",
     "baseline:generate": "node scripts/generate-baseline.mjs > supabase/baseline/000_baseline_core.sql",
     "backup:schema": "node scripts/backup-schema.mjs > supabase/baseline/full_schema.sql",
     "backup:data": "node scripts/backup-data.mjs",

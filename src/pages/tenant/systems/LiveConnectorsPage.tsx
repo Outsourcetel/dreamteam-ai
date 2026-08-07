@@ -4,6 +4,7 @@ import { supabase } from '../../../supabase';
 import AISessionPanel from '../../../components/AISessionPanel';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
 import { CustomerApiError } from '../../../lib/customerApi';
+import { useIsTenantAdmin } from '../../../lib/useRoleGate';
 import {
   Connector, ConnectorObject, ConnectorAction, ConnectorObjectMode,
   ConnectorProvider, ConnectorAccessMode, HubItem,
@@ -500,6 +501,15 @@ const CAND_STATUS_META: Record<string, { label: string; cls: string }> = {
 const TYPE_LABEL: Record<string, string> = { pdf: 'PDF', doc: 'Doc', slide: 'Slides', sheet: 'Sheet', text: 'Text', other: 'Other' };
 
 function IngestControlPanel({ connector, onToast }: { connector: Connector; onToast: (m: string) => void }) {
+  // ⚠ The two halves of this panel are gated DIFFERENTLY at the database, and
+  // the page sits one tier wider than the stricter half:
+  //   set_connector_ingest_config  owner/admin/MANAGER  — matches the page
+  //   decide_ingest_candidates     owner/admin          — does not
+  // A tenant_manager could set the filters and run a scan, then be refused on
+  // every Approve/Exclude button in the queue those filters had just filled.
+  // Scanning and the queue stay visible: seeing what WOULD be ingested is
+  // exactly what a manager tuning the filters needs. Only the verdict is admin.
+  const canDecideCandidates = useIsTenantAdmin();
   const [filters, setFilters] = useState<IngestFilters>(() => readIngestFilters(connector));
   const [excludeText, setExcludeText] = useState<string>(() => readIngestFilters(connector).exclude_patterns.join(', '));
   const [cands, setCands] = useState<IngestCandidate[]>([]);
@@ -616,7 +626,7 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
               className="px-3 py-1.5 rounded-lg text-xs text-dt-body border border-dt-border-strong hover:border-dt-border-strong disabled:opacity-50 transition-colors">
               {busy === 'scan' ? 'Scanning…' : 'Scan for documents'}
             </button>
-            {pending.length > 0 && (
+            {pending.length > 0 && canDecideCandidates && (
               <>
                 <button disabled={isBusy} onClick={() => void decide(pending.map(c => c.external_ref), 'approved')}
                   className="px-2.5 py-1.5 rounded-lg text-xs text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/15 disabled:opacity-50">Approve all</button>
@@ -626,6 +636,15 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
             )}
           </div>
         </div>
+
+        {/* Say who decides, rather than leaving a manager to wonder where the
+            buttons went. A missing control with no explanation reads as a bug. */}
+        {!canDecideCandidates && pending.length > 0 && (
+          <p className="mb-2 text-[11px] text-dt-faint">
+            {pending.length} file(s) waiting on a decision — approving or excluding documents is done by a
+            workspace owner or admin. You can still change the filters above and re-scan.
+          </p>
+        )}
 
         {!loaded ? (
           <p className="text-[11px] text-dt-faint">Loading…</p>
@@ -643,7 +662,7 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
                     {c.path && <p className="text-[10px] text-dt-faint truncate">{c.path}</p>}
                   </div>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded ${meta.cls} flex-shrink-0`}>{meta.label}</span>
-                  {c.status !== 'ingested' && (
+                  {c.status !== 'ingested' && canDecideCandidates && (
                     <div className="flex gap-1 flex-shrink-0">
                       {c.status !== 'approved' && (
                         <button disabled={isBusy} onClick={() => void decide([c.external_ref], 'approved')}

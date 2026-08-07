@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../../context/AuthContext';
+import { useIsTenantManager } from '../../../lib/useRoleGate';
 import { PageHeader } from '../../../components/ui';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
@@ -297,6 +298,8 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const [rerouteNote, setRerouteNote] = useState('');
   const [colleagues, setColleagues] = useState<{ id: string; name: string }[]>([]);
   const [retrying, setRetrying] = useState(false);
+  // Matches retry_answerable_blockers' own gate: owner, admin, manager.
+  const canRetryBlockers = useIsTenantManager();
   const [retryNote, setRetryNote] = useState<string | null>(null);
   // docs/34 — approve WITH EDITS. The correction is the valuable half of the
   // learning loop: it produces an (original, corrected) pair written by the
@@ -600,7 +603,15 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
               answers them. Retrying cleared 31 in one pass — one completed
               itself ("receivables books are clear"), one came back with a
               sharper question naming exactly what was missing. */}
-          {scope !== 'chat' && (
+          {/* ⚠ This page is APPROVALS tier, so an `approver` opens it — that is
+              the whole point of the role. But retry_answerable_blockers is
+              owner/admin/manager, so the button below would refuse them with a
+              bare 'insufficient_role'. Hidden rather than disabled: retrying is
+              a bulk housekeeping action, not part of an approver's job, and the
+              paragraph beside it exists only to introduce the button. Deciding
+              a task stays available to them — decide_human_task refuses with a
+              reason that teaches, which is a working control, not a dead one. */}
+          {scope !== 'chat' && canRetryBlockers && (
             <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-dt-border bg-dt-inset px-4 py-2.5">
               <p className="text-[13px] text-dt-muted">
                 Some of these were raised before the employee had what it asked for. Retrying lets them try again

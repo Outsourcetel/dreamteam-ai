@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
+import { useIsTenantManager } from '../../lib/useRoleGate';
 import { PerformanceDashboard } from '../../components/workforce/PerformanceDashboard';
 import { DETrainingPanel } from '../../components/workforce/DETrainingPanel';
 import { SuggestionAlert } from '../../components/workforce/SuggestionAlert';
@@ -43,12 +44,20 @@ export function WorkforceChatHubPage() {
     }
   }, [tenantId]);
 
-  // Load DE performance when selected
+  // Load DE performance when selected.
+  //
+  // ⚠ This page is ALL_TENANT — anyone may come here and talk to the workforce
+  // — but get_de_performance_summary is owner/admin/manager. Below that it
+  // raises 'Unauthorized', which the catch below swallows into a console error
+  // and a panel that silently never appears. Not a dead button, but a failed
+  // request on every selection and a page that quietly means two different
+  // things to two people. Don't ask for what will be refused.
+  const canSeePerformance = useIsTenantManager();
   useEffect(() => {
-    if (selectedDEId) {
+    if (selectedDEId && canSeePerformance) {
       loadDEPerformance(selectedDEId);
     }
-  }, [selectedDEId]);
+  }, [selectedDEId, canSeePerformance]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
