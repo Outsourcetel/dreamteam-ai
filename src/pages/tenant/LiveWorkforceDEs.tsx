@@ -34,8 +34,12 @@ import type { KpiMetric, SkillCategory, EscalationRule, EscCondition, Escalation
 import { DeCertificationPanel, DeCompliancePanel } from './DeWorkbench';
 import ResponsiblePeoplePanel from '../../components/de/ResponsiblePeoplePanel';
 import DEActionDials from '../../components/de/DEActionDials';
-import { PanelCard, Button, Chip, EntityRow, Banner, EmptyState, Drawer, Field, Modal, INPUT_CLS } from '../../design/primitives';
+import { PanelCard, Button, Chip, EntityRow, EmployeeCard, Banner, EmptyState, Drawer, Field, Modal, INPUT_CLS } from '../../design/primitives';
 import { say, DE_STATUS } from '../../design/statusVocabulary';
+import { summariseWork, workCells } from '../../lib/workSummary';
+import type { WorkSummary } from '../../lib/workSummary';
+import { getDeInquiryMetrics, getDeActionMetrics, getDeCostMetricsRanged, getOutcomeMetering } from '../../lib/api';
+import { countDeOutputs } from '../../lib/deWorkbenchApi';
 import {
   listDigitalEmployees, createDigitalEmployee, updateDigitalEmployee, getDEConfigHistory,
   checkDeRetirementReadiness, retireDigitalEmployee,
@@ -119,8 +123,13 @@ function draftFromDial(d: { enabled: boolean; max_amount_cents: number | null; m
 // not just Account/Finance/etc. Simple enough for a non-technical
 // admin: name + role label are the only required fields.
 function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) {
+  const { currentTenant } = useAuth();
   const [des, setDes] = useState<DigitalEmployee[] | null>(null);
   const [health, setHealth] = useState<Record<string, DEHealth>>({});
+  // What each employee actually DID, from the same four sources the Results
+  // tab reads, summarised by the same function — so the two screens cannot
+  // drift into disagreeing about what "handled" means.
+  const [work, setWork] = useState<Record<string, WorkSummary>>({});
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [hiring, setHiring] = useState(false);
@@ -150,7 +159,32 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
       const h = await listDeHealth();
       setHealth(Object.fromEntries(h.map(x => [x.de_id, x])));
     } catch { /* health is supplementary — a roster still renders without it */ }
-  }, [showRetired]);
+    // Work summary is supplementary too: if any of this fails the roster still
+    // lists everyone, it just cannot say what they have been doing.
+    try {
+      const tid = currentTenant?.id ?? null;
+      if (tid) {
+        const [inq, act, cost, om] = await Promise.all([
+          getDeInquiryMetrics(tid, 30), getDeActionMetrics(tid, 30),
+          getDeCostMetricsRanged(tid, 30), getOutcomeMetering(tid, 30),
+        ]);
+        const iBy = new Map(inq.map(x => [x.de_id, x]));
+        const aBy = new Map(act.map(x => [x.de_id, x]));
+        const cBy = new Map(cost.map(x => [x.de_id, x]));
+        const mBy = new Map((om?.by_de ?? []).map(x => [x.de_id, x]));
+        const ids = new Set([...iBy.keys(), ...aBy.keys(), ...cBy.keys(), ...mBy.keys(), ...(des ?? []).map(d => d.id)]);
+        const outs = new Map<string, { items_done?: number; deliverables?: number }>();
+        await Promise.all([...ids].map(async id => {
+          try { outs.set(id, await countDeOutputs(id, 30)); } catch { /* per-employee */ }
+        }));
+        const next: Record<string, WorkSummary> = {};
+        for (const id of ids) {
+          next[id] = summariseWork({ inquiry: iBy.get(id), action: aBy.get(id), cost: cBy.get(id), metering: mBy.get(id), outputs: outs.get(id) });
+        }
+        setWork(next);
+      }
+    } catch { /* the roster is still a roster without it */ }
+  }, [showRetired, currentTenant?.id]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -224,37 +258,40 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
 
       {error && <Banner tone="danger" className="mb-3">{error}</Banner>}
 
-      <div className="space-y-2 mb-3">
-        {des.map(de => (
-          <EntityRow
-            key={de.id}
-            onOpen={() => onSelect(de)}
-            avatar={
-              <div className="w-8 h-8 rounded-lg bg-dt-accent-soft border border-dt-accent/30 flex items-center justify-center text-dt-accent-text font-semibold flex-shrink-0">
-                {(de.persona_name || de.name).charAt(0).toUpperCase()}
-              </div>
-            }
-            title={de.persona_name || de.name}
-            titleExtra={de.persona_name ? <span className="text-xs text-dt-muted">— {de.name}</span> : undefined}
-            chips={
-              <>
-                {(() => { const w = say(DE_STATUS, de.status); return <Chip tone={w.tone} dot={de.status === 'active'} pulse={de.status === 'active'}><span title={w.means}>{w.label}</span></Chip>; })()}
-                {health[de.id] && (
-                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${DE_HEALTH_LABELS[health[de.id].state]?.color}`}>
-                    {DE_HEALTH_LABELS[health[de.id].state]?.label ?? health[de.id].state}
-                  </span>
-                )}
-              </>
-            }
-            meta={`${de.department || de.category} · ${de.description || 'No description yet.'}`}
-            actions={
-              <Button kind="ai" size="sm" title="Describe what to change, in plain language"
-                onClick={() => setEditingDe({ id: de.id, label: de.persona_name || de.name })}>
-                ✨ Edit with AI
-              </Button>
-            }
-          />
-        ))}
+      <div className="grid grid-cols-dt-cards gap-dt mb-3">
+        {des.map(de => {
+          const w = work[de.id];
+          const cells = w ? workCells(w) : [];
+          const state = say(DE_STATUS, de.status);
+          const h = health[de.id];
+          return (
+            <EmployeeCard
+              key={de.id}
+              onOpen={() => onSelect(de)}
+              avatar={
+                <div className="w-10 h-10 rounded-lg bg-dt-accent-soft border border-dt-accent/30 flex items-center justify-center text-dt-accent-text font-semibold flex-shrink-0">
+                  {(de.persona_name || de.name).charAt(0).toUpperCase()}
+                </div>
+              }
+              name={de.persona_name || de.name}
+              state={{ label: state.label, tone: state.tone }}
+              role={`${de.department || de.category} · ${de.description || 'No description yet.'}`}
+              stats={cells}
+              /* ⚠ Says which it is. "0 handled" and "nothing recorded" look the
+                 same on a card and mean opposite things — one is an employee
+                 doing nothing, the other is a measurement gap. */
+              lastAction={cells.length === 0
+                ? (h ? DE_HEALTH_LABELS[h.state]?.label ?? 'Nothing recorded in the last 30 days' : 'Nothing recorded in the last 30 days')
+                : undefined}
+              actions={
+                <Button kind="ai" size="sm" title="Describe what to change, in plain language"
+                  onClick={() => setEditingDe({ id: de.id, label: de.persona_name || de.name })}>
+                  ✨ Edit with AI
+                </Button>
+              }
+            />
+          );
+        })}
         {des.length === 0 && (
           <EmptyState headline="No digital employees yet">
             Hire your first one with AI above — it starts supervised, with no data access until you grant it.
@@ -4338,7 +4375,12 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
       <p className="text-dt-support text-sm mb-5">
         {liveTenantName || 'Your company'} · Click an employee to open their file — work, performance, setup and trust in one place
       </p>
-      <div className="max-w-3xl">
+      {/* max-w-3xl (768px) was a reading-width cap wrapped around a card grid
+          on a page with 1278px to spend — the roster got one column and the
+          rest of the screen went to nothing. A Tailwind default standing in
+          for a decision nobody made, which is the reason --dt-content-max
+          exists. */}
+      <div className="max-w-dt-content">
         <RosterPanel onSelect={de => openFile(de.id)} />
         <TeamsPanel />
       </div>
