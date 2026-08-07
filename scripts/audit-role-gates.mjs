@@ -114,6 +114,25 @@ const FILES = {};
 // best-behaved component in the codebase and would have had me "fix" it.
 const GATE_RE = /canOverride|canEdit|canManage|isDTUser|isAdmin|canApprove|canOperate|canStop|canResume|tenant_owner|role ===|useIsTenantAdmin|useIsTenantManager|isTenantAdmin|isTenantManager|can_edit_|can_manage_|can_approve_|\.can_/;
 
+// ⚠⚠ ONE DEFINITION OF "THIS FILE HAS A GATE", USED BY BOTH PASSES.
+//
+// GATE_RE is a hard-coded list of idioms. The intra-file pass stopped trusting
+// it long ago and derives gate names from the file's own use*Is/use*Can
+// bindings — but the FILE-LEVEL pass still consulted GATE_RE alone, so the two
+// disagreed about the same file. Adding `useCanCurateKnowledge` proved it: the
+// intra-file pass saw the gate, the file-level pass did not, and the checker
+// reported a freshly-gated page as ungated. That is the FIFTH time a detector
+// has failed to learn an idiom I had just introduced, and the fix is not
+// another name in the list — it is to stop keeping two lists.
+function localGateNames(src) {
+  return [...new Set([...src.matchAll(/const\s+([a-zA-Z0-9_]+)\s*=\s*use(?:Is|Can)[A-Za-z0-9_]*\s*\(/g)].map((m) => m[1]))];
+}
+function fileHasGate(src) {
+  if (GATE_RE.test(src)) return true;
+  const local = localGateNames(src);
+  return local.length > 0 && new RegExp('\\b(?:' + local.join('|') + ')\\b').test(src);
+}
+
 const gatedByProp = new Set();
 for (const body of Object.values(FILES)) {
   const re = /<([A-Z][A-Za-z0-9_]*)([^>]*?)\/?>/g;
@@ -462,7 +481,7 @@ function controlsMissingGate(src, wrapperMap) {
   // time in this work that a detector failed to learn a new idiom. Anything
   // bound from a use*Is/use*Can hook is a gate, whatever it is called, so read
   // the bindings instead of guessing the names.
-  const local = [...src.matchAll(/const\s+([a-zA-Z0-9_]+)\s*=\s*(use(?:Is|Can)[A-Za-z0-9_]*)\s*\(/g)].map((m) => m[1]);
+  const local = localGateNames(src);          // same extraction the file-level pass uses
   const localRe = local.length ? new RegExp('\\b(?:' + local.join('|') + ')\\b') : null;
   const isGate = (s) => GATE_RE.test(s) || (localRe !== null && localRe.test(s));
   // Component boundaries: a top-level `function Name(` at column 0.
@@ -568,7 +587,16 @@ function controlsMissingGate(src, wrapperMap) {
     // is indistinguishable from a clean sweep, and both of my earlier
     // instruments failed exactly that way — one compared nothing and reported
     // success. The total is asserted at the end.
-    const guarded = isGate(tag) || insideGate(i);
+    // ⚠ A TOOLTIP IS NOT A GATE. Testing the whole tag for a gate name counts
+    //     title={canResolve ? undefined : 'an admin does this'}
+    // as enforcement, so a control that EXPLAINS the permission but does not
+    // apply it reads as guarded. Caught by a negative test: I stripped
+    // `!canResolve` from three buttons that still carried that title and the
+    // checker reported nothing. Only the attributes that actually stop a click
+    // count — plus withholding the control entirely, which insideGate covers.
+    const enforcing = [...tag.matchAll(/\b(?:disabled|readOnly|aria-disabled|onClick|onChange|onSelect|enabled)\s*=\s*(\{(?:[^{}]|\{[^{}]*\})*\})/g)]
+      .map((m) => m[1]).join(' ');
+    const guarded = isGate(enforcing) || insideGate(i);
     const seen = new Set();
     for (const h of handlers.values()) {
       if (h.comp !== compAt(line)) continue;                       // scope, not name
@@ -600,7 +628,7 @@ function controlsMissingGate(src, wrapperMap) {
 for (const [f, src] of Object.entries(FILES)) {
   if (!f.startsWith('src/pages/') && !f.startsWith('src/components/')) continue;
   const comp = path.basename(f).replace(/\.tsx?$/, '');
-  if (GATE_RE.test(src) || gatedByProp.has(comp)) {
+  if (fileHasGate(src) || gatedByProp.has(comp)) {
     // Partially gated: look at the controls rather than trusting the file.
     const viewers = viewersOf(f);
     if (!viewers.length) { SKIPPED.push(f); continue; }

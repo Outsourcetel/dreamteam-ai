@@ -1,4 +1,4 @@
-import { useIsTenantAdmin } from '../../../lib/useRoleGate';
+import { useCanCurateKnowledge } from '../../../lib/useRoleGate';
 import React, { useEffect, useState } from 'react';
 import { Drawer } from '../../../design/primitives';
 import AISessionPanel from '../../../components/AISessionPanel';
@@ -106,10 +106,14 @@ const LIVE_STATUS_META: Record<KnowledgeGapCluster['status'], { label: string; c
 // Ledger-3: tune the detection policy from the product (RLS already permits
 // tenant writes, mig 070). Plain-language labels; saves per-row.
 function GapPolicyPanel({ policies, onSaved }: { policies: KnowledgeGapPolicy[]; onSaved: () => void }) {
-  // knowledge_gap_policies is owner/admin in RLS, and updateGapPolicy does
-  // not read the row back — so on a KNOWLEDGE-tier page a manager or the
-  // knowledge specialist would have saved a policy that never changed.
-  const canEditGapPolicy = useIsTenantAdmin();
+  // The thresholds that turn a knowledge gap into work. Owner, admin or the
+  // knowledge specialist since migration 634.
+  //
+  // ⚠ updateGapPolicy does not read the row back, so before 634 a refusal
+  // arrived as a save that reported success and changed nothing. If this
+  // gate is ever narrowed again, that is the failure it produces — not an
+  // error message.
+  const canEditGapPolicy = useCanCurateKnowledge();
   const [open, setOpen] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, { floor: string; size: string; window: string; sim: string }>>({});
   const [busyId, setBusyId] = useState<string | null>(null);

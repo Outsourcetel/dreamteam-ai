@@ -36,3 +36,34 @@ export function useIsTenantManager(): boolean {
   const { authedUser, isDTUser } = useAuth();
   return isDTUser || ['tenant_owner', 'tenant_admin', 'tenant_manager'].includes(authedUser?.role ?? '');
 }
+
+// ── the knowledge specialist ─────────────────────────────────────────────
+//
+// navAccess gives the KNOWLEDGE tier to owner, admin, manager and
+// knowledge_manager because "curating knowledge is their job". The database
+// then refused the specialist every action on those three pages: the role
+// could open the doors and touch nothing. Migration 634 fixed the database;
+// these two hooks are the UI half.
+//
+// ⚠ THEY DIFFER, AND THE DIFFERENCE IS NOT AN OVERSIGHT. 634 widened each gate
+// from wherever it already stood rather than flattening all three to one tier,
+// so deciding what the knowledge base SAYS is admin-or-specialist, while the
+// cadence a source refreshes on also admits a manager — which is where that
+// one already sat. Using one hook for both would silently hand a manager the
+// conflict queue, or take the sync toggle away from them.
+
+/** Owner, admin or the knowledge specialist. Deciding which of two documents
+ *  is the source of truth, and the thresholds that turn a gap into work. */
+export function useCanCurateKnowledge(): boolean {
+  const { authedUser, isDTUser } = useAuth();
+  return isDTUser || ['tenant_owner', 'tenant_admin', 'knowledge_manager'].includes(authedUser?.role ?? '');
+}
+
+/** The manage tier plus the specialist — whether a connected source re-syncs
+ *  on its own. Connecting one, holding its credential and choosing which of
+ *  its documents may be ingested all stay owner/admin: this toggles the
+ *  cadence of a source somebody else already connected. */
+export function useCanScheduleKnowledgeSync(): boolean {
+  const { authedUser, isDTUser } = useAuth();
+  return isDTUser || ['tenant_owner', 'tenant_admin', 'tenant_manager', 'knowledge_manager'].includes(authedUser?.role ?? '');
+}
