@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { supabase } from '../supabase';
 import type { AuthUser } from '../types';
 import { Spinner } from '../components';
+import { Banner } from '../design/primitives';
 
-import { INDUSTRY_NAMES as INDUSTRIES } from '../lib/industries';
 
 const LoginPage = ({
   onLogin,
@@ -48,8 +48,6 @@ const LoginPage = ({
   const [suFullName, setSuFullName] = useState('');
   const [suEmail, setSuEmail] = useState('');
   const [suPassword, setSuPassword] = useState('');
-  const [suOrgName, setSuOrgName] = useState('');
-  const [suIndustry, setSuIndustry] = useState(INDUSTRIES[0]);
   const [suError, setSuError] = useState('');
   const [suLoading, setSuLoading] = useState(false);
   const [suSuccess, setSuSuccess] = useState(false);
@@ -90,7 +88,7 @@ const LoginPage = ({
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setSuError('');
-    if (!suFullName.trim() || !suEmail.trim() || !suPassword.trim() || !suOrgName.trim()) {
+    if (!suFullName.trim() || !suEmail.trim() || !suPassword.trim()) {
       setSuError('All fields are required.');
       return;
     }
@@ -118,11 +116,10 @@ const LoginPage = ({
             full_name: suFullName.trim(),
             role: 'tenant_owner',
             layer: 'tenant',
-            // Carried through so the post-confirmation setup screen can
-            // pre-fill the org name/industry the user already typed here,
-            // even though it isn't used to create anything at this step.
-            pending_org_name: suOrgName.trim(),
-            pending_industry: suIndustry,
+            // No pending_org_name / pending_industry any more: sign-up used to
+            // collect the company here and stash it for a screen that asks
+            // again. OrgSetupScreen still READS these keys, so accounts made
+            // before this change keep their pre-fill.
           },
         },
       });
@@ -227,7 +224,7 @@ const LoginPage = ({
                   <input value={password} onChange={e => setPassword(e.target.value)} type="password" placeholder="..."
                     className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                 </div>
-                {error && <p className="text-xs text-red-400">{error}</p>}
+                {error && <Banner tone="danger">{error}</Banner>}
                 <button type="submit" disabled={loading}
                   className="w-full py-3 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 transition-all flex items-center justify-center gap-2">
                   {loading ? <><Spinner /> Signing in...</> : 'Sign In'}
@@ -287,8 +284,8 @@ const LoginPage = ({
           {/* ── SIGN UP ── */}
           {tab === 'signup' && !suSuccess && (
             <>
-              <h2 className="text-2xl font-bold text-white mb-1">Create your organization</h2>
-              <p className="text-dt-support text-sm mb-6">Set up your Digital Workforce in minutes</p>
+              <h2 className="text-2xl font-bold text-white mb-1">Set up your company</h2>
+              <p className="text-dt-support text-sm mb-6">Three things now. We'll ask about your company after you confirm your email.</p>
               <form onSubmit={handleSignUp} className="space-y-4">
                 <div>
                   <label className="text-xs font-medium text-dt-support block mb-1.5">Full Name</label>
@@ -305,22 +302,10 @@ const LoginPage = ({
                   <input value={suPassword} onChange={e => setSuPassword(e.target.value)} type="password" placeholder="8+ characters"
                     className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                 </div>
-                <div className="border-t border-dt-border pt-4">
-                  <label className="text-xs font-medium text-dt-support block mb-1.5">Organization Name</label>
-                  <input value={suOrgName} onChange={e => setSuOrgName(e.target.value)} type="text" placeholder="Acme Corp"
-                    className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-dt-support block mb-1.5">Industry</label>
-                  <select value={suIndustry} onChange={e => setSuIndustry(e.target.value)}
-                    className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500">
-                    {INDUSTRIES.map(i => <option key={i}>{i}</option>)}
-                  </select>
-                </div>
-                {suError && <p className="text-xs text-red-400">{suError}</p>}
+                {suError && <Banner tone="danger">{suError}</Banner>}
                 <button type="submit" disabled={suLoading}
                   className="w-full py-3 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 transition-all flex items-center justify-center gap-2">
-                  {suLoading ? <><Spinner /> Creating account...</> : 'Create Organization'}
+                  {suLoading ? <><Spinner /> Creating your account…</> : 'Create my account'}
                 </button>
                 <p className="text-xs text-dt-faint text-center">
                   By signing up you agree to DreamTeam's{' '}
@@ -335,10 +320,11 @@ const LoginPage = ({
           {/* ── SIGN UP SUCCESS ── */}
           {tab === 'signup' && suSuccess && (
             <div className="text-center py-8">
-              <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 flex items-center justify-center text-3xl mx-auto mb-4">✓</div>
-              <h2 className="text-xl font-bold text-white mb-2">Organization created</h2>
+              <div className="w-16 h-16 rounded-2xl bg-dt-ok-soft flex items-center justify-center text-3xl mx-auto mb-4">✓</div>
+              <h2 className="text-xl font-bold text-white mb-2">Check your email</h2>
               <p className="text-dt-support text-sm mb-6 leading-relaxed">
-                Check your email to confirm your account, then sign in to access your workspace.
+                We sent a confirmation link to {suEmail || 'your inbox'}. Click it and you'll come
+                straight back here to finish setting up your workspace.
               </p>
               <button onClick={() => { setTab('signin'); setSuSuccess(false); setEmail(suEmail); }}
                 className="w-full py-3 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 transition-all">
