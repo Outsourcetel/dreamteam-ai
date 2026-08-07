@@ -19,6 +19,12 @@ export interface SupportConversation {
   last_message_at: string | null;
   created_at: string;
   identity_verified: boolean | null;   // T2.3: caller proved their identity (widget HMAC)
+  // The newest message on the thread, embedded by the list query. The inbox
+  // used to title each row `subject || end_user_name || 'Conversation'`, and
+  // chat channels never set a subject — so a screenful of live conversations
+  // all read "Conversation" and you had to open each one to find out what it
+  // was. This is what the row is actually about.
+  last_message?: { content: string; role: 'user' | 'assistant'; created_at: string }[] | null;
 }
 
 export interface SupportMessage {
@@ -33,7 +39,11 @@ export interface SupportMessage {
   created_at: string;
 }
 
-const CONV_COLS = 'id, channel, status, priority, subject, detected_language, handoff_summary, end_user_name, account_external_ref, owner_user_id, csat_score, de_id, last_message_at, created_at, identity_verified';
+// The embedded `last_message` rides the de_messages_conversation_id_fkey
+// relationship, ordered newest-first and limited to one PER PARENT ROW (that
+// is what a foreignTable limit means in PostgREST) — one round trip for the
+// whole list, not one per conversation.
+const CONV_COLS = 'id, channel, status, priority, subject, detected_language, handoff_summary, end_user_name, account_external_ref, owner_user_id, csat_score, de_id, last_message_at, created_at, identity_verified, last_message:de_messages(content, role, created_at)';
 
 export async function listSupportConversations(status?: SupportConversation['status'] | 'all'): Promise<SupportConversation[]> {
   const tid = await requireTenantId();
@@ -44,6 +54,8 @@ export async function listSupportConversations(status?: SupportConversation['sta
     // human-review surface anywhere in the product.
     .in('channel', ['widget', 'hosted', 'portal', 'email', 'dock'])
     .order('last_message_at', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false, referencedTable: 'de_messages' })
+    .limit(1, { referencedTable: 'de_messages' })
     .limit(200);
   if (status && status !== 'all') q = q.eq('status', status);
   const { data, error } = await q;

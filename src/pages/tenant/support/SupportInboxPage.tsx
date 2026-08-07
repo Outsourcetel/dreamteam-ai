@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { PageHeader } from '../../../components/ui';
+import { Button, Chip, Banner, INPUT_CLS } from '../../../design/primitives';
 import { useAuth } from '../../../context/AuthContext';
 import {
   listSupportConversations, getConversationThread, claimConversation, sendHumanReply,
@@ -14,24 +15,51 @@ import type { Page } from '../../../types';
 // appear without a refresh. Humans take over, approve/edit the DE's drafts,
 // reply, and resolve — all on the same thread the customer is watching.
 
-const STATUS_META: Record<SupportConversation['status'], { label: string; cls: string }> = {
-  needs_human: { label: 'Needs a human', cls: 'bg-amber-500/20 text-amber-300 border-amber-500/30' },
-  ai_handling: { label: 'AI handling', cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' },
-  human_owned: { label: 'You own it', cls: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' },
-  resolved: { label: 'Resolved', cls: 'bg-dt-panel text-dt-support border-dt-border-strong' },
+// One 12px chip carrying the status, in the shared tone vocabulary. Was four
+// separate text-[9px] pills per row — status, channel, language, priority,
+// verified — competing for the same eye at a size the design system does not
+// allow anywhere. Everything but the status moves to a plain-text line.
+const STATUS_META: Record<SupportConversation['status'], { label: string; tone: 'ok' | 'warn' | 'info' | 'neutral' }> = {
+  needs_human: { label: 'Needs you', tone: 'warn' },
+  ai_handling: { label: 'Being handled', tone: 'ok' },
+  human_owned: { label: 'Yours', tone: 'info' },
+  resolved: { label: 'Closed', tone: 'neutral' },
 };
-type Tab = 'needs_human' | 'mine' | 'open' | 'internal' | 'resolved';
+type Tab = 'needs_human' | 'mine' | 'open' | 'resolved';
 const TABS: { key: Tab; label: string }[] = [
-  { key: 'needs_human', label: 'Needs a human' },
+  { key: 'needs_human', label: 'Needs you' },
   { key: 'mine', label: 'Mine' },
-  { key: 'open', label: 'All open' },
-  // Questions asked through the in-app assistant dock. Previously these
-  // were fetched-out entirely, so a DE could be asked seven questions and
-  // no human had any surface to see or take them over.
-  { key: 'internal', label: 'Internal' },
-  { key: 'resolved', label: 'Resolved' },
+  { key: 'open', label: 'Open now' },
+  { key: 'resolved', label: 'History' },
 ];
-const CUSTOMER_CHANNELS = ['widget', 'hosted', 'portal', 'email'];
+// Five tabs became four (handoff 06). `internal` — questions asked through the
+// in-app assistant dock — was its own tab, which meant a colleague's escalated
+// question was only ever visible to someone who thought to look in a tab
+// labelled for the plumbing rather than the person. It folds into Open now,
+// and the channel line says "in-app" so the distinction survives where it is
+// actually useful: on the row. ⚠ These still must not be fetched out of the
+// list; being invisible entirely is the older, worse bug this replaced.
+const channelLabel = (c: SupportConversation) => c.channel === 'dock' ? 'in-app' : c.channel;
+
+// One line of plain text from a message body. DE replies are markdown, so a
+// preview that doesn't strip it renders "**Change something**" — the emphasis
+// markers become noise in exactly the place with the least room for it.
+const previewOf = (raw?: string) => (raw ?? '')
+  .replace(/^\[[^\]]*\]\s*/, '')             // the internal [channel · …] prefix
+  .replace(/```[\s\S]*?```/g, ' ')           // fenced code blocks
+  .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1') // links and images → their text
+  .replace(/[*_`>#]+/g, '')                  // emphasis, inline code, quotes, headings
+  .replace(/\s+/g, ' ')
+  .trim();
+
+// ⚠ 164 of 173 conversations in this workspace have NO name and NO subject —
+// every question asked through the in-app dock records neither. Under the old
+// `subject || end_user_name || 'Conversation'` title they all rendered as the
+// single word "Conversation", which is why the preview line above is not a
+// nicety: it is the only thing telling 164 rows apart. Where even that fails,
+// say what the row IS rather than the word "Conversation" again.
+const titleOf = (c: SupportConversation) =>
+  c.end_user_name || c.subject || (c.channel === 'dock' ? 'A colleague asked' : 'Unnamed customer');
 
 const fmtTime = (iso: string | null) => iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
 // Relative time for the list — "now / 5m / 3h / 2d", falling back to a date
@@ -96,15 +124,15 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
 
   useEffect(() => { if (selId) void loadThread(selId); }, [selId, loadThread]);
 
-  const isCustomer = (c: SupportConversation) => CUSTOMER_CHANNELS.includes(c.channel);
   const filtered = convs.filter(c => {
     // Escalations are channel-agnostic: if a DE says it needs a human, a
     // human must see it whether it came from a customer or the app dock.
     if (tab === 'needs_human') return c.status === 'needs_human';
-    if (tab === 'internal') return !isCustomer(c);
     if (tab === 'mine') return c.owner_user_id === myId && c.status !== 'resolved';
-    if (tab === 'resolved') return c.status === 'resolved' && isCustomer(c);
-    return c.status !== 'resolved' && isCustomer(c); // open = customer tickets
+    // History and Open now both carry internal (dock) threads, tagged by
+    // channel rather than quarantined in a tab of their own.
+    if (tab === 'resolved') return c.status === 'resolved';
+    return c.status !== 'resolved';
   });
   const sel = convs.find(c => c.id === selId) ?? null;
   const pendingDraft = thread.find(m => m.delivery === 'draft_pending');
@@ -120,6 +148,11 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
   const counts = {
     needs_human: convs.filter(c => c.status === 'needs_human').length,
     mine: convs.filter(c => c.owner_user_id === myId && c.status !== 'resolved').length,
+    // What the workforce is carrying without you. The queue showed only what
+    // was wrong with it; the point of the desk is that most of it never
+    // reaches a person, and that was the one number nowhere on the screen.
+    // Deliberately not attributed to a named DE — several answer this inbox.
+    handled: convs.filter(c => c.status === 'ai_handling').length,
   };
 
   const run = async (fn: () => Promise<void>) => {
@@ -161,49 +194,71 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
 
   return (
     <div className="relative flex-1 flex flex-col overflow-hidden bg-dt-page">
-      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-[radial-gradient(circle_at_20%_-40%,rgba(99,102,241,0.18),transparent_60%)]" />
       <div className={`relative px-6 flex items-start justify-between gap-4 ${embedded ? 'pt-3' : 'pt-6'}`}>
         {!embedded && <PageHeader title="Support inbox" subtitle="Live customer conversations — take over, approve a draft, reply, resolve." />}
-        {embedded && <div />}
-        <span className="mt-1 flex-shrink-0 inline-flex items-center gap-2 text-[11px] font-medium text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 rounded-full px-3 py-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_2px_rgba(52,211,153,0.7)] animate-pulse" /> Live · Realtime
-        </span>
+        {embedded && (
+          <p className="text-sm text-dt-support">
+            {loading ? ' '
+              : counts.needs_human > 0
+                ? <><span className="text-dt-body font-medium">{counts.needs_human} {counts.needs_human === 1 ? 'conversation needs' : 'conversations need'} you.</span>
+                    {counts.handled > 0 && ` Your digital employees are handling ${counts.handled} more.`}</>
+              : counts.handled > 0 ? `Nothing needs you. Your digital employees are handling ${counts.handled}.`
+              : 'Nothing waiting.'}
+          </p>
+        )}
+        <Chip tone="ok" dot pulse title="New messages and escalations appear here without a refresh">Live</Chip>
       </div>
-      {error && <div className="mx-6 mb-2 text-xs text-rose-400">{error}</div>}
+      {error && <div className="mx-6 mb-2 text-xs text-dt-danger">{error}</div>}
       <div className="relative flex-1 flex overflow-hidden px-6 pb-6 gap-4">
         {/* Left: conversation list */}
-        <div className="w-[340px] flex-shrink-0 flex flex-col rounded-2xl border border-white/10 bg-dt-panel backdrop-blur-xl overflow-hidden shadow-[0_10px_40px_-20px_rgba(0,0,0,0.8)]">
-          <div className="flex items-center gap-1 p-2 border-b border-white/10 flex-wrap">
-            {TABS.map(t => (
-              <button key={t.key} onClick={() => setTab(t.key)}
-                className={`relative text-xs px-2.5 py-1.5 rounded-lg transition-all ${tab === t.key ? 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-[0_4px_16px_-4px_rgba(99,102,241,0.7)]' : 'text-dt-support hover:text-dt-body hover:bg-white/5'}`}>
-                {t.label}{t.key === 'needs_human' && counts.needs_human > 0 ? ` (${counts.needs_human})` : t.key === 'mine' && counts.mine > 0 ? ` (${counts.mine})` : ''}
-                {t.key === 'needs_human' && counts.needs_human > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_2px_rgba(251,191,36,0.6)] animate-pulse" />
-                )}
-              </button>
-            ))}
+        <div className="w-[340px] flex-shrink-0 flex flex-col rounded-xl border border-dt-border bg-dt-card overflow-hidden">
+          <div className="flex items-center gap-1 p-2 border-b border-dt-border flex-wrap">
+            {TABS.map(t => {
+              const n = t.key === 'needs_human' ? counts.needs_human : t.key === 'mine' ? counts.mine : 0;
+              return (
+                <button key={t.key} onClick={() => setTab(t.key)}
+                  className={`text-xs px-2.5 py-1.5 rounded-lg transition-colors ${tab === t.key ? 'bg-dt-accent-strong text-white' : 'text-dt-support hover:text-dt-body hover:bg-dt-inset'}`}>
+                  {t.label}{n > 0 ? ` ${n}` : ''}
+                </button>
+              );
+            })}
           </div>
           <div className="flex-1 overflow-y-auto">
             {loading ? <p className="text-xs text-dt-muted p-4 text-center">Loading…</p>
-              : filtered.length === 0 ? <p className="text-xs text-dt-muted p-6 text-center">Nothing here right now.</p>
+              : filtered.length === 0 ? <p className="text-xs text-dt-muted p-6 text-center">
+                  {tab === 'needs_human' ? "That's everything waiting on you."
+                    : tab === 'mine' ? "Nothing is yours right now."
+                    : tab === 'resolved' ? 'No closed conversations yet.'
+                    : 'No open conversations.'}
+                </p>
               : filtered.map(c => {
                 const meta = STATUS_META[c.status];
                 const active = selId === c.id;
+                const preview = previewOf(c.last_message?.[0]?.content);
                 return (
                   <button key={c.id} onClick={() => setSelId(c.id)}
-                    className={`relative w-full text-left px-3 py-2.5 border-b border-white/5 transition-all ${active ? 'bg-gradient-to-r from-indigo-500/15 to-transparent' : 'hover:bg-white/[0.03]'}`}>
-                    {active && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-gradient-to-b from-indigo-400 to-violet-500" />}
+                    className={`relative w-full text-left px-3 py-2.5 border-b border-dt-border transition-colors ${active ? 'bg-dt-inset' : 'hover:bg-dt-inset'}`}>
+                    {active && <span className="absolute left-0 top-0 bottom-0 w-0.5 bg-dt-accent-strong" />}
+                    {/* WHO, then WHAT THEY SAID. The old row led with `subject`,
+                        which chat channels never set, so live conversations all
+                        read "Conversation" and had to be opened to be triaged. */}
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-dt-body font-medium truncate flex-1">{c.subject || c.end_user_name || 'Conversation'}</span>
-                      <span className="text-[10px] text-dt-muted flex-shrink-0">{fmtRel(c.last_message_at)}</span>
+                      <span className="text-xs text-dt-body font-medium truncate flex-1">{titleOf(c)}</span>
+                      <span className="text-xs text-dt-muted flex-shrink-0">{fmtRel(c.last_message_at)}</span>
                     </div>
-                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full border ${meta.cls}`}>{meta.label}</span>
-                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-dt-panel text-dt-support">{c.channel}</span>
-                      {c.detected_language && c.detected_language !== 'English' && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-dt-panel text-dt-support">{c.detected_language}</span>}
-                      {c.priority !== 'normal' && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-rose-500/15 text-rose-300">{c.priority}</span>}
-                      {c.identity_verified && <span title="This caller proved their identity" className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300">✓ verified</span>}
+                    {preview && <p className="text-xs text-dt-support truncate mt-0.5">{preview}</p>}
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <Chip tone={meta.tone}>{meta.label}</Chip>
+                      {/* Channel, language, priority and identity used to be
+                          three more pills each fighting the status for the same
+                          glance. They are facts about the row, not states of it. */}
+                      <span className="text-xs text-dt-muted truncate">
+                        {[channelLabel(c),
+                          c.identity_verified ? 'verified' : null,
+                          c.priority !== 'normal' ? c.priority : null,
+                          c.detected_language && c.detected_language !== 'English' ? c.detected_language : null,
+                        ].filter(Boolean).join(' · ')}
+                      </span>
                     </div>
                   </button>
                 );
@@ -212,44 +267,50 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
         </div>
 
         {/* Right: thread */}
-        <div className="flex-1 flex flex-col rounded-2xl border border-white/10 bg-dt-panel backdrop-blur-xl overflow-hidden min-w-0 shadow-[0_10px_40px_-20px_rgba(0,0,0,0.8)]">
+        <div className="flex-1 flex flex-col rounded-xl border border-dt-border bg-dt-card overflow-hidden min-w-0">
           {!sel ? (
             <div className="flex-1 flex items-center justify-center text-sm text-dt-muted">Select a conversation.</div>
           ) : (
             <>
               <div className="px-4 py-3 border-b border-dt-border">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-semibold text-white truncate">{sel.subject || 'Conversation'}</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${STATUS_META[sel.status].cls}`}>{STATUS_META[sel.status].label}</span>
+                  <span className="text-sm font-semibold text-dt-title truncate">{titleOf(sel)}</span>
+                  <Chip tone={STATUS_META[sel.status].tone}>{STATUS_META[sel.status].label}</Chip>
                   <div className="ml-auto flex items-center gap-2">
                     {sel.status !== 'human_owned' && sel.status !== 'resolved' && (
-                      <button disabled={busy} onClick={() => void run(() => claimConversation(sel.id))} className="text-xs px-3 py-1.5 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 hover:brightness-110 text-white shadow-[0_4px_16px_-4px_rgba(99,102,241,0.7)] disabled:opacity-50 transition-all">Take over</button>
+                      <Button kind="primary" size="sm" disabled={busy} onClick={() => void run(() => claimConversation(sel.id))}>I'll take this</Button>
                     )}
                     {(sel.status === 'human_owned' || sel.status === 'needs_human') && sel.de_id && (
-                      <button disabled={busy} onClick={() => setHandback(h => !h)} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:border-indigo-500 disabled:opacity-50">Return to {deName}</button>
+                      <Button size="sm" disabled={busy} onClick={() => setHandback(h => !h)}>Hand back to {deName}</Button>
                     )}
                     {sel.status !== 'resolved'
-                      ? <button disabled={busy} onClick={() => void run(() => setConversationState(sel.id, { status: 'resolved' }))} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:border-emerald-500 disabled:opacity-50">Resolve</button>
-                      : <button disabled={busy} onClick={() => void run(() => setConversationState(sel.id, { status: 'human_owned' }))} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support disabled:opacity-50">Reopen</button>}
+                      ? <Button size="sm" disabled={busy} onClick={() => void run(() => setConversationState(sel.id, { status: 'resolved' }))}>Mark done</Button>
+                      : <Button size="sm" disabled={busy} onClick={() => void run(() => setConversationState(sel.id, { status: 'human_owned' }))}>Reopen</Button>}
                   </div>
                 </div>
-                <p className="text-[11px] text-dt-muted mt-1">
-                  {[sel.end_user_name, sel.account_external_ref ? `account ${sel.account_external_ref}` : null, sel.channel].filter(Boolean).join(' · ')}
-                  {sel.identity_verified && <span className="ml-2 inline-flex items-center gap-1 text-emerald-300"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />identity verified</span>}
+                <p className="text-xs text-dt-muted mt-1">
+                  {[sel.account_external_ref ? `account ${sel.account_external_ref}` : null,
+                    channelLabel(sel),
+                    sel.identity_verified ? 'identity verified' : null,
+                  ].filter(Boolean).join(' · ')}
                 </p>
-                {sel.handoff_summary && <p className="text-[11px] text-amber-300/80 mt-1.5 bg-amber-500/5 border border-amber-500/20 rounded-lg px-2.5 py-1.5">Handoff: {sel.handoff_summary}</p>}
-                {notice && <p className="text-[11px] text-amber-300 mt-1.5 bg-amber-500/10 border border-amber-500/30 rounded-lg px-2.5 py-1.5">{notice}</p>}
+                {sel.handoff_summary && (
+                  <Banner tone="warn" className="mt-2">
+                    <span className="font-medium">{deName} stopped and asked for you.</span> {sel.handoff_summary}
+                  </Banner>
+                )}
+                {notice && <Banner tone="warn" className="mt-2">{notice}</Banner>}
                 {handback && (
-                  <div className="mt-2 rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-2.5">
-                    <p className="text-[11px] text-dt-support mb-1.5">
-                      Hand this conversation back to <span className="text-dt-body font-medium">{deName}</span>. Add a note and {deName} will remember it on the customer's next message.
+                  <div className="mt-2 rounded-xl border border-dt-border-strong bg-dt-inset p-3">
+                    <p className="text-xs text-dt-support mb-2">
+                      Hand this back to <span className="text-dt-body font-medium">{deName}</span>. Anything you write here, {deName} remembers on the customer's next message.
                     </p>
                     <textarea value={handbackNote} onChange={e => setHandbackNote(e.target.value)} rows={2}
-                      placeholder={`Optional lesson for ${deName} — e.g. "Customer is on the legacy plan; offer the loyalty discount before any refund talk."`}
-                      className="w-full text-xs bg-dt-page border border-dt-border-strong rounded-lg px-2.5 py-1.5 text-dt-title placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
-                    <div className="flex gap-2 mt-1.5">
-                      <button disabled={busy} onClick={doHandback} className="text-xs px-3 py-1 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 hover:brightness-110 text-white disabled:opacity-50">Hand back{handbackNote.trim() ? ' with note' : ''}</button>
-                      <button onClick={() => setHandback(false)} className="text-xs px-3 py-1 rounded-lg border border-dt-border-strong text-dt-support">Cancel</button>
+                      placeholder={`Optional — e.g. "Customer is on the legacy plan; offer the loyalty discount before any refund talk."`}
+                      className={INPUT_CLS} />
+                    <div className="flex gap-2 mt-2">
+                      <Button kind="primary" size="sm" disabled={busy} onClick={doHandback}>Hand back{handbackNote.trim() ? ' with the note' : ''}</Button>
+                      <Button size="sm" onClick={() => setHandback(false)}>Cancel</Button>
                     </div>
                   </div>
                 )}
@@ -262,30 +323,29 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
                   return (
                     <div key={m.id} className={`max-w-[80%] ${isCustomer ? 'self-start' : 'self-end'}`}>
                       <div className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
-                        isCustomer ? 'bg-white/[0.06] text-dt-title border border-white/10 rounded-tl-sm'
-                        : isDraft ? 'bg-amber-500/10 text-amber-100 border border-amber-500/40 rounded-tr-sm'
-                        : 'bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-tr-sm shadow-[0_4px_18px_-6px_rgba(99,102,241,0.7)]'
+                        isCustomer ? 'bg-dt-inset text-dt-body border border-dt-border rounded-tl-sm'
+                        : isDraft ? 'bg-dt-warn-soft text-dt-warn border border-dt-warn-border rounded-tr-sm'
+                        : 'bg-dt-accent-strong text-white rounded-tr-sm'
                       }`}>
                         {/* Strip the internal [channel · …] prefix from the customer message for display */}
                         {isCustomer ? m.content.replace(/^\[[^\]]*\]\s*/, '') : m.content}
                       </div>
-                      <div className={`text-[10px] text-dt-muted mt-0.5 ${isCustomer ? 'text-left' : 'text-right'}`}>
-                        {isDraft ? 'Draft — awaiting your approval · ' : ''}{fmtTime(m.created_at)}
+                      <div className={`text-xs text-dt-muted mt-0.5 ${isCustomer ? 'text-left' : 'text-right'}`}>
+                        {isDraft ? `${deName} wrote this — nothing is sent until you say so · ` : ''}{fmtTime(m.created_at)}
                       </div>
                       {isDraft && (
                         editDraftId === m.id ? (
                           <div className="mt-1.5">
-                            <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={3}
-                              className="w-full text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-title focus:outline-none focus:border-indigo-500" />
-                            <div className="flex gap-2 mt-1">
-                              <button disabled={busy} onClick={() => doApprove(m.id, editText)} className="text-xs px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50">Approve edited</button>
-                              <button onClick={() => setEditDraftId(null)} className="text-xs px-3 py-1 rounded-lg border border-dt-border-strong text-dt-support">Cancel</button>
+                            <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={3} className={INPUT_CLS} />
+                            <div className="flex gap-2 mt-1.5">
+                              <Button kind="primary" size="sm" disabled={busy} onClick={() => doApprove(m.id, editText)}>Send it</Button>
+                              <Button size="sm" onClick={() => setEditDraftId(null)}>Cancel</Button>
                             </div>
                           </div>
                         ) : (
-                          <div className="flex gap-2 mt-1 justify-end">
-                            <button disabled={busy} onClick={() => doApprove(m.id)} className="text-xs px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50">Approve &amp; send</button>
-                            <button onClick={() => { setEditDraftId(m.id); setEditText(m.content); }} className="text-xs px-3 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-muted">Edit</button>
+                          <div className="flex gap-2 mt-1.5 justify-end">
+                            <Button kind="primary" size="sm" disabled={busy} onClick={() => doApprove(m.id)}>Send it</Button>
+                            <Button size="sm" onClick={() => { setEditDraftId(m.id); setEditText(m.content); }}>Change the wording</Button>
                           </div>
                         )
                       )}
@@ -293,7 +353,7 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
                   );
                 })}
                 {pendingDraft && (
-                  <p className="self-center text-[11px] text-dt-muted mt-1">
+                  <p className="self-center text-xs text-dt-muted mt-1">
                     {isEmail ? 'Nothing has been emailed yet — approving sends this reply to the customer.' : 'The customer sees a holding message until you approve or reply.'}
                   </p>
                 )}
@@ -304,16 +364,17 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
                 <div className="flex items-end gap-2">
                   <textarea value={reply} onChange={e => setReply(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); } }}
-                    placeholder={sel.status === 'resolved' ? 'Reopen to reply…' : 'Reply to the customer…'}
+                    placeholder={sel.status === 'resolved' ? 'Reopen to reply…'
+                      : sel.channel === 'dock' ? 'Reply to your colleague…'
+                      : `Write to ${sel.end_user_name || 'the customer'}…`}
                     disabled={sel.status === 'resolved' || busy} rows={1}
-                    className="flex-1 resize-none max-h-32 text-sm bg-dt-page border border-dt-border-strong rounded-xl px-3 py-2 text-dt-title placeholder-slate-500 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
-                  <button disabled={!reply.trim() || busy || sel.status === 'resolved'} onClick={doSend}
-                    className="flex-shrink-0 text-sm px-4 py-2 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 hover:brightness-110 text-white shadow-[0_4px_16px_-4px_rgba(99,102,241,0.7)] disabled:opacity-40 disabled:shadow-none transition-all">Send</button>
+                    className={`${INPUT_CLS} flex-1 resize-none max-h-32 disabled:opacity-50`} />
+                  <Button kind="primary" className="flex-shrink-0" disabled={!reply.trim() || busy || sel.status === 'resolved'} onClick={doSend}>Send</Button>
                 </div>
-                <p className="text-[10px] text-dt-muted mt-1.5">
-                  {isEmail ? `Sent as an email reply to ${sel.end_user_name || 'the customer'}. This conversation becomes yours.`
-                    : sel.channel === 'dock' ? 'The teammate sees your reply in their assistant thread. This conversation becomes yours.'
-                    : 'Your reply goes straight to the customer. This conversation becomes yours.'}
+                <p className="text-xs text-dt-muted mt-1.5">
+                  {isEmail ? `Sent as an email reply to ${sel.end_user_name || 'the customer'}. If you reply, this becomes yours and ${deName} steps back.`
+                    : sel.channel === 'dock' ? `Your colleague sees this in their assistant thread. If you reply, this becomes yours and ${deName} steps back.`
+                    : `Your reply goes straight to the customer. If you reply, this becomes yours and ${deName} steps back.`}
                 </p>
               </div>
             </>
