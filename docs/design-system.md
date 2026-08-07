@@ -61,6 +61,66 @@ Never mix (e.g. emerald never means "selected"; indigo never means "success").
 
 ---
 
+### Layout — tokenised in v2 (`src/design/tokens.css` §layout)
+
+v1 tokenised colour and nothing else, so every page invented its own widths and
+gutters. Same file, same law, surfaced through `tailwind.config.js` the same way.
+
+| Token | Utility | Value | Use |
+|---|---|---|---|
+| `--dt-sidebar` | `w-dt-sidebar` | 248px | Full navigation |
+| `--dt-sidebar-rail` | `w-dt-sidebar-rail` | 56px | Collapsed, and the auto state below 1280 |
+| `--dt-gutter` | `p-dt-gutter` | `clamp(20px,3vw,40px)` | Page gutter |
+| `--dt-content-max` | `max-w-dt-content` | 1180px | Reading and mixed pages |
+| `--dt-content-wide` | `max-w-dt-content-wide` | 1440px | Table-heavy pages |
+| `--dt-gap` / `--dt-gap-tight` | `gap-dt` / `gap-dt-tight` | 16 / 10px | Grid and stack rhythm |
+| `--dt-card-min` | `grid-cols-dt-cards` | 380px | `auto-fit` — drops a column on its own |
+| `--dt-kpi-min` / `--dt-tile-min` | `grid-cols-dt-kpis` / `-tiles` | 220 / 96px | Same, for stat rows |
+| `--dt-drawer` / `-wide` | `w-dt-drawer` | `min(560px,90vw)` | Drawer widths |
+| `--dt-row-compact` / `-comfort` | `min-h-dt-row-*` | 38 / 56px | The density rule, below |
+| `--dt-field-max` | `max-w-dt-field` | 420px | A field wider than this is harder to read |
+
+⚠ These are **lengths, not colours** — per-tenant branding must never reach
+them. A workspace picks an accent; it does not pick a sidebar width.
+
+### Density is per-surface, not per-app
+
+The most common mistake is picking one density for everything. Ask what the
+person is doing on the surface, then pick:
+
+- **Data surface — compact.** Scanning and comparing many rows: history tables,
+  the audit trail, a roster past ~12 people. `min-h-dt-row-compact`, 14px text,
+  12px labels.
+- **Decision surface — comfortable.** Reading a few items and deciding: employee
+  cards, the approval queue, conversation threads. 16–22px padding, 14–17px
+  text, **one** clear action.
+
+### Three breakpoints, fluid between
+
+Six tiers across 55 pages is more surface than anyone verifies, and an
+unverified breakpoint is a liability. `clamp()` and `auto-fit` cover the rest.
+
+| Screen | Width | Behaviour |
+|---|---|---|
+| `dt-large` | ≥1600px | Content capped; extra space buys a secondary panel, never longer lines |
+| `dt-target` | 1280–1599px | **The design target.** Every screen is drawn here |
+| `dt-compact` | 1024–1279px | Sidebar auto-collapses to the rail; grids drop a column themselves |
+| — | <1024px | Not a reflow. A scoped mobile surface, if and when it is decided |
+
+### Status vocabulary (`src/design/statusVocabulary.ts`)
+
+Database enums leak into the UI everywhere; `needs_human` is a column value, not
+something to show an owner. One module translates, so a screen never invents its
+own wording — **six pages had grown their own `STATUS_META` before this, and they
+disagreed.** Colour meanings are unchanged; only the words are.
+
+⚠ **Display only.** Never compare against a label, never store one. `say(DE_STATUS,
+row.status).label`, never `if (x === 'Working')`.
+
+⚠ Grounded in the **check constraints**, not in a design document. It carries all
+twelve `lifecycle_status` values the column actually permits. `RETIRED_FROM_UI`
+lists the words that stay in code and never reach a screen.
+
 ## 2. The schema catalog (`src/design/primitives.tsx`)
 
 | Schema | Use it for | Never |

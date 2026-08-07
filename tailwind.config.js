@@ -55,6 +55,64 @@ export default {
           neutral: 'var(--dt-neutral)', 'neutral-soft': 'var(--dt-neutral-soft)', 'neutral-border': 'var(--dt-neutral-border)',
         },
       },
+
+      // ── Design System v2 — LAYOUT tokens (src/design/tokens.css §layout).
+      // Colour was tokenised in v1 and space was not, so every page invented
+      // its own widths and gutters. Same variables, surfaced the same way, so
+      // `w-dt-sidebar` and `bg-dt-card` are the same kind of statement.
+      //
+      // Registered under several scales on purpose: a width token is only
+      // useful if it can also be a min-width, a grid track and a flex basis.
+      spacing: {
+        'dt-sidebar': 'var(--dt-sidebar)',
+        'dt-sidebar-rail': 'var(--dt-sidebar-rail)',
+        'dt-gutter': 'var(--dt-gutter)',
+        'dt-gap': 'var(--dt-gap)',
+        'dt-gap-tight': 'var(--dt-gap-tight)',
+        'dt-row-compact': 'var(--dt-row-compact)',
+        'dt-row-comfort': 'var(--dt-row-comfort)',
+      },
+      maxWidth: {
+        'dt-content': 'var(--dt-content-max)',
+        'dt-content-wide': 'var(--dt-content-wide)',
+        'dt-field': 'var(--dt-field-max)',
+        'dt-drawer': 'var(--dt-drawer)',
+        'dt-drawer-wide': 'var(--dt-drawer-wide)',
+      },
+      minWidth: {
+        'dt-card': 'var(--dt-card-min)',
+        'dt-kpi': 'var(--dt-kpi-min)',
+        'dt-tile': 'var(--dt-tile-min)',
+      },
+      minHeight: {
+        'dt-row-compact': 'var(--dt-row-compact)',
+        'dt-row-comfort': 'var(--dt-row-comfort)',
+      },
+      width: {
+        'dt-sidebar': 'var(--dt-sidebar)',
+        'dt-sidebar-rail': 'var(--dt-sidebar-rail)',
+        'dt-drawer': 'var(--dt-drawer)',
+        'dt-drawer-wide': 'var(--dt-drawer-wide)',
+      },
+      gap: {
+        dt: 'var(--dt-gap)',
+        'dt-tight': 'var(--dt-gap-tight)',
+      },
+      // Responsive grids that drop a column on their own, so 1024–1279 needs
+      // no separate layout to maintain (handoff §04).
+      gridTemplateColumns: {
+        'dt-cards': 'repeat(auto-fit, minmax(var(--dt-card-min), 1fr))',
+        'dt-kpis': 'repeat(auto-fit, minmax(var(--dt-kpi-min), 1fr))',
+        'dt-tiles': 'repeat(auto-fit, minmax(var(--dt-tile-min), 1fr))',
+      },
+      // The three verified breakpoints. Six tiers across 55 pages is more
+      // surface than anyone checks, and an unverified breakpoint is a
+      // liability — clamp() and auto-fit cover everything between these.
+      screens: {
+        'dt-compact': '1024px',
+        'dt-target': '1280px',
+        'dt-large': '1600px',
+      },
     },
   },
   plugins: [],

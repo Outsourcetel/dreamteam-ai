@@ -42,5 +42,37 @@
   --dt-neutral:   #a6b4d8; --dt-neutral-soft:#2d35541a; --dt-neutral-border:#414b6e4d;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   LAYOUT — v2 (design handoff §03)
+   v1 tokenised colour and nothing else, so every page invented its own widths
+   and gutters. These are the missing half: the same law, applied to space.
+   Surfaced through tailwind.config.js exactly like the colours.
+
+   ⚠ These are LENGTHS, not colours — per-tenant branding must never touch
+   them. A workspace can pick an accent; it cannot pick a sidebar width.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  /* ── Shell ───────────────────────────────────────────────────────────── */
+  --dt-sidebar:       248px;                /* full navigation               */
+  --dt-sidebar-rail:  56px;                 /* collapsed, and the <1280 auto */
+  --dt-gutter:        clamp(20px, 3vw, 40px);
+  --dt-content-max:   1180px;               /* reading + mixed pages         */
+  --dt-content-wide:  1440px;               /* table-heavy pages             */
+
+  /* ── Grid ────────────────────────────────────────────────────────────── */
+  --dt-gap:        16px;
+  --dt-gap-tight:  10px;
+  --dt-card-min:   380px;   /* auto-fit minimum — drops a column on its own  */
+  --dt-kpi-min:    220px;
+  --dt-tile-min:   96px;
+
+  /* ── Overlays and density ────────────────────────────────────────────── */
+  --dt-drawer:       min(560px, 90vw);
+  --dt-drawer-wide:  min(760px, 95vw);
+  --dt-row-compact:  38px;  /* data surface: scanning and comparing rows     */
+  --dt-row-comfort:  56px;  /* decision surface: reading and deciding        */
+  --dt-field-max:    420px; /* a form field wider than this is harder to read */
+}
+
 /* Light theme lands here later — semantic names stay identical. */
 :root.light { /* reserved */ }
