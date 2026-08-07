@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Modal } from '../../../design/primitives';
+import { Modal, Button, Chip, Banner } from '../../../design/primitives';
 import { supabase } from '../../../supabase';
 import AISessionPanel from '../../../components/AISessionPanel';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
@@ -38,43 +38,26 @@ import { TemplateBuilderModal, ConnectFromTemplateModal, TemplateLibrary } from 
 // we look at your data to answer and never store it.
 // ============================================================
 
-function statusChip(status: Connector['status']) {
-  const map = {
-    connected: ['bg-emerald-400', 'text-emerald-400', 'Connected'],
-    error: ['bg-red-400', 'text-red-400', 'Error'],
-    disconnected: ['bg-slate-600', 'text-dt-muted', 'Disconnected'],
-  } as const;
-  const [dot, text, label] = map[status];
-  return (
-    <span className="flex items-center gap-1.5">
-      <span className={`inline-block w-2 h-2 rounded-full ${dot}`} />
-      <span className={`text-xs ${text}`}>{label}</span>
-    </span>
-  );
-}
-
 const OBJECT_LABELS: Record<string, string> = { ticket: 'Tickets', user: 'Users', organization: 'Organizations' };
 const ACTION_LABELS: Record<string, string> = {
   add_internal_note: 'Add internal note',
   update_status: 'Update ticket status',
 };
-function healthBadge(c: Connector) {
+// ── ONE WORD FOR WHETHER IT WORKS (handoff 07) ──────────────────────────
+//
+// Two chips used to sit side by side saying overlapping things: statusChip
+// read connected/error/disconnected off the row, healthBadge read
+// healthy/degraded/down/never_connected off the last check. "Connected ·
+// Degraded" is two facts the owner has to reconcile before learning the one
+// thing they came for. They are the same question asked twice, so they are
+// now answered once — in a word, not a status enum.
+function connectionState(c: Connector): { label: string; tone: 'ok' | 'warn' | 'danger' | 'neutral'; means: string } {
   const h: ConnectorHealth = connectorHealth(c);
-  const map: Record<ConnectorHealth, [string, string, string]> = {
-    healthy: ['bg-emerald-400', 'text-emerald-400', 'Healthy'],
-    degraded: ['bg-amber-400', 'text-amber-400', 'Degraded'],
-    down: ['bg-red-400', 'text-red-400', 'Down'],
-    never_connected: ['bg-slate-600', 'text-dt-muted', 'Never checked'],
-  };
-  const [dot, text, label] = map[h];
-  const checked = c.last_ok_at || c.last_error_at;
-  return (
-    <span className="flex items-center gap-1.5" title={HEALTH_LABELS[h]}>
-      <span className={`inline-block w-2 h-2 rounded-full ${dot}`} />
-      <span className={`text-xs ${text}`}>{label}</span>
-      {checked && <span className="text-[10px] text-dt-faint">· checked {fmtSince(checked)}</span>}
-    </span>
-  );
+  if (c.status === 'disconnected') return { label: 'Not connected', tone: 'neutral', means: 'Nobody has connected this system yet, or it was disconnected.' };
+  if (c.status === 'error' || h === 'down') return { label: 'Not working', tone: 'danger', means: HEALTH_LABELS[h] };
+  if (h === 'degraded') return { label: 'Having trouble', tone: 'warn', means: HEALTH_LABELS[h] };
+  if (h === 'never_connected') return { label: 'Not checked yet', tone: 'neutral', means: HEALTH_LABELS[h] };
+  return { label: 'Working', tone: 'ok', means: HEALTH_LABELS[h] };
 }
 
 // ── The 5-rung connection ladder (product doctrine) ───────────────
@@ -858,6 +841,7 @@ export default function LiveConnectorsPage() {
   const [useTemplate, setUseTemplate] = useState<AdapterTemplate | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [fieldMapFor, setFieldMapFor] = useState<string | null>(null);
+  const [settingsFor, setSettingsFor] = useState<string | null>(null);
   const [ingestFor, setIngestFor] = useState<string | null>(null);
 
   // Read-through search demo
@@ -1119,38 +1103,63 @@ export default function LiveConnectorsPage() {
                       <span className={`text-[10px] px-1.5 py-0.5 rounded ${c.access_mode === 'fetch_only' ? 'bg-teal-500/15 text-teal-300' : 'bg-purple-500/15 text-purple-300'}`}>
                         {c.access_mode === 'fetch_only' ? 'fetch-only · never stored' : 'ingest · working copy'}
                       </span>
-                      {statusChip(c.status)}
-                      {healthBadge(c)}
+                      {(() => { const st = connectionState(c); return <Chip tone={st.tone} dot title={st.means}>{st.label}</Chip>; })()}
                     </div>
-                    <p className="text-xs text-dt-muted mt-1">{c.base_url} · last sync {fmtSince(c.last_sync_at)}</p>
+                    <p className="text-xs text-dt-muted mt-1">
+                      {[c.base_url,
+                        (c.last_ok_at || c.last_error_at) ? `checked ${fmtSince(c.last_ok_at || c.last_error_at)}` : null,
+                        c.last_sync_at ? `last sync ${fmtSince(c.last_sync_at)}` : null,
+                      ].filter(Boolean).join(' · ')}
+                    </p>
                     {/* W4-R (docs/16): a green "Connected" said nothing about which
                         employee may actually USE the system — the default-deny
                         grants were invisible in this module. */}
-                    <p className="text-[11px] mt-1">
+                    <p className="text-xs mt-1">
                       {(() => {
                         const g = grantsFor(c);
                         return g.length === 0
-                          ? <span className="text-amber-300/90">No employee has access to this system yet — grant it in Governance → Data Access.</span>
+                          ? <span className="text-dt-warn">No employee has access to this system yet — grant it in Governance → Data Access.</span>
                           : <span className="text-dt-muted">Employee access: {g.map(x => `${x.name} (${x.level.replace('_', '-')})`).join(' · ')}</span>;
                       })()}
                     </p>
-                    {connectorHealth(c) !== 'healthy' && c.last_error && <p className="text-xs text-red-300 mt-1">{connectorErrorLabel(c.last_error)}</p>}
-                  </div>
-                  <div className="flex gap-2 flex-wrap">
-                    <button disabled={isBusy || !meta?.implemented} onClick={() => void doTest(c)} className="px-3 py-1.5 rounded-lg text-xs text-dt-support border border-dt-border-strong hover:border-dt-border-strong disabled:opacity-50 transition-colors">
-                      Test connection
-                    </button>
-                    <button disabled={isBusy || !meta?.implemented} onClick={() => void doHealthCheck(c)} className="px-3 py-1.5 rounded-lg text-xs text-dt-support border border-dt-border-strong hover:border-dt-border-strong disabled:opacity-50 transition-colors">
-                      Run health check
-                    </button>
-                    <button disabled={isBusy} onClick={() => setFieldMapFor(fieldMapFor === c.id ? null : c.id)} className="px-3 py-1.5 rounded-lg text-xs text-dt-support border border-dt-border-strong hover:border-dt-border-strong disabled:opacity-50 transition-colors">
-                      Field mapping
-                    </button>
-                    {(['sharepoint', 'gdrive', 'notion', 'box', 'dropbox'] as ConnectorProvider[]).includes(c.provider) && (
-                      <button disabled={isBusy} onClick={() => setIngestFor(ingestFor === c.id ? null : c.id)} className="px-3 py-1.5 rounded-lg text-xs text-dt-support border border-dt-border-strong hover:border-dt-border-strong disabled:opacity-50 transition-colors">
-                        What gets ingested
-                      </button>
+                    {/* ── What broke, and who it stops ────────────────────────
+                        Was a bare `text-xs text-red-300` line carrying the raw
+                        error label and nothing else — true, and useless to the
+                        person who has to decide whether it matters. The names
+                        come from the SAME grants read just above, so the card
+                        can say who is affected without inventing a link.
+                        ⚠ It deliberately does NOT claim what the outage is
+                        CAUSING (the handoff's "that's why two invoices are
+                        stuck"). Nothing joins a connector failure to blocked
+                        work today, and a fabricated consequence on a red
+                        banner is worse than no consequence at all. */}
+                    {connectorHealth(c) !== 'healthy' && c.last_error && (
+                      <Banner tone="danger" className="mt-2">
+                        <span className="font-medium">{connectorErrorLabel(c.last_error)}</span>
+                        {(() => {
+                          const g = grantsFor(c);
+                          if (!g.length) return ' No employee uses this system yet, so nothing is waiting on it.';
+                          const names = g.map(x => x.name);
+                          return ` ${names.length === 1 ? `${names[0]} can't` : `${names.slice(0, -1).join(', ')} and ${names.slice(-1)} can't`} reach it until this is fixed.`;
+                        })()}
+                      </Banner>
                     )}
+                  </div>
+                  {/* ── The admin work stops being the first thing you see ──
+                      Eight buttons used to sit in one row: Test connection,
+                      Run health check, Field mapping, What gets ingested,
+                      Sync knowledge, Register tools, Sync tickets, and
+                      Disconnect. Field maps and ingest filters are things you
+                      set up once; they were competing for attention with the
+                      one button that matters when a system is down. The
+                      configuration folds behind "Settings"; what stays out is
+                      what you act on — reconnect it, or sync it.
+                      ⚠ Every disabled= and role gate below is carried over
+                      unchanged; this moved buttons, it did not open any. */}
+                  <div className="flex gap-2 flex-wrap items-start">
+                    <Button size="sm" disabled={isBusy} onClick={() => setSettingsFor(settingsFor === c.id ? null : c.id)}>
+                      {settingsFor === c.id ? 'Hide settings' : 'Settings'}
+                    </Button>
                     {meta?.knowledgeSync && (
                       <button disabled={isBusy} onClick={() => void doKnowledgeSync(c)}
                         title={c.access_mode === 'fetch_only' ? 'Fetch-only connectors refuse sync server-side — try it.' : 'Ingest help articles / pages into knowledge'}
@@ -1187,8 +1196,20 @@ export default function LiveConnectorsPage() {
                   </div>
                 </div>
 
+                {/* The moved controls, unchanged in behaviour and gating. */}
+                {settingsFor === c.id && (
+                  <div className="mb-4 rounded-xl border border-dt-border-strong bg-dt-inset p-3 flex gap-2 flex-wrap">
+                    <Button size="sm" disabled={isBusy || !meta?.implemented} onClick={() => void doTest(c)}>Test connection</Button>
+                    <Button size="sm" disabled={isBusy || !meta?.implemented} onClick={() => void doHealthCheck(c)}>Run health check</Button>
+                    <Button size="sm" disabled={isBusy} onClick={() => setFieldMapFor(fieldMapFor === c.id ? null : c.id)}>Field mapping</Button>
+                    {(['sharepoint', 'gdrive', 'notion', 'box', 'dropbox'] as ConnectorProvider[]).includes(c.provider) && (
+                      <Button size="sm" disabled={isBusy} onClick={() => setIngestFor(ingestFor === c.id ? null : c.id)}>What gets ingested</Button>
+                    )}
+                  </div>
+                )}
+
                 {!meta?.implemented && (
-                  <p className="text-xs text-amber-400 mb-3">Registered, but this system's adapter is not built yet — every call returns an honest "not implemented" until it ships.</p>
+                  <p className="text-xs text-dt-warn mb-3">Registered, but this system's adapter is not built yet — every call returns an honest "not implemented" until it ships.</p>
                 )}
 
                 {fieldMapFor === c.id && (
