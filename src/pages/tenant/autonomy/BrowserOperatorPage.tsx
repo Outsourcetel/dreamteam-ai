@@ -9,6 +9,33 @@ import {
 import {
   Chip, Banner, Button, Field, INPUT_CLS, EmptyState, Modal, Drawer, TimelineStep, type Tone,
 } from '../../../design/primitives';
+import { useAuth } from '../../../context/AuthContext';
+
+// ⚠ WHO MAY DO WHAT HERE.
+//
+// This page is ALL_TENANT in navAccess — every role, down to read_only, can
+// open it. Its actions are not:
+//
+//   propose_browser_task        owner / admin / manager
+//   upsert_de_operate_binding   owner / admin
+//   set_de_operate_login        owner / admin   ← a PASSWORD field
+//   clear_de_operate_login      owner / admin
+//   delete_de_operate_binding   owner / admin
+//
+// Before this, the page had no role logic at all, so a read_only account was
+// shown "Add credentials" and a password box that could never save. Inviting
+// someone to type a system credential into a form that will be refused is
+// worse than a dead button.
+//
+// Two levels, because the server has two.
+function useCanOperate(): boolean {
+  const { authedUser, isDTUser } = useAuth();
+  return isDTUser || ['tenant_owner', 'tenant_admin', 'tenant_manager'].includes(authedUser?.role ?? '');
+}
+function useCanManageCredentials(): boolean {
+  const { authedUser, isDTUser } = useAuth();
+  return isDTUser || ['tenant_owner', 'tenant_admin'].includes(authedUser?.role ?? '');
+}
 
 // ── status vocabulary — one glance tells you where a task is (Chip tones) ──
 const STATUS: Record<string, { label: string; tone: Tone; pulse?: boolean }> = {
@@ -34,6 +61,8 @@ function timeAgo(iso: string | null): string {
 }
 
 const BrowserOperatorPage = ({ setPage }: { setPage: (p: Page) => void }) => {
+  const canOperate = useCanOperate();
+  const canManageCredentials = useCanManageCredentials();
   const [state, setState] = useState<BrowserOperatorState | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -69,10 +98,21 @@ const BrowserOperatorPage = ({ setPage }: { setPage: (p: Page) => void }) => {
           <Chip tone={runtimeOnline ? 'ok' : 'neutral'} dot pulse={runtimeOnline}>
             {runtimeOnline ? `${(state?.runtimes ?? []).filter(r => r.active).length} browser connected` : 'No browser connected'}
           </Chip>
-          <Button kind="secondary" onClick={() => setShowConfig(true)}>Configure apps</Button>
-          <Button kind="primary" onClick={() => setShowNew(true)}>+ New task</Button>
+          {/* propose_browser_task needs owner/admin/manager; the app config
+              behind "Configure apps" needs owner/admin. Below those, the page
+              is still worth opening — the task list and its history are the
+              point of it — so only the entry points go. */}
+          {canManageCredentials && <Button kind="secondary" onClick={() => setShowConfig(true)}>Configure apps</Button>}
+          {canOperate && <Button kind="primary" onClick={() => setShowNew(true)}>+ New task</Button>}
         </div>
       </div>
+
+      {!canOperate && (
+        <Banner tone="info" className="mb-5">
+          You can follow what the browser operator is doing and read every step it took. Starting a new
+          task needs a manager, owner or admin; connecting an app and storing its login needs an owner or admin.
+        </Banner>
+      )}
 
       {error && <Banner tone="danger" className="mb-5">{error}</Banner>}
       {state && !state.enabled && (
@@ -393,6 +433,7 @@ function OperateConfigDrawer({ onClose }: { onClose: () => void }) {
 }
 
 function SystemCard({ deId, s, connectors, onChange }: { deId: string; s: OperateSystem; connectors: DeOperateConfig['connectors']; onChange: () => void }) {
+  const canManageCredentials = useCanManageCredentials();
   const [label, setLabel] = useState(s.label);
   const [domain, setDomain] = useState(s.operate_domain ?? '');
   const [connectorId, setConnectorId] = useState(s.connector_id ?? '');
@@ -435,12 +476,21 @@ function SystemCard({ deId, s, connectors, onChange }: { deId: string; s: Operat
       )}
       {err && <p className="text-[11px] text-dt-danger mt-2">{err}</p>}
 
-      <div className="flex items-center gap-2 mt-3">
-        {dirty && <Button kind="primary" size="sm" disabled={busy} onClick={() => save(s.can_operate)}>Save</Button>}
-        <Button kind="secondary" size="sm" onClick={() => setShowLogin(v => !v)}>{s.has_login ? 'Change login' : 'Set login'}</Button>
-        {s.has_login && <Button kind="ghost" size="sm" disabled={busy} onClick={() => run(() => clearOperateLogin(s.id))}>Remove login</Button>}
-        {s.operate_only && <Button kind="ghost" size="sm" disabled={busy} className="ml-auto hover:text-dt-danger" onClick={() => run(() => deleteOperateBinding(s.id))}>Delete</Button>}
-      </div>
+      {/* Every control here maps to an owner/admin RPC. Hidden rather than
+          disabled: a greyed-out "Set login" still invites someone to hunt for
+          the permission, while the row above stays fully readable. */}
+      {canManageCredentials ? (
+        <div className="flex items-center gap-2 mt-3">
+          {dirty && <Button kind="primary" size="sm" disabled={busy} onClick={() => save(s.can_operate)}>Save</Button>}
+          <Button kind="secondary" size="sm" onClick={() => setShowLogin(v => !v)}>{s.has_login ? 'Change login' : 'Set login'}</Button>
+          {s.has_login && <Button kind="ghost" size="sm" disabled={busy} onClick={() => run(() => clearOperateLogin(s.id))}>Remove login</Button>}
+          {s.operate_only && <Button kind="ghost" size="sm" disabled={busy} className="ml-auto hover:text-dt-danger" onClick={() => run(() => deleteOperateBinding(s.id))}>Delete</Button>}
+        </div>
+      ) : (
+        <p className="text-[11px] text-dt-muted mt-3">
+          You can see how this system is connected, but changing it — or its stored login — needs an owner or admin.
+        </p>
+      )}
 
       {showLogin && <LoginForm systemId={s.id} onDone={() => { setShowLogin(false); onChange(); }} onCancel={() => setShowLogin(false)} />}
     </div>
