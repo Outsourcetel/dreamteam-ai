@@ -183,7 +183,12 @@ function ContactsPanel({ accountId, accountName }: { accountId: string; accountN
         </div>
       )}
 
-      {form !== null && (
+      {/* `canEdit` is redundant TODAY — form is only ever set by the Add and
+          Edit controls above, both of which are already behind it. It is here
+          because that is an invariant held in two other places rather than
+          stated here, and the next person to add a third way of opening this
+          form should not have to notice. */}
+      {form !== null && canEdit && (
         <div className="mt-3 pt-3 border-t border-dt-border space-y-2">
           <div className="grid grid-cols-2 gap-2">
             <input className={fieldCls} placeholder="First name" value={form.firstName} onChange={set('firstName')} />

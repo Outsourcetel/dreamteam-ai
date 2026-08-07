@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { PageHeader, th, td } from '../../../components/ui';
 import { ConfidenceBar } from './KnowledgeLibraryPage';
 import { CustomerApiError } from '../../../lib/customerApi';
+import { useIsTenantAdmin } from '../../../lib/useRoleGate';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
 import { ConfirmDeleteModal } from '../../../components';
 import {
@@ -48,6 +49,16 @@ const CoverageBadge = ({ state }: { state: CoverageDemand['top_gaps'][number]['c
 };
 
 function LiveKnowledgeQuality() {
+  // ⚠ SAME CONTRADICTION AS INGESTION, ONE TIER WORSE. This page is KNOWLEDGE
+  // tier — owner, admin, manager and the knowledge specialist — but
+  // resolve_knowledge_conflict is owner/admin, so it refuses the manager AND
+  // the specialist. Deciding which of two documents is the source of truth is
+  // the most curatorial act on the page, and neither curating role can do it.
+  //
+  // Disabled with the reason shown rather than hidden: the mismatch is a
+  // permissions decision for the founder, and a control that vanishes takes
+  // the question with it.
+  const canResolve = useIsTenantAdmin();
   const [docs, setDocs] = useState<KnowledgeDoc[]>([]);
   const [citationStats, setCitationStats] = useState<Record<string, KnowledgeDocCitationStats>>({});
   const [scopes, setScopes] = useState<Record<string, { kind: 'de' | 'specialist'; id: string }[]>>({});
@@ -360,9 +371,9 @@ function LiveKnowledgeQuality() {
                           </div>
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          <button disabled={busy} onClick={() => void resolveConflict(c, 'resolved_pick_a')} className="text-xs px-2.5 py-1 rounded-lg border border-emerald-500/40 text-emerald-300 hover:border-emerald-400 disabled:opacity-50">Keep A as source</button>
-                          <button disabled={busy} onClick={() => void resolveConflict(c, 'resolved_pick_b')} className="text-xs px-2.5 py-1 rounded-lg border border-emerald-500/40 text-emerald-300 hover:border-emerald-400 disabled:opacity-50">Keep B as source</button>
-                          <button disabled={busy} onClick={() => void resolveConflict(c, 'dismissed')} className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-muted disabled:opacity-50">Dismiss</button>
+                          <button disabled={busy || !canResolve} title={canResolve ? undefined : 'Resolving a conflict is done by a workspace owner or admin.'} onClick={() => void resolveConflict(c, 'resolved_pick_a')} className="text-xs px-2.5 py-1 rounded-lg border border-emerald-500/40 text-emerald-300 hover:border-emerald-400 disabled:opacity-50">Keep A as source</button>
+                          <button disabled={busy || !canResolve} title={canResolve ? undefined : 'Resolving a conflict is done by a workspace owner or admin.'} onClick={() => void resolveConflict(c, 'resolved_pick_b')} className="text-xs px-2.5 py-1 rounded-lg border border-emerald-500/40 text-emerald-300 hover:border-emerald-400 disabled:opacity-50">Keep B as source</button>
+                          <button disabled={busy || !canResolve} title={canResolve ? undefined : 'Resolving a conflict is done by a workspace owner or admin.'} onClick={() => void resolveConflict(c, 'dismissed')} className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-muted disabled:opacity-50">Dismiss</button>
                           {busy && <span className="text-xs text-indigo-300 self-center">Saving…</span>}
                         </div>
                       </div>

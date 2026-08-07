@@ -3176,6 +3176,12 @@ interface LadderLevelDraft { name: string; mode: TrustLadderMode; amount: string
 function LadderEditorDrawer({ entry, deName, onClose, onSaved }: {
   entry: TrustSurfaceEntry; deName: string; onClose: () => void; onSaved: () => Promise<void>;
 }) {
+  // ⚠ set_trust_ladder is owner/admin, and this page is ALL_TENANT. The
+  // "Customize levels…" button that opens this drawer carried no gate, so
+  // anyone could reach Save and be refused. READING the ladder is worth
+  // keeping open — it explains what the employee is allowed to decide — so
+  // the drawer opens for everyone and only the writes are held back.
+  const canEditLadder = useCanManageDe();
   const policy = entry.policy;
   const [displayName, setDisplayName] = useState(policy?.display_name ?? '');
   const toDraft = (l: TrustLadderLevel): LadderLevelDraft => ({
@@ -3333,11 +3339,11 @@ function LadderEditorDrawer({ entry, deName, onClose, onSaved }: {
         {err && <Banner tone="danger">{err}</Banner>}
 
         <div className="flex items-center gap-2 flex-wrap pt-1">
-          <Button kind="primary" size="sm" disabled={busy} onClick={() => void save()}>
+          <Button kind="primary" size="sm" disabled={busy || !canEditLadder} onClick={() => void save()}>
             {busy ? 'Saving…' : 'Save ladder'}
           </Button>
           {policy.ladder && policy.ladder.length > 0 && (
-            <Button kind="secondary" size="sm" disabled={busy} onClick={() => void reset()}
+            <Button kind="secondary" size="sm" disabled={busy || !canEditLadder} onClick={() => void reset()}
               title="Back to the engine's built-in levels ($1k/$5k/$10k caps, 90/75/60 confidence floors).">
               Reset to built-in levels
             </Button>
@@ -3588,6 +3594,10 @@ function TrustPlanComposerPanel({ deId, deName, surface, onApplied }: {
    *  edits on the other cards exactly like a dial save does. */
   onApplied: (capabilityKey: string) => Promise<void>;
 }) {
+  // Applying a compiled plan writes through set_trust_ladder, same as the
+  // drawer — owner/admin, on an ALL_TENANT page. Composing and reading the
+  // plan stays open; committing it does not.
+  const canApplyLadder = useCanManageDe();
   const [planText, setPlanText] = useState('');
   const [compiling, setCompiling] = useState(false);
   const [compileErr, setCompileErr] = useState<string | null>(null);
@@ -3712,7 +3722,7 @@ function TrustPlanComposerPanel({ deId, deName, surface, onApplied }: {
               {draft.guardrail_suggestions.length > 0 ? ` · ${draft.guardrail_suggestions.length} guardrail suggestion${draft.guardrail_suggestions.length === 1 ? '' : 's'}` : ''}
             </span>
             {unapplied.length > 1 && (
-              <Button kind="secondary" size="sm" className="ml-auto" disabled={anyApplying} onClick={() => void applyAll()}>
+              <Button kind="secondary" size="sm" className="ml-auto" disabled={anyApplying || !canApplyLadder} onClick={() => void applyAll()}>
                 {applyingAll ? 'Applying…' : `Apply all ${unapplied.length} changes`}
               </Button>
             )}
@@ -3745,7 +3755,7 @@ function TrustPlanComposerPanel({ deId, deName, surface, onApplied }: {
                     <Chip tone="neutral">no change</Chip>
                   )}
                   {cap.changed && st?.status !== 'applied' && (
-                    <Button kind="secondary" size="sm" className="ml-auto" disabled={anyApplying} onClick={() => void applyOne(cap)}>
+                    <Button kind="secondary" size="sm" className="ml-auto" disabled={anyApplying || !canApplyLadder} onClick={() => void applyOne(cap)}>
                       {st?.status === 'applying' ? 'Applying…' : 'Apply this ladder'}
                     </Button>
                   )}

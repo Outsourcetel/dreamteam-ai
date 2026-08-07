@@ -214,8 +214,20 @@ const pageRoles = {};
   let m; while ((m = re.exec(block)) !== null) pageRoles[m[1]] = m[2] === '[]' ? [] : TIER[m[2]];
 }
 const compOfPage = {}; {
-  const re = /case\s+'([a-z_]+)':\s*(?:\n\s*)?return\s*<([A-Za-z0-9_]+)/g;
-  let m; while ((m = re.exec(app)) !== null) compOfPage[m[1]] = m[2];
+  // ⚠ CASE LABELS STACK. Four support pages share one component:
+  //     case 'support_command_center':
+  //     case 'support_triage_rules':
+  //     case 'support_inbox':
+  //     case 'support_calls':
+  //       return <SupportHubPage …/>
+  // A regex demanding `case 'x': return <Y` captures only the LAST label, so
+  // three of the four pages had no component and the tier lookup came back
+  // empty — which the checker then treated as "unreachable" and skipped.
+  const re = /((?:case\s+'[a-z_]+':\s*)+)return\s*<([A-Za-z0-9_]+)/g;
+  let m;
+  while ((m = re.exec(app)) !== null) {
+    for (const c of m[1].matchAll(/case\s+'([a-z_]+)'/g)) compOfPage[c[1]] = m[2];
+  }
 }
 const fileOfComp = {}; {
   const re = /import\s+(?:\{\s*([^}]+)\s*\}|([A-Za-z0-9_]+))\s+from\s+'(\.[^']+)'/g;
@@ -224,7 +236,38 @@ const fileOfComp = {}; {
     for (const n of names) fileOfComp[n] = path.posix.join('src', m[3].replace(/^\.\//, ''));
   }
 }
-const ext = (b) => ['.tsx', '.ts'].map((x) => b + x).find((c) => FILES[c]);
+const ext = (b) => ['.tsx', '.ts', '/index.tsx', '/index.ts'].map((x) => b + x).find((c) => FILES[c]);
+
+// ── who imports whom, and under WHAT LOCAL NAME ──────────────────────────
+//
+// ⚠⚠ THE FILENAME IS NOT THE RENDER NAME. The first resolver searched for
+// `<Basename` and returned no viewers when it found none — and the checker
+// then skipped the file IN SILENCE. `DeWorkbench.tsx` is default-exported and
+// rendered as `<DeWorkbenchPanel>`, so it went unexamined while the report
+// read clean. A whole sub-page slipped through a check I had just written to
+// stop exactly that.
+//
+// So follow the IMPORT, which carries the binding, rather than guessing from
+// the path. Handles `import D from`, `import { A, B as C } from`, and
+// `import D, { A } from`.
+const importsOf = {};    // file -> [{ from: <file>, names: [local names] }]
+for (const [f, src] of Object.entries(FILES)) {
+  const re = /import\s+(?:([A-Za-z0-9_]+)\s*,\s*)?(?:\{\s*([^}]*)\s*\}|([A-Za-z0-9_]+))\s+from\s+'(\.[^']+)'/g;
+  let m;
+  while ((m = re.exec(src)) !== null) {
+    const names = [];
+    if (m[1]) names.push(m[1]);
+    if (m[3]) names.push(m[3]);
+    if (m[2]) for (const part of m[2].split(',')) {
+      const t = part.trim(); if (!t) continue;
+      const as = t.split(/\s+as\s+/);
+      names.push((as[1] || as[0]).trim());          // the LOCAL binding, i.e. after `as`
+    }
+    const target = ext(path.posix.normalize(path.posix.join(path.posix.dirname(f), m[4])));
+    if (!target || !names.length) continue;
+    (importsOf[target] ||= []).push({ from: f, names });
+  }
+}
 /** Widest set of roles that can reach this file, following renders upward. */
 function viewersOf(file, depth = 0) {
   if (depth > 6) return [];
@@ -240,12 +283,18 @@ function viewersOf(file, depth = 0) {
     if (roles.length > own.length) own = roles;
   }
   if (own.length) return own;
-  const comp = path.basename(file).replace(/\.tsx?$/, '');
+  // ⚠ The app SHELL is every page at once. DEChatDock is rendered in App.tsx
+  // outside the page switch, so it appears on every screen a signed-in tenant
+  // user can reach — its viewers are ALL_TENANT, not "none". Resolving it to
+  // nothing skipped the global chat dock entirely.
+  if (file === 'src/App.tsx') return TIER.ALL_TENANT;
   let widest = [];
-  for (const [f2, b] of Object.entries(FILES)) {
-    if (f2 === file) continue;
-    if (!new RegExp(`<${comp}[\\s/>]`).test(b)) continue;
-    const up = viewersOf(f2, depth + 1);
+  for (const { from, names } of (importsOf[file] || [])) {
+    if (from === file) continue;
+    const body = FILES[from] || '';
+    // Rendered under ANY of the names this importer bound to the file.
+    if (!names.some((n) => new RegExp(`<${n}[\\s/>]`).test(body))) continue;
+    const up = viewersOf(from, depth + 1);
     if (up.length > widest.length) widest = up;
   }
   return widest;
@@ -267,7 +316,12 @@ function viewersOf(file, depth = 0) {
 // ⚠ Handler names collide — `save` is declared in six components here — so a
 // name-keyed map merges unrelated bodies and invents findings. Handlers are
 // therefore scoped to the component they are declared in.
-const COMPARED = { n: 0 };
+// Split the tally by area. "Components are covered" is a claim; "27 of 63
+// comparisons were in src/components" is a fact, and the difference matters
+// because a resolver that fails to find a component's render site returns no
+// viewers and the file is skipped WITHOUT SAYING SO.
+const SKIPPED = [];
+const COMPARED = { n: 0, pages: 0, components: 0, area: '' };
 function controlsMissingGate(src, wrapperMap) {
   const L = src.split(/\r?\n/);
   // ⚠⚠ DERIVE the gate names from this file rather than hard-coding them.
@@ -352,18 +406,32 @@ function controlsMissingGate(src, wrapperMap) {
   // the following line reads as absent.
   const out = [];
   for (let i = 0; i < src.length; i++) {
-    // ⚠ Only real HTML controls. `<SystemCard onChange={() => loadCfg(id)}/>`
-    // is a callback handed to a CHILD, not a control the user can press, and
-    // the child is examined on its own — counting it reported three refresh
-    // callbacks on Browser Operator as dead buttons.
-    if (src[i] !== '<' || !/[a-z]/.test(src[i + 1] || '')) continue;
+    if (src[i] !== '<' || !/[a-zA-Z]/.test(src[i + 1] || '')) continue;
     let d = 0, j = i + 1;
     for (; j < src.length; j++) {
       const c = src[j];
       if (c === '{') d++; else if (c === '}') d--; else if (c === '>' && d === 0) break;
     }
     const tag = src.slice(i, j + 1);
-    if (!/on[A-Z][a-zA-Z]+\s*=/.test(tag)) continue;
+    // ⚠⚠ WHICH TAGS ARE CONTROLS.
+    //
+    // A LOWERCASE tag is native HTML: any on* handler on it is the user acting
+    // — click, change, submit — so all of them count.
+    //
+    // A CAPITALISED tag is a component, and its on* props are two different
+    // things wearing one prefix. `<Button onClick={save}>` IS the control;
+    // `<SystemCard onChange={() => loadCfg(id)}>` is a REFRESH NOTIFICATION
+    // handed to a child that renders its own controls — and that child is
+    // examined on its own, so counting the parent reported three refresh
+    // callbacks on Browser Operator as dead buttons.
+    //
+    // I first "fixed" that by ignoring capitalised tags entirely. That threw
+    // away the design system: `Button` is how most of this codebase renders a
+    // control, so MissionPanel's gates could be deleted outright and the
+    // checker stayed silent. Restricting to onClick keeps the primitive and
+    // still drops the notification props.
+    const lower = /^[a-z]/.test(tag.slice(1));
+    if (!(lower ? /on[A-Z][a-zA-Z]+\s*=/ : /onClick\s*=/).test(tag)) continue;
     const line = src.slice(0, i).split('\n').length - 1;
     // Count the comparison BEFORE judging it. `0 findings from 0 comparisons`
     // is indistinguishable from a clean sweep, and both of my earlier
@@ -375,6 +443,7 @@ function controlsMissingGate(src, wrapperMap) {
       if (!new RegExp(`\\b${h.name}\\s*[(}]`).test(tag)) continue;
       for (const a of h.acts) {
         COMPARED.n++;
+        COMPARED[COMPARED.area]++;
         if (!guarded) out.push({ action: a, line: line + 1, via: h.name });
       }
     }
@@ -388,7 +457,8 @@ for (const [f, src] of Object.entries(FILES)) {
   if (GATE_RE.test(src) || gatedByProp.has(comp)) {
     // Partially gated: look at the controls rather than trusting the file.
     const viewers = viewersOf(f);
-    if (!viewers.length) continue;
+    if (!viewers.length) { SKIPPED.push(f); continue; }
+    COMPARED.area = f.startsWith('src/components/') ? 'components' : 'pages';
     for (const c of controlsMissingGate(src, wrappers)) {
       const allowed = needsGate.get(c.action) || [];
       const refused = viewers.filter((v) => !allowed.includes(v));
@@ -436,7 +506,13 @@ if (COMPARED.n < FLOOR) {
   process.exit(2);
 }
 console.log(`role-gated functions: ${rows.length}   (self-aware, subject always allowed: ${selfAware})`);
-console.log(`controls compared against their action's gate: ${COMPARED.n}`);
+console.log(`controls compared against their action's gate: ${COMPARED.n}   (pages ${COMPARED.pages}, components ${COMPARED.components})`);
+// ⚠ Name the files that were skipped. A component whose render site the
+// resolver cannot find is indistinguishable from one nobody renders, and
+// silence there is how a whole file goes unexamined while the report reads
+// clean. Nine components reach a gated action and all nine resolved a parent
+// on 2026-08-07 — if that list stops being empty, read it.
+if (SKIPPED.length) console.log(`files skipped, no render site resolved: ${SKIPPED.join(', ')}`);
 console.log(`UI call sites offering a gated action with no role check: ${findings.length}\n`);
 // Print what it needs and who it refuses. Without those two columns the
 // report says a control is wrong but not how to fix it, and the wrong hook

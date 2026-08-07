@@ -189,7 +189,7 @@ export function MissionRowView({ m, onChanged, onReview }: { m: MissionRow; onCh
               onClick={() => void act(() => setMissionState(m.id, m.status === 'paused' ? 'resume' : 'pause'))}>
               {m.status === 'paused' ? 'Resume' : 'Pause'}
             </Button>
-            <Button kind="danger" size="sm" disabled={busy} onClick={() => void act(() => setMissionState(m.id, 'cancel'))}>Cancel</Button>
+            <Button kind="danger" size="sm" disabled={busy || !isTenantManager} onClick={() => void act(() => setMissionState(m.id, 'cancel'))}>Cancel</Button>
           </>
         )}
       </div>
@@ -243,6 +243,12 @@ const MISSION_TEMPLATES: Array<{ key: string; label: string; directive: string }
 ];
 
 export default function MissionPanel({ de }: { de: DigitalEmployee }) {
+  // create_de_mission is owner/admin/manager; this panel sits on the Employee
+  // File, which is ALL_TENANT. MissionRowView above already gates Compile and
+  // Pause/Resume — this is the same gate for the control that STARTS a
+  // mission, which was missed because the design-system <Button> was invisible
+  // to the audit script until today.
+  const canGiveMission = useIsTenantManager();
   const [directive, setDirective] = useState('');
   const [missions, setMissions] = useState<MissionRow[] | null>(null);
   const [notReady, setNotReady] = useState(false);
@@ -283,7 +289,7 @@ export default function MissionPanel({ de }: { de: DigitalEmployee }) {
             <textarea rows={2} value={directive} onChange={e => setDirective(e.target.value)}
               placeholder={`e.g. "Run renewals for every account with an agreement ending this quarter"`}
               className={`${INPUT_CLS} resize-none flex-1`} />
-            <Button kind="primary" disabled={busy || !directive.trim()} onClick={() => void give()}>
+            <Button kind="primary" disabled={busy || !canGiveMission || !directive.trim()} onClick={() => void give()}>
               {busy ? 'Working…' : 'Compile mission plan'}
             </Button>
           </div>

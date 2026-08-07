@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { PageHeader, th, td } from '../../../components/ui';
 import type { Page } from '../../../types';
 import { CustomerApiError } from '../../../lib/customerApi';
+import { useIsTenantManager } from '../../../lib/useRoleGate';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
 import {
   listConnectors, connectorHealth, hubSync, PROVIDERS, setConnectorSchedule,
@@ -26,6 +27,17 @@ const HEALTH_META: Record<string, { label: string; dot: string; text: string }> 
 };
 
 function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
+  // ⚠ THIS PAGE IS `KNOWLEDGE` TIER, WHOSE WHOLE POINT IS THE KNOWLEDGE
+  // SPECIALIST — navAccess says so in as many words: "Manage tier plus the
+  // knowledge specialist — curating knowledge is their job." But
+  // set_connector_schedule is owner/admin/manager, so it refuses exactly the
+  // role the tier was widened for.
+  //
+  // Disabled rather than hidden, with the reason stated: this is a
+  // contradiction between the page tier and the server gate, and hiding the
+  // control would hide the contradiction too. Whether the knowledge specialist
+  // should hold this is a permissions decision, not a UI one.
+  const canSchedule = useIsTenantManager();
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [docs, setDocs] = useState<KnowledgeDoc[]>([]);
   const [chunkStatus, setChunkStatus] = useState<Record<string, { chunks: number; embedded: number }>>({});
@@ -252,8 +264,11 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
                               </button>
                               <button
                                 onClick={() => void toggleSchedule(c)}
-                                title={c.scheduled_sync_enabled ? 'Auto-sync is on (daily). Click to turn off.' : 'Turn on daily auto-sync for this source.'}
-                                className={`text-[11px] px-2 py-1 rounded-lg border transition-colors ${c.scheduled_sync_enabled ? 'border-emerald-500/50 text-emerald-300' : 'border-dt-border-strong text-dt-muted hover:border-indigo-500'}`}>
+                                disabled={!canSchedule}
+                                title={!canSchedule
+                                  ? 'Turning auto-sync on or off is done by a workspace owner, admin or manager.'
+                                  : c.scheduled_sync_enabled ? 'Auto-sync is on (daily). Click to turn off.' : 'Turn on daily auto-sync for this source.'}
+                                className={`text-[11px] px-2 py-1 rounded-lg border transition-colors disabled:opacity-50 disabled:hover:border-dt-border-strong ${c.scheduled_sync_enabled ? 'border-emerald-500/50 text-emerald-300' : 'border-dt-border-strong text-dt-muted hover:border-indigo-500'}`}>
                                 {c.scheduled_sync_enabled ? 'Auto-sync ✓' : 'Auto-sync'}
                               </button>
                             </div>

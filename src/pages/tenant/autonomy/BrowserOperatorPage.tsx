@@ -208,6 +208,11 @@ function TaskCard({ t, onOpen }: { t: BrowserTaskRow; onOpen: () => void }) {
 
 // ── launch form ──
 function NewTaskModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  // Redundant TODAY — the only way here is the "+ New task" button, which is
+  // already behind canOperate. Stated here anyway because propose_browser_task
+  // is owner/admin/manager and this modal should not depend on remembering
+  // where it was opened from.
+  const canOperate = useCanOperate();
   const [des, setDes] = useState<DeLite[]>([]);
   const [deId, setDeId] = useState('');
   const [goal, setGoal] = useState('');
@@ -286,7 +291,7 @@ function NewTaskModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
           <p className="text-xs text-dt-muted">This creates an approval request — nothing runs until you approve it.</p>
           <div className="flex gap-2">
             <Button kind="ghost" onClick={onClose}>Cancel</Button>
-            <Button kind="primary" disabled={!valid || busy} onClick={submit}>{busy ? 'Creating…' : 'Create task'}</Button>
+            <Button kind="primary" disabled={!valid || busy || !canOperate} onClick={submit}>{busy ? 'Creating…' : 'Create task'}</Button>
           </div>
         </div>
       </div>
@@ -498,6 +503,11 @@ function SystemCard({ deId, s, connectors, onChange }: { deId: string; s: Operat
 }
 
 function LoginForm({ systemId, onDone, onCancel }: { systemId: string; onDone: () => void; onCancel: () => void }) {
+  // ⚠ This form asks for a PASSWORD. A read_only account once reached it and
+  // could type a credential that would never save. It is behind
+  // canManageCredentials at the render site now, and behind it here too —
+  // for a control that collects a secret, one gate is not enough insurance.
+  const canManageCredentials = useCanManageCredentials();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -519,7 +529,7 @@ function LoginForm({ systemId, onDone, onCancel }: { systemId: string; onDone: (
       </div>
       {err && <p className="text-[11px] text-dt-danger mt-2">{err}</p>}
       <div className="flex gap-2 mt-2">
-        <Button kind="primary" size="sm" disabled={busy} onClick={save}>Save login</Button>
+        <Button kind="primary" size="sm" disabled={busy || !canManageCredentials} onClick={save}>Save login</Button>
         <Button kind="ghost" size="sm" onClick={onCancel}>Cancel</Button>
       </div>
     </div>
@@ -527,6 +537,9 @@ function LoginForm({ systemId, onDone, onCancel }: { systemId: string; onDone: (
 }
 
 function AddBindingForm({ deId, connectors, onCancel, onDone }: { deId: string; connectors: DeOperateConfig['connectors']; onCancel: () => void; onDone: () => void }) {
+  // upsert_de_operate_binding is owner/admin. Reachable only from inside the
+  // config drawer, which is already gated — same reasoning as above.
+  const canManageCredentials = useCanManageCredentials();
   const [systemKey, setSystemKey] = useState('');
   const [label, setLabel] = useState('');
   const [domain, setDomain] = useState('');
@@ -566,7 +579,7 @@ function AddBindingForm({ deId, connectors, onCancel, onDone }: { deId: string; 
       </div>
       {err && <p className="text-[11px] text-dt-danger mt-2">{err}</p>}
       <div className="flex gap-2 mt-3">
-        <Button kind="primary" size="sm" disabled={!valid || busy} onClick={submit}>{busy ? 'Adding…' : 'Add app'}</Button>
+        <Button kind="primary" size="sm" disabled={!valid || busy || !canManageCredentials} onClick={submit}>{busy ? 'Adding…' : 'Add app'}</Button>
         <Button kind="ghost" size="sm" onClick={onCancel}>Cancel</Button>
       </div>
     </div>
