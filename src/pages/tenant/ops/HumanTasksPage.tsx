@@ -14,7 +14,7 @@ import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../
 // Design system is law (docs/design-system.md): the blocked-work panel uses
 // Chip and INPUT_CLS rather than another hand-rolled badge/input, which the
 // drift detector counts and fails on.
-import { Chip, INPUT_CLS, TabBar } from '../../../design/primitives';
+import { Chip, INPUT_CLS, TabBar, Button, DecisionCard } from '../../../design/primitives';
 import { listDigitalEmployees } from '../../../lib/digitalEmployeesApi';
 import { listAssignablePeople } from '../../../lib/orgApi';
 
@@ -730,48 +730,49 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                   )}
                 </div>
               )}
+              {/* ── One decision per card (handoff 08) ──────────────────
+                  Was a four-column grid whose first column was a 9px all-caps
+                  type badge and whose detail ran at 10px — the two smallest
+                  things on the page carrying the two most important facts.
+
+                  ⚠ THE CARD DOES NOT DECIDE. Approving and rejecting live in
+                  the detail panel beside it, because rejecting REQUIRES a
+                  reason and that flow already exists there, complete with the
+                  real reasonCode list. Duplicating a decision path to get an
+                  inline button is how the two disagree later. The card's job
+                  is to make the queue readable and open the right one. */}
               {visible.map(task => {
                 const stale = staleness.get(task.id);
+                const assignee = task.assigned_user_id
+                  ? (peopleById.get(task.assigned_user_id) ?? 'Unnamed user') + (task.assigned_role ? ` · ${task.assigned_role}` : '')
+                  : task.status === 'pending' ? "nobody's job yet" : null;
                 return (
-                <button
-                  key={task.id}
-                  onClick={() => setSelectedId(task.id)}
-                  className={`w-full text-left grid grid-cols-[100px_1fr_70px_80px] gap-2 items-center px-3 py-2.5 rounded-xl border transition-colors ${
-                    selectedId === task.id ? 'border-indigo-500/50 bg-dt-panel/60'
-                    : stale ? (stale.tier === 'breach' ? 'border-red-500/30 bg-red-500/5 hover:bg-red-500/10' : 'border-orange-500/25 bg-orange-500/5 hover:bg-orange-500/10')
-                    : task.status !== 'pending' ? 'border-dt-border bg-dt-card opacity-70 hover:opacity-100'
-                    : 'border-dt-border bg-dt-card hover:bg-dt-panel'
-                  }`}
-                >
-                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded w-fit ${taskBadgeStyle(task.type)}`}>
-                    {taskBadgeLabel(task.type)}
-                  </span>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="text-xs text-dt-body truncate">{task.title}</span>
-                      {stale && stalledBadge(stale.tier)}
-                    </div>
-                    {task.detail && <span className="text-[10px] text-dt-muted">{task.detail}</span>}
-                    {/* Whose job this is. The column has existed for months and
-                        was never written to, so the queue read as one shared
-                        pile in which no single item was anybody's problem. */}
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      {task.assigned_user_id ? (
-                        <span className="text-[10px] text-dt-support">
-                          {peopleById.get(task.assigned_user_id) ?? 'Unnamed user'}
-                          {task.assigned_role && <span className="text-dt-muted"> · {task.assigned_role}</span>}
-                        </span>
-                      ) : task.status === 'pending' && (
-                        <span className="text-[10px] text-dt-warn">Nobody's job yet</span>
-                      )}
-                      {task.first_approver_id && (
-                        <Chip tone="info">1 OF 2 APPROVED</Chip>
-                      )}
-                    </div>
+                  <div
+                    key={task.id}
+                    className={`rounded-xl transition-shadow ${selectedId === task.id ? 'ring-2 ring-dt-accent' : ''} ${task.status !== 'pending' ? 'opacity-70 hover:opacity-100' : ''}`}
+                  >
+                    <DecisionCard
+                      tone={stale ? (stale.tier === 'breach' ? 'danger' : 'warn') : task.status !== 'pending' ? 'neutral' : 'warn'}
+                      title={task.title}
+                      stale={stale ? (stale.tier === 'breach' ? 'Nothing has happened in too long' : 'Gone quiet') : undefined}
+                      detail={task.detail ? <span className="line-clamp-2">{task.detail}</span> : undefined}
+                      /* "Waiting 2 hours · Marcus · renewal invoice" — how long,
+                         whose job, and which kind, in one readable line instead
+                         of a badge column and two 10px rows. */
+                      meta={[`Waiting ${taskAge(task.created_at)}`, assignee, taskBadgeLabel(task.type).toLowerCase()]
+                        .filter(Boolean).join(' · ')}
+                      actions={
+                        <>
+                          <Button kind={task.status === 'pending' ? 'primary' : 'secondary'} size="sm"
+                            onClick={() => setSelectedId(task.id)}>
+                            {task.status === 'pending' ? 'Decide this' : 'Open it'}
+                          </Button>
+                          {task.status !== 'pending' && statusBadge(task.status as TaskStatus)}
+                          {task.first_approver_id && <Chip tone="info">One of two approved</Chip>}
+                        </>
+                      }
+                    />
                   </div>
-                  <span className="text-xs text-dt-muted">{taskAge(task.created_at)}</span>
-                  <span className="justify-self-end">{statusBadge(task.status as TaskStatus)}</span>
-                </button>
                 );
               })}
             </div>
