@@ -687,13 +687,33 @@ const SettingsPage = ({
           </div>
 
           <div className="bg-dt-card border border-dt-border rounded-xl p-5">
+            {/* ⚠ THIS WAS WRITTEN FOR THE PLATFORM OPERATOR AND SHOWN TO
+                CUSTOMERS. It said "you pay the provider" (only true in byo),
+                "a budget you set" (false in platform mode as of mig 632 — the
+                server now refuses that write), and "charge clients per token at
+                your own margin", which is reseller guidance addressed to us,
+                rendered on a customer's settings page.
+
+                Now it answers the question a tenant is actually asking: who is
+                billed for MY workspace, and what happens when it runs out. It
+                follows keyMode, so it cannot drift from what the server
+                enforces. */}
             <h2 className="text-sm font-semibold text-white mb-1">How billing works</h2>
-            <div className="space-y-2 text-xs text-dt-support mt-3">
-              <div className="flex gap-3"><span className="text-dt-faint w-4">1</span><span>You pay the provider that served the answer — Anthropic directly, or AWS when the Bedrock fallback steps in (same per-token list prices).</span></div>
-              <div className="flex gap-3"><span className="text-dt-faint w-4">2</span><span>Each tenant has a monthly token budget you set — DEs stop responding when the budget is hit.</span></div>
-              <div className="flex gap-3"><span className="text-dt-faint w-4">3</span><span>Haiku costs ~$0.25/M input tokens and ~$1.25/M output tokens — a 500-token query costs ~$0.001.</span></div>
-              <div className="flex gap-3"><span className="text-dt-faint w-4">4</span><span>You can price AI usage into your service fee or charge clients per token at your own margin.</span></div>
-            </div>
+            {keyMode === 'byo' ? (
+              <div className="space-y-2 text-xs text-dt-support mt-3">
+                <div className="flex gap-3"><span className="text-dt-faint w-4">1</span><span>This workspace uses its <strong className="text-dt-body">own provider keys</strong>, so the provider bills you directly — Anthropic, or AWS when the Bedrock fallback serves the answer.</span></div>
+                <div className="flex gap-3"><span className="text-dt-faint w-4">2</span><span>Because it is your account, <strong className="text-dt-body">you set your own monthly token budget</strong> on the Usage &amp; Budgets tab. Digital Employees pause when it is reached, and it resets on the 1st.</span></div>
+                <div className="flex gap-3"><span className="text-dt-faint w-4">3</span><span>Roughly, a 500-token query costs about $0.001 at current Haiku list prices (~$0.25 per million input tokens, ~$1.25 per million output).</span></div>
+                <div className="flex gap-3"><span className="text-dt-faint w-4">4</span><span>If a key is missing or rejected, work <strong className="text-dt-body">stops with a clear message</strong> rather than silently running on someone else's account.</span></div>
+              </div>
+            ) : (
+              <div className="space-y-2 text-xs text-dt-support mt-3">
+                <div className="flex gap-3"><span className="text-dt-faint w-4">1</span><span><strong className="text-dt-body">DreamTeam AI pays the provider</strong> for this workspace's answers and bills you as part of your plan — there is no separate provider account for you to manage.</span></div>
+                <div className="flex gap-3"><span className="text-dt-faint w-4">2</span><span>Your plan includes a <strong className="text-dt-body">monthly token budget</strong>. Digital Employees pause when it is reached, and it resets on the 1st of each month. You can watch it on the Usage &amp; Budgets tab.</span></div>
+                <div className="flex gap-3"><span className="text-dt-faint w-4">3</span><span>The budget is set with your plan, so it is not editable here. If you are hitting it often, contact DreamTeam AI and we will raise it.</span></div>
+                <div className="flex gap-3"><span className="text-dt-faint w-4">4</span><span>Prefer to be billed by the provider directly? Add your own keys above and ask us to switch this workspace to its own account — then the budget becomes yours to set too.</span></div>
+              </div>
+            )}
           </div>
         </div>
       )}
