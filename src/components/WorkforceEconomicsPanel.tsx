@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useIsTenantAdmin } from '../lib/useRoleGate';
 import { StatTile } from '../design/primitives';
 import { getWorkforceEconomics, setWorkforceFteCost, type WorkforceEconomics } from '../lib/employeeRecordApi';
 
@@ -12,6 +13,8 @@ import { getWorkforceEconomics, setWorkforceFteCost, type WorkforceEconomics } f
 const money = (n: number) => n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$${n.toFixed(n < 10 ? 2 : 0)}`;
 
 export default function WorkforceEconomicsPanel({ tenantId }: { tenantId: string }) {
+  // set_workforce_baselines is owner/admin; this panel reaches the ALL_TENANT outcomes hub.
+  const isTenantAdmin = useIsTenantAdmin();
   const [econ, setEcon] = useState<WorkforceEconomics | null>(null);
   const [hidden, setHidden] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -69,7 +72,7 @@ export default function WorkforceEconomicsPanel({ tenantId }: { tenantId: string
                 className="w-28 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-2.5 py-1.5 text-dt-title placeholder-dt-faint focus:outline-none focus:border-dt-accent" />
               <span className="text-dt-muted text-xs">/ month</span>
             </div>
-            <button disabled={saving} onClick={save} className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent hover:brightness-110 text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save baseline'}</button>
+            <button disabled={saving || !isTenantAdmin} onClick={save} className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent hover:brightness-110 text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save baseline'}</button>
             {editing && <button onClick={() => setEditing(false)} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support">Cancel</button>}
             {err && <span className="text-xs text-rose-400">{err}</span>}
           </div>

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useIsTenantManager } from '../lib/useRoleGate';
 import {
   listTeamMissions, createTeamMission, compileMission, listArchetypeTargets,
   type MissionRow, type MissionTargetSpec,
@@ -15,6 +16,8 @@ const humanizeArchetype = (k: string) =>
   k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
 export default function TeamMissionPanel() {
+  // create_de_team_mission is owner/admin/manager; this panel reaches the ALL_TENANT outcomes hub.
+  const isTenantManager = useIsTenantManager();
   const [directive, setDirective] = useState('');
   const [archetypes, setArchetypes] = useState<{ archetype_key: string; count: number }[]>([]);
   const [target, setTarget] = useState<string>('');
@@ -66,7 +69,7 @@ export default function TeamMissionPanel() {
         <textarea rows={2} value={directive} onChange={e => setDirective(e.target.value)}
           placeholder={`e.g. "Chase every account with a renewal closing this quarter"`}
           className={`${INPUT_CLS} resize-none flex-1 min-w-[16rem]`} />
-        <Button kind="primary" disabled={busy || !directive.trim() || !target} onClick={() => void give()}>
+        <Button kind="primary" disabled={busy || !isTenantManager || !directive.trim() || !target} onClick={() => void give()}>
           {busy ? 'Working…' : 'Compile team plan'}
         </Button>
       </div>

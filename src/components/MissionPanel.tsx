@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useIsTenantManager } from '../lib/useRoleGate';
 import type { DigitalEmployee } from '../lib/digitalEmployeesApi';
 import {
   listMissions, createMission, compileMission, approveMission, setMissionState, missionProgress,
@@ -150,6 +151,8 @@ export function PlanDrawer({ mission, onClose, onApproved }: {
 }
 
 export function MissionRowView({ m, onChanged, onReview }: { m: MissionRow; onChanged: () => void; onReview: (m: MissionRow) => void }) {
+  // set_de_mission_state is owner/admin/manager; the Employee File is ALL_TENANT.
+  const isTenantManager = useIsTenantManager();
   const [progress, setProgress] = useState<MissionProgress | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -175,14 +178,14 @@ export function MissionRowView({ m, onChanged, onReview }: { m: MissionRow; onCh
         <p className="text-sm text-dt-body flex-1 min-w-[12rem] truncate">{m.directive_text}</p>
         {m.status === 'awaiting_approval' && <Button kind="primary" size="sm" onClick={() => onReview(m)}>Review plan</Button>}
         {['draft', 'failed'].includes(m.status) && (
-          <Button kind="secondary" size="sm" disabled={busy} onClick={() => void act(async () => {
+          <Button kind="secondary" size="sm" disabled={busy || !isTenantManager} onClick={() => void act(async () => {
             const r = await compileMission(m.id);
             if (!r.ok) throw new Error(r.impossible ? `The employee says it can't: ${r.impossible}` : (r.error ?? 'Compile failed.'));
           })}>{busy ? 'Compiling…' : 'Compile plan'}</Button>
         )}
         {['running', 'paused'].includes(m.status) && (
           <>
-            <Button kind="ghost" size="sm" disabled={busy}
+            <Button kind="ghost" size="sm" disabled={busy || !isTenantManager}
               onClick={() => void act(() => setMissionState(m.id, m.status === 'paused' ? 'resume' : 'pause'))}>
               {m.status === 'paused' ? 'Resume' : 'Pause'}
             </Button>

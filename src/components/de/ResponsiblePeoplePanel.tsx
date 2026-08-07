@@ -35,6 +35,7 @@
  * state says so plainly rather than showing a tidy "—".
  */
 import React, { useCallback, useEffect, useState } from 'react';
+import { useIsTenantManager } from '../../lib/useRoleGate';
 import { supabase } from '../../supabase';
 import { useAuth } from '../../context/AuthContext';
 
@@ -50,6 +51,8 @@ type Assignment = { id: string; user_id: string; relation: Relation; full_name: 
 type Member = { user_id: string; full_name: string | null; email: string | null };
 
 export default function ResponsiblePeoplePanel({ deId, deName }: { deId: string; deName?: string }) {
+  // set_de_assignment / remove_de_assignment are owner/admin/manager; the Employee File is ALL_TENANT.
+  const isTenantManager = useIsTenantManager();
   const { currentTenant } = useAuth();
   const [rows, setRows] = useState<Assignment[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
@@ -145,7 +148,7 @@ export default function ResponsiblePeoplePanel({ deId, deName }: { deId: string;
                       {r.full_name || r.email || 'Unnamed person'}
                       <button
                         onClick={() => unassign(r.id)}
-                        disabled={busy === r.id}
+                        disabled={busy === r.id || !isTenantManager}
                         title={`Remove as ${rel.label.toLowerCase()}`}
                         className="text-dt-muted hover:text-red-400 disabled:opacity-40"
                       >×</button>
@@ -158,7 +161,7 @@ export default function ResponsiblePeoplePanel({ deId, deName }: { deId: string;
 
                 <select
                   value=""
-                  disabled={busy === rel.key || unassignedMembers.length === 0}
+                  disabled={busy === rel.key || !isTenantManager || unassignedMembers.length === 0}
                   onChange={e => assign(e.target.value, rel.key)}
                   className="mt-2 text-xs bg-dt-inset border border-dt-border rounded-lg px-2 py-1.5 text-dt-body disabled:opacity-40"
                 >

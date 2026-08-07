@@ -6,6 +6,7 @@
 // lifecycle gates as far as they honestly allow. No governance is
 // bypassed — the gates just speak plain language now.
 import { useState, useEffect } from 'react';
+import { useIsTenantAdmin } from '../lib/useRoleGate';
 import { Modal } from '../design/primitives';
 import {
   draftNewHire, saveExamAsGolden, teachNewHire, runRehearsal,
@@ -27,6 +28,8 @@ const EXAMPLES = [
 ];
 
 export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: () => void; onFinished: () => void }) {
+  // Hiring calls create_digital_employee / advance_de_lifecycle / install_role_systems — all owner/admin. The workforce pages that open this wizard are ALL_TENANT.
+  const isTenantAdmin = useIsTenantAdmin();
   const [step, setStep] = useState<Step>('brief');
   const [commsCopied, setCommsCopied] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -198,7 +201,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                   </button>
                 ))}
               </div>
-              <button onClick={doDraft} disabled={busy}
+              <button onClick={doDraft} disabled={busy || !isTenantAdmin}
                 className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium disabled:opacity-60 transition-colors">
                 {busy ? phase || 'Working…' : 'Draft my new employee'}
               </button>
@@ -236,7 +239,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                           <input value={roleDeName} onChange={(e) => setRoleDeName(e.target.value)}
                             className="mt-1 w-full bg-dt-card border border-dt-border rounded-lg px-3 py-2 text-xs text-dt-body focus:border-indigo-500 focus:outline-none" />
                         </label>
-                        <button onClick={doArchetypeHire} disabled={busy}
+                        <button onClick={doArchetypeHire} disabled={busy || !isTenantAdmin}
                           className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium disabled:opacity-60 transition-colors">
                           {busy ? phase || 'Hiring…' : `Hire ${roleDeName.trim() || selectedRole.name}`}
                         </button>
