@@ -57,6 +57,38 @@ import { listAuditEvents } from '../../lib/guardrailApi';
 import type { AuditEvent } from '../../lib/guardrailApi';
 import { listDocScopes } from '../../lib/knowledgeApi';
 
+// ════════════════════════════════════════════════════════════
+// ⚠ WHO MAY CHANGE AN EMPLOYEE.
+//
+// This page is ALL_TENANT in navAccess — a tenant_user can open any employee's
+// file. But every set_de_* / lifecycle / team RPC below is owner/admin-gated in
+// the DATABASE, so a tenant_user could fill in Identity, Voice, KPIs or hit
+// Pause and get an error back. Nineteen controls across ten panels behaved that
+// way; DEActionDials was the only one that took a permission prop.
+//
+// The database was never wrong — it refused correctly. The UI was offering
+// controls it knew would fail, which is precisely what navAccess's own header
+// says default-deny exists to stop.
+//
+// One hook, matching the server's gate exactly. Panels use it to disable their
+// MUTATING controls only — navigation, refresh and read-only views stay live,
+// because a viewer who cannot edit can still legitimately look.
+// ════════════════════════════════════════════════════════════
+export function useCanManageDe(): boolean {
+  const { authedUser, isDTUser } = useAuth();
+  return isDTUser || ['tenant_owner', 'tenant_admin'].includes(authedUser?.role ?? '');
+}
+
+/** One line, same wording everywhere, so "you cannot edit this" never reads as
+ *  a bug. Rendered by a panel when the viewer may look but not change. */
+export function ReadOnlyNote({ what }: { what: string }) {
+  return (
+    <p className="text-[11px] text-dt-muted mb-2">
+      You can see {what} here, but changing it needs an owner or admin.
+    </p>
+  );
+}
+
 // ============================================================
 // Workforce — LIVE mode (R5): the first live DE-profile surface.
 // One real DE (Alex — Customer Support DE) + the Trust dial panel:
@@ -331,6 +363,7 @@ const INCIDENT_KIND_LABELS: Record<string, string> = {
 // Exported: rendered on the Employee File's Record tab (docs/31 — incidents
 // are the disciplinary half of the employment record, not a governance rule).
 export function DeIncidentsPanel({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => void }) {
+  const canManage = useCanManageDe();
   const [incidents, setIncidents] = useState<DEIncident[] | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [note, setNote] = useState('');
@@ -415,12 +448,12 @@ export function DeIncidentsPanel({ de, setPage }: { de: DigitalEmployee; setPage
                       />
                       <div className="flex gap-2">
                         {inc.status === 'open' && (
-                          <button onClick={() => void review(inc.id, 'reviewed')} disabled={busy}
+                          <button onClick={() => void review(inc.id, 'reviewed')} disabled={busy || !canManage}
                             className="px-2.5 py-1 rounded-lg bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 hover:bg-indigo-600/50 disabled:opacity-50">
                             Mark reviewed
                           </button>
                         )}
-                        <button onClick={() => void review(inc.id, 'closed')} disabled={busy}
+                        <button onClick={() => void review(inc.id, 'closed')} disabled={busy || !canManage}
                           className="px-2.5 py-1 rounded-lg bg-dt-panel border border-dt-border-strong text-dt-support hover:bg-dt-panel disabled:opacity-50">
                           Close incident
                         </button>
@@ -460,6 +493,7 @@ const SKILL_CATEGORY_LABEL: Record<string, string> = {
 };
 const PROFICIENCY_NAME = ['', 'Foundational', 'Developing', 'Proficient', 'Advanced', 'Expert'];
 export function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
+  const canManage = useCanManageDe();
   const [skills, setSkills] = useState<SkillRow[] | null>(null);
   const [assessing, setAssessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -536,7 +570,7 @@ export function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
           className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white">
           + Add a skill your business cares about
         </button>
-        <button onClick={() => void assess()} disabled={assessing}
+        <button onClick={() => void assess()} disabled={assessing || !canManage}
           className="text-xs px-3 py-1.5 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body disabled:opacity-50">
           {assessing ? 'Assessing…' : 'Assess now'}
         </button>
@@ -590,7 +624,7 @@ export function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
                   <div className="flex items-center gap-1.5 mt-2">
                     <span className="text-[10px] text-dt-faint mr-1">Rate:</span>
                     {[1, 2, 3, 4, 5].map(l => (
-                      <button key={l} disabled={saving}
+                      <button key={l} disabled={saving || !canManage}
                         onClick={() => void rateSkill(s.skill_key, l)}
                         className={`text-[10px] w-6 h-6 rounded border transition-colors ${
                           s.proficiency === l
@@ -600,7 +634,7 @@ export function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
                       </button>
                     ))}
                     {s.proficiency != null && (
-                      <button onClick={() => void rateSkill(s.skill_key, null)} disabled={saving}
+                      <button onClick={() => void rateSkill(s.skill_key, null)} disabled={saving || !canManage}
                         className="text-[10px] text-dt-faint hover:text-rose-300 ml-1">Clear</button>
                     )}
                   </div>
@@ -628,7 +662,7 @@ export function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
             </select>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => void addSkill()} disabled={saving || !newName.trim()}
+            <button onClick={() => void addSkill()} disabled={saving || !canManage || !newName.trim()}
               className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
               {saving ? 'Adding…' : 'Add skill'}
             </button>
@@ -658,6 +692,7 @@ type ReviewRow = {
   metrics_snapshot: { skills?: ReviewSkillSnap[] } | null;
 };
 export function DeReviewsPanel({ de }: { de: DigitalEmployee }) {
+  const canManage = useCanManageDe();
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -692,7 +727,7 @@ export function DeReviewsPanel({ de }: { de: DigitalEmployee }) {
       {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
 
       <div className="flex items-center gap-2 mb-1.5">
-        <button onClick={() => void run(() => supabase.rpc('run_de_performance_review'))} disabled={busy}
+        <button onClick={() => void run(() => supabase.rpc('run_de_performance_review'))} disabled={busy || !canManage}
           className="ml-auto text-[10px] text-indigo-400 hover:text-indigo-300 disabled:opacity-50">
           {busy ? 'Working…' : 'Run review now'}
         </button>
@@ -713,7 +748,7 @@ export function DeReviewsPanel({ de }: { de: DigitalEmployee }) {
                 <span className="text-[11px] text-dt-muted">quarter starting {r.period_start}</span>
                 {r.status === 'open' ? (
                   <button onClick={() => void run(() => supabase.rpc('acknowledge_de_performance_review', { p_review_id: r.id }))}
-                    disabled={busy}
+                    disabled={busy || !canManage}
                     className="ml-auto text-[10px] text-indigo-400 hover:text-indigo-300">
                     Acknowledge
                   </button>
@@ -1554,6 +1589,7 @@ function DeSystemAccessPanel({ deId, setPage }: { deId: string; setPage: (p: Pag
 // this says how it sounds. Facts are untouched either way — every factual claim
 // still comes from the knowledge documents, which is what certification grades.
 function DeVoicePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: DigitalEmployee) => void }) {
+  const canManage = useCanManageDe();
   const [voice, setVoice] = useState((de as { voice?: string | null }).voice ?? '');
   const [turns, setTurns] = useState(String((de as { context_turns?: number }).context_turns ?? 8));
   const [busy, setBusy] = useState(false);
@@ -1599,10 +1635,12 @@ function DeVoicePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: D
         </label>
       </div>
       <div className="mt-3 flex items-center gap-3">
-        <button onClick={() => void save()} disabled={busy}
+        {/* set_de_voice is owner/admin-gated in the database. */}
+        <button onClick={() => void save()} disabled={busy || !canManage}
           className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
           {busy ? 'Saving…' : 'Save voice'}
         </button>
+        {!canManage && <span className="text-[11px] text-dt-muted">Changing this needs an owner or admin.</span>}
         {saved && <span className="text-xs text-emerald-400">Saved — takes effect on the next answer</span>}
       </div>
     </div>
@@ -1614,6 +1652,7 @@ function DeVoicePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: D
 // system prompt of every answer this employee gives (dePersona), and
 // responsibilities are a lifecycle identity criterion (126).
 function DeIdentityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: DigitalEmployee) => void }) {
+  const canManage = useCanManageDe();
   const [title, setTitle] = useState(de.display_title ?? '');
   const [purpose, setPurpose] = useState(de.purpose_statement ?? '');
   const [outcome, setOutcome] = useState(de.primary_business_outcome ?? '');
@@ -1683,10 +1722,12 @@ function DeIdentityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d
         </div>
       </div>
       <div className="mt-3 flex items-center gap-3">
-        <button onClick={() => void save()} disabled={busy}
+        {/* set_de_identity is owner/admin-gated in the database. */}
+        <button onClick={() => void save()} disabled={busy || !canManage}
           className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
           {busy ? 'Saving…' : 'Save identity'}
         </button>
+        {!canManage && <span className="text-[11px] text-dt-muted">Changing this needs an owner or admin.</span>}
         {saved && <span className="text-xs text-emerald-400">Saved — takes effect on the next answer</span>}
       </div>
     </div>
@@ -1699,6 +1740,7 @@ function DeIdentityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d
 type Availability = { mode: string; timezone?: string; start_hour?: number; end_hour?: number; days?: number[] };
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 function DeAvailabilityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: DigitalEmployee) => void }) {
+  const canManage = useCanManageDe();
   const avail = (de.availability ?? { mode: 'always_on' }) as Availability;
   const [mode, setMode] = useState(avail.mode ?? 'always_on');
   const [tz, setTz] = useState(avail.timezone ?? 'UTC');
@@ -1752,10 +1794,12 @@ function DeAvailabilityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated
               className="w-16 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500" />
           </>
         )}
-        <button onClick={() => void save()} disabled={busy}
+        {/* set_de_availability is owner/admin-gated in the database. */}
+        <button onClick={() => void save()} disabled={busy || !canManage}
           className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
           {busy ? 'Saving…' : 'Save'}
         </button>
+        {!canManage && <span className="text-[11px] text-dt-muted">Changing this needs an owner or admin.</span>}
         {saved && <span className="text-xs text-emerald-400">Saved</span>}
       </div>
       {mode === 'business_hours' && (
@@ -2056,6 +2100,7 @@ type KpiStatus = {
 // could not track anything the platform had not thought of. It now comes from
 // kpi_metric_catalog (migration 205) via list_kpi_metrics().
 export function DeKpisPanel({ de }: { de: DigitalEmployee }) {
+  const canManage = useCanManageDe();
   const [kpis, setKpis] = useState<KpiStatus[] | null>(null);
   // The metric list is now this workspace's catalog (built-ins + its own),
   // not a constant compiled into the page.
@@ -2184,13 +2229,13 @@ export function DeKpisPanel({ de }: { de: DigitalEmployee }) {
                   this they would sit at "—" forever and look broken. */}
               {metric?.source === 'manual' && (
                 <button onClick={() => { setReading({ key: k.metric_key, name: k.name }); setReadingValue(''); }}
-                  disabled={busy}
+                  disabled={busy || !canManage}
                   className="text-[10px] text-indigo-400 hover:text-indigo-300">
                   Record value
                 </button>
               )}
               <button onClick={() => void run(() => supabase.rpc('set_de_kpi', { p_de_id: de.id, p_metric_key: k.metric_key, p_name: k.name, p_target: null, p_direction: k.direction }))}
-                disabled={busy}
+                disabled={busy || !canManage}
                 className="ml-auto text-[10px] text-dt-faint hover:text-rose-300">
                 Remove
               </button>
@@ -2232,7 +2277,7 @@ export function DeKpisPanel({ de }: { de: DigitalEmployee }) {
             ];
           })()}
         </select>
-        <input type="number" value={target} disabled={busy} onChange={e => setTarget(e.target.value)} placeholder="Target"
+        <input type="number" value={target} disabled={busy || !canManage} onChange={e => setTarget(e.target.value)} placeholder="Target"
           className="w-24 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
         <button onClick={add} disabled={busy || target.trim() === '' || !selected}
           className="text-xs px-3 py-1.5 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body disabled:opacity-40">
@@ -2289,6 +2334,7 @@ type Economics = {
   unconfigured: string[]; configured: boolean;
 };
 export function DeEconomicsPanel({ de }: { de: DigitalEmployee }) {
+  const canManage = useCanManageDe();
   const [eco, setEco] = useState<Economics | null>(null);
   const [showConfig, setShowConfig] = useState(false);
   const [fteCost, setFteCost] = useState('');
@@ -2351,23 +2397,23 @@ export function DeEconomicsPanel({ de }: { de: DigitalEmployee }) {
           <p className="text-[10px] uppercase tracking-wide text-amber-300/80">Workspace-wide — applies to every employee</p>
           <div className="grid grid-cols-2 gap-2">
             <label className="text-[11px] text-dt-muted">Human minutes per inbox item
-              <input type="number" min={0.1} step={0.5} value={inqMin} disabled={busy} onChange={e => setInqMin(e.target.value)} placeholder="e.g. 6"
+              <input type="number" min={0.1} step={0.5} value={inqMin} disabled={busy || !canManage} onChange={e => setInqMin(e.target.value)} placeholder="e.g. 6"
                 className="mt-0.5 w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
             </label>
             <label className="text-[11px] text-dt-muted">Human minutes per action
-              <input type="number" min={0.1} step={0.5} value={actMin} disabled={busy} onChange={e => setActMin(e.target.value)} placeholder="e.g. 8"
+              <input type="number" min={0.1} step={0.5} value={actMin} disabled={busy || !canManage} onChange={e => setActMin(e.target.value)} placeholder="e.g. 8"
                 className="mt-0.5 w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
             </label>
             <label className="text-[11px] text-dt-muted">Human minutes per conversation
-              <input type="number" min={0.1} step={0.5} value={convMin} disabled={busy} onChange={e => setConvMin(e.target.value)} placeholder="e.g. 4"
+              <input type="number" min={0.1} step={0.5} value={convMin} disabled={busy || !canManage} onChange={e => setConvMin(e.target.value)} placeholder="e.g. 4"
                 className="mt-0.5 w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
             </label>
             <label className="text-[11px] text-dt-muted">Human FTE cost / month (USD, fully loaded)
-              <input type="number" min={1} value={fteCost} disabled={busy} onChange={e => setFteCost(e.target.value)} placeholder="e.g. 6000"
+              <input type="number" min={1} value={fteCost} disabled={busy || !canManage} onChange={e => setFteCost(e.target.value)} placeholder="e.g. 6000"
                 className="mt-0.5 w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
             </label>
           </div>
-          <button onClick={() => void saveBaselines()} disabled={busy}
+          <button onClick={() => void saveBaselines()} disabled={busy || !canManage}
             className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
             {busy ? 'Saving…' : 'Save baselines'}
           </button>
@@ -2432,6 +2478,7 @@ type LifecycleReadiness = {
   criteria: Record<string, Record<string, boolean | string>>;
 };
 function DeLifecyclePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: DigitalEmployee) => void }) {
+  const canManage = useCanManageDe();
   const [readiness, setReadiness] = useState<LifecycleReadiness | null>(null);
   const [events, setEvents] = useState<Array<{ id: string; from_stage: string; to_stage: string; actor_label: string; note: string | null; created_at: string }>>([]);
   const [note, setNote] = useState('');
@@ -2541,11 +2588,12 @@ function DeLifecyclePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
             )}
             <button
               onClick={() => void run(() => supabase.rpc('advance_de_lifecycle', { p_de_id: de.id, p_to_stage: nextStage, p_note: note.trim() || null }))}
-              disabled={busy || !allMet || (nextStage === 'certified' && !note.trim())}
+              disabled={busy || !canManage || !allMet || (nextStage === 'certified' && !note.trim())}
               className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
               {busy ? 'Working…' : nextStage === 'certified' ? 'Certify' : `Advance to ${STAGE_LABELS[nextStage]}`}
             </button>
             {!allMet && <span className="text-[10px] text-dt-faint">Criteria above must be met first.</span>}
+            {!canManage && <span className="text-[10px] text-dt-faint">Only an owner or admin can move an employee through its stages.</span>}
           </div>
         </div>
       )}
@@ -2559,21 +2607,24 @@ function DeLifecyclePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
             placeholder={isPaused ? 'Resume note — what was investigated?' : 'Pause reason (required)'}
             className="flex-1 min-w-[220px] bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500 disabled:opacity-50"
           />
+          {/* Stopping or restarting an employee is owner/admin in the database.
+              Offering it to anyone else produced an error, not a pause. */}
           {isPaused ? (
             <button
               onClick={() => void run(() => supabase.rpc('resume_digital_employee', { p_de_id: de.id, p_note: note.trim() }))}
-              disabled={busy || !note.trim()}
+              disabled={busy || !canManage || !note.trim()}
               className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-40">
               Resume
             </button>
           ) : (
             <button
               onClick={() => void run(() => supabase.rpc('pause_digital_employee', { p_de_id: de.id, p_reason: note.trim() }))}
-              disabled={busy || !note.trim()}
+              disabled={busy || !canManage || !note.trim()}
               className="text-xs px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-40">
               Pause
             </button>
           )}
+          {!canManage && <span className="text-[11px] text-dt-muted">Pausing or restarting needs an owner or admin.</span>}
         </div>
       )}
 
@@ -2604,6 +2655,7 @@ function DeLifecyclePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
 // trust dial and is deliberately not duplicated here.
 type EscalationRow = { de_id: string | null; frustration_threshold: number | null; always_escalate_topics: string[] };
 export function DeEscalationPanel({ deId }: { deId: string }) {
+  const canManage = useCanManageDe();
   const [deRow, setDeRow] = useState<EscalationRow | null>(null);
   const [tenantRow, setTenantRow] = useState<EscalationRow | null>(null);
   const [threshold, setThreshold] = useState('');
@@ -2712,7 +2764,7 @@ export function DeEscalationPanel({ deId }: { deId: string }) {
         <div>
           <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">Frustration threshold</p>
           <input
-            type="number" min={0} max={100} value={threshold} disabled={busy}
+            type="number" min={0} max={100} value={threshold} disabled={busy || !canManage}
             onChange={e => setThreshold(e.target.value)}
             placeholder={`inherited (${tenantRow?.frustration_threshold ?? 50})`}
             className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
@@ -2724,7 +2776,7 @@ export function DeEscalationPanel({ deId }: { deId: string }) {
         <div>
           <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">Always-escalate topics</p>
           <input
-            type="text" value={topics} disabled={busy}
+            type="text" value={topics} disabled={busy || !canManage}
             onChange={e => setTopics(e.target.value)}
             placeholder="e.g. refund, contract renewal"
             className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
@@ -2736,7 +2788,7 @@ export function DeEscalationPanel({ deId }: { deId: string }) {
         </div>
       </div>
       <div className="mt-3 flex items-center gap-3">
-        <button onClick={() => void save()} disabled={busy}
+        <button onClick={() => void save()} disabled={busy || !canManage}
           className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
           {busy ? 'Saving…' : 'Save'}
         </button>
@@ -2760,7 +2812,7 @@ export function DeEscalationPanel({ deId }: { deId: string }) {
           <div className="space-y-1.5 mb-3">
             {customRules.map((r, i) => (
               <div key={i} className="flex items-start gap-2 text-xs rounded-lg border border-dt-border bg-dt-page px-3 py-2">
-                <input type="checkbox" checked={r.enabled} disabled={busy}
+                <input type="checkbox" checked={r.enabled} disabled={busy || !canManage}
                   onChange={() => void persistRules(customRules.map((x, j) => j === i ? { ...x, enabled: !x.enabled } : x))}
                   className="mt-0.5 accent-indigo-500" />
                 <div className="min-w-0 flex-1">
@@ -2771,7 +2823,7 @@ export function DeEscalationPanel({ deId }: { deId: string }) {
                   r.action === 'escalate' ? 'bg-amber-500/15 text-amber-300' : 'bg-sky-500/15 text-sky-300'}`}>
                   {r.action === 'escalate' ? 'hand to a human' : 'needs approval'}
                 </span>
-                <button onClick={() => void persistRules(customRules.filter((_, j) => j !== i))} disabled={busy}
+                <button onClick={() => void persistRules(customRules.filter((_, j) => j !== i))} disabled={busy || !canManage}
                   className="text-[10px] text-dt-faint hover:text-rose-300">Remove</button>
               </div>
             ))}
@@ -2782,7 +2834,7 @@ export function DeEscalationPanel({ deId }: { deId: string }) {
             support DE composes message/confidence conditions and a finance DE
             composes amount conditions with the same tool. */}
         <div className="rounded-lg border border-dt-border bg-dt-page p-3 space-y-2">
-          <input value={ruleName} disabled={busy} onChange={e => setRuleName(e.target.value)}
+          <input value={ruleName} disabled={busy || !canManage} onChange={e => setRuleName(e.target.value)}
             placeholder="Rule name — e.g. Large payment, Legal threat"
             className="w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
 
@@ -2799,7 +2851,7 @@ export function DeEscalationPanel({ deId }: { deId: string }) {
             const boolOp = c.op === 'is_true' || c.op === 'is_false';
             return (
               <div key={i} className="flex items-center gap-1.5 flex-wrap">
-                <select value={c.signal} disabled={busy}
+                <select value={c.signal} disabled={busy || !canManage}
                   onChange={e => setCond(i, { signal: e.target.value, op: '', value: '' })}
                   className="bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
                   <option value="">Pick a signal…</option>
@@ -2827,10 +2879,10 @@ export function DeEscalationPanel({ deId }: { deId: string }) {
           })}
 
           <div className="flex items-center gap-2 flex-wrap pt-1">
-            <button onClick={() => setConds(cs => [...cs, { signal: '', op: '', value: '' }])} disabled={busy}
+            <button onClick={() => setConds(cs => [...cs, { signal: '', op: '', value: '' }])} disabled={busy || !canManage}
               className="text-[11px] text-dt-support hover:text-dt-body">+ add a condition</button>
             <div className="ml-auto flex items-center gap-2">
-              <select value={ruleAction} disabled={busy} onChange={e => setRuleAction(e.target.value as 'escalate' | 'require_approval')}
+              <select value={ruleAction} disabled={busy || !canManage} onChange={e => setRuleAction(e.target.value as 'escalate' | 'require_approval')}
                 className="bg-dt-card border border-dt-border text-dt-support text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
                 <option value="escalate">Hand to a human</option>
                 <option value="require_approval">Needs approval first</option>
@@ -2858,6 +2910,7 @@ type TeamMemberRow = {
   digital_employees: { name: string; persona_name: string | null; lifecycle_status: string; status: string } | null;
 };
 function TeamsPanel() {
+  const canManage = useCanManageDe();
   const [teams, setTeams] = useState<TeamRow[] | null>(null);
   const [members, setMembers] = useState<TeamMemberRow[]>([]);
   const [des, setDes] = useState<Array<{ id: string; name: string; lifecycle_status: string }>>([]);
@@ -2953,7 +3006,7 @@ function TeamsPanel() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm text-white font-medium">{team.name}</span>
                   <button onClick={() => { if (window.confirm(`Archive "${team.name}"? Its fallback chain will stop applying.`)) void run(() => supabase.rpc('archive_workforce_team', { p_team_id: team.id })); }}
-                    disabled={busy}
+                    disabled={busy || !canManage}
                     className="ml-auto text-[10px] text-dt-muted hover:text-rose-300">
                     Archive
                   </button>
@@ -2974,7 +3027,7 @@ function TeamsPanel() {
                           {eligible ? 'on duty' : (de?.lifecycle_status ?? '')}
                         </span>
                         <button onClick={() => void run(() => supabase.rpc('set_workforce_team_member', { p_team_id: team.id, p_de_id: m.de_id, p_fallback_rank: null }))}
-                          disabled={busy}
+                          disabled={busy || !canManage}
                           className="ml-auto text-[10px] text-dt-faint hover:text-rose-300">
                           Remove
                         </button>
@@ -2983,7 +3036,7 @@ function TeamsPanel() {
                   })}
                 </div>
                 <div className="mt-2 flex items-center gap-2">
-                  <select value={addDe[team.id] ?? ''} disabled={busy}
+                  <select value={addDe[team.id] ?? ''} disabled={busy || !canManage}
                     onChange={e => setAddDe(prev => ({ ...prev, [team.id]: e.target.value }))}
                     className="flex-1 bg-dt-card border border-dt-border text-dt-support text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
                     <option value="">Add a member…</option>
