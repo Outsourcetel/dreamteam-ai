@@ -723,13 +723,20 @@ const SettingsPage = ({
         <div className="max-w-3xl space-y-4">
           <div className="bg-dt-card border border-dt-border rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-1">Monthly AI Budget</h2>
+            {/* ⚠ THIS HEADER STILL SAID "Set a monthly AI usage limit" after the
+                editor below it became read-only for platform-mode workspaces —
+                I fixed the input and the near-limit warning and missed the
+                paragraph introducing them. Same defect, three feet higher up.
+                It now leads with what the reader can actually do. */}
             <p className="text-xs text-dt-support mb-5">
               {/* RLS scopes this list to what the caller can see: a normal
                   workspace sees only itself; an operator sees their clients —
                   so the copy stays singular-first, not "per client". */}
               {tenants.length > 1
-                ? 'Set a monthly AI usage limit for each workspace. Digital Employees pause when a limit is reached — resets on the 1st of each month.'
-                : 'Set a monthly AI usage limit for your workspace. Your Digital Employees pause when the limit is reached — it resets on the 1st of each month.'}
+                ? 'Monthly AI usage against each workspace\'s limit. Digital Employees pause when a limit is reached — it resets on the 1st of each month.'
+                : (isDTUser || tenants[0]?.llm_key_mode === 'byo')
+                  ? 'Set a monthly AI usage limit for your workspace. Your Digital Employees pause when the limit is reached — it resets on the 1st of each month.'
+                  : 'Your monthly AI usage against the limit included in your plan. Digital Employees pause when it is reached, and it resets on the 1st of each month — contact DreamTeam AI if you need more.'}
               {' '}Current month: <span className="text-white font-mono">{new Date().toISOString().slice(0, 7)}</span>
             </p>
 
