@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useIsTenantAdmin } from '../../../lib/useRoleGate';
 import { Modal } from '../../../design/primitives';
 import { PageHeader, th, td } from '../../../components/ui';
 import type { Page } from '../../../types';
@@ -1068,6 +1069,9 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
   onChanged: () => void;
   onOpenRun: (runId: string) => void;
 }) {
+  // upsertEventDefinition + emitEvent are owner/admin in the database; this
+  // builder renders inside the Playbooks page, which is ALL_TENANT.
+  const isTenantAdmin = useIsTenantAdmin();
   const [adding, setAdding] = useState<'schedule' | 'event' | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -1279,7 +1283,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
                 value={newKey} onChange={e => setNewKey(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'))} />
               <input className={inputCls + ' !w-44'} placeholder="Label (e.g. Deal signed)"
                 value={newLabel} onChange={e => setNewLabel(e.target.value)} />
-              <button onClick={() => void createCustomEvent()} disabled={busy || !newKey.trim()}
+              <button onClick={() => void createCustomEvent()} disabled={busy || !isTenantAdmin || !newKey.trim()}
                 className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-40 transition-colors">
                 Create event
               </button>
@@ -1291,7 +1295,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
               {customEvents.map(d => (
                 <div key={d.id} className="flex items-center justify-between gap-2 bg-dt-card rounded-lg px-3 py-1.5">
                   <span className="text-[11px] text-dt-support">{d.label} <span className="text-dt-faint font-mono">· {d.event_key}</span></span>
-                  <button onClick={() => void fireEvent(d.event_key)}
+                  <button onClick={() => void fireEvent(d.event_key)} disabled={!isTenantAdmin}
                     className="text-[10px] px-2 py-1 rounded border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
                     Fire now
                   </button>

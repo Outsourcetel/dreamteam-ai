@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useIsTenantManager } from '../../../lib/useRoleGate';
 import { useAuth } from '../../../context/AuthContext';
 import type { Page } from '../../../types';
 import {
@@ -47,6 +48,9 @@ function StatCard({ label, value, sub, color = 'text-white' }: { label: string; 
 // ── Add agreement — the W4-B entry path (docs/16 gap #1: agreements were
 // seed-only, leaving this whole module permanently empty for new tenants).
 function AddAgreementDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  // upsertAgreement is owner/admin/manager in the database, and this dialog is
+  // reached from the Customers hub, which is ALL_TENANT.
+  const canManage = useIsTenantManager();
   const [f, setF] = useState({
     title: '', counterparty_name: '', party_side: 'sell' as 'sell' | 'buy',
     agreement_type: 'subscription', value: '', auto_renew: false,
@@ -100,9 +104,10 @@ function AddAgreementDialog({ onClose, onSaved }: { onClose: () => void; onSaved
           </div>
           <p className="text-[11px] text-dt-muted">Dates are never inferred from each other — the employee only acts on the dates you set. The watcher opens a case as each one approaches.</p>
           {err && <p className="text-xs text-rose-300">{err}</p>}
+          {!canManage && <p className="text-[11px] text-dt-muted">Adding an agreement needs a manager, owner or admin.</p>}
           <div className="flex justify-end gap-2 pt-1">
             <button onClick={onClose} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border text-dt-support hover:text-dt-body">Cancel</button>
-            <button onClick={() => void save()} disabled={busy || !f.title.trim() || !f.counterparty_name.trim()}
+            <button onClick={() => void save()} disabled={busy || !canManage || !f.title.trim() || !f.counterparty_name.trim()}
               className="text-xs px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
               {busy ? 'Saving…' : 'Add agreement'}
             </button>

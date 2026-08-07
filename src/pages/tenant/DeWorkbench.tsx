@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useIsTenantAdmin } from '../../lib/useRoleGate';
 import {
   getDeMemory, getDeTrace, getDeExceptions,
   getDeCertifications, getDeCertStatus, getTenantCompliancePacks, runCertificationEval,
@@ -242,6 +243,10 @@ export function DeCompliancePanel() {
 }
 
 export default function DeWorkbenchPanel({ deId }: { deId: string }) {
+  // forgetMemory → forget_de_memory, owner/admin in the database. This panel
+  // renders inside the Employee File, which is ALL_TENANT — so "Forget" was
+  // offered to every role and worked for two.
+  const isTenantAdmin = useIsTenantAdmin();
   const [section, setSection] = useState<Section>('memory');
   const [loading, setLoading] = useState(true);
   const [memory, setMemory] = useState<MemoryRow[]>([]);
@@ -420,7 +425,7 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
                               {/* A wrong memory keeps steering answers until removed. */}
                               <button
                                 onClick={() => void handleForget(it.id)}
-                                disabled={forgetting === it.id}
+                                disabled={forgetting === it.id || !isTenantAdmin}
                                 title="Remove this memory"
                                 className="text-[10px] text-dt-faint hover:text-rose-300 flex-shrink-0 disabled:opacity-40">
                                 {forgetting === it.id ? '…' : 'Forget'}

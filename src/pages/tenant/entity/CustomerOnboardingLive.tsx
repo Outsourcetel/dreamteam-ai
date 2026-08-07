@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useIsTenantAdmin } from '../../../lib/useRoleGate';
 import { useAuth } from '../../../context/AuthContext';
 import { Modal } from '../../../design/primitives';
 import type { Page } from '../../../types';
@@ -435,9 +436,12 @@ function VerifyEditor({ item, onChange }: {
 }
 
 // ── Template editor ───────────────────────────────────────────────
+// publishTemplate → publish_onboarding_template, owner/admin in the database.
+// This editor opens from the Customers hub, which is ALL_TENANT.
 function TemplateEditor({ template, onClose, onSaved }: {
   template: OnboardingTemplate; onClose: () => void; onSaved: () => void;
 }) {
+  const isTenantAdmin = useIsTenantAdmin();
   const [name, setName] = useState(template.name);
   const [description, setDescription] = useState(template.description);
   const [items, setItems] = useState<TemplateItem[]>(template.items);
@@ -543,7 +547,7 @@ function TemplateEditor({ template, onClose, onSaved }: {
 
         <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => void save()} disabled={busy !== null} className={btnGhost}>{busy === 'save' ? 'Saving…' : 'Save draft'}</button>
-          <button onClick={() => void publish()} disabled={busy !== null} className={btnPrimary}>{busy === 'publish' ? 'Publishing…' : `Publish v${template.version + 1}`}</button>
+          <button onClick={() => void publish()} disabled={busy !== null || !isTenantAdmin} className={btnPrimary}>{busy === 'publish' ? 'Publishing…' : `Publish v${template.version + 1}`}</button>
           <p className="text-[10px] text-dt-faint">Publishing snapshots the checklist — running projects keep the version they started on. Sign-off items must be owned by human or either.</p>
         </div>
       </>

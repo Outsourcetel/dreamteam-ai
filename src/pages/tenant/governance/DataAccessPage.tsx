@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useIsTenantAdmin } from '../../../lib/useRoleGate';
 import { PageHeader } from '../../../components/ui';
 import { listConnectors, Connector } from '../../../lib/connectorApi';
 import { CATEGORIES, CATEGORY_LABELS, CATEGORY_SHORT, SystemCategory } from '../../../lib/categoryContracts';
@@ -54,6 +55,9 @@ const SENSITIVE: Set<SystemCategory> = new Set([
 ]);
 
 export default function DataAccessPage({ setPage }: { setPage: (p: Page) => void }) {
+  // set_access_grant / revoke_access_grant are owner/admin; this page renders
+  // inside the Governance hub, which managers can also open.
+  const isTenantAdmin = useIsTenantAdmin();
   const [subjects, setSubjects] = useState<AccessSubject[]>([]);
   const [grants, setGrants] = useState<AccessGrant[]>([]);
   const [connectors, setConnectors] = useState<Connector[]>([]);
@@ -222,7 +226,7 @@ export default function DataAccessPage({ setPage }: { setPage: (p: Page) => void
                             <select
                               className={selectCls}
                               value={cur}
-                              disabled={savingCell === key}
+                              disabled={savingCell === key || !isTenantAdmin}
                               title={PERMISSION_EXPLAIN[cur as AccessPermission] ?? PERMISSION_EXPLAIN.none}
                               onChange={(e) => void changeCategory(s, cat, e.target.value)}
                             >
@@ -278,7 +282,7 @@ export default function DataAccessPage({ setPage }: { setPage: (p: Page) => void
                               <select
                                 className={selectCls}
                                 value={override ?? 'inherit'}
-                                disabled={savingCell === key}
+                                disabled={savingCell === key || !isTenantAdmin}
                                 title={override
                                   ? PERMISSION_EXPLAIN[override]
                                   : eff.permission
