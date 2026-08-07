@@ -6,14 +6,16 @@ import type { ChatEscalation } from '../../lib/chatEscalations';
 import type { Page } from '../../types';
 import GettingStartedGuide from '../../components/GettingStartedGuide';
 import OpsAlertsBanner from '../../components/OpsAlertsBanner';
-import { StatTile, PanelCard, Chip, Button, EmptyState } from '../../design/primitives';
+import { StatTile, PanelCard, Chip, Button, EmptyState, DecisionCard, SetupChecklist } from '../../design/primitives';
 import {
   listAccounts, listTickets, listInvoices, listHumanTasks, listActivity,
   getPendingKnowledgeGapCount, fmtMoneyK, CustomerApiError,
 } from '../../lib/customerApi';
 import type { CustomerAccount, SupportTicket, RenewalInvoice, DBHumanTask, ActivityEvent } from '../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveErrorNotice } from '../../components/LiveDataStates';
-import { getActiveWorkAcrossDes, type ActiveWorkRow } from '../../lib/deWorkbenchApi';
+import { getActiveWorkAcrossDes, countDeOutputs, type ActiveWorkRow } from '../../lib/deWorkbenchApi';
+import { getDeInquiryMetrics, getDeActionMetrics, getDeCostMetricsRanged, getOutcomeMetering } from '../../lib/api';
+import { summariseWork, type WorkSummary } from '../../lib/workSummary';
 import { listDigitalEmployees, type DigitalEmployee } from '../../lib/digitalEmployeesApi';
 import { useOpenEmployeeFile } from '../../lib/employeeFileRoute';
 
@@ -195,11 +197,15 @@ function liveActivityAge(iso: string): string {
 }
 
 function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
-  const { liveTenantName, currentTenant } = useAuth();
+  const { liveTenantName, currentTenant, authedUser } = useAuth();
   const vocab = useVocabulary();
   const openFile = useOpenEmployeeFile(setPage);
   const [working, setWorking] = useState<ActiveWorkRow[]>([]);
   const [workforce, setWorkforce] = useState<DigitalEmployee[]>([]);
+  // The same four sources, summarised by the same function, as the roster
+  // and the Results tab. The front page must not tell a different story
+  // from the page it links to.
+  const [work, setWork] = useState<Record<string, WorkSummary>>({});
   const [accounts, setAccounts] = useState<CustomerAccount[]>([]);
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [invoices, setInvoices] = useState<RenewalInvoice[]>([]);
@@ -245,10 +251,31 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
   useEffect(() => {
     let cancelled = false;
     void Promise.all([getActiveWorkAcrossDes(), listDigitalEmployees()])
-      .then(([w, d]) => { if (!cancelled) { setWorking(w); setWorkforce(d); } })
+      .then(async ([w, d]) => {
+        if (cancelled) return;
+        setWorking(w); setWorkforce(d);
+        const tid = currentTenant?.id ?? null;
+        if (!tid) return;
+        // Supplementary: a failure here costs the headline sentence, not the page.
+        const [inq, act, cost, om] = await Promise.all([
+          getDeInquiryMetrics(tid, 30), getDeActionMetrics(tid, 30),
+          getDeCostMetricsRanged(tid, 30), getOutcomeMetering(tid, 30),
+        ]);
+        const iBy = new Map(inq.map(x => [x.de_id, x]));
+        const aBy = new Map(act.map(x => [x.de_id, x]));
+        const cBy = new Map(cost.map(x => [x.de_id, x]));
+        const mBy = new Map((om?.by_de ?? []).map(x => [x.de_id, x]));
+        const ids = new Set([...iBy.keys(), ...aBy.keys(), ...cBy.keys(), ...mBy.keys(), ...d.map(x => x.id)]);
+        const outs = new Map<string, { items_done?: number; deliverables?: number }>();
+        await Promise.all([...ids].map(async id => { try { outs.set(id, await countDeOutputs(id, 30)); } catch { /* per-employee */ } }));
+        if (cancelled) return;
+        const next: Record<string, WorkSummary> = {};
+        for (const id of ids) next[id] = summariseWork({ inquiry: iBy.get(id), action: aBy.get(id), cost: cBy.get(id), metering: mBy.get(id), outputs: outs.get(id) });
+        setWork(next);
+      })
       .catch(() => undefined);
     return () => { cancelled = true; };
-  }, [retryTick]);
+  }, [retryTick, currentTenant?.id]);
 
   const openTickets = tickets.filter(t => t.status === 'open' || t.status === 'escalated').length;
   const atRisk = accounts.filter(a => a.status === 'at_risk' || a.health_score < 45).length;
@@ -256,14 +283,22 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
   const renewalsDue = invoices.filter(i => i.status !== 'paid').length;
   const arrCents = accounts.reduce((s, a) => s + a.arr_cents, 0);
 
-  const kpis = [
-    { icon: '◎', value: String(accounts.length), label: vocab.party_plural, navPage: 'entity_customer_success' as Page, alert: false },
-    { icon: '💬', value: String(openTickets), label: 'Open Tickets', navPage: 'entity_customer_support' as Page, alert: false },
-    { icon: '✋', value: `${pendingTasks} pending`, label: 'Human Tasks', navPage: 'ops_human_tasks' as Page, alert: pendingTasks > 0 },
-    { icon: '↻', value: String(renewalsDue), label: `${vocab.renewal_label}s Open`, navPage: 'entity_customer_renewal' as Page, alert: false },
-    { icon: '⚑', value: String(atRisk), label: `At-Risk ${vocab.party_plural}`, navPage: 'entity_customer_success' as Page, alert: atRisk > 0 },
-    { icon: '📚', value: `${knowledgeGaps} detected`, label: 'Knowledge Gaps', navPage: 'ops_human_tasks' as Page, alert: knowledgeGaps > 0 },
-  ];
+  // What the workforce actually did, from the same four sources the roster
+  // and the Results tab read. Totals only — per-employee lives on the roster.
+  // ⚠ SCOPED TO THE CURRENT WORKFORCE, not to every id the metrics mention.
+  // Summing Object.values(work) counts RETIRED employees too — they keep
+  // their history — and the front page then said 272 where the Results tab
+  // said 267. Two screens, same window, different total, five apart. Found
+  // only by reading one and then the other.
+  const totals = workforce.reduce(
+    (t, de) => {
+      const w = work[de.id];
+      return w ? { work: t.work + w.work, resolutions: t.resolutions + w.resolutions, handedOff: t.handedOff + w.handedOff } : t;
+    },
+    { work: 0, resolutions: 0, handedOff: 0 },
+  );
+  const hasWorkforce = workforce.length > 0;
+  const hasWork = totals.work > 0;
 
   const activityEventToType = (e: ActivityEvent): ActivityType =>
     e.event_type === 'resolved' || e.event_type === 'approval' ? 'resolved'
@@ -302,19 +337,77 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
           <MissingTablesNotice />
         ) : (
           <>
-            {/* KPI row — StatTiles, responsive (2/3/6 across widths) */}
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-              {kpis.map((kpi) => (
-                <StatTile key={kpi.label} icon={kpi.icon} label={kpi.label} value={kpi.value}
-                  tone={kpi.alert ? 'warn' : undefined} onClick={() => setPage(kpi.navPage)} />
-              ))}
-            </div>
+            {/* The answer to the page's one question, in a sentence. */}
+            {!hasWorkforce ? (
+              <SetupChecklist
+                title={`Welcome${authedUser?.name ? ', ' + authedUser.name.split(' ')[0] : ''}`}
+                why="You don't have anyone working yet. Three steps and someone can be answering your customers today."
+                items={[
+                  { label: 'Hire your first digital employee — describe the job in plain English' },
+                  { label: 'Teach them about your business — point us at your website and we read it' },
+                  { label: 'Put them on your website — one line of code' },
+                ]}
+                action={<Button kind="primary" size="sm" onClick={() => setPage('workforce_des')}>Hire your first employee</Button>}
+                estimate="about 2 minutes to start"
+              />
+            ) : (
+              <div>
+                <p className="text-[17px] text-dt-title font-semibold">
+                  {hasWork
+                    ? `Your team handled ${totals.work} piece${totals.work === 1 ? '' : 's'} of work in the last 30 days${
+                        totals.handedOff > 0 ? ` and brought ${totals.handedOff} to you` : ' without needing you once'}.`
+                    : 'Your team has not recorded any work in the last 30 days.'}
+                </p>
+                {hasWork && (
+                  <div className="grid grid-cols-dt-kpis gap-dt mt-3">
+                    <StatTile label="handled, 30 days" value={totals.work} />
+                    {totals.resolutions > 0 && <StatTile label="finished without you" value={totals.resolutions} tone="ok" />}
+                    {totals.handedOff > 0 && <StatTile label="came to you" value={totals.handedOff} tone="warn" />}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Waiting on you — at the TOP, and actionable ──────────────
+                Pending approvals used to appear twice: as a number in a tile
+                and as a table at the bottom, and neither could be acted on.
+                One block now, first thing, with the decision on the row. */}
+            {pendingTasks === 0 ? (
+              <PanelCard>
+                <div className="flex items-center gap-3">
+                  <span className="text-dt-ok text-lg" aria-hidden>✓</span>
+                  <div>
+                    <p className="text-[15px] font-semibold text-dt-title">Nothing needs you right now</p>
+                    <p className="text-[13px] text-dt-support mt-0.5">Everyone is working. Anything that stops will appear here.</p>
+                  </div>
+                </div>
+              </PanelCard>
+            ) : (
+              <PanelCard
+                title={`${pendingTasks} thing${pendingTasks === 1 ? '' : 's'} waiting on your decision`}
+                actions={<Button kind="primary" size="sm" onClick={() => setPage('ops_human_tasks')}>Review all {pendingTasks}</Button>}>
+                <div className="space-y-3">
+                  {tasks.filter(t => t.status === 'pending').slice(0, 3).map(task => (
+                    <DecisionCard
+                      key={task.id}
+                      title={task.title}
+                      detail={task.detail ? <span className="line-clamp-3">{task.detail}</span> : undefined}
+                      meta={`Waiting ${liveActivityAge(task.created_at).replace(' ago', '')} · ${taskBadgeLabel(task.type)}`}
+                      actions={<Button kind="secondary" size="sm" onClick={() => setPage('ops_human_tasks')}>Open it</Button>}
+                    />
+                  ))}
+                  {pendingTasks > 3 && (
+                    <p className="text-[13px] text-dt-muted">and {pendingTasks - 3} more.</p>
+                  )}
+                </div>
+              </PanelCard>
+            )}
 
             {/* Working now — the live per-employee strip: who is mid-task,
                 one click into their Employee File (Phase B legibility). */}
             <PanelCard title="Working now"
               badge={working.length > 0 ? <Chip tone="info" dot pulse>{working.length} active</Chip> : undefined}
-              actions={<Button kind="ghost" size="sm" onClick={() => setPage('ops_de_activity')}>At Work cockpit →</Button>}>
+              actions={<Button kind="ghost" size="sm" onClick={() => setPage('ops_de_activity')}>See everyone →</Button>}>
               {working.length === 0 ? (
                 <p className="text-xs text-dt-muted">
                   No employee is mid-task at this second. Watchers, playbook triggers, and the support inbox start work
@@ -383,33 +476,12 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
                         onClick={() => setPage('ops_human_tasks')}
                         className="text-xs text-dt-warn bg-dt-warn-soft hover:brightness-110 rounded-lg px-2 py-1.5 whitespace-nowrap transition-colors"
                       >
-                        {pendingTasks} Human Tasks
+                        {pendingTasks} waiting on you
                       </button>
                     )}
                   </div>
                 </div>
 
-                {/* Placeholder entities until they enter the production track */}
-                {[
-                  { label: 'Vendors & Partners', icon: '◈', page: 'entity_vendor' as Page },
-                  { label: 'Our People', icon: '◉', page: 'entity_workforce' as Page },
-                ].map(e => (
-                  <div key={e.label} className="rounded-xl border border-dt-border bg-dt-card p-4 flex flex-col gap-3 opacity-70">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-dt-support text-sm">{e.icon}</span>
-                        <span className="text-sm font-semibold text-dt-title">{e.label}</span>
-                      </div>
-                      <button
-                        onClick={() => setPage(e.page)} aria-label={`Open ${e.label}`}
-                        className="w-6 h-6 rounded-md bg-dt-panel text-dt-support hover:text-dt-title hover:bg-dt-inset flex items-center justify-center text-xs transition-colors"
-                      >
-                        →
-                      </button>
-                    </div>
-                    <div className="text-xs text-dt-faint italic">Not yet on the production track</div>
-                  </div>
-                ))}
               </div>
             </div>
 
@@ -461,12 +533,9 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
                         >
                           <span className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${activityDotColor(t)}`} />
                           <div className="flex-1 min-w-0">
-                            <div className="text-xs text-dt-support leading-tight">{item.text}</div>
-                            <div className="text-[10px] text-dt-faint mt-0.5">{item.actor} · {liveActivityAge(item.created_at)}</div>
+                            <div className="text-sm text-dt-body leading-snug">{item.text}</div>
+                            <div className="text-xs text-dt-muted mt-0.5">{item.actor} · {liveActivityAge(item.created_at)}</div>
                           </div>
-                          {item.confidence != null && (
-                            <Chip tone="neutral" className="flex-shrink-0">{item.confidence}%</Chip>
-                          )}
                         </div>
                       );
                     })}

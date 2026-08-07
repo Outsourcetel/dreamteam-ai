@@ -55,7 +55,15 @@ export default function OutcomeStatement({ setPage }: { setPage: (p: Page) => vo
         (async () => { try { const r = await supabase.rpc('get_de_economics', { p_tenant_id: tenantId, p_days: 30 }); return (r.data ?? null) as Econ | null; } catch { return null; } })(),
       ]);
       if (cancelled) return;
-      const active = d.filter(x => x.status === 'active');
+      // ⚠ WAS d.filter(x => x.status === 'active'), which dropped any employee
+      // that happens to be idle RIGHT NOW from a THIRTY-DAY retrospective.
+      // Workspace Assistant handled 5 pieces of work in the window and then
+      // went quiet, so this statement reported 267 while the Command Centre —
+      // reading the same four sources — reported 272. Work done inside the
+      // window does not stop having happened because the worker is idle at the
+      // moment you open the page. listDigitalEmployees() already excludes
+      // retired and archived, which is the exclusion that belongs here.
+      const active = d;
       setDes(active); setInq(i); setAct(a); setCost(c); setOm(m); setEcon(e);
       const outs = new Map<string, { items_done: number; deliverables: number }>();
       await Promise.all(active.map(async (de) => {
