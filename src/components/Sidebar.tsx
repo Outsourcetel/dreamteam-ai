@@ -371,9 +371,9 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
     <div className="w-dt-sidebar bg-dt-page border-r border-dt-border flex flex-col flex-shrink-0 overflow-hidden">
 
       {/* Workspace identity */}
-      <div className="p-3 border-b border-dt-border">
-        <div className="w-full flex items-center gap-2 p-2 rounded-lg">
-          <div className="w-7 h-7 rounded-md flex items-center justify-center text-xs font-bold text-white flex-shrink-0 bg-indigo-600">
+      <div className="px-3 py-2 border-b border-dt-border">
+        <div className="w-full flex items-center gap-2 rounded-lg">
+          <div className="w-7 h-7 rounded-md flex items-center justify-center text-xs font-bold text-white flex-shrink-0 bg-dt-accent-strong">
             {(liveTenantName || activeCompany.name || 'C')[0].toUpperCase()}
           </div>
           <div className="flex-1 text-left min-w-0">
@@ -386,9 +386,9 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-2 px-2">
         {nav.map(section => (
-          <div key={section.title} className="mb-1">
+          <div key={section.title}>
             {section.title && (
-              <div className="px-2 pt-2.5 pb-1 text-xs font-semibold tracking-wider text-dt-muted uppercase leading-none">
+              <div className="px-2 pt-2 pb-0.5 text-xs font-semibold tracking-wider text-dt-muted uppercase leading-none">
                 {section.title}
               </div>
             )}
@@ -409,7 +409,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
                         setPage(group.page);
                       }
                     }}
-                    className={`group relative w-full flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-md text-left transition-colors mb-0.5 leading-4 ${
+                    className={`group relative w-full flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-md text-left transition-colors leading-4 ${
                       groupActive || childActive
                         ? 'bg-dt-accent-soft text-dt-accent-text before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:rounded-full before:bg-dt-accent'
                         : 'text-dt-support hover:text-dt-body hover:bg-dt-panel'
@@ -437,7 +437,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
                         <button
                           key={child.id}
                           onClick={() => setPage(child.id)}
-                          className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors mb-0.5 ${
+                          className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors ${
                             isActive(child.id)
                               ? 'bg-indigo-500/10 text-indigo-300'
                               : 'text-dt-muted hover:text-dt-support hover:bg-dt-card'
@@ -464,12 +464,19 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
       </nav>
 
       {/* User footer */}
-      <div className="p-3 border-t border-dt-border">
+      <div className="px-3 py-2 border-t border-dt-border">
         {/* Account menu — the old footer had sign-out only as an
             unlabeled ⇥ icon (founder couldn't find it) and no way to
             change a password at all. */}
         {accountMenuOpen && (
           <div className="mb-2 bg-dt-card border border-dt-border rounded-lg overflow-hidden">
+            {/* Terms and privacy left the permanent footer for the same reason
+                Contact support did: read once if ever, and costing 24px of a
+                nav that does not fit on the founder's own screen. */}
+            <div className="flex items-center gap-3 px-3 py-2 text-xs text-dt-muted border-b border-dt-border">
+              <a href="/terms" className="hover:text-dt-support transition-colors">Terms</a>
+              <a href="/privacy" className="hover:text-dt-support transition-colors">Privacy</a>
+            </div>
             <a
               href="mailto:bkhan@outsourcetel.com?subject=DreamTeam%20AI%20support"
               className="w-full flex items-center gap-2 px-3 py-2 text-left text-[13px] text-dt-support hover:bg-dt-panel transition-colors"
@@ -515,10 +522,6 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
             Exit Remote Access
           </button>
         )}
-        <div className="flex items-center justify-center gap-3 mt-2 text-xs text-dt-muted">
-          <a href="/terms" className="hover:text-dt-support transition-colors">Terms</a>
-          <a href="/privacy" className="hover:text-dt-support transition-colors">Privacy</a>
-        </div>
       </div>
     </div>
   );
