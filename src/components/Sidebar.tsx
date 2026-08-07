@@ -10,6 +10,8 @@ import { listAccounts, listTickets, listInvoices, listHumanTasks, getPendingKnow
 import { listOpportunities } from '../lib/pipelineApi';
 import { listProjects } from '../lib/onboardingApi';
 import ChangePasswordModal from './ChangePasswordModal';
+import { ROLE_LABELS } from '../lib/useUsers';
+import type { TenantRole } from '../lib/useUsers';
 
 interface SidebarProps {
   page: Page;
@@ -36,7 +38,9 @@ interface NavGroup {
   icon: string;
   page?: Page;           // if clicking the group itself navigates
   children?: SubItem[];
-  badge?: { text: string; color: string };
+  /** A NUMBER, never a phrase — the row already says what is counted.
+   *  Exactly one nav item sets `loud`; see the note on Approvals below. */
+  badge?: { count: number; loud?: boolean };
   defaultOpen?: boolean;
 }
 
@@ -126,7 +130,7 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
         // — what it knows, how it works, who it serves — so they read better
         // together than as three section headers costing four lines of chrome.
         // Net: 8 sections down to 6, same destinations, nothing hidden.
-        { id: 'kb', label: 'Knowledge', icon: '◫', page: 'knowledge_library', badge: live.kbGaps > 0 ? { text: `${live.kbGaps} gaps`, color: '#f59e0b' } : undefined },
+        { id: 'kb', label: 'Knowledge', icon: '◫', page: 'knowledge_library', badge: live.kbGaps > 0 ? { count: live.kbGaps } : undefined },
         { id: 'playbooks', label: 'Playbook Builder', icon: '▶', page: 'systems_playbooks' },
         {
           id: 'customer',
@@ -135,7 +139,7 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
           label: vocab.section_label,
           icon: '◎',
           page: 'entity_customer',
-          badge: live.atRiskAccounts > 0 ? { text: `${live.atRiskAccounts} at risk`, color: '#ef4444' } : undefined,
+          badge: live.atRiskAccounts > 0 ? { count: live.atRiskAccounts } : undefined,
         },
         // Wave 4: the standalone Specialist Desk is retired. Specialists are
         // digital employees now — they live in the Roster, and their tools
@@ -152,7 +156,9 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
           label: 'Approvals & Drafts',
           icon: '✋',
           page: 'ops_human_tasks',
-          badge: live.humanTasks > 0 ? { text: `${live.humanTasks} pending`, color: '#f59e0b' } : undefined,
+          // The ONE loud badge in the nav. Work has stopped and is waiting on
+          // a person: if anything earns a solid fill it is this.
+          badge: live.humanTasks > 0 ? { count: live.humanTasks, loud: true } : undefined,
         },
         { id: 'activity', label: 'Activity Log', icon: '≡', page: 'ops_activity' },
       ],
@@ -362,7 +368,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
   }
 
   return (
-    <div className="w-60 bg-dt-page border-r border-dt-border flex flex-col flex-shrink-0 overflow-hidden">
+    <div className="w-dt-sidebar bg-dt-page border-r border-dt-border flex flex-col flex-shrink-0 overflow-hidden">
 
       {/* Workspace identity */}
       <div className="p-3 border-b border-dt-border">
@@ -371,8 +377,8 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
             {(liveTenantName || activeCompany.name || 'C')[0].toUpperCase()}
           </div>
           <div className="flex-1 text-left min-w-0">
-            <div className="text-xs font-semibold text-dt-title truncate">{liveTenantName || activeCompany.name || 'Your company'}</div>
-            <div className="text-[10px] text-emerald-400 truncate">Live workspace</div>
+            <div className="text-[13px] font-semibold text-dt-title truncate">{liveTenantName || activeCompany.name || 'Your company'}</div>
+            <div className="text-xs text-dt-ok truncate">Live workspace</div>
           </div>
         </div>
       </div>
@@ -382,7 +388,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
         {nav.map(section => (
           <div key={section.title} className="mb-1">
             {section.title && (
-              <div className="px-2 pt-3 pb-1 text-[9px] font-bold tracking-widest text-dt-faint uppercase">
+              <div className="px-2 pt-2.5 pb-1 text-xs font-semibold tracking-wider text-dt-muted uppercase leading-none">
                 {section.title}
               </div>
             )}
@@ -403,21 +409,25 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
                         setPage(group.page);
                       }
                     }}
-                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors mb-0.5 ${
+                    className={`group relative w-full flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-md text-left transition-colors mb-0.5 leading-4 ${
                       groupActive || childActive
-                        ? 'bg-indigo-500/10 text-indigo-300'
+                        ? 'bg-dt-accent-soft text-dt-accent-text before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:rounded-full before:bg-dt-accent'
                         : 'text-dt-support hover:text-dt-body hover:bg-dt-panel'
                     }`}
                   >
-                    <span className="text-[13px] flex-shrink-0 w-4 text-center">{group.icon}</span>
-                    <span className="text-xs font-medium flex-1 truncate">{group.label}</span>
+                    <span className="text-[13px] flex-shrink-0 w-4 text-center" aria-hidden>{group.icon}</span>
+                    <span className="text-[13px] font-medium flex-1 truncate">{group.label}</span>
                     {group.badge && (
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ color: group.badge.color, background: group.badge.color + '20' }}>
-                        {group.badge.text}
+                      <span className={`text-xs font-semibold px-1.5 rounded-full tabular-nums leading-4 ${
+                        group.badge.loud
+                          ? 'bg-dt-warn text-dt-page'
+                          : 'bg-dt-neutral-soft text-dt-support'
+                      }`}>
+                        {group.badge.count}
                       </span>
                     )}
                     {hasChildren && (
-                      <span className={`text-[10px] text-dt-faint transition-transform ${isOpen ? 'rotate-90' : ''}`}>›</span>
+                      <span className={`text-xs text-dt-faint transition-transform ${isOpen ? 'rotate-90' : ''}`} aria-hidden>›</span>
                     )}
                   </button>
 
@@ -436,9 +446,9 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
                           {child.indicator?.dot && (
                             <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: child.indicator.color }} />
                           )}
-                          <span className="text-xs flex-1 truncate">{child.label}</span>
+                          <span className="text-[13px] flex-1 truncate">{child.label}</span>
                           {child.indicator?.count !== undefined && (
-                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-dt-panel" style={{ color: child.indicator.color }}>
+                            <span className="text-xs font-semibold px-1.5 rounded-full bg-dt-neutral-soft text-dt-support tabular-nums leading-4">
                               {child.indicator.count}
                             </span>
                           )}
@@ -455,23 +465,22 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
 
       {/* User footer */}
       <div className="p-3 border-t border-dt-border">
-        <a
-          href="mailto:bkhan@outsourcetel.com?subject=DreamTeam%20AI%20support"
-          className="flex items-center gap-2 px-2 py-1.5 mb-2 rounded-md text-dt-muted hover:text-dt-support hover:bg-dt-card transition-colors text-xs"
-        >
-          <span className="w-4 text-center flex-shrink-0">✉</span>
-          <span className="truncate">Contact support</span>
-        </a>
         {/* Account menu — the old footer had sign-out only as an
             unlabeled ⇥ icon (founder couldn't find it) and no way to
             change a password at all. */}
         {accountMenuOpen && (
           <div className="mb-2 bg-dt-card border border-dt-border rounded-lg overflow-hidden">
+            <a
+              href="mailto:bkhan@outsourcetel.com?subject=DreamTeam%20AI%20support"
+              className="w-full flex items-center gap-2 px-3 py-2 text-left text-[13px] text-dt-support hover:bg-dt-panel transition-colors"
+            >
+              <span className="w-4 text-center flex-shrink-0" aria-hidden>✉</span> Contact support
+            </a>
             <button
               onClick={() => { setShowChangePassword(true); setAccountMenuOpen(false); }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-dt-support hover:bg-dt-panel transition-colors"
+              className="w-full flex items-center gap-2 px-3 py-2 text-left text-[13px] text-dt-support hover:bg-dt-panel transition-colors border-t border-dt-border"
             >
-              <span className="w-4 text-center flex-shrink-0">🔑</span> Change password…
+              <span className="w-4 text-center flex-shrink-0" aria-hidden>🔑</span> Change password…
             </button>
             <button
               onClick={onLogout}
@@ -491,10 +500,10 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
               {user?.name?.[0] ?? 'U'}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-medium text-dt-body truncate">{user?.name}</div>
-              <div className="text-[10px] text-dt-muted truncate">{user?.role?.replace(/_/g, ' ')}</div>
+              <div className="text-[13px] font-medium text-dt-body truncate">{user?.name}</div>
+              <div className="text-xs text-dt-muted truncate">{ROLE_LABELS[user?.role as TenantRole] ?? user?.role?.replace(/_/g, ' ')}</div>
             </div>
-            <span className={`text-dt-faint text-[10px] transition-transform ${accountMenuOpen ? 'rotate-180' : ''}`}>⌃</span>
+            <span className={`text-dt-faint text-xs transition-transform ${accountMenuOpen ? 'rotate-180' : ''}`} aria-hidden>⌃</span>
           </button>
           <button onClick={() => setCollapsed(true)} className="w-6 h-6 rounded text-dt-faint hover:text-dt-support text-xs flex items-center justify-center flex-shrink-0">
             ←
@@ -502,11 +511,11 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
         </div>
         {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} />}
         {godModeActive && (
-          <button onClick={exitGodMode} className="mt-2 w-full text-[10px] text-amber-500 hover:text-amber-300 text-center">
+          <button onClick={exitGodMode} className="mt-2 w-full text-xs text-dt-warn hover:text-dt-warn text-center">
             Exit Remote Access
           </button>
         )}
-        <div className="flex items-center justify-center gap-3 mt-2 text-[10px] text-dt-faint">
+        <div className="flex items-center justify-center gap-3 mt-2 text-xs text-dt-muted">
           <a href="/terms" className="hover:text-dt-support transition-colors">Terms</a>
           <a href="/privacy" className="hover:text-dt-support transition-colors">Privacy</a>
         </div>

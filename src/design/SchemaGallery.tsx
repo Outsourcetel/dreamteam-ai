@@ -9,6 +9,8 @@ import {
   EmployeeCard, DecisionCard, FilterBar, SetupChecklist,
   Button, Chip, PanelCard, INPUT_CLS,
 } from './primitives';
+import { Sidebar } from '../components/Sidebar';
+import { AuthProvider } from '../context/AuthContext';
 
 const Avatar = ({ letter, tone }: { letter: string; tone: string }) => (
   <div className={`w-10 h-10 rounded-full grid place-items-center text-sm font-semibold shrink-0 ${tone}`}>{letter}</div>
@@ -79,6 +81,24 @@ export default function SchemaPreview() {
               actions={<><Button kind="primary" size="sm">Read &amp; publish</Button><Button kind="secondary" size="sm">Edit first</Button></>}
             />
           </div>
+        </PanelCard>
+
+        <PanelCard title="Sidebar — full 248px, and the 56px rail">
+          {/* The real component, not a copy. Counts need a session, so the
+              badges are exercised on a signed-in screen; what is checked here
+              is the frame: width, row rhythm, the 12px floor, the active bar,
+              and the rule that matters most — 16 destinations and 5 section
+              headers must fit 900px WITHOUT the nav scrolling. */}
+          <AuthProvider>
+            <div className="flex gap-dt" style={{ height: 900 }}>
+              <Sidebar page={"dashboard" as never} setPage={() => {}}
+                user={{ role: "tenant_owner", name: "Bilal Khan" }} tenant={{ name: "OutsourceTel" }}
+                collapsed={false} setCollapsed={() => {}} onLogout={() => {}} />
+              <Sidebar page={"dashboard" as never} setPage={() => {}}
+                user={{ role: "tenant_owner", name: "Bilal Khan" }} tenant={{ name: "OutsourceTel" }}
+                collapsed setCollapsed={() => {}} onLogout={() => {}} />
+            </div>
+          </AuthProvider>
         </PanelCard>
 
         <PanelCard title="FilterBar">
