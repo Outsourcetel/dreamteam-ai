@@ -3274,18 +3274,22 @@ const dreamteamActions: Record<string, NativeAction> = {
       //  loop reads the instructions and routes to knowledge / connectors /
       //  rules on its own) → optional specialist accuracy check → human
       //  approval → complete. Every step is a genuine playbook primitive.
-      const wantsSpecialist = String(p.needs_specialist ?? '').toLowerCase() === 'true' || !!p.specialist_key;
       const steps: Array<Record<string, unknown>> = [
         { key: 'check_account', label: 'Load the record', params: {} },
         { key: 'agentic_step', label: p.name.trim().slice(0, 60),
           params: { goal_template: outline || `Carry out: ${p.name.trim()}. Use your knowledge, connected systems and your employer's rules as needed.` } },
       ];
-      if (wantsSpecialist) {
-        steps.push({ key: 'consult_specialist', label: 'Accuracy check',
-          params: { profile_key: String(p.specialist_key ?? 'technical').slice(0, 60),
-            question_template: `Review this "${p.name.trim()}" for {{account.name}} — is it correct and complete?`,
-            min_confidence: 60, on_low: 'escalate' } });
-      }
+      // ⚠ THE "ACCURACY CHECK" STEP THAT USED TO GO HERE COULD NOT RUN.
+      // It emitted consult_specialist, and migration 611 retired the
+      // specialist role: the specialists table is gone, digital_employees no
+      // longer has is_specialist or specialist_key, and playbook-execute's
+      // dispatch switch has no case for the key — so it fell to `default:`
+      // and marked the step `skipped: unknown primitive`, WITHOUT failing the
+      // run. A generated playbook therefore reported success having quietly
+      // skipped the review the request asked for, which is the worst way for
+      // a governance step to fail. The human_approval step below still stops
+      // the run for a person, so the review a caller actually wanted is the
+      // one that survives.
       steps.push({ key: 'human_approval', label: 'Human review',
         params: { title_template: `Review — ${p.name.trim()} for {{account.name}}`, task_type: 'approval_gate' } });
       steps.push({ key: 'complete', label: 'Done', params: {} });
@@ -3310,33 +3314,23 @@ const dreamteamActions: Record<string, NativeAction> = {
       if (error) return { ok: false, error: 'create_failed', detail: error.message };
       const attach = deId ? ` and attached it to ${p.for_de!.trim()}` : '';
       return { ok: true, raw: { playbook_id: data?.id },
-        receipt: `Drafted a runnable playbook "${p.name.trim()}" — ${steps.length} real steps (load the record → run the procedure as a smart step${wantsSpecialist ? ' → specialist accuracy check' : ''} → human approval → complete)${attach}. A human can refine and publish it in the Playbook Builder.` };
+        receipt: `Drafted a runnable playbook "${p.name.trim()}" — ${steps.length} real steps (load the record → run the procedure as a smart step → human approval → complete)${attach}. A human can refine and publish it in the Playbook Builder.` };
     },
   },
-  dt_create_specialist: {
-    render(_c, p) {
-      if (!p.name?.trim()) return { ok: false, error: 'param_required', detail: 'name is required.' };
-      return { ok: true, method: 'INTERNAL', url: 'dreamteam://create_specialist', body: p };
-    },
-    async run(c, p) {
-      if (!c.admin || !c.tenantId) return { ok: false, error: 'no_admin_context' };
-      if (!p.name?.trim()) return { ok: false, error: 'param_required', detail: 'name is required.' };
-      // Specialists are Digital Employees now (migrations 208/211).
-      const spCap = await dtQuota(c, 'digital_employees', 60, 'digital employees');
-      if (spCap) return { ok: false, error: 'quota_exceeded', detail: spCap };
-      const { data, error } = await c.admin.from('digital_employees').insert({
-        tenant_id: c.tenantId, catalog_id: 'support_agent',
-        name: p.name.trim().slice(0, 120), persona_name: p.name.trim().slice(0, 60),
-        category: 'Internal', is_specialist: true, specialist_key: `${dtSlug(p.name)}_${dtSuffix()}`,
-        description: (p.charter ?? p.description ?? '').slice(0, 300) || null,
-        charter: { mission: (p.charter ?? p.description ?? '').slice(0, 2000) },
-        lifecycle_status: 'designed', status: 'active', trust_level: 'supervised',
-      }).select('id').single();
-      if (error) return { ok: false, error: 'create_failed', detail: error.message };
-      return { ok: true, raw: { specialist_id: data?.id },
-        receipt: `Created specialist "${p.name.trim()}" (a Digital Employee). Assign it to the Digital Employees that need this expertise.` };
-    },
-  },
+  // ⚠ dt_create_specialist WAS HERE AND COULD NEVER SUCCEED. It inserted a
+  // digital_employees row setting is_specialist and specialist_key, and
+  // migration 611 dropped BOTH columns with the specialist role — so every
+  // call returned create_failed with a "column does not exist" message from
+  // Postgres. Found while removing the consult_specialist emitters: the same
+  // retirement, unfinished in a fourth place.
+  //
+  // ⚠ THE ACTION IS STILL ADVERTISED. action_definitions holds an ACTIVE,
+  // platform-scoped `create_specialist` row — offered to all 16 tenants,
+  // marked destructive, and now with no executor behind it. Retiring that row
+  // is a database change and is NOT done here; it is listed for the founder.
+  // Removing the executor does not make anything worse in the meantime: the
+  // action failed before and fails now, one step earlier and without a
+  // misleading Postgres error attached to a governance receipt.
   dt_propose_connector: {
     render(_c, p) {
       if (!p.provider?.trim()) return { ok: false, error: 'param_required', detail: 'provider is required.' };

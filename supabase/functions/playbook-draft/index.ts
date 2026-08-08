@@ -55,7 +55,6 @@ const COMPILER_PRIMITIVES = `
 - check_knowledge { "query_template": string, "on_miss": "continue"|"escalate" } — look up the tenant's knowledge base. Use for every step that depends on a policy/fact.
 - instruction { "title": string, "body_md": string } — guidance the DE must follow at this point (markdown).
 - checklist { "items": [string, ...] } — concrete actions a HUMAN must confirm (only for genuinely human sub-tasks).
-- consult_specialist { "profile_key": string, "question_template": string } — ask an expert (only if the SOP demands expert review; profile_key from the provided list).
 - custom_step { "instructions": string } — a JUDGMENT step: a FULL reasoning loop where the DE uses its tools to TAKE ACTION in external systems (create/update records, send messages via a connector, look things up live). EXPENSIVE — every custom_step is a separate agentic run against the tenant's budget. Use it ONLY when the step genuinely requires taking an action or an autonomous multi-tool investigation. Do NOT use custom_step for plain guidance, explaining policy, deciding whether to escalate, or drafting what to say — those are instruction steps.
 - complete {} — REQUIRED single last step.`;
 
@@ -94,8 +93,16 @@ serve(async (req) => {
 
     // ── Gather the tenant context the study grounds against ──
     const deId = typeof body.de_id === 'string' && body.de_id ? body.de_id : null;
-    const [specialists, guardrails, kb] = await Promise.all([
-      admin.from('digital_employees').select('key:specialist_key, name').eq('tenant_id', tenantId).eq('is_specialist', true).limit(12),
+    // ⚠ THE SPECIALIST LOOKUP THAT USED TO SIT HERE QUERIED TWO DROPPED
+    // COLUMNS. It read digital_employees.specialist_key filtered on
+    // is_specialist, and migration 611 removed both along with the specialist
+    // role — information_schema returns neither today. So the query errored on
+    // every draft, `specialists.data` came back null, and the prompt fell
+    // through to "(none available — do not emit consult_specialist)". It
+    // degraded quietly rather than breaking, which is why it survived: a
+    // wasted round trip on every call and a primitive advertised to the model
+    // that playbook-execute has no case for and skips silently.
+    const [guardrails, kb] = await Promise.all([
       admin.from('guardrail_rules').select('rule').eq('tenant_id', tenantId).eq('active', true).limit(25),
       (async () => {
         const emb = await embedText(sopText.slice(0, 1500));
@@ -107,7 +114,6 @@ serve(async (req) => {
         return Array.isArray(data) ? data as Array<Record<string, unknown>> : [];
       })(),
     ]);
-    const specialistKeys = (specialists.data ?? []).map((s) => s.key).join(', ') || '(none available — do not emit consult_specialist)';
     const guardrailList = (guardrails.data ?? []).map((g) => `- ${g.rule}`).join('\n') || '(none)';
     const kbExcerpts = kb.map((c, i) => `[KB ${i + 1}] ${String(c.title ?? '')}\n${String(c.content ?? '').slice(0, 900)}`).join('\n---\n').slice(0, 9000) || '(no matching knowledge found)';
 
@@ -116,7 +122,6 @@ serve(async (req) => {
     // ── 1) COMPILE: SOP → typed steps ──
     const compileSystem = 'You compile a business Standard Operating Procedure into an executable playbook for a governed digital employee. '
       + 'Decompose the SOP into steps using ONLY these primitives (params must match exactly):\n' + COMPILER_PRIMITIVES
-      + `\nAvailable specialist profile_keys: ${specialistKeys}.`
       + '\nPrinciples: (1) every policy-dependent step gets a check_knowledge FIRST so answers are grounded; '
       + '(2) DEFAULT to instruction steps for guidance, explaining policy, deciding whether to escalate, and drafting what to say — the DE reads the whole procedure (threaded at runtime) and follows these in flow at ZERO extra cost. '
       + '(3) use custom_step ONLY where the SOP requires actually TAKING AN ACTION in a system (create/update a record, send via a connector) — aim for AT MOST 1-2 custom_steps in a playbook, never a chain of them (each is an expensive separate reasoning run). '

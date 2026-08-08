@@ -40,7 +40,7 @@ const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: 
 const MODEL = 'claude-sonnet-5';
 const MAX_REPAIR = 2;
 
-const AMEND_PRIMITIVES = `check_account {}, check_knowledge {query_template, on_miss:'continue'|'escalate'}, instruction {title, body_md}, checklist {items:[]}, consult_specialist {profile_key, question_template}, custom_step {instructions} (EXPENSIVE — actions only), complete {} (required last).
+const AMEND_PRIMITIVES = `check_account {}, check_knowledge {query_template, on_miss:'continue'|'escalate'}, instruction {title, body_md}, checklist {items:[]}, custom_step {instructions} (EXPENSIVE — actions only), complete {} (required last).
 Prefer free instruction steps for guidance; reserve custom_step for genuine actions. Keep 4-9 steps.`;
 
 serve(async (req) => {
