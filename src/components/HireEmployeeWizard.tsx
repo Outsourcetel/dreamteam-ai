@@ -5,9 +5,10 @@
 // playbook, rehearses live in front of you, and then walks the real
 // lifecycle gates as far as they honestly allow. No governance is
 // bypassed — the gates just speak plain language now.
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useIsTenantAdmin } from '../lib/useRoleGate';
-import { Modal } from '../design/primitives';
+import { useAuth } from '../context/AuthContext';
+import { Modal, Banner, Button } from '../design/primitives';
 import {
   draftNewHire, saveExamAsGolden, teachNewHire, runRehearsal,
   promoteAsFarAsGatesAllow, describeStage,
@@ -35,35 +36,139 @@ const EXAMPLES: { label: string; brief: string }[] = [
     brief: 'Someone to handle order status questions for our online store — where is my order, returns, exchanges — always polite, never promises delivery dates we cannot keep.' },
 ];
 
+// ── Surviving a refresh ───────────────────────────────────────────────────
+// ⚠ THE EMPLOYEE OUTLIVES THE TAB. draftNewHire() creates a REAL digital
+// employee server-side at step one and hands back its entity_id; every later
+// step (teaching, rehearsal, the promotion gates) acts on that row. So closing
+// the tab never lost the employee — it lost the only route back to it, leaving
+// a half-built hire sitting in the roster that nobody could finish. Measured
+// 2026-08-09: 41 employees stuck at `designed`, 33 of them created in the last
+// 30 days. That is roughly one abandoned hire a day.
+//
+// What is kept is the expensive human input — the brief you wrote and the
+// interview answers about your own business — plus the results of the slow
+// calls, so resuming never re-runs a rehearsal you already paid for.
+const HIRE_STORE_V = 1;
+const HIRE_KEEP_MS = 7 * 24 * 60 * 60 * 1000; // a week; past that the roster has moved on
+
+interface SavedHire {
+  v: number; at: number;
+  step: Step; brief: string; draft: HireDraft | null; answers: string[];
+  goldenSaved: number; teach: TeachResult | null; rehearsal: RehearsalResult | null;
+  promo: PromotionOutcome | null;
+  showRoles: boolean; selectedRole: RoleArchetype | null; roleDeName: string;
+  archResult: ArchetypeHireResult | null; setupQuestions: SetupQuestion[];
+  setupAnswers: Record<string, string>; applyResult: TailoredApplyResult | null;
+}
+
+function readSavedHire(key: string): SavedHire | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const s = JSON.parse(raw) as SavedHire;
+    if (s?.v !== HIRE_STORE_V || typeof s.at !== 'number' || Date.now() - s.at > HIRE_KEEP_MS) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    // Nothing worth resuming unless a real employee exists or words were typed.
+    if (!s.draft && !s.archResult && !s.brief?.trim()) return null;
+    return s;
+  } catch {
+    return null; // corrupt JSON or blocked storage must never stop someone hiring
+  }
+}
+
 export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: () => void; onFinished: () => void }) {
   // Hiring calls create_digital_employee / advance_de_lifecycle / install_role_systems — all owner/admin. The workforce pages that open this wizard are ALL_TENANT.
   const isTenantAdmin = useIsTenantAdmin();
-  const [step, setStep] = useState<Step>('brief');
+  const { authedUser } = useAuth();
+
+  // ⚠⚠ SCOPED TO TENANT **AND** USER. entity_id names a row in ONE workspace;
+  // restoring it under another would point the rest of the wizard — teaching,
+  // rehearsal, the promotion gates — at somebody else's employee.
+  const storeKey = `dt.hire.${authedUser?.tenantId ?? 'none'}.${authedUser?.id ?? 'anon'}`;
+  // App.tsx renders this only past its `if (!authedUser) return`, so the
+  // identity is known on the FIRST render and the restore can happen in the
+  // initialisers below — no flash of an empty step one before it lands.
+  const [restored] = useState(() => readSavedHire(storeKey));
+  const [resumed, setResumed] = useState(!!restored);
+
+  const [step, setStep] = useState<Step>(restored?.step ?? 'brief');
   const [commsCopied, setCommsCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const [brief, setBrief] = useState('');
-  const [draft, setDraft] = useState<HireDraft | null>(null);
-  const [answers, setAnswers] = useState<string[]>([]);
-  const [goldenSaved, setGoldenSaved] = useState(0);
-  const [teach, setTeach] = useState<TeachResult | null>(null);
-  const [rehearsal, setRehearsal] = useState<RehearsalResult | null>(null);
+  const [brief, setBrief] = useState(restored?.brief ?? '');
+  const [draft, setDraft] = useState<HireDraft | null>(restored?.draft ?? null);
+  const [answers, setAnswers] = useState<string[]>(restored?.answers ?? []);
+  const [goldenSaved, setGoldenSaved] = useState(restored?.goldenSaved ?? 0);
+  const [teach, setTeach] = useState<TeachResult | null>(restored?.teach ?? null);
+  const [rehearsal, setRehearsal] = useState<RehearsalResult | null>(restored?.rehearsal ?? null);
   const [rehearsalError, setRehearsalError] = useState<string | null>(null);
-  const [promo, setPromo] = useState<PromotionOutcome | null>(null);
+  const [promo, setPromo] = useState<PromotionOutcome | null>(restored?.promo ?? null);
   const [showScenarios, setShowScenarios] = useState(false);
 
   // ── Archetype-hire mode: hire a ready-made role (Renewals, Billing…) ──
-  const [showRoles, setShowRoles] = useState(false);
+  const [showRoles, setShowRoles] = useState(restored?.showRoles ?? false);
   const [archetypes, setArchetypes] = useState<RoleArchetype[]>([]);
-  const [selectedRole, setSelectedRole] = useState<RoleArchetype | null>(null);
-  const [roleDeName, setRoleDeName] = useState('');
-  const [archResult, setArchResult] = useState<ArchetypeHireResult | null>(null);
-  const [setupQuestions, setSetupQuestions] = useState<SetupQuestion[]>([]);
-  const [setupAnswers, setSetupAnswers] = useState<Record<string, string>>({});
-  const [applyResult, setApplyResult] = useState<TailoredApplyResult | null>(null);
+  const [selectedRole, setSelectedRole] = useState<RoleArchetype | null>(restored?.selectedRole ?? null);
+  const [roleDeName, setRoleDeName] = useState(restored?.roleDeName ?? '');
+  const [archResult, setArchResult] = useState<ArchetypeHireResult | null>(restored?.archResult ?? null);
+  const [setupQuestions, setSetupQuestions] = useState<SetupQuestion[]>(restored?.setupQuestions ?? []);
+  const [setupAnswers, setSetupAnswers] = useState<Record<string, string>>(restored?.setupAnswers ?? {});
+  const [applyResult, setApplyResult] = useState<TailoredApplyResult | null>(restored?.applyResult ?? null);
   const [applyBusy, setApplyBusy] = useState(false);
+
+  const saveTimer = useRef<number | null>(null);
+
+  // ⚠ busy / phase / error / applyBusy are DELIBERATELY not restored above and
+  // not saved below. A `busy: true` that survived a refresh would reopen the
+  // wizard permanently mid-spinner with nothing actually running behind it.
+  useEffect(() => {
+    if (!draft && !archResult && !brief.trim()) {
+      try { localStorage.removeItem(storeKey); } catch { /* storage unavailable */ }
+      return;
+    }
+    // ⚠ DEBOUNCED ON PURPOSE. The blob carries the whole draft, including the
+    // generated exam, and the interview step is a set of long free-text
+    // answers — serialising all of it on every keystroke puts real work in the
+    // typing path. 400ms costs nothing on a refresh and keeps typing smooth.
+    saveTimer.current = window.setTimeout(() => {
+      const body: SavedHire = {
+        v: HIRE_STORE_V, at: Date.now(),
+        step, brief, draft, answers, goldenSaved, teach, rehearsal, promo,
+        showRoles, selectedRole, roleDeName, archResult, setupQuestions, setupAnswers, applyResult,
+      };
+      try { localStorage.setItem(storeKey, JSON.stringify(body)); }
+      catch { /* quota or private browsing — hiring must still work without it */ }
+    }, 400);
+    return () => { if (saveTimer.current) window.clearTimeout(saveTimer.current); };
+  }, [storeKey, step, brief, draft, answers, goldenSaved, teach, rehearsal, promo,
+      showRoles, selectedRole, roleDeName, archResult, setupQuestions, setupAnswers, applyResult]);
+
+  const forgetDraft = () => {
+    // ⚠ KILL THE PENDING WRITE FIRST. A debounced save queued moments before
+    // the hire completed would otherwise land 400ms later and resurrect the
+    // draft we just deleted — so the next visit would offer to resume an
+    // employee that is already finished. Unmounting happens to clear this too,
+    // but correctness here should not depend on the caller navigating away.
+    if (saveTimer.current) { window.clearTimeout(saveTimer.current); saveTimer.current = null; }
+    try { localStorage.removeItem(storeKey); } catch { /* storage unavailable */ }
+  };
+
+  /** Abandon this hire in the browser. ⚠ It does NOT delete the employee —
+   *  it is already in the roster and only the workforce page can retire it.
+   *  The button says so, because a control that implies a cleanup it does not
+   *  perform is worse than no button. */
+  const startDifferentHire = () => {
+    forgetDraft();
+    setStep('brief'); setBrief(''); setDraft(null); setAnswers([]); setGoldenSaved(0);
+    setTeach(null); setRehearsal(null); setRehearsalError(null); setPromo(null);
+    setShowRoles(false); setSelectedRole(null); setRoleDeName(''); setArchResult(null);
+    setSetupQuestions([]); setSetupAnswers({}); setApplyResult(null);
+    setError(null); setResumed(false);
+  };
 
   useEffect(() => {
     if (showRoles && archetypes.length === 0) {
@@ -75,6 +180,11 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
 
   const persona = draft?.config.persona_name || 'Your new employee';
   const roleName = draft?.config.name || 'New Digital Employee';
+  // Who the resumed draft is ABOUT — null when only a typed brief was saved
+  // and no employee exists yet, because then there is nothing in the roster.
+  const resumeSubject = draft ? roleName
+    : archResult ? (roleDeName.trim() || selectedRole?.name || 'An employee')
+    : null;
 
   const tailoredProposal = proposeTailoredSetup(setupQuestions, setupAnswers);
   const hasProposal =
@@ -179,11 +289,11 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
     // ⚠ The work itself was never as fragile as it looked. draftNewHire()
     // creates a REAL entity server-side at step one and returns its
     // entity_id, so an abandoned wizard leaves a `designed` employee rather
-    // than nothing — 41 of those exist across the platform. What a stray
-    // click actually destroyed was the local state: the brief you typed, your
-    // answers, and which step you were on. That is still true here and is the
-    // one thing a route cannot fix on its own; persisting it is listed as new
-    // data in the handoff and is NOT built here.
+    // than nothing — 41 of those exist across the platform, 33 from the last
+    // 30 days. What a stray click destroyed was the local state: the brief you
+    // typed, your answers, and which step you were on. That IS now persisted
+    // (see readSavedHire above), so leaving and coming back resumes the same
+    // hire instead of starting a second one beside it.
     <div className="p-6 max-w-4xl mx-auto">
       <button onClick={() => { if (!busy) onClose(); }}
         className="text-xs text-dt-support hover:text-dt-body mb-4 inline-flex items-center gap-1.5">
@@ -193,6 +303,27 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
         <h1 className="text-2xl font-semibold text-dt-title">Hire a digital employee</h1>
         <p className="text-sm text-dt-support mt-1">Describe the role. The rest is a conversation.</p>
       </div>
+      {resumed && (
+        <Banner tone="info" className="mb-5">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <p className="flex-1 min-w-[18rem]">
+              <span className="font-medium">Picking up where you left off.</span>{' '}
+              {resumeSubject
+                ? `${resumeSubject} already exists in your roster as an unfinished hire — carry on here to finish it.`
+                : 'The description you wrote was saved on this device.'}
+            </p>
+            <span className="flex items-center gap-2 shrink-0">
+              <Button kind="ghost" size="sm" onClick={() => setResumed(false)}>Carry on</Button>
+              <Button size="sm" onClick={startDifferentHire}
+                title={resumeSubject
+                  ? `Starts a blank hire. ${resumeSubject} stays in your roster — finish or retire it from the workforce page.`
+                  : 'Clears the saved description and starts a blank hire.'}>
+                Start a different hire
+              </Button>
+            </span>
+          </div>
+        </Banner>
+      )}
         <div className="px-6 pb-6 space-y-5">
           {error && <div className="rounded-xl border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{error}</div>}
 
@@ -472,7 +603,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                 </button>
               </div>
 
-              <button onClick={() => { onFinished(); onClose(); }}
+              <button onClick={() => { forgetDraft(); onFinished(); onClose(); }}
                 className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors">
                 Done — take me to the team
               </button>
@@ -588,7 +719,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                 You can refine its rules, watchers, SOP and connections any time from the employee’s profile — the setup stays editable as your business changes.
               </p>
 
-              <button onClick={() => { onFinished(); onClose(); }}
+              <button onClick={() => { forgetDraft(); onFinished(); onClose(); }}
                 className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors">
                 Done — take me to the team
               </button>
