@@ -53,7 +53,53 @@ money/reputation) → **Ring 2** (costs correctness) → **Ring 3** (polish).
 | R2.2 | Role-gated UI: every control's gate matches its RPC+RLS | **PROVEN** | `npm run audit:role-gates` |
 | R2.3 | No silent `{ok:false}`/HTTP-200 refusal dropped at a call site | **PROVEN** | `npm run audit:silent-refusals` |
 | R2.4 | Design system: no token/drift regression | **PROVEN** | `scripts/design-drift.mjs` |
-| R2.5 | The core loop closes end-to-end (hire→…→trust) | **UNPROVEN** | Golden Path — building next |
+| R2.5 | The core loop closes end-to-end (hire→…→trust) | **UNPROVABLE HERE** | `npm run golden-path` — built; the dev project cannot run it (see below) |
+
+---
+
+## The Golden Path, and what it found on its first run
+
+`npm run golden-path` is the product as an **executable trace**: signup → hire →
+equip → intake → escalate → **human decides** → gate → evidence → trust. Every
+step asserts an *observable consequence*, not a return code. It runs against dev
+through the real public signup path — never a forged `auth.users` row.
+
+**Result: 2 of 10 steps proven. 8 CANNOT BE PROVEN — not because the product is
+broken, but because the dev project cannot run the product.**
+
+| | dev | production | gap |
+|---|---|---|---|
+| routines | 779 | 881 | **−102** |
+| tables | 266 | 284 | **−18** |
+| policies | 350 | 387 | **−37** |
+| **migration ledger rows** | **0** | 657 | **dev tracks nothing** |
+
+Concretely, dev cannot:
+
+- **Hire.** `role_archetypes` is **empty**. The product's first step is
+  impossible there, so nothing downstream can run.
+- **Escalate.** `open_de_escalation` **does not exist** — the human seam, which
+  is the entire product thesis, cannot be exercised.
+- **Prove the guardrail.** Dev carries **two** overloads of
+  `decide_action_execution` (a 4-arg legacy and a 7-arg), production has one
+  8-arg version *with `p_content`* — the parameter the guardrail scan reads. The
+  duplicate-overload trap that caused a cron outage in migration 562 is sitting
+  in the test environment right now.
+
+**Why this matters more than any single bug.** There is currently **no
+environment anywhere in which the core loop can be verified before it reaches
+customers.** The behavioural tests that pass are running against a system 102
+routines behind production, and dev has *no ledger*, so the drift is invisible
+and unbounded — nothing would ever have reported it. `certify` is green because
+its Ring-0 probes read production directly; the *write paths* have no
+pre-production proof at all.
+
+This is a **Ring-1 environment defect** and it is the highest-leverage fix
+available: it is the difference between a review that certifies today and a
+system that stays certified. Options, cheapest first: seed `role_archetypes` and
+sync the missing routines to dev; or rebuild dev from `full_schema.sql` (the
+restore drill already proves that file reproduces production exactly) and give
+dev a migration ledger so it can never silently drift again.
 
 ## The spine — is there a product?
 

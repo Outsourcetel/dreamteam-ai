@@ -29,7 +29,8 @@
     "restore:drill": "node scripts/restore-drill.mjs",
     "certify": "node scripts/certify.mjs",
     "certify:fast": "node scripts/certify.mjs --fast",
-    "certify:mutation": "node scripts/certify-mutation-test.mjs"
+    "certify:mutation": "node scripts/certify-mutation-test.mjs",
+    "golden-path": "node scripts/golden-path.mjs"
   },
   "dependencies": {
     "@sentry/react": "^10.64.0",
