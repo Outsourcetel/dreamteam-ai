@@ -1,0 +1,2649 @@
+{
+  "pinned_at": "2026-08-08T19:38:25.377Z",
+  "purpose": "Certification-review baseline. Diff current state against this to see exactly what moved during the review.",
+  "git_commit": "bc863888c578b20321a1c0960eee8b10b7fc29c6",
+  "git_tag": "review-baseline-20260809",
+  "ledger_entries": 656,
+  "ledger_last": "635_the_gap_the_row_trigger_could_not_see.sql",
+  "census": {
+    "tables": 284,
+    "views": 5,
+    "routines": 881,
+    "triggers": 278,
+    "policies": 387,
+    "cron_jobs": 49,
+    "tenants": 16,
+    "users": 21,
+    "digital_employees": 117,
+    "connectors": 24,
+    "published_templates": 13,
+    "active_actions": 68,
+    "db_bytes": 210734227
+  },
+  "ledger": [
+    {
+      "filename": "001_digital_employees_and_playbooks.sql",
+      "checksum": "87595c164d6ffb24ae31b0190a14ec09766a3a9793e3221135338a4f2c9693fe"
+    },
+    {
+      "filename": "002_workspaces_capabilities_audit.sql",
+      "checksum": "d4595116f20781e301dbbd1043577972cd43680ca29f27d5dd11b0fcaa8ccae1"
+    },
+    {
+      "filename": "003_seed_outsourcetel.sql",
+      "checksum": "095a9e8773a0651d35aeadfd5799b499d5545737a847276d2319505052ad27ea"
+    },
+    {
+      "filename": "004_profiles_extra_columns.sql",
+      "checksum": "4928fff2212fb88bddd5f7ef9f29e6183a891d5eac45bdf1ef736971451c4ab7"
+    },
+    {
+      "filename": "005_agent_actions.sql",
+      "checksum": "5137faf092b18757a10c5ce40e95fbfda253db18e9df9c487f3c9e20c4167b41"
+    },
+    {
+      "filename": "006_knowledge_chunks_and_search.sql",
+      "checksum": "0328acfeb4bc8aa1c6dc88bb0d8a40fe5028f27a6b627def6f7c191ae5b3c431"
+    },
+    {
+      "filename": "007_ai_usage_and_platform_config.sql",
+      "checksum": "135ac1832e313e8acc6b170419d37c4efa2b96aa63f1a08f18536b44d9ae0358"
+    },
+    {
+      "filename": "008_de_model_config.sql",
+      "checksum": "a7259e8bb3716be84edc1c80f4d06f93c511584fd9ddf0a93816a8a227a9ba3c"
+    },
+    {
+      "filename": "009_de_intelligence_config.sql",
+      "checksum": "9952758eb9152710e437b61190513bd5f64d3847c2dc9c93cf97d6499d4f1fcf"
+    },
+    {
+      "filename": "010_csat_and_alerts.sql",
+      "checksum": "6da241200108052f7ad518958c17bfb0e3de2ca0b35151767e4347572a5a6ea2"
+    },
+    {
+      "filename": "011_customer_entity.sql",
+      "checksum": "7ec9c6754c99b50a4d0f9385db59d41ff6b969e1f9d750c6631473dc43244d27"
+    },
+    {
+      "filename": "012_knowledge_docs.sql",
+      "checksum": "8a6cd268f79c881ccb1ee7109472641b4dfe2eeeb2b4d445dee15b5eaf86add1"
+    },
+    {
+      "filename": "013_scale_foundation.sql",
+      "checksum": "e43fdb66ac47685fc3a87911c4b4b4686588c73529eb79d6bdb643c291aa1c4f"
+    },
+    {
+      "filename": "014_end_user_tokens.sql",
+      "checksum": "4acf7d4a995bbdf1ffc6cd7a68fc384aabdbb8fc71dfbf330eb8242d086607da"
+    },
+    {
+      "filename": "015_workforce_engine.sql",
+      "checksum": "a7d79be452b55f8476a3d1cce5ad403d9bf72b91638640f30b25c4128fc5f1ab"
+    },
+    {
+      "filename": "016_executor_trust_dial.sql",
+      "checksum": "ca2532363d4f3dda13fc7e19a1c3f7413ad86ba64ef3f8df552da2a603f5bc2c"
+    },
+    {
+      "filename": "017_connectors.sql",
+      "checksum": "635cdf5a43b148c6466259fa6003fca471aced018a2761aead4e925e1ce3aa78"
+    },
+    {
+      "filename": "018_proving_ground.sql",
+      "checksum": "00a4c266bd04e1ded1c6f4e8fdab2d05795752b78d1b2abeae7cf3133f963352"
+    },
+    {
+      "filename": "019_playbook_builder.sql",
+      "checksum": "dc94466a4986e5905a2a56e676d4684f0e8eabf05f4756aefb0c58a4eaf98cf9"
+    },
+    {
+      "filename": "020_playbook_triggers.sql",
+      "checksum": "db06be65902c4cba2c1fa74c4425231f105ecbd864b5e9a3d33f76f87c51f7f4"
+    },
+    {
+      "filename": "021_customer_success.sql",
+      "checksum": "ecaca4b42c91d38ba44de6619cd34daad0b7f34198c48e47aef96be66d772ab7"
+    },
+    {
+      "filename": "022_onboarding.sql",
+      "checksum": "65dc99b56c44b2769bb780f6530e90b3050a33f94a6104644a122ffe1e6b32a1"
+    },
+    {
+      "filename": "023_pipeline.sql",
+      "checksum": "9737acc038e9836ff74e1328929bfb6386dac41a1f8d5dcf88676b4b7590e9df"
+    },
+    {
+      "filename": "024_specialists.sql",
+      "checksum": "5acab75558f8e131e3620828878ecad8b69cc752c5accf3206b68a37b2c242db"
+    },
+    {
+      "filename": "025_earned_trust.sql",
+      "checksum": "3a94ba8d86ba3ee32b88ce8fc0c7d6fd503dfc63d8ee8da297b8a0dbd2d629d1"
+    },
+    {
+      "filename": "026_connector_hub_evidence.sql",
+      "checksum": "4762992e9ceae8115bb0a639f8673d768a5543aed2a47f4b680d8f34aa4003ab"
+    },
+    {
+      "filename": "027_category_contracts.sql",
+      "checksum": "3338e7fbc59fc4760509811e78fe6c0b7be435e077857a4ffc879353d3a9b377"
+    },
+    {
+      "filename": "028_adapter_templates.sql",
+      "checksum": "8d1a3efcad17b51437b42700cbeb665813096b7e83dbb69be2ca35e6ccfd6d28"
+    },
+    {
+      "filename": "029_data_access_grants.sql",
+      "checksum": "cee85aa4dfab8c388803762a9bb341cfd1b8d510e2fa06db81ad5fafafaefae6"
+    },
+    {
+      "filename": "030_knowledge_scopes.sql",
+      "checksum": "caff0c1f83fdab6a2fc4946d1b98e6ec34ea69e472c9f3e7255bf731db4e639c"
+    },
+    {
+      "filename": "031_playbook_document.sql",
+      "checksum": "67ecb0f368597d3c98dd1031769284dd5a4f55e4ef898fe129c8cb5eb867f56d"
+    },
+    {
+      "filename": "032_knowledge_feedback_loop.sql",
+      "checksum": "9904fe4c0836aa794c43d332f04f85fb682febf7c55b0c0049950f01f4e1b6c1"
+    },
+    {
+      "filename": "033_drop_connector_role.sql",
+      "checksum": "b9102fbf675c4a0ef3a54f1faab88e50f817dc549d31e768564eef6ee6d08be4"
+    },
+    {
+      "filename": "034_proactive_inquiry_triage.sql",
+      "checksum": "eb7997107295e4f2d765ffb502fbf775a44464e1b5771029e616b0c5de1412e4"
+    },
+    {
+      "filename": "035_action_layer.sql",
+      "checksum": "7487f7024813c73b28a7d05c9547277a615a09082f440ed36d808d9447206bc6"
+    },
+    {
+      "filename": "036_generalized_trigger_layer.sql",
+      "checksum": "d011c8312b2ad2bf03c060cbe31e800a0bbf5f962e97e2c730835e87ed45bb7c"
+    },
+    {
+      "filename": "037_account_de.sql",
+      "checksum": "d8963374710015a8d742fa53856f4e7df1af3ff9f296cdbc0aa79d099cd744e6"
+    },
+    {
+      "filename": "038_security_audit_fixes.sql",
+      "checksum": "80025fcc17706ae9d4ac77c5ce4878af27b6dc365416de63fd479084bd652fa0"
+    },
+    {
+      "filename": "039_security_audit_followup.sql",
+      "checksum": "c5cebe13aa63817a36a368441c499913fbb2d02f83e6af88f2f8b76260227f1d"
+    },
+    {
+      "filename": "040_security_audit_revoke_public_grants.sql",
+      "checksum": "a169c48d9776a9c1f5c88a3dcf5f995ee66d0c7547d095d61167972c63ffcbf1"
+    },
+    {
+      "filename": "041_security_audit_residual_fixes.sql",
+      "checksum": "e5eb1e668fa2ce1f6bb6f26e64f06cf427b55eda4e82f5a46d76b56b3e7d2906"
+    },
+    {
+      "filename": "042_staleness_watchdog.sql",
+      "checksum": "1f0f9715502ec519dffd03447c11758f70f868e872c9efd3f8244800f680e1ad"
+    },
+    {
+      "filename": "043_finance_de.sql",
+      "checksum": "b359effeb59ea6fcddce31ff03104f0078b9cde6c7aa3a8e62b902767ee15ef4"
+    },
+    {
+      "filename": "044_identity_credential_inventory.sql",
+      "checksum": "2d37b960081ad0ced96a62315d9533f88f6076b5de79eabc79da7833d30070f7"
+    },
+    {
+      "filename": "045_de_memory.sql",
+      "checksum": "d6adaccaf1ff48662525dbadeedb3724f2b841d23aa3349490a4a8540bdfb101"
+    },
+    {
+      "filename": "046_hybrid_knowledge_retrieval.sql",
+      "checksum": "550251de4bccee08da9eabdc91c75faccc4f6c0913bba19803703032f4e94192"
+    },
+    {
+      "filename": "047_security_anon_grants_and_bypass_fix.sql",
+      "checksum": "f295335b15143383ec80fb76eb1b18b025bc49d14a7000f4b6b8fb6aa8a013c0"
+    },
+    {
+      "filename": "048_exhaustive_secdef_null_bypass_sweep.sql",
+      "checksum": "03f59d3a926fcb00c0cc270d68595fc567d4028b0d5546601f5f14eeef5ac40f"
+    },
+    {
+      "filename": "049_complete_signup_rpc.sql",
+      "checksum": "ad389a969b0c9586ba0f45d545af222db536e2235344aba15b48980f06c4ef93"
+    },
+    {
+      "filename": "050_tenant_hierarchy.sql",
+      "checksum": "a1e513225d83e78d2ede4dea35dfc890104c2cf8f2db7bc8d20a6ed9f2c5ebc8"
+    },
+    {
+      "filename": "051_platform_admin_tenant_visibility.sql",
+      "checksum": "e0f6f7eb8432a7b8e92273bb431ad9f9b0f698f105c71bfe1d5990b5c760e2d2"
+    },
+    {
+      "filename": "052_platform_owner_security.sql",
+      "checksum": "723c410b98d72663b0ebb6e1add70f3ac3b8e960c8b2639a81b25924597b0c01"
+    },
+    {
+      "filename": "053_remote_access_data_layer.sql",
+      "checksum": "f31c64f95def30ffd3d07552f1e35170fe77e79dea070cd59e967ac96b5506cf"
+    },
+    {
+      "filename": "054_remote_access_rls_bulk_fix.sql",
+      "checksum": "11b545eec0ccb063e86f45c695e2f741e6177bd0678f9d3b3038271771f0317b"
+    },
+    {
+      "filename": "055_remote_access_rls_individual_fix.sql",
+      "checksum": "09871125fcdb70ae76dc2671875cdcc2945d5f0f0ffbc2677f91132efa5c8248"
+    },
+    {
+      "filename": "056_critical_access_control_fixes.sql",
+      "checksum": "088aa87ec20066f8bda0bd8d5d8269722210fa690079bfc198ba83ed88eebab7"
+    },
+    {
+      "filename": "057_fix_ineffective_profiles_column_revoke.sql",
+      "checksum": "2a1e3513cb14a37703194c9b39d10c88088545b5dc93a4339257c6030290db33"
+    },
+    {
+      "filename": "058_deactivation_auth_tenant_id_fix.sql",
+      "checksum": "d28638e571b47a4b024a6e943f431d36430ee3b98261b24a46369c50bf51a77d"
+    },
+    {
+      "filename": "059_secdef_direct_profiles_is_active_sweep.sql",
+      "checksum": "a5cb7873374ee9b35db6e0de39a857a524e5e5a9fdb67ade48bc6b58a622a3b7"
+    },
+    {
+      "filename": "060_signin_lockout_and_signup_burst_limit.sql",
+      "checksum": "6c59de48ba12819b88b4bf9809c02a736326a1b8788737b3aaed4f1d9b19a5a0"
+    },
+    {
+      "filename": "061_remote_access_mfa_requirement.sql",
+      "checksum": "e374e8b17ece80a7472789c0977cccd1f3794f23472df03cf1aeaa384084d34d"
+    },
+    {
+      "filename": "062_remote_access_write_audit_core.sql",
+      "checksum": "5c6f685b781c81ad195c240a21dcd0f13020ef507bd456ac9f9c0690bc6bb531"
+    },
+    {
+      "filename": "063_remote_access_write_audit_triggers.sql",
+      "checksum": "41ca4875863218e83968374542497d8dc2f6ade389f86299490fd1418f370db4"
+    },
+    {
+      "filename": "064_intra_tenant_role_gating.sql",
+      "checksum": "4c2e678e38ec6ab16e3433b786392d81643060286d8108d35479f38959d6c4c9"
+    },
+    {
+      "filename": "065_team_management_rpcs.sql",
+      "checksum": "07abe31af01700ea953b0932354aefac83405511f9c17ea40be5cb75ded06448"
+    },
+    {
+      "filename": "066_tenant_activity_log_core.sql",
+      "checksum": "ba8e2df53df1f8cafc47f7fa60ae8ca138ebd83029f742ef9d20bba4df5e68bd"
+    },
+    {
+      "filename": "067_tenant_activity_log_triggers.sql",
+      "checksum": "a80765e56ceed216f741caf1e2cb647c9fad9d184411cbd9dcf2f7f2f25526ba"
+    },
+    {
+      "filename": "068_feature_flag_wiring.sql",
+      "checksum": "debade03346f79e8d5ade23012ed4af396a142278c76c41b18946712b77af2a8"
+    },
+    {
+      "filename": "069_cleanup_pass_fixes.sql",
+      "checksum": "c8b8cf74aaa2eb3791875a1e5036a34adad3ebea394df9ce3f33cac37df7c776"
+    },
+    {
+      "filename": "070_knowledge_gap_detection.sql",
+      "checksum": "e01b3dd151697bd856ef8a29542fb1939282dad7430c613e0ddd8a2b7e8fa8d5"
+    },
+    {
+      "filename": "071_knowledge_gap_provisioning.sql",
+      "checksum": "15819c8f9e33dea2a5801eceb1d108124c08878631d20fb08c13cee8c564422a"
+    },
+    {
+      "filename": "072_knowledge_gap_promotion_fix.sql",
+      "checksum": "fbb6f652e8deaf8ee810b32db9ce10222a8e0f0077fc00494e08a9b2d25bcc0a"
+    },
+    {
+      "filename": "073_agentic_step_schema.sql",
+      "checksum": "d3993558e57281e634e69d6445c91d63f40eb5f9c3658a6f9a2b9caeaf8a5938"
+    },
+    {
+      "filename": "074_agentic_tool_resolution.sql",
+      "checksum": "85253d642d2c81b76c5b1d2b7542cde7045c966bd962b757de7afd81fcaf6437"
+    },
+    {
+      "filename": "075_agentic_step_provisioning.sql",
+      "checksum": "7847725d4a8fabf8addd6b4ea63f983fab31535d0851bfa94b4330f2423717f4"
+    },
+    {
+      "filename": "076_onboarding_connector_verification.sql",
+      "checksum": "10881357a2929910795e3d76b733db993d94e756a8eac6ba004f49fac868eb25"
+    },
+    {
+      "filename": "077_platform_capability_grants.sql",
+      "checksum": "8b7c7da07f2a4fe8500d4a7ab90309f1257165e5707dcda30d18990baa3a364f"
+    },
+    {
+      "filename": "078_platform_capability_cutover.sql",
+      "checksum": "89809ce1cc21cac277cacdaa75f9ddee9236bd72a64e7c510ed58b6d5599e8e5"
+    },
+    {
+      "filename": "079_anon_grant_sweep.sql",
+      "checksum": "62a1d6edd8091025c283daba44c0938da918d5adb91c25e39e267cc44e3c070c"
+    },
+    {
+      "filename": "080_public_grant_sweep.sql",
+      "checksum": "b603ea75f99b5621e1066c612900654061c97941059606b2ebe0b4f2a160c5bf"
+    },
+    {
+      "filename": "081_tenant_status_rpc.sql",
+      "checksum": "3bb6e785dd24be1ee5bc7fe7426381c69f53e1df29ee1a91e43964af515eef8f"
+    },
+    {
+      "filename": "082_tenant_self_serve_rpc.sql",
+      "checksum": "34b0b5e2f4530d7d6bb885c1b4aa48c31d22eb50002377b2b43077161f33e4e7"
+    },
+    {
+      "filename": "083_tenant_self_service_settings_rpc.sql",
+      "checksum": "4d5d96908d1703a18dbcadad4a63326fc05f0bc8b054ff22f58755454075e2c8"
+    },
+    {
+      "filename": "084_tenant_budget_ceiling.sql",
+      "checksum": "4c3ead7ce4fd644dad615db841681856fa15958296d58e2860863ea8b3d3564a"
+    },
+    {
+      "filename": "085_backfill_undocumented_functions.sql",
+      "checksum": "72f578ddcebfb2a2fd83114d8aae8acc421b6fb4d15f4a7ba465707d2893f4f5"
+    },
+    {
+      "filename": "086_trial_expiry_and_plan_control.sql",
+      "checksum": "1da384a7302f6f985256e29ef1f85ac55836292015efc0da834aa747b513141f"
+    },
+    {
+      "filename": "087_encrypt_platform_config.sql",
+      "checksum": "f1ec0d9667f662ddcd4fb51a98f2284d2772f7ebac28cd8afb83304f1739abcb"
+    },
+    {
+      "filename": "088_encrypt_connector_and_specialist_secrets.sql",
+      "checksum": "104a41097d006c92ade16856c7398fd66e78da21b2e6f3e8e9324a345cf4e6b5"
+    },
+    {
+      "filename": "089_security_page_team_mfa_status.sql",
+      "checksum": "5c82354e9d8414165124d903c11aef868d3a931bb1fc67347feae2b6e8650d42"
+    },
+    {
+      "filename": "090_tenant_api_keys.sql",
+      "checksum": "5c56b6349fb26ccccb0dde5aca248640b448ce798cfec83a62fc1af1ffd5486f"
+    },
+    {
+      "filename": "091_tenant_session_policy.sql",
+      "checksum": "362f6e087ca91d2a69ada7de8a598c4dc7ac64e3b0b24aa1a400fb10cf1b3ba8"
+    },
+    {
+      "filename": "092_tenant_ip_allowlist.sql",
+      "checksum": "f460c87f0a303c16fc72c57f0393352da25e609a3a45d72d76da0fbad4278d74"
+    },
+    {
+      "filename": "093_de_performance_metrics.sql",
+      "checksum": "f03fb4a011152ea1fd2168917a9652a5cae03a4235d915fa2d51acd1f7fbfb66"
+    },
+    {
+      "filename": "094_de_token_cost_tracking.sql",
+      "checksum": "0ec6ecbd0ced8091a9e666849954683e74acc92dd409f6aa225832239414c9d1"
+    },
+    {
+      "filename": "095_real_csat_collection.sql",
+      "checksum": "410ae3c994092e746f17697d2d3ff0491c6d15c9336491eea0081632391c4cc3"
+    },
+    {
+      "filename": "096_de_insights_signals.sql",
+      "checksum": "714dafe5e3ea21c7a07a47202cc5ae3a67ff374c3f3ab4f1affa7f2a718f1ae5"
+    },
+    {
+      "filename": "097_fix_duplicate_starter_de_provisioning.sql",
+      "checksum": "8e5365ab5fc75cbf177e9d952d57dc2a565fb728689df60c188f91f31c4551da"
+    },
+    {
+      "filename": "098_fix_merged_de_catalog_id_swap.sql",
+      "checksum": "daba7e531a4198ab6d5aef8150dafd366250218a7c5f8fead1d2946cb6ef76e3"
+    },
+    {
+      "filename": "099_critical_findings_fix.sql",
+      "checksum": "6cbeac123e4c453f961fd04d19520b40f1c9600c88a14af20ff2e721000c0a0b"
+    },
+    {
+      "filename": "100_ai_budget_enforcement.sql",
+      "checksum": "f324f7364d2f004acffffb581b374c47ad345ad59ab718c8097febd315c76e43"
+    },
+    {
+      "filename": "101_knowledge_quality.sql",
+      "checksum": "66e8af39a25a886760f9feaabe317683b511819ea7b9cbdad70f86e2003118a2"
+    },
+    {
+      "filename": "102_edge_function_remote_access_tenant.sql",
+      "checksum": "5a14b3fe260dc0c94b6bcae01e4a8baa8396b157d351211936dbc1ae922da1b5"
+    },
+    {
+      "filename": "103_de_learned_behavior_detection.sql",
+      "checksum": "219a75ab2bcfa883ce1ccfcaf6284dd1fba87370b4460ca87ab9aad918eebca2"
+    },
+    {
+      "filename": "104_onboarding_playbook_reunification_and_frustration.sql",
+      "checksum": "88cda88b37f37bff4e97533860b05be468259b86a80e9740df616b1dc2576ab0"
+    },
+    {
+      "filename": "105_remote_access_role_gate_fix.sql",
+      "checksum": "238acefe56ead473c9bf80e1bc53ba05d954584c35ec4c0028dab836debdf0a2"
+    },
+    {
+      "filename": "106_trust_level_terminology_fix.sql",
+      "checksum": "169dbf946c69bcf9df1c3603f3357a3cb247f2c4525799ae52362bafcd5ffa09"
+    },
+    {
+      "filename": "107_extensible_category_and_specialist_taxonomy.sql",
+      "checksum": "9b358f9f56d5361147b4f13c919f9c56fcc7074c68a440c18681970c80a05051"
+    },
+    {
+      "filename": "108_trust_dial_per_employee.sql",
+      "checksum": "4afef18ef696c4e5a0e9f6bd993c5f3445640b05098663b200614ec842a55bb2"
+    },
+    {
+      "filename": "109_work_item_ownership_claims.sql",
+      "checksum": "0317b717409e70c8d9515e0341ee91015cf3fa6e177cb9b3f308e1ca3931c35d"
+    },
+    {
+      "filename": "110_de_governance_triad.sql",
+      "checksum": "c431d07cc851a7a5f7f927478ee214af402676bfd8e77f826a98f9023fc282e9"
+    },
+    {
+      "filename": "111_de_consultation.sql",
+      "checksum": "4d270a5affc41d95adfe12850ff4ea5cb006e2a414aea10ffb81b2624388a2c1"
+    },
+    {
+      "filename": "112_de_development_and_health.sql",
+      "checksum": "2d1297c5ee7439c93f2a2f2684a5844aec15572f284488ec63a49440319b5e9a"
+    },
+    {
+      "filename": "113_create_de_owner_id_fix.sql",
+      "checksum": "c9c1c992f352838fa973402cf6268b17283d3d41f34c2b3a68c4cfab7f035bcb"
+    },
+    {
+      "filename": "114_provision_starter_de_fixes.sql",
+      "checksum": "b394c7301802d77e99fe4168903f3c17b4f200337567540dde5be21f8b2c0d0e"
+    },
+    {
+      "filename": "115_complete_signup_role_fix.sql",
+      "checksum": "b6ebace363a6318f48d760c9198a1277d133219baf63a6b081eaaee3883cd897"
+    },
+    {
+      "filename": "116_remote_access_tenant_resolution_sweep.sql",
+      "checksum": "13f78e42fd3a06c237817d8bec369400c68353981d33ef7ef9a2238eb0302505"
+    },
+    {
+      "filename": "117_de_governance_remote_access_fix.sql",
+      "checksum": "9486424e2d8053513077fae46ce98a11e18f18d687eadfc98f86ca74068f9ccc"
+    },
+    {
+      "filename": "118_tenant_provisioning_contract.sql",
+      "checksum": "c8f94e3dec70f4edd062b069c452bb35001ecc0b606fcaf77a8fd74a750dde6d"
+    },
+    {
+      "filename": "119_dispatch_cron_jwt_fix.sql",
+      "checksum": "275bb98fe57f35306bdd38904d3d5ea7bbbc58c3b455d7fbd74b8661c67a1c31"
+    },
+    {
+      "filename": "120_support_action_breadth.sql",
+      "checksum": "e450d9f5cb1bdb9b082de649ce443cd97e1a74105a820cb4666f8551ca03c76e"
+    },
+    {
+      "filename": "121_de_owns_inbox_over_specialist.sql",
+      "checksum": "09763eeace0242ebd13cf99b63f0ccc8d0ae66a373c1c7863c5aff35c545ce9d"
+    },
+    {
+      "filename": "122_de_specialist_assignments.sql",
+      "checksum": "ebb0ae2fc4eca2e3ddf9a8d926d9073e515ea6a3f836b396cf8ed5635769cef6"
+    },
+    {
+      "filename": "123_de_incident_record.sql",
+      "checksum": "4a5b246cd0636fb935c41a574a8428b573bbcff0b70f62c9c505f72204841be2"
+    },
+    {
+      "filename": "124_de_escalation_rules.sql",
+      "checksum": "4332a47c0738eb5793d6fac7354cc7e8935e3e5aa62f04935ad454eb9b78d150"
+    },
+    {
+      "filename": "125_unified_action_gate_and_dev_needs_cron.sql",
+      "checksum": "0ae4da3d97dc6bb8a8cc83bfb4a0248567088946a80032992c76e62e0d1b7c31"
+    },
+    {
+      "filename": "126_de_lifecycle_gates.sql",
+      "checksum": "0a4c8c2cf37282ff70025775f3c06485aced3d890214bb9caf00d9270268a8e6"
+    },
+    {
+      "filename": "127_de_skills_framework.sql",
+      "checksum": "b61ca0bafa345ec97980c97d84573b3edcb5b20d022c9c356c1d466abf2479b3"
+    },
+    {
+      "filename": "128_workforce_teams.sql",
+      "checksum": "ea16efc5ead665a7067a904426798ccf793700f5b2945e91bc849e5a5e568a8d"
+    },
+    {
+      "filename": "129_certifications_and_review_cadence.sql",
+      "checksum": "3bad59c821e231a4e6692334ec1ab732569fc4b98a857d4682333e261b639974"
+    },
+    {
+      "filename": "130_identity_kpis_availability.sql",
+      "checksum": "1c8a7b8e36c55898277fddc555825b8f0af1cedb20047bfef8093611054ed5d6"
+    },
+    {
+      "filename": "131_workforce_economics.sql",
+      "checksum": "04c87f50992ad0da4f20a0769f826675b794a6e2a311e16ddca42881623dd4e5"
+    },
+    {
+      "filename": "132_model_pricing_allowlist.sql",
+      "checksum": "a2effa27f694a9fa4bcc25fdd16e6026b0b8c57872a985597264969017501cd0"
+    },
+    {
+      "filename": "133_guardrail_scoping.sql",
+      "checksum": "567680462d181f1d8192b067bf502c0ccefd22526ae9fc48ffbd6a12a991eeae"
+    },
+    {
+      "filename": "134_event_registry_and_emission.sql",
+      "checksum": "b06bfa06cfc35cec6b90004a52c86d6fe46027d6ef3f2d530a236c4db3cd8cd9"
+    },
+    {
+      "filename": "135_tenant_vocabulary_stages_fields.sql",
+      "checksum": "c4e44b17e0881f32cd0006283b8815b437b5bb24b2459d93da5b9c9789b4f2f6"
+    },
+    {
+      "filename": "136_rbac_writes_and_de_profile_fields.sql",
+      "checksum": "8445083383f821eff42590a7dd48579d7fe696a308bdce12c3d5e8e1d322f0fb"
+    },
+    {
+      "filename": "137_qa_event_definitions_read_authenticated.sql",
+      "checksum": "668147a15c6145c8c98977d0b6b7d5d565aa8cb20fd8975a0ddc122d8abc022e"
+    },
+    {
+      "filename": "138_connector_ingest_control.sql",
+      "checksum": "25f95e94b5f24361886737ba0b4830ffd4eec2683677df67e99176a1727cdae1"
+    },
+    {
+      "filename": "139_slack_post_action.sql",
+      "checksum": "2ab4c9ea123cc87d61512fe507809f6a19fe5afda301d8f5b20c0b3b0cc2a56a"
+    },
+    {
+      "filename": "140_tier2_write_actions.sql",
+      "checksum": "2ed25da7ed3380316dd8954c119b0b3871e9367305b3de528638247a705850f4"
+    },
+    {
+      "filename": "141_oauth_infrastructure.sql",
+      "checksum": "926360120e578bc10d8f347476a16b978ebde2324229c2ddfe6717174ce84dcb"
+    },
+    {
+      "filename": "142_dreamteam_self_management_actions.sql",
+      "checksum": "7c1425d0bffca3b6f5e683d67f992088f998c57f3aeaac946cf17b3ef9f80955"
+    },
+    {
+      "filename": "143_onboarding_architect_default.sql",
+      "checksum": "b6bf6af73e50919a05cda5310cc55d5684d0b1fbe9fd3919be7a93a0150ded35"
+    },
+    {
+      "filename": "144_widen_connector_providers.sql",
+      "checksum": "2622eeb548977f12bae00da10c92fced29f7eb5d91294e0b8430c3f1db10f297"
+    },
+    {
+      "filename": "145_ada_real_playbooks.sql",
+      "checksum": "65233fe41110706781c560acf7cbe9e8ccc27ac09917947a2fb30c390c14dc2d"
+    },
+    {
+      "filename": "146_playbook_intended_de.sql",
+      "checksum": "ee2662b7fd7ed0f667c583b56408cd6eccc3bc392434cae8c63e4e70c170806d"
+    },
+    {
+      "filename": "147_de_action_metrics.sql",
+      "checksum": "87660fd312856986b9908af752bc9f7f51f3f78a3c8bee9cef40ef5e6c1c00d5"
+    },
+    {
+      "filename": "148_ranged_perf_metrics.sql",
+      "checksum": "8274da8ec8ac13669beeb6f29ef7f8aa399390d73cc693383271e96c0aba4a7e"
+    },
+    {
+      "filename": "149_support_conversation_lifecycle.sql",
+      "checksum": "6cc436d27f7d3d41634d5e239b902c158367ae97c2a0e90a5a0805923e141caa"
+    },
+    {
+      "filename": "150_set_external_reply_mode.sql",
+      "checksum": "7e4e3d17d4faa13e9c6716ce5d1abfdbca0cca49a1f26893315a8ffdca93ef01"
+    },
+    {
+      "filename": "151_support_inbox.sql",
+      "checksum": "3a0d4e329a6d39f07d541782cdf7f8811c7b0d706384e869c72e17b5f984fdec"
+    },
+    {
+      "filename": "152_security_tables_activity_log.sql",
+      "checksum": "365f1dd58238623b5e7fb8cde2e7a86c147d55cae9854f1a3a517dabc34150f7"
+    },
+    {
+      "filename": "153_guardrail_resolver_lockdown.sql",
+      "checksum": "142333bf9d0b4ea54a3ac626afe4473155ff0e188fea7e64ca6b7d2c3971f35d"
+    },
+    {
+      "filename": "154_url_safety_hardening.sql",
+      "checksum": "7519641e7f367298ca7758b4795b43ec2b013e43056a25c70faca507c0c47b41"
+    },
+    {
+      "filename": "155_de_memory.sql",
+      "checksum": "01a3a52ff8e333e5ef435a3ff853bfde65dbb46d0af6321649580ae9ae78e0c9"
+    },
+    {
+      "filename": "156_de_work_engine.sql",
+      "checksum": "22fc78b813f82cc1efef073a958c8a28b11d184c68b38140f0d5f79101d710a1"
+    },
+    {
+      "filename": "157_safe_actions_and_compute.sql",
+      "checksum": "82018b6efaa0f0f501187eeece3b6cf1b3beec700a1873a5a8e8b8312921433e"
+    },
+    {
+      "filename": "158_tool_learning.sql",
+      "checksum": "f0b53ace7e2803ce00a5618afa46e52c07780b77039c94f78e479b4f83ab58ab"
+    },
+    {
+      "filename": "159_perception_query_channels.sql",
+      "checksum": "5ee719b9298bc5484bfedbe1ef6f76216d6f2fb782fa0266facf7841ddd48c77"
+    },
+    {
+      "filename": "160_judgment_and_conscience.sql",
+      "checksum": "17e0d956143726a25cdc1a8403dec38f0320502ae258b6cf2afb5d570dfc68dc"
+    },
+    {
+      "filename": "161_de_work_cron.sql",
+      "checksum": "931583a0fbd24d57dc1f1ed6165e55fb02002e6577d249adb673006b19e1c134"
+    },
+    {
+      "filename": "162_role_archetypes_and_certification.sql",
+      "checksum": "1fa6e115e5855c46fec02b23223a2ba938a0bc4c6d370b36d9f0da772b3c05c9"
+    },
+    {
+      "filename": "163_de_school_and_economics.sql",
+      "checksum": "8d785d40ed3906a21b088264e7607427fcd96fdde8866e0d1942abefb83617fc"
+    },
+    {
+      "filename": "164_language_aware_answer_cache.sql",
+      "checksum": "ca161f97d5dcea334ed06b1320b92f2dedcfb7ecf97db5eb628e507e05a6d4cb"
+    },
+    {
+      "filename": "165_ada_hire_from_archetype.sql",
+      "checksum": "0419f8e15cdeff92d104f3d10d3f655eba7d3dc210a358ba7e1500b107168773"
+    },
+    {
+      "filename": "166_de_work_stale_reclaim.sql",
+      "checksum": "634c8c0e0b802053fdbf6f795701b93fa2ffc0be6e49b473a35f5ed4068777cc"
+    },
+    {
+      "filename": "167_eval_judgments.sql",
+      "checksum": "ee6b78f40accc1a45e805693f319bb863649238fe7a4ae8c6f3e05bf993f6d0f"
+    },
+    {
+      "filename": "168_online_eval_sampling.sql",
+      "checksum": "733bc270d48c8a6166b26ea5f51ebe5c756f109a6c83c82952e7a1680037788e"
+    },
+    {
+      "filename": "169_online_eval_cron.sql",
+      "checksum": "424b33d9c1910c4268b5d1e959d001c2a94db408407543acde696fb4903ca96f"
+    },
+    {
+      "filename": "170_simulation_studio.sql",
+      "checksum": "5a4aee711ba3c8e5c84fc4e6b2ec7f4b11eb627b50b52f43cb10ba0f0736f645"
+    },
+    {
+      "filename": "171_regression_gate.sql",
+      "checksum": "743993a9473e6884c5e564283c99f2f566fb8d9ae5dc8a67bc7d302247e34208"
+    },
+    {
+      "filename": "172_self_improvement_loop.sql",
+      "checksum": "167e5fc7fdf6707bc7dc4140547973e93f7773d58a6626cef8fe8005cf1570d3"
+    },
+    {
+      "filename": "173_long_horizon_goals.sql",
+      "checksum": "78b0825e5ef1759edc430638e9da225e3c6558bde62721dbee726e4d2d9fa97d"
+    },
+    {
+      "filename": "174_mcp_allowlist.sql",
+      "checksum": "a49f971aae598e8355f8fe3506572ef2ef28f3463ae39b0a6434f3cad7d2b100"
+    },
+    {
+      "filename": "175_outcome_metering.sql",
+      "checksum": "4a8d39db88a9ac338ff12d92c1ea62db56bce66884031225507a45193bd46b38"
+    },
+    {
+      "filename": "176_benchmark_report.sql",
+      "checksum": "81b824ee58cc061e6058d1b11057bf2bf4c2ba0b976b4465d6d32baf80671d4f"
+    },
+    {
+      "filename": "177_otel_spans.sql",
+      "checksum": "2772b8a802207e73a1667fa7b8a65cd632e85f21bafe85816398f9a5c36437cd"
+    },
+    {
+      "filename": "178_de_delegation_tokens.sql",
+      "checksum": "401e8c150206387a97bc9ac633fad95df126fd46427092575561795d41d2d6e2"
+    },
+    {
+      "filename": "179_outbound_drafts.sql",
+      "checksum": "e089cd4b948fd36c1d3d75d443990e365cc6a76367a7157fdcbc916f2749c4c9"
+    },
+    {
+      "filename": "180_consolidation_fixes.sql",
+      "checksum": "e80a75b7de365c92ca8d0753d4e83d7fdd92906080dff9e56f4587c07911259e"
+    },
+    {
+      "filename": "181_consolidation_fixes_2.sql",
+      "checksum": "08ad95b9b5fac2c1becbdcb35eb0cc81c16010f7398b9202149aa08b09470097"
+    },
+    {
+      "filename": "182_computer_use_scaffold.sql",
+      "checksum": "cbcb73cc38228a85a962e9a7638925e5af2f81466f9b68abfaa509dc20fe9768"
+    },
+    {
+      "filename": "183_improvement_auto_apply.sql",
+      "checksum": "2cb2459634e5530d201880e3858292fa65b9b19a5fa9ea32513746943bd1d1a1"
+    },
+    {
+      "filename": "184_demo_provisioning_helper.sql",
+      "checksum": "c008609dc8f0faec3b39c6716a2251c3b08026980b8340dd7164def3a6956caf"
+    },
+    {
+      "filename": "185_demo_admin_secret.sql",
+      "checksum": "0207ac94a35fea224f83eb74b86a4052fe43a65671117234b02c6e5d45668a20"
+    },
+    {
+      "filename": "186_embed_backfill_cron.sql",
+      "checksum": "46ef604f5ed64ce12818e3917942bf7fbed5fdd641df8ee6774096bba1eedd6e"
+    },
+    {
+      "filename": "187_playbook_studies.sql",
+      "checksum": "87fdf5edcbf114768be4a19df9e76163d63502da9525e79dc85077b9506ea8e5"
+    },
+    {
+      "filename": "188_agentic_blocking_gate.sql",
+      "checksum": "165ca6a590994df2e0c98ff1fc5288b2cc77345b3283f03c318808d641028597"
+    },
+    {
+      "filename": "189_playbook_knowledge_retire.sql",
+      "checksum": "6a97531d796bf80100ca558858b1e73bde64daf76adf4490b9c567268617e422"
+    },
+    {
+      "filename": "190_playbook_amendments.sql",
+      "checksum": "f1e11408fa1aa584f662dcbe8153d92e0dbb95230b155ca0639526803a98b9b6"
+    },
+    {
+      "filename": "191_playbook_economics.sql",
+      "checksum": "8e605efacf9bde6d03b060096717ae2216764bb532137d6a99ac73b9cad830f1"
+    },
+    {
+      "filename": "192_living_workforce.sql",
+      "checksum": "1d808c4867404a7905ee2dd219a25a5a83fc128ba03fe14fc31736cdee9510a6"
+    },
+    {
+      "filename": "193_workforce_practice_review.sql",
+      "checksum": "84bfcc29dc38c8522cefccb284faa1a32ba75f8cdd0b620bd676cb3d1dc0617f"
+    },
+    {
+      "filename": "194_tenant_lifecycle_delete.sql",
+      "checksum": "7c1dcee03c02b1285603ce396b07f5066f355aa4f6861c6499b928ab34e92320"
+    },
+    {
+      "filename": "195_workforce_assistant_system.sql",
+      "checksum": "3705420afc03eecf133ad11aedc12b9c932372503d23dea028339fd7d5ed17c1"
+    },
+    {
+      "filename": "196_auto_provision_new_tenants.sql",
+      "checksum": "e1939d094e9c435800d7bf781c29463665fa92ba31f89ed38cd527a8ca2964b1"
+    },
+    {
+      "filename": "197_security_hardening_review.sql",
+      "checksum": "95ab0b3964e6b1d7ceb753fa2a12ce6cf63f48a3afde0e778e3e3e0410028868"
+    },
+    {
+      "filename": "198_durable_rate_limits.sql",
+      "checksum": "cb924f56ae4a6222e36fc8a3f1ef7cc2dc898e4839a78fafe0a03bd3e6d7c87b"
+    },
+    {
+      "filename": "199_round2_hardening.sql",
+      "checksum": "bd3cb1939d7b01a18106d2d744b37446ae7599e3e8d7cc0f07b4856133f58286"
+    },
+    {
+      "filename": "200_platform_tenant_overview.sql",
+      "checksum": "401005efcfdb2d2feea8deb8f5651c5a23ac9a4545ebf1d97530667089857f8c"
+    },
+    {
+      "filename": "201_ai_working_sessions.sql",
+      "checksum": "24674643c49ba824b65c5df9598ebf7792fce5a9584aab7fefd49eddcdac3294"
+    },
+    {
+      "filename": "202_ai_budget_default_and_alerts.sql",
+      "checksum": "e0136619bfaaa90572deb87767e3484c30f6a6da6e0e2691b6883689ef4ba52e"
+    },
+    {
+      "filename": "20260719225435_create_extensible_metrics_config.sql",
+      "checksum": "85bbf6495b977488f8ea82f6e3d9e16c7b67419d6df5c2946ac4c12e8244df4a"
+    },
+    {
+      "filename": "20260719225526_create_metrics_config_rpcs.sql",
+      "checksum": "f6afc01e984e070f0b485da9040d73f6011c33ab262e287e10da4dc4a792ca8f"
+    },
+    {
+      "filename": "20260720_amendment_metrics.sql",
+      "checksum": "e70801dd89d75f070066bd9b35db6478e7629c7ca5a2db505d58bb31473a8f00"
+    },
+    {
+      "filename": "20260720_config_schema_instances.sql",
+      "checksum": "0b545aa154fe057c0bd6f23bf5ec3d566606ceaa989998c42eb7e61bb12a71ef"
+    },
+    {
+      "filename": "20260720_reply_mode_system.sql",
+      "checksum": "77877a2b5994410f80ef7b697f5854df9fb180aeec9e060dec2d8f90b6d5104c"
+    },
+    {
+      "filename": "20260720_tenant_management.sql",
+      "checksum": "6fddb946c110773d641b9dd9acbd397a2b11af37f3f4defcb5f384a21cb31473"
+    },
+    {
+      "filename": "203_token_usage_single_source.sql",
+      "checksum": "506489b04f6e35f46459ac2a9e793f75f44d05e77ec285786bb3b81ed743721b"
+    },
+    {
+      "filename": "204_fix_de_health_ambiguous_column.sql",
+      "checksum": "f0badcacf922a71556398267d74d69bc2b4c4a91bb48b1a0a3d74eb4a66aa9fa"
+    },
+    {
+      "filename": "205_tenant_extensible_role_config.sql",
+      "checksum": "797401b807c5e65f2ce9316cd0957c3b25eb2baa909716e3b4e15235faccb800"
+    },
+    {
+      "filename": "206_human_rated_custom_skills.sql",
+      "checksum": "297772e7aa43c1b393d320f976bf3cd0e3aa0400e8055de143beca10850a7470"
+    },
+    {
+      "filename": "207_editable_objectives_exceptions_memory.sql",
+      "checksum": "694e2569893020d867fed06019861a7ca4e68a6482e0a343e9f470d29627e696"
+    },
+    {
+      "filename": "208_absorb_specialists_into_des.sql",
+      "checksum": "bac98e6f52dee680661c7d84e5e763b18d5dccc57fd03013cf39259e5d8dae75"
+    },
+    {
+      "filename": "209_specialist_de_autosync_triggers.sql",
+      "checksum": "4d67562fa93ed4ca0183bf7aceed6e94e00c9dd38bf0ce1314a79a64e0b5e0c0"
+    },
+    {
+      "filename": "210_governance_ai_proposals.sql",
+      "checksum": "f46f1259d04cd9c8acacfec86e42a3bbb07106425c6ba347c6598839257d72cb"
+    },
+    {
+      "filename": "211_specialists_on_de_rails.sql",
+      "checksum": "a61c2e946ff79ffb8873f88a0b16929ef3ea2477cf83503ec389cd99bfb7f10b"
+    },
+    {
+      "filename": "212_drop_specialist_profiles.sql",
+      "checksum": "6b6caea4e5ab7d6f784a2c41b682e78414a0703b186ce0738982c2a00c3e8866"
+    },
+    {
+      "filename": "213_book_of_work_engine.sql",
+      "checksum": "69d2a0b78c201c8b6d98c1910bd3b2cdf6dfe9a03793e57c95a8b964b2685577"
+    },
+    {
+      "filename": "214_case_timeline_engine.sql",
+      "checksum": "b982b0108d2cb1920972a8c1c2be61e8cd3c5cf76542d4f310d86275a1db8c50"
+    },
+    {
+      "filename": "215_account_writeback_registry.sql",
+      "checksum": "0c7b100d3e7a195100d43fedd8af1ac200c21eea193348af0c314a5cec525891"
+    },
+    {
+      "filename": "216_comms_delivery_and_deliverables.sql",
+      "checksum": "6d90e37a2c850981a98b8ece23710dcbc01e159ab6737e5c36ecfc2a9caf9abe"
+    },
+    {
+      "filename": "217_freshdesk_helpdesk_actions.sql",
+      "checksum": "d2462ba74799ac98aecac5e3e7e3edd61878e86e6e7f1288063e19d53a59fffc"
+    },
+    {
+      "filename": "218_role_kits_and_renewal.sql",
+      "checksum": "682549ffcbfd47fbbe51bfc04479d4e89655eae0083280862de4c117b9581f29"
+    },
+    {
+      "filename": "219_cs_role.sql",
+      "checksum": "f99da8dd8e0f4a5755f2c6b445a57b7ef0130185304d1f87bd80edf4ab79383f"
+    },
+    {
+      "filename": "220_pipeline_desk_sdr.sql",
+      "checksum": "fb64ff756c6f85d8cc74e323b004bfaddf0d6e73c25c03451544920866d085b5"
+    },
+    {
+      "filename": "221_connected_systems_desk.sql",
+      "checksum": "5ddad3366d95af12d6299df41683bdc224746a2e92621f882068af9714c48c41"
+    },
+    {
+      "filename": "222_system_writeback_dispatch.sql",
+      "checksum": "7b6a3e375de1d9edfbeea0877cf556fab4a409c364f4ea532e0cc7cafae8118a"
+    },
+    {
+      "filename": "223_billing_ar_role.sql",
+      "checksum": "5a9308bef961f7cfec0432eba8481cd593e52145036fb6803857b31c17b7bb39"
+    },
+    {
+      "filename": "224_accounting_fpa_roles.sql",
+      "checksum": "201e360f1752c02bb2bbfe929b5451d6f4d9fe1180532e4d3c27617bd060b79b"
+    },
+    {
+      "filename": "225_commercial_continuity_domain.sql",
+      "checksum": "67ecd09e74de14ab9028cd074051d5aa30a6c2a60576142eabac34a9bec27af0"
+    },
+    {
+      "filename": "226_continuity_engine_and_kit.sql",
+      "checksum": "6d8d6273aa29b366f922f0a8ac0e83c6dcd305ca56b31b72e8e92e51cbe47a03"
+    },
+    {
+      "filename": "227_continuity_writeback_registry.sql",
+      "checksum": "29d92dd351724f0e8164589f50c6702c94ebaaebe17662c5d1d5de953625e649"
+    },
+    {
+      "filename": "228_continuity_scenarios_seed.sql",
+      "checksum": "819b660940955a136cedd18dbd3fb8888fbbf743cf4f0d444b2a3542e9c73bd5"
+    },
+    {
+      "filename": "229_archetype_setup_questions.sql",
+      "checksum": "ba175970d7c5d6a4cb9cfb745187b6bb3267cb2119f2f1fa23e2dfb0554d6e63"
+    },
+    {
+      "filename": "230_marketing_family_and_bdr_archetypes.sql",
+      "checksum": "99f577483028a821a19643cce7d05a31360a86f5b9b08b05948ce6ba30c23ef6"
+    },
+    {
+      "filename": "231_existing_de_setup_questions.sql",
+      "checksum": "28e3dad7de5c5aec347bb92ea76e97087469c5aa97d8c52dd8d559d2d2000fe6"
+    },
+    {
+      "filename": "232_support_role_kit.sql",
+      "checksum": "1beb4c0fe12c3a227a3aa8559f6699e38472073ee07a0503162492cb94e6b1e9"
+    },
+    {
+      "filename": "233_support_triage.sql",
+      "checksum": "9cd9116aa11a74078a9f5b8bdb1ce83d2df6d89ce67317e2a1d712c62cd28b4b"
+    },
+    {
+      "filename": "234_cross_de_task_assignment.sql",
+      "checksum": "715d8d964e10c9201a092980a9a20a5924a8c98a2489158e48b2b0f3178db0d4"
+    },
+    {
+      "filename": "235_spend_cap.sql",
+      "checksum": "7129119b46b3bc2fb7e49ae617bf28f8a5cb1b6ced72409b996ef3a9de676001"
+    },
+    {
+      "filename": "236_knowledge_authority.sql",
+      "checksum": "f3155b33cd96d524d54b3cbea5e36a6d7a96d943fcc445323863d21c018f9085"
+    },
+    {
+      "filename": "237_sentiment_and_identity.sql",
+      "checksum": "20264cd720b039c33c735591bc600fe5a16d9907b312d32e3a2732171df22f08"
+    },
+    {
+      "filename": "238_multidim_confidence.sql",
+      "checksum": "e6dadacf334b1432be3d858d6ea7912c8a18d0876990b13eaa7038db607416be"
+    },
+    {
+      "filename": "239_accounting_sod.sql",
+      "checksum": "7024f4a1c227751012a254287b20d6accbd342613746d5958b623c79f65fa68f"
+    },
+    {
+      "filename": "240_eval_batch_rescore.sql",
+      "checksum": "8545caa22584b91c61dbc6b810205c6ef83391cdc1da83bc062484e4c238c0d8"
+    },
+    {
+      "filename": "241_browser_operator.sql",
+      "checksum": "6dddb56e55fe112344245166429211ffb7800d392bfd72dc26786a1638ea268f"
+    },
+    {
+      "filename": "242_browser_worker_rpcs.sql",
+      "checksum": "b82d91c87de27ba6ec9676db6b7fca305f67b5688bd29ec79eef3e5e24a2c1f9"
+    },
+    {
+      "filename": "243_operate_connected_system.sql",
+      "checksum": "04685d1795f0a8fe7ec715bf40991a1f4c7aebc7ddd499ab90f225d84f435b6c"
+    },
+    {
+      "filename": "244_operate_binding_config.sql",
+      "checksum": "3df5143695376e14dd8423104a5ebee0dc0101059fec22b6975838cfaca99fd8"
+    },
+    {
+      "filename": "245_fix_propose_browser_task_source.sql",
+      "checksum": "5e7390f3dd3c29d895e1302f5637f65770524bc6ec04910057b16828d2ef17c4"
+    },
+    {
+      "filename": "246_onboarding_role_kit.sql",
+      "checksum": "79615e1d196a0e7e91ae954319a74185eeec07878480ebfd8ba6f0f74d957ee2"
+    },
+    {
+      "filename": "247_tenant_branding.sql",
+      "checksum": "cb23882b94b18fa9a7ae1a1359684eb8b0179981a62fd3c8ff9ac2a0d8efd69d"
+    },
+    {
+      "filename": "248_mission_delegation.sql",
+      "checksum": "0411fb7eb749f1aebcb8a9aef6c35be658c0a6cf436732511d51db2cdf512143"
+    },
+    {
+      "filename": "249_wave1_enforcement_fixes.sql",
+      "checksum": "2c2696f741df9e7aabcef91ee5a23404d12553702940289a28dbec981f31ce92"
+    },
+    {
+      "filename": "250_briefing_multi_sop.sql",
+      "checksum": "90265d0f2b212eb448a68bd3a67f92f577abbc7b07c35eaa75706cac0fd6e277"
+    },
+    {
+      "filename": "251_agreement_entry_path.sql",
+      "checksum": "eebf20ba3749ffe375b2d0c1612c507c2f32ce182aff985d2e73b54565f76998"
+    },
+    {
+      "filename": "252_live_channel_gap_bridge.sql",
+      "checksum": "16543dc3810ee6a2dbe2d39608bb6eec9e5131ec0b6327e806d12c922f9f4d83"
+    },
+    {
+      "filename": "253_knowledge_publish_hardening.sql",
+      "checksum": "b145680cc49d98f035df6ca02fa45136a546f4c1f1de75609cb2c3965d46e45e"
+    },
+    {
+      "filename": "254_workforce_board.sql",
+      "checksum": "b00c491c7cb03ff3da1cecda886ad5f6cf0b64a65e961262afb769659f02c29f"
+    },
+    {
+      "filename": "255_operating_model_v2.sql",
+      "checksum": "65e9fb90b57735d5de42b0df7da5654bb589a7896033d38280d040ba22c0e947"
+    },
+    {
+      "filename": "256_learning_digest.sql",
+      "checksum": "cac51cbac76b687c9f9b23fa0eff0bc23dd33d087c1f9a7c66dcb6511be1b788"
+    },
+    {
+      "filename": "257_handoff_completion.sql",
+      "checksum": "dd1ceaebc5e06e7e4469e722fefa2add281d2acd3662b085d0f41362ee47ba0b"
+    },
+    {
+      "filename": "258_records_become_gates.sql",
+      "checksum": "b023880e0f74b7bed83c7da4f2f270427a49a6b7fd0acac4ee137713bb9cd6a7"
+    },
+    {
+      "filename": "259_employee_record_surfaces.sql",
+      "checksum": "58a09f105e35c853a047e45be4ee3f363ee40e7dece0c3e57075b3890f1afa2a"
+    },
+    {
+      "filename": "260_agentic_run_transcript.sql",
+      "checksum": "fb4697271eea5f33708a9b63cc0f863200ecd13abddc01be8bb04f5f889def6f"
+    },
+    {
+      "filename": "261_role_work_product.sql",
+      "checksum": "308f40b436d434ee46b0a97a5a70c63b1a7e87e6fa9b789dad55fb57e41a1c2a"
+    },
+    {
+      "filename": "262_escalation_conditions_engine.sql",
+      "checksum": "64d70183628edd05188c913186dd54ed2ed2340953c97debe1e0162fccee5c57"
+    },
+    {
+      "filename": "263_role_aware_kpis.sql",
+      "checksum": "8ac89709cfa3271e7da14d282c8418fd7f8d9e7f607784795bd0150836971e68"
+    },
+    {
+      "filename": "264_eval_run_driver.sql",
+      "checksum": "b43d74f57025c28daeece2b96f605f4b359694c0fe24f530d707fe75f460f0be"
+    },
+    {
+      "filename": "265_role_aware_certification.sql",
+      "checksum": "089b2bdf85be8e4153028e9e5d988030975b8c2ee498e7e7e0c13f48983b06c4"
+    },
+    {
+      "filename": "266_multi_archetype_exam.sql",
+      "checksum": "ad4627d5eefdb56ac0cdd3c54c3442c21c7a6a5052333563982a2e426231f8e7"
+    },
+    {
+      "filename": "267_tier0_archetype_binding_and_compliance.sql",
+      "checksum": "35737a97d55f338cbd59317ea3b0fa782385c2e3111f8d2af35abd7cccbf6994"
+    },
+    {
+      "filename": "268_briefing_situational_sop.sql",
+      "checksum": "0c38325282ce6746c47c40329585a19df9ceed93bf31879d97fc74d4fc3d5548"
+    },
+    {
+      "filename": "269_de_task_wiring.sql",
+      "checksum": "a893fde4ed38a1d940761c08eb380cf59800d8c18f742077a525fc69e95c5def"
+    },
+    {
+      "filename": "270_de_supervisor.sql",
+      "checksum": "ec13c658baed9915d56684ca803629c96e2387049b688beba938130f46590ead"
+    },
+    {
+      "filename": "271_role_shared_learning.sql",
+      "checksum": "401bd780490effc6ce03cd81b3ab0af1c5c7e8cd22d1720a0468f7369b49923b"
+    },
+    {
+      "filename": "272_generic_watch_sources.sql",
+      "checksum": "684b28045a03b9af01bd565a2e08d7fd20b9478d51c944195f8fbe9ed43a77cf"
+    },
+    {
+      "filename": "273_standing_missions.sql",
+      "checksum": "c8988f42c855b5c66b6431ad6b5041f335896f922eeccd855f399185dc94ee56"
+    },
+    {
+      "filename": "274_cross_de_missions.sql",
+      "checksum": "0b6e6a37ee2054cf6fcdda959576ca330b5e761ce53c4fd7099a787e9594dd35"
+    },
+    {
+      "filename": "275_verified_identity_model.sql",
+      "checksum": "25d2c6e71fce4f5a5cb4c0000f1dd6da14fe5c64541597cd260a13727ef6560c"
+    },
+    {
+      "filename": "276_widget_identity_secret.sql",
+      "checksum": "c81bdd73b7a275d47b940d44f20a9c55354e5a41046fa551083c56a60d2f22ef"
+    },
+    {
+      "filename": "277_bind_verified_identity.sql",
+      "checksum": "e58e14c4a84d674c6ab59655a471d26e540780d9ab4fa6b0ba3bd63485f20bd7"
+    },
+    {
+      "filename": "278_de_improve_driver.sql",
+      "checksum": "07d7d200b4bef4f33a583cf74c36357df156406d9f1d99f34eb53cb1c7fe750a"
+    },
+    {
+      "filename": "279_knowledge_scale_search.sql",
+      "checksum": "06df5b3881b2b6e47e216a4da30e3763e55794cfaed4a5eca7b4fef42eecb75f"
+    },
+    {
+      "filename": "280_knowledge_citation_capture.sql",
+      "checksum": "d7786696fbbbcef360b377dba8aa8faea5e06b4b138db273187bd1c4f7626042"
+    },
+    {
+      "filename": "281_knowledge_search_usage_col.sql",
+      "checksum": "5786a59c3c9d5f2c396b047c996ba97b474319d7cd01f2b307348018577c37d8"
+    },
+    {
+      "filename": "282_knowledge_gap_closed_loop.sql",
+      "checksum": "c62f904d7a49a1adbe061dfaec34f981991a4ee2dd78d0ca34feb911f2018eea"
+    },
+    {
+      "filename": "283_knowledge_overview.sql",
+      "checksum": "5e4547ff68b22b222bf51336c8a2a1d40ea2da8901f8ed819523acca888ab637"
+    },
+    {
+      "filename": "284_knowledge_taxonomy.sql",
+      "checksum": "108532f4d646d2bb3c4fd2177574c83474df7a010978bd8f6eba2d7e8f95c339"
+    },
+    {
+      "filename": "285_knowledge_lifecycle.sql",
+      "checksum": "92aa43127c8f78f6034719729efe33d3bb8fa188751d51f17c8ab1088cd374f3"
+    },
+    {
+      "filename": "286_knowledge_content_hash.sql",
+      "checksum": "61b8b4de3fc7313ac174b333b6ba89b38a3fa249ba1a1842350463c15cb8dbaf"
+    },
+    {
+      "filename": "287_connector_sync_cursors.sql",
+      "checksum": "fbb87c6eb86dc55d6899d81cab92ffbd1cc637491e88c66a0245f508c30ba618"
+    },
+    {
+      "filename": "288_knowledge_scheduled_sync_cron.sql",
+      "checksum": "dc2935111862c42ea5dbb40ae5f151224fd380eedcf0b1cf8efb2b04879975bd"
+    },
+    {
+      "filename": "289_knowledge_bulk_ops.sql",
+      "checksum": "5b124ffe714d7a248ad842c645d54d5ab86f19726473b3bd67699ec53206a458"
+    },
+    {
+      "filename": "290_knowledge_bulk_reembed.sql",
+      "checksum": "698452710af9a323969beb8ff2ac8de85c72cd73813c5351f2aea729c2510a7a"
+    },
+    {
+      "filename": "291_knowledge_reembed_cron.sql",
+      "checksum": "584c57d18a9d3cfd0e54e78f4a38ff6e5eed9d1f32088a515a60d46bde8cfcd8"
+    },
+    {
+      "filename": "292_knowledge_freshness_retrieval.sql",
+      "checksum": "5a56f85b3298a37b62a8cb86608d7771b95b3d70d37224e5aeac3a8aaa2bef56"
+    },
+    {
+      "filename": "293_knowledge_coverage_demand.sql",
+      "checksum": "61bee7d543164daa86b950e216e24f354dd20833a83758007c80196ac0a6ec89"
+    },
+    {
+      "filename": "294_knowledge_conflict_tables.sql",
+      "checksum": "6aad7dc8c975c31aff3db75bdec306b2f1e1956e5f18b2eb228e83b5ad1f2e33"
+    },
+    {
+      "filename": "295_knowledge_conflict_flag.sql",
+      "checksum": "98d20bb83282ab0777703348fb277c649c0202fcf64b9d88472ef1a561276959"
+    },
+    {
+      "filename": "296_knowledge_conflict_rpcs.sql",
+      "checksum": "75bc7a53ef48136f05fe73401516f8d330130b81571168e7c709ce4b9e6f0fa6"
+    },
+    {
+      "filename": "297_knowledge_conflict_probe_refine.sql",
+      "checksum": "05a15e29fc6621009a844470180a8428bf330f91603980b34a346dd6a08a32a8"
+    },
+    {
+      "filename": "298_knowledge_conflict_dispatcher.sql",
+      "checksum": "7c905de0e8ef6821fb3c8d676bbbe1550c3d68e9a48f3b38de46252134571bcf"
+    },
+    {
+      "filename": "299_knowledge_conflict_automation.sql",
+      "checksum": "db36bd111d8b108cff1b6ebced37a3bb2f2f46bbddb7381575f70b6f7b9bcff1"
+    },
+    {
+      "filename": "300_reembed_dispatcher_jwt_fix.sql",
+      "checksum": "7f2a9bd05964d84da66496c9b36d5ce87844149ebc59cf080f9551c4defb83e5"
+    },
+    {
+      "filename": "301_knowledge_ann_retrieval.sql",
+      "checksum": "5e644c6a2ccd4256041719cbce5984e84dbf47174889de8b407202fdd56f0c5e"
+    },
+    {
+      "filename": "302_conflict_backlog_uuid_fix.sql",
+      "checksum": "601144ae14bde9226ffa7e2f81739c35d693cff2ab12a3dd5aa9ef74bf53933e"
+    },
+    {
+      "filename": "303_decide_action_amount_scope_fix.sql",
+      "checksum": "939ede3d892b876f841384a9a2e7b268328d0d7e68446180f7b2f5e34dafd86d"
+    },
+    {
+      "filename": "304_answer_cache_de_scope.sql",
+      "checksum": "515c3885a27fa49af4ca0ca35c9cca330fad9bc5ddd44168d305d814aa2de0ab"
+    },
+    {
+      "filename": "305_audit_chain_insider_write_lock.sql",
+      "checksum": "2d7705193b3eea61cd4e303aae425e8c8cda03203f3c7b8d4c08072b6a169b7a"
+    },
+    {
+      "filename": "306_trust_ladder_per_employee.sql",
+      "checksum": "119ef0e0e4b730d00c032c1b2b3d5c68abccc4fa88830af4a0ed1f172c3a6671"
+    },
+    {
+      "filename": "307_gi4_incident_and_metric_gates.sql",
+      "checksum": "0db947a9699fb6b98acefc6f0a365ae2472cebcbe1eda44006af316e771cf0a0"
+    },
+    {
+      "filename": "308_gi5_kpi_snapshot_feeder.sql",
+      "checksum": "7e0f37ab913a72247c5fbf76b77f1f2a8b72ab343b4103fbe031aab662b48f75"
+    },
+    {
+      "filename": "309_gi6a_closed_loop_learning_signal.sql",
+      "checksum": "3f91fcc548ad42b9d5c3cf8048ac36ad4e37a47e2d6c632b3480a0a2f9b8f970"
+    },
+    {
+      "filename": "310_amendment_fitness_persistence.sql",
+      "checksum": "3e93005ac07bdaaf1fb5ae9504470ea27163e994c62aa625fe2b2b64ec67e91f"
+    },
+    {
+      "filename": "311_gi6b_digest_quality_exclude_simulation.sql",
+      "checksum": "59e3dc28e518ebfaad171e9185411e0700a2a5251629a6d5f6a4c6ab89e32a37"
+    },
+    {
+      "filename": "312_gi6b_fitness_claim.sql",
+      "checksum": "0b36a0a55f1bcaeafd57f4a4e1ea4feba63e8477d2eaf608e3e9dee65cc70edb"
+    },
+    {
+      "filename": "313_gi6b_fitness_cron.sql",
+      "checksum": "7a4c6ebbd7eaaf3820152f5bc6d9b97ae1244f3accdc5a4114c95cfe362d152c"
+    },
+    {
+      "filename": "314_metering_deferred_settlement.sql",
+      "checksum": "230af323c422ae39fabf6861eae4f198e074727d350a64f729c7c1344daed758"
+    },
+    {
+      "filename": "315_gi8_semantic_guardrail.sql",
+      "checksum": "6d71acbd12c6727ea9d9a085b61c542400ca2f2f8c0e069901043ce092e18f5e"
+    },
+    {
+      "filename": "316_gi9_mandatory_certification.sql",
+      "checksum": "cbdd240e554770000f144224994d86948189857ed23b60246a37b77be797a062"
+    },
+    {
+      "filename": "317_grounded_confidence_calibration.sql",
+      "checksum": "3ce83377abaf7f4cc9011942fcd6a731fe75775f56a3d05c6f572a4c58fff48c"
+    },
+    {
+      "filename": "318_action_exactly_once.sql",
+      "checksum": "a193c44e07269c9c645d7cbecd0c76642848a86c76062e45010e687ea6243a84"
+    },
+    {
+      "filename": "319_definition_of_done.sql",
+      "checksum": "c95eeab276c09ee7aa79461eeb8f20cb0cb4f1c2eae7231427521fbe0a145b2f"
+    },
+    {
+      "filename": "320_defofdone_w4_respond_de_task.sql",
+      "checksum": "7d275b9fc2865b606b97bee0beab00a330dc708cfcfc1575c82f34626da110d0"
+    },
+    {
+      "filename": "321_agentic_tool_name_uniqueness.sql",
+      "checksum": "7c32e277587a31fb33cc4b9afb7eb1089a654f59943d517e5c14173f90649fab"
+    },
+    {
+      "filename": "322_learned_actions_publish_gate.sql",
+      "checksum": "f68050586862d4c7f6644fed1613fb17ff0eada0445b361bd4002a4be411ff6b"
+    },
+    {
+      "filename": "323_widget_key_de_binding.sql",
+      "checksum": "e4053b3028fb55cf2cf317485a00ec935e858f9e1b23429a83aa202a7f8ff522"
+    },
+    {
+      "filename": "324_model_pricing_dated_aliases.sql",
+      "checksum": "e6ac45e7fcae26cd939147c272c314bc5c8c50fee882378b2d48357336cdfa26"
+    },
+    {
+      "filename": "325_de_voice_and_sentiment.sql",
+      "checksum": "95ecea690ee1a63ba4eeb97ea782a3c5ae71abfdaf6c4537b10178318a00b25e"
+    },
+    {
+      "filename": "326_frustration_threshold_calibration.sql",
+      "checksum": "a2d858b55050b41275f2d9a5e60921f8117c7e881ae6f515cd5e6811eb12f50e"
+    },
+    {
+      "filename": "327_set_de_voice.sql",
+      "checksum": "e342a7b76c20df60ba94c6a0f9c3cfe638854b20c054e9517a6489c6d8c88458"
+    },
+    {
+      "filename": "328_guardrail_pattern_grouping_fix.sql",
+      "checksum": "27a07afd966dd3da79c5cba7a33126459c5720ec46c951e9ebf30ffb4b830484"
+    },
+    {
+      "filename": "329_gi10_guardrail_adjudication.sql",
+      "checksum": "d6949519bca3fdd3755c0be5d0f5e7fb5e2b629b86f5f3e80ec21e5d383ea6d1"
+    },
+    {
+      "filename": "330_tenant_isolation_anon_hardening.sql",
+      "checksum": "6182a359c5f984f9d775af29784fbcda84e6d6a3056a43b8239bf5612a17ae90"
+    },
+    {
+      "filename": "331_features_global_default.sql",
+      "checksum": "1a0e615e33e7e94f45a3439762cdabf1160e23d766e26c6929e6bc5870b16890"
+    },
+    {
+      "filename": "332_workforce_assistant_global.sql",
+      "checksum": "db9dd965ff91035627b9c841940cdc4587dc877b4ba92cd24910deb089a64eef"
+    },
+    {
+      "filename": "333_knowledge_isolation_prework.sql",
+      "checksum": "95556ad1955b236ef2a3ed032d31ab50b76e673a9ea329b65c3ebfa479e379be"
+    },
+    {
+      "filename": "334_platform_knowledge_shelf.sql",
+      "checksum": "51107ab190df13548ea5f9ca3678912f3f3631d135dd8febb79f339d52896e46"
+    },
+    {
+      "filename": "336_seed_platform_shelf.sql",
+      "checksum": "1942b783ad82f59be736f51d5d2af6431c5349b8a8cb9bb375a974ccb59b8739"
+    },
+    {
+      "filename": "337_platform_shelf_read_api.sql",
+      "checksum": "9e1d0afdcb1e3ff04c6f5a81b046c32f9a4ea0402a41932c43a8d306b38ee493"
+    },
+    {
+      "filename": "338_platform_kb_self_maintaining.sql",
+      "checksum": "dfcacc8322437a91ca9e9f5692905f70ff026db65bfc3cc6c42b2698b399ef1a"
+    },
+    {
+      "filename": "339_workforce_assistant_autonomy.sql",
+      "checksum": "bfe7d1613260f13600d28999d5e4621b28487a026f98cf647379ddb8b9e35f65"
+    },
+    {
+      "filename": "340_fix_de_exception_decisions.sql",
+      "checksum": "5cdc4e4ff74a90698d4262d8cda1c46e295d2e6aa7c6da9dc3fd138a0da3aba0"
+    },
+    {
+      "filename": "341_knowledge_spaces.sql",
+      "checksum": "113468cda72dd2568fa21d64f7d6c594cf2147785e10c5983c28540b980c0207"
+    },
+    {
+      "filename": "342_platform_shelf_write_lockdown.sql",
+      "checksum": "584d405924c49f3a9d389426a575f1c635dd8d5559e62bc091cbf20c0ad62770"
+    },
+    {
+      "filename": "343_knowledge_access_grants.sql",
+      "checksum": "88d7f7d05af270c81f3df9469d490feb1b099d8c127c2b4e16a0a2ac2f176391"
+    },
+    {
+      "filename": "344_knowledge_acl_enforcement.sql",
+      "checksum": "a5d1bf0b3dc028b0140beb605927efc969134e86db53d47b5e1a19bb327300b7"
+    },
+    {
+      "filename": "345_knowledge_acl_retrieval.sql",
+      "checksum": "0bbf44cacc0b9a7f3b5c4017564b18362f49b5925295fdeeaf1d659f195a26bc"
+    },
+    {
+      "filename": "346_knowledge_lifecycle.sql",
+      "checksum": "b176a74e11ff92c93412037b1ca880ee9becfa3870e9e689b019ae4353261642"
+    },
+    {
+      "filename": "347_knowledge_ingestion_queue.sql",
+      "checksum": "dd6aa8203b3b2c687127247907778ee7837adfb159f7689e22800e5d7b3e6df5"
+    },
+    {
+      "filename": "348_repair_updated_at.sql",
+      "checksum": "c08e5429ac68c30f4b06a2177b06771caaaf4d812303190d38ab62315a5e40c3"
+    },
+    {
+      "filename": "349_lifecycle_transition_authz.sql",
+      "checksum": "f156ccd5f84559e42019d7c896e9645f0e94fa81626ba5d6f69ad0625bfbe849"
+    },
+    {
+      "filename": "350_ingestion_drain_wiring.sql",
+      "checksum": "42ea95c3e334c9c743d4fb1d7b504bc5b20d88851b5bbae148867ea9a6661036"
+    },
+    {
+      "filename": "351_claim_tenant_scope.sql",
+      "checksum": "0f07dd5cc624353357418acc6eb7fafee99c3ed5c173b02e1c695ff947d46ef2"
+    },
+    {
+      "filename": "352_content_hash_one_algorithm.sql",
+      "checksum": "4172f8f0309d3865c75b833dca1de32b6cd346085943b80cf52db57139ae6150"
+    },
+    {
+      "filename": "353_content_hash_correct_input.sql",
+      "checksum": "45b2bc809a431de20d89d3ebc12a74fb55f458dbb525f4521ef46b70e132c5eb"
+    },
+    {
+      "filename": "354_ingestion_ui_rpcs.sql",
+      "checksum": "797f741a0bce97811c2345cd3b8cc58745784bcbc35040e7e6f9dc9d7d20ed72"
+    },
+    {
+      "filename": "355_lifecycle_roundtrip_fix.sql",
+      "checksum": "09570bc23f6153ceb1036ce826cbb5b10a737eb376a53830eaf2e96b79d2b7f2"
+    },
+    {
+      "filename": "356_knowledge_access_write_api.sql",
+      "checksum": "1517e347c6a00532b497a4b54a9f0a52c3f4f2942992065bdd23ba70981fd20a"
+    },
+    {
+      "filename": "357_restricted_means_restricted.sql",
+      "checksum": "7c8414dde466991585a2fb976b5223d0c9e885e0e2ec2c50b711bc816cff8ff7"
+    },
+    {
+      "filename": "358_principal_group_management.sql",
+      "checksum": "e8bb6a7285537f15ecea0c54455dec6c3ba53ba224356cdc26a4ac80beb1d213"
+    },
+    {
+      "filename": "359_admin_not_locked_out.sql",
+      "checksum": "0903fcb47d5b19e17ec441d8a76fffd456801d2b707dbca83ffdba9de07ea40c"
+    },
+    {
+      "filename": "360_close_closure_enumeration.sql",
+      "checksum": "6138b139fa0b69825b47b32ed0de3a6f3f69e78b8643e645383f2c1247987b21"
+    },
+    {
+      "filename": "361_revoke_anon_knowledge_surface.sql",
+      "checksum": "ce3450784b8bc10ecc6c10d7cae934971694511f1a116ee6b51b56df743fbe15"
+    },
+    {
+      "filename": "362_knowledge_tree_api.sql",
+      "checksum": "21d806957ee0b4804162378eb2798c9bbcef5811bf0dd410cda59442d6cb72ec"
+    },
+    {
+      "filename": "363_de_team_knowledge_audience.sql",
+      "checksum": "c57093948898e1a6ade238023459304ed06242918aea03ee2129f57acbaf2804"
+    },
+    {
+      "filename": "364_migration_ledger.sql",
+      "checksum": "eb1e173eac6f5a27b60046a4fe76834149383adfd1df33a5a23250e801de954f"
+    },
+    {
+      "filename": "365_authenticated_perimeter.sql",
+      "checksum": "6430a40aae350541332521694fd37361022ed6a669f2515c1ca1fb7e6ad69d24"
+    },
+    {
+      "filename": "366_cron_observability.sql",
+      "checksum": "01ef65c99dd4719d65fab0ffcbc4a76f8730637c35c87a6f63586299a4bc706c"
+    },
+    {
+      "filename": "367_guard_ui_called_writers.sql",
+      "checksum": "601adaf1db5b9d97b496df568ffab3b77f5dd95d9583185dc23d5a6fa2b8509e"
+    },
+    {
+      "filename": "368_edge_error_reporting.sql",
+      "checksum": "55f068f5c19502894e8fbc24d4b9081495904f48c61c991c1539536b282c490f"
+    },
+    {
+      "filename": "369_fail_open_uid_guard.sql",
+      "checksum": "932b74b941f4ea2a96aea82519c2af82a04f02f9c095f656986ca62b07ad91ee"
+    },
+    {
+      "filename": "370_ssrf_mapped_ipv6_bypass.sql",
+      "checksum": "9a986eb58e2c6801bf051a72623d0b63ad633729f174c9de6b88fb816ab63b07"
+    },
+    {
+      "filename": "371_complete_tenant_deletion.sql",
+      "checksum": "5e8da658f4c618c6754769e567ae41149689d5c12d4e3e06558e425afed49d1b"
+    },
+    {
+      "filename": "372_tenant_data_export.sql",
+      "checksum": "b34b57f3090fab8d15c851824e40d99dd3ce41abde368edd281f182873cedb56"
+    },
+    {
+      "filename": "373_tenant_domains.sql",
+      "checksum": "8195ce273fda465f84f6b553127c05136fca2c262e1472b8bd101c0ac05ff28b"
+    },
+    {
+      "filename": "374_sso_policy_jit.sql",
+      "checksum": "cf59c5109bf3af5440657033b2856318d571afd972dca22e26b21efe47a124cf"
+    },
+    {
+      "filename": "375_scim_tokens.sql",
+      "checksum": "aeebd6006b1dcf070e672348ea626fc91c50c97d36b427a03a339dd4e0db8230"
+    },
+    {
+      "filename": "376_tenant_deletion_requests.sql",
+      "checksum": "5565609bdd7c181f98b592e96ee90c4230eef564861c236c83762030ea40430f"
+    },
+    {
+      "filename": "377_export_acl_and_audit.sql",
+      "checksum": "c5a93077a20771e2032af87928ab6f4e1979cacdf70060bc35efd0ff253a262d"
+    },
+    {
+      "filename": "378_signup_grants_and_owner_email.sql",
+      "checksum": "364570840dc2958ed6d8d2fabcabc25ab3410deabc49d1e5ee946b48e1323442"
+    },
+    {
+      "filename": "379_ingestion_queue_grants.sql",
+      "checksum": "13da655b42a49c48eeddafc8e866c842db5b5e165ef6fdf7da03548d6141a41c"
+    },
+    {
+      "filename": "380_handoff_returned_event_type.sql",
+      "checksum": "71e40d3bb92fcb5b1009ab150d71511083e2488999ff123bc4a27b6943908788"
+    },
+    {
+      "filename": "381_export_pager_restore_contract.sql",
+      "checksum": "7e6928ef852a5dd9c5c7ae93d00778e814df178314af00420f5e111da6058f0d"
+    },
+    {
+      "filename": "382_drop_export_pager_overload.sql",
+      "checksum": "7a831a72812fd3c57c27eca7b86f1332f50b480085930eaac93c5201be7aed4a"
+    },
+    {
+      "filename": "383_dispatchers_read_env_config.sql",
+      "checksum": "d0e919ac5415657c828eba8f319ed7dfbe49035f8e8000ce2bc2567d91499051"
+    },
+    {
+      "filename": "384_managers_manage_connectors.sql",
+      "checksum": "0fbc736e4e38a4a9ddb655a924be5d8dfe0bf6d6fabcf95ce0f828b788b2f316"
+    },
+    {
+      "filename": "385_de_assignments.sql",
+      "checksum": "54a0525016d30d633a48de7c4f2a2cf98e7c4755e04b652e52f806c064f76e36"
+    },
+    {
+      "filename": "386_de_scoping_wave1_work_surfaces.sql",
+      "checksum": "ce3e5081dac83ed3e0a85ba21a3fea8535bd9df32d56daef0281c80b544b6ad8"
+    },
+    {
+      "filename": "387_scope_workforce_board.sql",
+      "checksum": "48e733d8cea091606c0651a5967a0807fcc1ef65c41e9500d2f72fd49a5b4a6d"
+    },
+    {
+      "filename": "388_scope_de_csat_metrics.sql",
+      "checksum": "02ca0f0f57405615a65569019df7afb863ae169a155432de4dfff585f94b0b27"
+    },
+    {
+      "filename": "389_scope_workforce_learning_digest.sql",
+      "checksum": "89ee720ec5b32194ae9844b424a540aab7f82158a2f1c39ac944dc9cc6b39fa8"
+    },
+    {
+      "filename": "390_scope_benchmark_report.sql",
+      "checksum": "53759db3e4c5c45797fe2c39ff9b4bbdce2f101e830c58aefcad9b6e84f0a7ac"
+    },
+    {
+      "filename": "391_scope_de_economics.sql",
+      "checksum": "b08b82173dae6268f673636daf1df8694623f289f75e8bd129d9f08cad7edbe8"
+    },
+    {
+      "filename": "392_scope_de_operating_model.sql",
+      "checksum": "23d270d689be566f2721b3fe7058eee1c024f5ea1082910ff5c48e968d3f6b19"
+    },
+    {
+      "filename": "393_scope_de_work_product.sql",
+      "checksum": "7431483a48f0e302e83aa76ba5197b295a91c7d96362af42beefae97133387de"
+    },
+    {
+      "filename": "394_scope_de_kpi_status.sql",
+      "checksum": "fe6bebd8cb50a0c156db7c8c065f6454826443d41f350e330ec13605d814fae9"
+    },
+    {
+      "filename": "395_scope_pending_draft.sql",
+      "checksum": "bc4ed3be6d9ec41c9d919cc35a1cb3167635f9f17262ecaede419d9b1f8e4abc"
+    },
+    {
+      "filename": "396_scope_pending_drafts_for_de.sql",
+      "checksum": "41180ce101d89edee9ed9ea14b2b586ea263e64935713dc60457955216061057"
+    },
+    {
+      "filename": "397_scope_list_browser_operator.sql",
+      "checksum": "1c240f9f08db4799c6a5ddf27c2590b30086e6798173237dd62bf29fdf61881c"
+    },
+    {
+      "filename": "398_scope_analytics_de_workload.sql",
+      "checksum": "293db3a0408c8dca705f699d144a4dea3c37db9531d4b80f3980f1bb2a01e928"
+    },
+    {
+      "filename": "399_scope_de_retirement_readiness.sql",
+      "checksum": "f3abb58f95ecd0285a930feae8a9572ec750c591581bd731945ee28eb4fb9a8e"
+    },
+    {
+      "filename": "400_align_learning_digest_null_de.sql",
+      "checksum": "a4cce3fad4aadc9c71c4c0b68712972fa4d99141c177adee50f1f0c62a6f4c47"
+    },
+    {
+      "filename": "401_align_benchmark_report_null_de.sql",
+      "checksum": "16d7bb6f85c925583f846319c0190ac2046cae60403dac218114c66e78d1fdc6"
+    },
+    {
+      "filename": "402_align_de_economics_null_de.sql",
+      "checksum": "dac0a5dc5145ea3fb439ef7adcd045715b3a3ca56b912e69eac34558c7ca2a37"
+    },
+    {
+      "filename": "403_guard_approve_draft.sql",
+      "checksum": "6924255f13357509be16e5f79e9ce34c672d7a3fc805c97004b77d39005dbd13"
+    },
+    {
+      "filename": "404_guard_approve_draft_reply.sql",
+      "checksum": "aad4d6b4a451b844abf328493863461154688541633af4139959ec0db0879719"
+    },
+    {
+      "filename": "405_guard_edit_outbound_draft.sql",
+      "checksum": "a19473d1d46d3eb2e5d14f24baedb5e6df0815773578280c89dcbc38cd7efe51"
+    },
+    {
+      "filename": "406_guard_send_human_reply.sql",
+      "checksum": "808732bf4c865a026ab615bed4a32bb675af417bae978a176681209f2d16d869"
+    },
+    {
+      "filename": "407_guard_claim_support_conversation.sql",
+      "checksum": "34ff8eb4c98dc56ff5e480ca929a1f3ac89ebd7fbcbc8ef748a0420e673eb055"
+    },
+    {
+      "filename": "408_guard_set_support_conversation_state.sql",
+      "checksum": "93b5c76b84bcc02cf89459c2cee343b090fab2f9462f44cbef580dc74559385f"
+    },
+    {
+      "filename": "409_guard_handoff_back_to_de.sql",
+      "checksum": "17896e785d5b7ce3f40aaa72972885c9fff6dcd88aa39ebc047170d8a27fb656"
+    },
+    {
+      "filename": "410_guard_propose_invoice_writeback.sql",
+      "checksum": "e396caeb8f9eb83988a360d9fb033aafb559524e97a63c7357a67de7097cf9b9"
+    },
+    {
+      "filename": "411_guard_propose_account_writeback.sql",
+      "checksum": "a713b954a2d0090ca598d64d95e0be0c5bd6c4e66becc823863e17383653073b"
+    },
+    {
+      "filename": "412_guard_propose_opportunity_writeback.sql",
+      "checksum": "85f690cefdce66fb38924c47678a2e4149bf6f0358eeaf825afbd19a42e3c29f"
+    },
+    {
+      "filename": "413_guard_propose_continuity_writeback.sql",
+      "checksum": "4519bcf2babcff386746a5c84f525bc0a47a92c55f1dc5cf0c97ee76e471dc25"
+    },
+    {
+      "filename": "414_guard_create_browser_operation.sql",
+      "checksum": "8649fd0c83c17d6aa090d858e7ab272a1a9dc8e5398bee5caa25318ad23c664a"
+    },
+    {
+      "filename": "415_guard_propose_browser_task.sql",
+      "checksum": "1ca81fdb7e47b8d1b2a48b6d9c9fedd3cc5838d6a77353742f851f87e810f294"
+    },
+    {
+      "filename": "416_guard_approve_learned_behavior.sql",
+      "checksum": "0b8f23adacd41cc57b230ce8e4f29953026f809ec4a9a771dd6006ffb0980e9e"
+    },
+    {
+      "filename": "417_guard_reject_learned_behavior.sql",
+      "checksum": "44cdd8302b30f9063320f294e62c5fee7a8347bbb10647f8f4823bf740d5d7ad"
+    },
+    {
+      "filename": "418_guard_apply_improvement.sql",
+      "checksum": "ee0062892a0b8c95c32805e2626f702bf4e2db05366dbcfb6a69f88aaf2ae613"
+    },
+    {
+      "filename": "419_guard_request_trust_promotion.sql",
+      "checksum": "caba17905ef5c66d28b3095c5b45f03d70574df4624327170a78a4f87a5f65f1"
+    },
+    {
+      "filename": "420_guard_enqueue_de_work_item.sql",
+      "checksum": "6d27e28f29760d9a63f5eb7d3123ec73c8efa14161b23e1f776af6195e7b4a18"
+    },
+    {
+      "filename": "421_guard_create_de_mission.sql",
+      "checksum": "5582800ca92e95fd85c591f0770505e929feecabb36e4c69de71f1c3bb73e7af"
+    },
+    {
+      "filename": "422_guard_create_de_team_mission.sql",
+      "checksum": "c59cf3b59b12ba82bb6dc52b21545a0a0c48bcf42f81b37c3bc09ac362b8e5e1"
+    },
+    {
+      "filename": "423_guard_set_de_mission_state.sql",
+      "checksum": "7caf7c6b0dc509eb064a8a8d064c46c3853b67933d84a70c3863ea92e942411e"
+    },
+    {
+      "filename": "424_guard_submit_evidence_feedback.sql",
+      "checksum": "a1bf04e866b0457219c9db25c3e9bb41603d089bf4223359d6014708c755a69b"
+    },
+    {
+      "filename": "425_guard_assess_definition_of_done.sql",
+      "checksum": "cec6869f971a1faf5e32666e037566359aac95f175c2eca3dd2a78fbffa13d14"
+    },
+    {
+      "filename": "426_revoke_dispatch_de_work_internal.sql",
+      "checksum": "b784ad88afb6a932a4110cdce4dc1d1e80e49b272837a1ada72ffb3508661c98"
+    },
+    {
+      "filename": "427_scope_resolve_action_execution_for_task.sql",
+      "checksum": "cffa972cd090cb91978a21e83cfcd93532d6e40131160830637fb9cac46794d2"
+    },
+    {
+      "filename": "428_fix_dod_comment_token_contamination.sql",
+      "checksum": "f715b0b7c033c650862219cdc75f8c55c0d2540cf9a353741fc95143b84acd59"
+    },
+    {
+      "filename": "429_audit_reporting_line_writers.sql",
+      "checksum": "74f2d8bbc9e9e6f883dbaeb2f2413a225f4f955b015558b519e5608210e69d7f"
+    },
+    {
+      "filename": "430_suspended_tenant_dispatch_guard.sql",
+      "checksum": "f7beafe1ef4e7c3a3cc0b69cede7222520fc41039faf1e9d4713eee69d60221e"
+    },
+    {
+      "filename": "431_guard_list_de_skills.sql",
+      "checksum": "6d725b78381d267008b7e447a38ea3eabeb5805155c5ba31ff3144e6ad488397"
+    },
+    {
+      "filename": "432_guard_get_de_systems.sql",
+      "checksum": "5247646d6a46e8618f4aacd7229f6437408538bbaddfe63220c47a3ea39ad48b"
+    },
+    {
+      "filename": "433_role_gate_de_external_reply_mode.sql",
+      "checksum": "fd907bf9feb8bb71668f4620b2416c8f1d96f577a5a425311d3f300cb8e40a4c"
+    },
+    {
+      "filename": "434_role_gate_specialist_source_secret.sql",
+      "checksum": "c801b60bc6a4a6ea374d0daf1b7102d421866bd1b8886be7aea412f335dbe820"
+    },
+    {
+      "filename": "435_scope_de_performance_metrics.sql",
+      "checksum": "b62282e158648684e4061e86f3e4f7f7259a7b006b43a26b3c21081b425c5fec"
+    },
+    {
+      "filename": "436_scope_record_kpi_reading.sql",
+      "checksum": "0fd722c041a3d164adea7b2ff261da93bd11cc2976ec0beb227ef1dcc2c94a25"
+    },
+    {
+      "filename": "437_scope_ai_undo_change.sql",
+      "checksum": "a2b0503dd1519e1c617aa07ef36a8ceaa2f51a508106b6c2db6ee517d71cf728"
+    },
+    {
+      "filename": "438_scope_respond_de_task.sql",
+      "checksum": "f4a2d8aba4bb17a68d815fb588cc70b892ce93da4a83a0134294907fefa0807a"
+    },
+    {
+      "filename": "439_scope_cancel_case_continuation.sql",
+      "checksum": "356e73d17a13af16e00555b227c2d7e36b0f2c6b6ea967ecc5e2838da8baddb5"
+    },
+    {
+      "filename": "440_role_gate_install_technical_specialist.sql",
+      "checksum": "87538da83645fa6f915c580ea33650ebffc50e5c1e9fbbd99569fa2bbef334a7"
+    },
+    {
+      "filename": "441_role_gate_seed_trust_policies.sql",
+      "checksum": "ccb8a94f693d5fabcdb6a6e6ae0fa222464622ea2bbd6f9a887dc2d98d538573"
+    },
+    {
+      "filename": "442_live_channel_evidence_decisions.sql",
+      "checksum": "f306e961141790857337c09cd3bea1694f64e0d005d55929f1c22d8fbb2eb219"
+    },
+    {
+      "filename": "443_exception_ruling_closes_the_loop.sql",
+      "checksum": "7e9c62489bc4e463302173820a8f8ca24d6b558959a0eb329e674da8519bd00c"
+    },
+    {
+      "filename": "444_revoke_anon_wave2_actors.sql",
+      "checksum": "791bc1c937542d8b84b68691f5b811acb1bc55caba94ef97a0a5c0b2bd0a3ce6"
+    },
+    {
+      "filename": "445_de_scoping_record_readers.sql",
+      "checksum": "b79668f4d0a5b3550155b77c7ef809099e3db14cdaf438216524cc0d8c9a5d51"
+    },
+    {
+      "filename": "446_scope_memory_and_metrics.sql",
+      "checksum": "75f3a5c738b140564796d9fa86fa9c842d97f543cc7b3c992a32cd83b88cbb14"
+    },
+    {
+      "filename": "447_scope_config_identity_readers.sql",
+      "checksum": "21d812f428c49a5597237fd2484bfacbe20404369218c1f36a06ce8b19313537"
+    },
+    {
+      "filename": "448_assignments_scope_and_creator_primary.sql",
+      "checksum": "ecc075b24926bb0860d55a665f6b925694e0a72d256cc33892a172bae4d9b15d"
+    },
+    {
+      "filename": "449_rls_de_scope_workbench_tables.sql",
+      "checksum": "752789dfa0a1ba27ce577a035368b3f82eaad9c953411cbd1de7cf393e3c64ef"
+    },
+    {
+      "filename": "450_revoke_public_anon_employee_file.sql",
+      "checksum": "fda4ac740dfcfe6becbbaf974b5a443c085481ace88f89114413479e4ebf5300"
+    },
+    {
+      "filename": "451_de_scope_write_side_workbench_tables.sql",
+      "checksum": "2bf656646912fb17abeb223701ecdc2bb5f9a0c79b511ad9bfe8d1fcd0d8be46"
+    },
+    {
+      "filename": "452_de_scope_the_write_side.sql",
+      "checksum": "bbae1c14496395be3907120f7b81b45c681fda1e71676f7308929ace66edf757"
+    },
+    {
+      "filename": "453_dev_items_auto_close.sql",
+      "checksum": "9ad92a05ef6afc91713bfb21e810553385a189e6b1f04ea3739e69ff4d92d022"
+    },
+    {
+      "filename": "454_fix_435_cron_blindness.sql",
+      "checksum": "9fe7ea50d70fdb93e7850931568067d96d71a8116ea0a4437032c08dc7663ba5"
+    },
+    {
+      "filename": "455_approval_learning_capture.sql",
+      "checksum": "16e453f59a1104f48da68863a42abb7168e706cd9243337a4c5fa5cb6c3c8ee0"
+    },
+    {
+      "filename": "456_decision_audit_detail_parity.sql",
+      "checksum": "b1f5ce5b3e683aa5b0c1059d44ee8ce533ccf4e48f5c06d0739783e3c9a9a7ed"
+    },
+    {
+      "filename": "457_capture_the_training_pair.sql",
+      "checksum": "02a67ddec47f8111628badce6ad0c8873dca971ee06b0dd8723abe1a1086ea44"
+    },
+    {
+      "filename": "458_trust_ladder_as_data.sql",
+      "checksum": "1cee518a4bca129329faeb78e5a0657f9f53906f97b062733cdb48a718411958"
+    },
+    {
+      "filename": "459_trust_unbrick_registered_actions.sql",
+      "checksum": "a3d5f722bceacb7fa5e6c9969a360aa31f67c2ffdf9e8182e42c143616896828"
+    },
+    {
+      "filename": "460_trust_surface_backend.sql",
+      "checksum": "221a78a4815f96779961a1676d37e86d0fbf2942337209fe25aa6f7dd46ddb30"
+    },
+    {
+      "filename": "461_trust_per_de_evidence_honesty.sql",
+      "checksum": "8ababe9668e768ed0e2e4e0097c33594ec62833c754bbb1a25944dac56fe5c41"
+    },
+    {
+      "filename": "462_trust_badge_derived_read_model.sql",
+      "checksum": "41d289007df39a54543badff5b2ec044be4270c908487899013afc268838ac6f"
+    },
+    {
+      "filename": "465_de_scope_charter_and_widget_keys.sql",
+      "checksum": "c8fb5ddcf0e02b5753de0de4e294e84e1c3c6c14fa02e7c474e9cd1a3505053e"
+    },
+    {
+      "filename": "466_idle_in_transaction_monitor.sql",
+      "checksum": "6db88f8a79d5d89d7b79287adf52594b7929fa296f919d6253a463420c16dc05"
+    },
+    {
+      "filename": "467_dispatch_attribution_log.sql",
+      "checksum": "ea448764dd707342320a4dc4b2482ed485810ecd8b9c9ce72effc4cb5beb172a"
+    },
+    {
+      "filename": "468_budget_alert_rearms_on_budget_change.sql",
+      "checksum": "84951cfca9236e7311b13d466ff2224258477944d7d2e8d70f892e55a3ea7c8d"
+    },
+    {
+      "filename": "469_revoke_recompute_de_trust_badge.sql",
+      "checksum": "f5baffe5c503480256207cbdfeb502d92085c6dc2c0d6c214a558688ca28d8a6"
+    },
+    {
+      "filename": "470_revoke_anon_writes_schemawide.sql",
+      "checksum": "8f8e7162fd4029bb2356049dc0f819c00f5a53f224a9a879633c6074c99fb4df"
+    },
+    {
+      "filename": "471_auto_grant_specialist_consultation.sql",
+      "checksum": "264bfbf0363e23424efc0ee571f650bb08eb60154f6880d23189fa9cdf6d2668"
+    },
+    {
+      "filename": "472_development_program_wiring.sql",
+      "checksum": "0e71d329120675772ad3710fb1b186a3a760c0e3ce71a122aa5b2592d06f7439"
+    },
+    {
+      "filename": "473_knowledge_proposal_entity_guard.sql",
+      "checksum": "690da33f25121f8e8e15c218a48b602976fb9be6d7d009dca64e8a1413a97f1a"
+    },
+    {
+      "filename": "474_approve_with_edit_applies_and_learns.sql",
+      "checksum": "540b0824f25d0576d81c50b1f851257bbc51ef68f05358565f1385496b2f9c06"
+    },
+    {
+      "filename": "475_installer_reinstall_and_audit_repair.sql",
+      "checksum": "4484b9dd68d25a16b90099faf6c384384af1b6989ac96ef9cf5bbfb98609d820"
+    },
+    {
+      "filename": "476_ingest_workspace_assistant_kb_articles.sql",
+      "checksum": "42294886ded54ea5d57845c1a92d5d7b65a50c8759434f0846cc7e243cb466a7"
+    },
+    {
+      "filename": "477_copy_workspace_assistant_kb_to_shelf.sql",
+      "checksum": "06e336fa19a314372a142f7ed28b104e145805cdbb066947d99fc33e5935cacb"
+    },
+    {
+      "filename": "478_unify_workspace_assistant_name.sql",
+      "checksum": "719bf104e2512fb7daead335f5a707ae14db56a9fc893b914efb118ee5971b47"
+    },
+    {
+      "filename": "479_actions_article_approval_revision.sql",
+      "checksum": "6ef002270d545396d84959167153874373a4bdce234f9c3d55bf672cbe08619d"
+    },
+    {
+      "filename": "480_eval_gate_ignores_outages.sql",
+      "checksum": "f4a878d0c0b287ada85a98710abe584977738db185cbfadc8cfa80ca65474100"
+    },
+    {
+      "filename": "481_server_side_chunking_for_improvement_publishes.sql",
+      "checksum": "2a94a6d7fd0f29985e19b664570b935d36f1a4179ecd8082fecbd88f7ad86e10"
+    },
+    {
+      "filename": "482_wake_spine_and_revivable_objectives.sql",
+      "checksum": "0b2dc0230ef9d9b49c9c472059ee8eb5623c45e24db55bbc69e39be46cad6888"
+    },
+    {
+      "filename": "483_escalation_return_path.sql",
+      "checksum": "82cf8106e8e463ffb2bec742767b8d9eff44667c3a526fe6911b1474050a961e"
+    },
+    {
+      "filename": "484_escalation_backfill_and_rearm.sql",
+      "checksum": "e8e7297ac8a28f727c170107f5b2945607ccc8fde28370bbe5bf9dc483acf11c"
+    },
+    {
+      "filename": "485_stall_sweep.sql",
+      "checksum": "b6aaade4c77f2eac3711618f56ffa100f71780defd07e274fbcb354464b63d89"
+    },
+    {
+      "filename": "486_rename_decide_de_escalation.sql",
+      "checksum": "f86ddf3d718578ff9e50983614fb39556a4375954b514c9d1057bbca6200166e"
+    },
+    {
+      "filename": "487_approvals_ledger_guard.sql",
+      "checksum": "9eb25840b7e24abf887324675db0353f176e40cf74a6743d12435be6480b2384"
+    },
+    {
+      "filename": "488_guard_message_accuracy.sql",
+      "checksum": "f84241834025dfcbf1da9200a54ecc9d4b60259868b2434e3413769b63ff50c1"
+    },
+    {
+      "filename": "489_definition_of_done_shadow.sql",
+      "checksum": "ab12e5fa9fefcd26d083b1fa76377c254f65b03590d55d46074f97ec04b6d0ee"
+    },
+    {
+      "filename": "490_dispatcher_sees_revived_objectives.sql",
+      "checksum": "77fa31cf7b6ec682360c6b2795e3f3bd07fa84a806e79056330494c2680f8ffc"
+    },
+    {
+      "filename": "491_performance_stops_fabricating.sql",
+      "checksum": "6d390eb6741a18cf1070f03ddfc7563f6091f1def53ad969a5a834397bb73a6c"
+    },
+    {
+      "filename": "492_performance_summary_revived_and_honest.sql",
+      "checksum": "9f93fa3775f9c9ca7acdaf032e07ae3a693e09deacbaf23e2b7df8cd4c8ab356"
+    },
+    {
+      "filename": "493_reclassify_hollow_completions.sql",
+      "checksum": "0469ed7d766016a3ed4de84224cf22438b99a677a6b6a686e4d6f9db264c87c1"
+    },
+    {
+      "filename": "494_board_shows_the_stall.sql",
+      "checksum": "edcf4ee9536a312929bd2859bda72c27ca1b33a0be37d30d504a0dc6e11caee7"
+    },
+    {
+      "filename": "495_guardrails_can_see_what_the_employee_wrote.sql",
+      "checksum": "f262b3a6b470d401edc866eaedd10a01c109765131d09d715ffac9d5cbe3f734"
+    },
+    {
+      "filename": "496_the_writeback_dial_becomes_visible.sql",
+      "checksum": "53d05e582afb6526241ebe216f506e39fb9a85a38a5ada184a48806333051b44"
+    },
+    {
+      "filename": "497_d4_renewal_records_unattended.sql",
+      "checksum": "69f30750c6aa7aa2affd7f0f321613d96c831e995cd0b3d22004589e2f6d646a"
+    },
+    {
+      "filename": "498_evidence_spine_admits_work.sql",
+      "checksum": "f16c8b26b6f5ec66b944ace2ad38681f3a9988c10a0f88383a57f5333995c939"
+    },
+    {
+      "filename": "499_work_becomes_measurable.sql",
+      "checksum": "e376a307451da317297cfd0fe9798633862634f0908423594f0c017dc0c506a4"
+    },
+    {
+      "filename": "500_work_metric_counts_only_work.sql",
+      "checksum": "3a3e8beeb40d46eb492c2e21e504f4bd13b0c4165cbecbc129b332f9cc2d351d"
+    },
+    {
+      "filename": "501_kpi_snapshot_stops_storing_fabricated_zeros.sql",
+      "checksum": "22d13f7c273a00a050a8d00779fe1ef2909952e7f3f5e9f1cd84770c7abc8922"
+    },
+    {
+      "filename": "502_per_archetype_performance_contract.sql",
+      "checksum": "9ceb22bb0cd25c5ced1b9688237ac36f3c416506319b94555828291014c1c489"
+    },
+    {
+      "filename": "503_authority_follows_assignment.sql",
+      "checksum": "7325775bda9424661b76def09a06f07e6475a89d94a4a08e3a93b09fa8f492d3"
+    },
+    {
+      "filename": "504_reroute_a_blocker.sql",
+      "checksum": "9c7d39157875ec0f4d27960c6f0f17823a9b7230beee6737fd1e37a9dbeb812a"
+    },
+    {
+      "filename": "505_the_worklist_desk.sql",
+      "checksum": "86cdb87eb967604ced12b05f07ff6a5d6fb12f2592522d491367b7e5ef26e1c9"
+    },
+    {
+      "filename": "506_agreements_find_their_customer.sql",
+      "checksum": "43aca729109e6f59eac88b39d1d38f0bf9cc6e474e0d1623dd67cb8058bc911a"
+    },
+    {
+      "filename": "507_contacts_become_real_contacts.sql",
+      "checksum": "6ad5968b5a7ed5b7a21a4ca468d249fe3cbe24a7516a7d2ed8bca4046d110d35"
+    },
+    {
+      "filename": "508_seed_test_account_book.sql",
+      "checksum": "70fec661a22222a9ac5ef37a79dbeb293d4a594c6772943b453cd6f0fadb682e"
+    },
+    {
+      "filename": "509_the_renewal_sop_becomes_a_procedure.sql",
+      "checksum": "672804fbedcec445a4ad17c25ebdd7c9816248278b67e1a47f2d2d4bc7ad5a4f"
+    },
+    {
+      "filename": "510_account_health_stops_inventing_a_score.sql",
+      "checksum": "cf8c5c697e18c16db454ad1cb0afe356d48a0cd82d9a4b03a3734ae8e2e54854"
+    },
+    {
+      "filename": "511_five_more_roles_get_a_procedure.sql",
+      "checksum": "699a92448672faa203880194c390ad81ce1db2113109eddee309fcc9f928dc7f"
+    },
+    {
+      "filename": "512_retire_the_technical_specialist.sql",
+      "checksum": "9b8e7412a7d786b70cd5330bcb6db1226b139edd8d3897a7f636b2fc8d94ea1d"
+    },
+    {
+      "filename": "513_retry_blockers_the_employee_can_now_answer.sql",
+      "checksum": "2d1cdc4be49ecec298e1e47a272c49e600d303d62fa618f99d03de307b93f58b"
+    },
+    {
+      "filename": "514_claim_the_most_urgent_work_first.sql",
+      "checksum": "6513c5544e889e87721557449b26542dfe07a1e9fa374944f0419f3dcd36aff4"
+    },
+    {
+      "filename": "514_register_erpnext_provider.sql",
+      "checksum": "0d00855715cb16033eb2a4fca876f5cd0ba59baa40e699aba166e63657fe4020"
+    },
+    {
+      "filename": "515_one_meaning_per_field_and_real_deadlines.sql",
+      "checksum": "47aaed129593c7d77b68e23f926d04093a7c72af7405b3ffbbf2054bd629bd70"
+    },
+    {
+      "filename": "516_apply_the_response_standard_to_open_cases.sql",
+      "checksum": "8826f01e1e37f24f7cb3aec946d0ee95efddcfbd6f2e437a81272b177d01890b"
+    },
+    {
+      "filename": "517_external_ar_ingest.sql",
+      "checksum": "fc7aa6f843259bec6083bee027db3b86c23df290d86e9df6cedb49c30e0b1cd3"
+    },
+    {
+      "filename": "518_a_response_window_you_can_actually_set.sql",
+      "checksum": "c5f91fa599203b93458348a17dd5647a8601c3fa1feb67d83ab5128444ba0997"
+    },
+    {
+      "filename": "519_the_response_standard_reaches_the_sweeps.sql",
+      "checksum": "332dc1dd07347dec236de5741d6275ba0c228bedd49eb6edbf085248db5397c3"
+    },
+    {
+      "filename": "520_erpnext_dunning_actions.sql",
+      "checksum": "2db87b208c7a48376d89dea5736fa2f859aa79e6f31018af7611bbc5a7b173f7"
+    },
+    {
+      "filename": "520_the_claim_locks_only_what_it_claims.sql",
+      "checksum": "7b6483d80539f96eaf9f4406dcba253e226cfec46825f0ee6469dbbb071e3baa"
+    },
+    {
+      "filename": "521_erp_ar_drift_reconcile.sql",
+      "checksum": "ee16b570da0aa9938ec3a31b777ae0ecaa8ae84faf7036f80c031416ee8d922e"
+    },
+    {
+      "filename": "522_a_heartbeat_for_the_workforce.sql",
+      "checksum": "dcad1c60898384b231224e6ac42575b82d6ade0d641ef7b7a038f61752972b87"
+    },
+    {
+      "filename": "523_escalations_that_answer_themselves.sql",
+      "checksum": "8564210b7bdf8d9e05841de205da6a4d6952bafc9e4841c02c37c1db3d444a69"
+    },
+    {
+      "filename": "524_a_goal_is_only_blocked_if_something_blocks_it.sql",
+      "checksum": "81606dc357999b48ed1d3be1324a5cf1c05d9274d1bcb2b227d8ceafc961dd0d"
+    },
+    {
+      "filename": "525_work_that_can_never_finish_must_say_so.sql",
+      "checksum": "54b5c113b5d65a892e70034e5e296516e89dfae4036443ead3ed9dd277fe3634"
+    },
+    {
+      "filename": "526_blocked_on_people_is_not_a_deadlock.sql",
+      "checksum": "4a34549d7f6f84562065eb95e8badf91b73375da2f0c213ed67e10a5e5a7bed6"
+    },
+    {
+      "filename": "526_erpnext_autonomous_dunning.sql",
+      "checksum": "899505fb99f5fe70591eeed7aa1ca0bffdaa1cdc4106d06d58f854e275e9e7bc"
+    },
+    {
+      "filename": "527_an_alert_nobody_clears_is_noise.sql",
+      "checksum": "6d0cb10f5a20a47f8199fe8b7f81001cd645013c951a2c5ac5d7cde15e016c04"
+    },
+    {
+      "filename": "528_an_empty_book_and_an_unread_book_are_not_the_same.sql",
+      "checksum": "6be13275e1f39e51f656b15d61fc6908ecd02e3d091056f38802518a8c366053"
+    },
+    {
+      "filename": "529_you_cannot_chase_a_balance_you_have_never_reconciled.sql",
+      "checksum": "fa3cd361ba502f2e4530f2181890f3ec449d81ebb6435ea195cceab6bab4c5d3"
+    },
+    {
+      "filename": "530_face_value_is_not_a_balance_owed.sql",
+      "checksum": "04091e818be81711c8309e5b6b9e138c57044de9f18c40086c956813c924ed98"
+    },
+    {
+      "filename": "531_a_posting_a_human_can_trust_in_thirty_seconds.sql",
+      "checksum": "399b4018e071ca0f8ed436616e2c5db689638011ef48ebc4cd27da0a059cdd42"
+    },
+    {
+      "filename": "532_the_erp_already_told_us_what_is_owed.sql",
+      "checksum": "98ec45e5f80bc2f34ac6b3992a188dd1569379a73728654f84697333beb5bed3"
+    },
+    {
+      "filename": "533_ar_that_refreshes_itself.sql",
+      "checksum": "35ca8c92f1aca1f7f849fd0c1968e058f561e20f7cc03b0e59b33cc86fe67d7a"
+    },
+    {
+      "filename": "534_a_dunning_ladder_you_declare.sql",
+      "checksum": "c2b6d28e382e650acaf26d95c4af015582730d52d5d0137912f1425a98dcf6a7"
+    },
+    {
+      "filename": "535_not_yet_due_is_not_minus_days_overdue.sql",
+      "checksum": "f07b9a9593f7f6b3416c4e3e3148ec8c022aadb1890b9f9e7595353b0e7c123c"
+    },
+    {
+      "filename": "536_money_should_read_like_money.sql",
+      "checksum": "18c71208d302f5a8554e5b09bea29bef002e90ce5129490106fa75c57b40c490"
+    },
+    {
+      "filename": "537_a_promise_to_pay_is_evidence_not_optimism.sql",
+      "checksum": "9ebddb4cfb3c4ba2db938df55139b23acae205a9f98bd15a51c73161cdb2b150"
+    },
+    {
+      "filename": "538_the_next_invoice_writes_itself.sql",
+      "checksum": "bd57ccee82d74649d5cbc45fbf4a3442861bee1252246047a559f3702ebb9325"
+    },
+    {
+      "filename": "539_hubspot_native_writes.sql",
+      "checksum": "d0e9408acb387129c3df4e193f4bc05eb1f0668e7bb7aa13513dc5d0d269cefc"
+    },
+    {
+      "filename": "540_hq_workspace_cleared_verification.sql",
+      "checksum": "9161958c6291dc635525bf04ff4a24f9d014f85e6ff3a6a8ebc13e91db664447"
+    },
+    {
+      "filename": "540_p1_native_writes_sf_qbo_xero_stripe.sql",
+      "checksum": "09f8ddb7cb6e1a8c955deee85ab7d7954a4fbb5af586cfb545a41395a4f35750"
+    },
+    {
+      "filename": "541_every_tenant_brings_its_own_key.sql",
+      "checksum": "9ce8074ed84aca5025f074ae6156cb3e31a4d7d728309646d04f3cf23fca7e07"
+    },
+    {
+      "filename": "541_register_mcp_provider.sql",
+      "checksum": "107bcbd6b5749a28c15964cba5ca33bbae53577022c175b15f3021db5f4afe4b"
+    },
+    {
+      "filename": "542_p3_support_people_pos_writes.sql",
+      "checksum": "562a4ce1d97e933f10ab55a720912cdb0fed425ca1e586f2db6f38f650c613c9"
+    },
+    {
+      "filename": "542_the_new_finance_writers_are_not_the_internets_to_call.sql",
+      "checksum": "1a2d20c3efae3203b34c5b88f77b11f9cc4f50a62e2b45989bac4bcf50c77592"
+    },
+    {
+      "filename": "543_knowledge_you_cannot_reach_is_knowledge_you_do_not_have.sql",
+      "checksum": "53c52b7a6b3a65fff75a2750c421c1a2b74e32b0cf54f5fcd2475b2583254336"
+    },
+    {
+      "filename": "543_register_p4_providers.sql",
+      "checksum": "9d634d565a18b885d015870a1486b0e883de94f2cbf88f69d0bdda6a490dd67b"
+    },
+    {
+      "filename": "544_allow_blank_base_url.sql",
+      "checksum": "f6c9161b514570cd647cf2ce7b12fb63f6d1eee1ff50499618d8295b21a41d19"
+    },
+    {
+      "filename": "544_dropping_a_function_drops_its_grants_too.sql",
+      "checksum": "b5e6c5f1518c625579d6352e7f984b92f47c984769fa5843c227e2746b22301d"
+    },
+    {
+      "filename": "545_staleness_respects_suspension.sql",
+      "checksum": "b05c448db6ce9bed50fd20c32f3d2195a616adf0378a0669c46ca2ddbf853052"
+    },
+    {
+      "filename": "546_dormancy_writer_audit.sql",
+      "checksum": "7dd74e5186958f8fa1c7376f0d6d49c9474c238ba830d2791a63f01294672336"
+    },
+    {
+      "filename": "547_guard_two_reachable_writers.sql",
+      "checksum": "7b29705e4333fdec947955771d130702862c8a02dd712b3e3b0aaa53275c796b"
+    },
+    {
+      "filename": "548_remove_mcp_demo_artifacts.sql",
+      "checksum": "9b3485641d2b86c9310456180c7df1849f0df95eb7bb91e3e559ec5604f928e3"
+    },
+    {
+      "filename": "549_audit_chain_order_and_verifier.sql",
+      "checksum": "a7a84151425a83fb4bf57fc42027f7faff57661b339fb1b3b2884d0753a15b4c"
+    },
+    {
+      "filename": "550_tenant_feature_parity.sql",
+      "checksum": "68f1dc97d6a1c7245a566fa9228aab6bafb4e05e531b7f03df5dce017265dbfb"
+    },
+    {
+      "filename": "551_every_feature_on_by_default.sql",
+      "checksum": "54e45fbc53fa7893c77ed05052465314e0d877c28bf2290211524d45b34efe3f"
+    },
+    {
+      "filename": "552_role_kits_installable_everywhere.sql",
+      "checksum": "2ade77c9dafd34c0b59461bed2fc920d21636fba5834e9a133b9462e56c66d21"
+    },
+    {
+      "filename": "553_apply_a_role_kit_to_an_existing_employee.sql",
+      "checksum": "6786ee1b1204c4859597e247e550a6c55287572e2e383944c473615f880dab7d"
+    },
+    {
+      "filename": "554_the_config_table_nine_functions_were_reading.sql",
+      "checksum": "5968b99e3f7e3829bd72322e55c8cc3bbae3353f71c2db712da087738510fcc8"
+    },
+    {
+      "filename": "555_the_draft_review_leg_that_could_never_run.sql",
+      "checksum": "5c631505c49c3c29ec817f3678e543b1150927d9ed4fd96c48592c848904005c"
+    },
+    {
+      "filename": "556_a_review_queue_worth_putting_answers_in.sql",
+      "checksum": "993fbd9d7c5b9ca3d71257eda8abfb04d68669a419b9168cc221ae764f5b3deb"
+    },
+    {
+      "filename": "557_remove_the_e2e_probe_artifacts.sql",
+      "checksum": "ffe12e5c42a938ff44c3191f78e8f5b5d567bace77801e4869b1eb6a7dafed94"
+    },
+    {
+      "filename": "558_put_back_the_perimeter_i_opened.sql",
+      "checksum": "609ed920d698aa581bc9cee3b566f7f524b7537dfbf0040657d24e7a1ed1a19d"
+    },
+    {
+      "filename": "559_close_the_anon_door_on_definer_rpcs.sql",
+      "checksum": "0b16e3011863c8c73a3b235ca44b423728adc918c31bb9e745d129a7fcf793a7"
+    },
+    {
+      "filename": "560_stop_polling_for_work_that_is_not_there.sql",
+      "checksum": "179a7a6f8091dffe51ccf66e61fba4179cc65c5e29f848e61d6ea3fbbffc6557"
+    },
+    {
+      "filename": "561_split_the_four_in_one_dispatcher.sql",
+      "checksum": "edd3745e658be799912862f8e89ce06ced7f202845ec716d6c45f30a83c7536e"
+    },
+    {
+      "filename": "562_gate_the_three_drains_that_never_learned_to_skip.sql",
+      "checksum": "c659592943ff1fc4a83b5467996a6bbc105d7a1f3f5ec2deac2d85f22c2778da"
+    },
+    {
+      "filename": "563_undo_the_overload_i_created.sql",
+      "checksum": "4facc66395b3f05366b1dc777d6677e7ecab5b018f62017255646b86c995a8fd"
+    },
+    {
+      "filename": "564_gate_playbook_execute_and_why_the_poll_cannot_be.sql",
+      "checksum": "a5442e14b9c627a76d80147bfac680c8dbbe93787df636c1411f3c985730c35c"
+    },
+    {
+      "filename": "565_the_answer_cache_was_being_emptied_faster_than_it_filled.sql",
+      "checksum": "0f5f561c6e4f093e5aaa248771fa619b81c76ff93c9f494759a0ebfc10098543"
+    },
+    {
+      "filename": "566_remove_the_cache_probe_artifacts.sql",
+      "checksum": "a9897efb89ceccedbfa6e016bc02da3044eb50b3ed3374e4220248b01eed73d0"
+    },
+    {
+      "filename": "567_denied_access_is_a_policy_not_a_doubt.sql",
+      "checksum": "9d5d87404d53829ece2f16f73fa8485faf725187d700e4f821122f648fc9a9fb"
+    },
+    {
+      "filename": "568_auto_send_for_technical_support_certified_first.sql",
+      "checksum": "7c1770e629202cf8d9b04123db0080dec542535e78755f412b278ca11e5fe50f"
+    },
+    {
+      "filename": "569_remove_the_auto_send_probe_conversations.sql",
+      "checksum": "bfde3ddb0f1d83a7d0cabbf7d62af94e241396035dce2647efc63b3ec2822c24"
+    },
+    {
+      "filename": "570_exam_threads_are_not_customer_conversations.sql",
+      "checksum": "4fd555e4fa62db42cd083975266c0620dcee23f431d15d736729ee07f3ebaf3f"
+    },
+    {
+      "filename": "571_an_exam_is_not_production_work.sql",
+      "checksum": "6333baf3383cbf6a0923da2523e2714184b23c962ca34de6157d628c01a7ec0c"
+    },
+    {
+      "filename": "572_restore_the_auto_send_the_poisoned_metric_revoked.sql",
+      "checksum": "ef6a37a5c1f82fa7c850d2c6ef873a2fcbc4ea21c41a3fa86abec58ab0b7d058"
+    },
+    {
+      "filename": "573_exams_stop_claiming_a_humans_attention.sql",
+      "checksum": "70b03bce624647643e78b68c62e1afe558982871c78402948a91d9976085f17f"
+    },
+    {
+      "filename": "574_the_categories_marketing_roles_were_asking_for.sql",
+      "checksum": "be03afd2a53cb51eb34e531e0e6ab6292ca8bad2946278a7c30341d22fd89d49"
+    },
+    {
+      "filename": "574_voice_channel_spike.sql",
+      "checksum": "05047430ab8a4ff6c1db3315989ac39fd0f8c53271873c1ddf764644dff7cb50"
+    },
+    {
+      "filename": "575_byo_refusal_is_not_absence.sql",
+      "checksum": "be6ccd8d3ee74085b31c673fe4f934890fd2d0ded1e18fcb9ee31fffa9a553ee"
+    },
+    {
+      "filename": "575_google_ads_adapter.sql",
+      "checksum": "9dfa96ba9adc567828fbbcf97fb4d986677a273e284ea64090953a7685c72ccb"
+    },
+    {
+      "filename": "576_google_ads_response_paths.sql",
+      "checksum": "58bda6b4496a984aa716f36a6101ec4c98428be6943bcd0c2fc87b24acea625a"
+    },
+    {
+      "filename": "576_resolve_every_llm_key_in_one_trip.sql",
+      "checksum": "323e221dd8f91115f8bb971df0dc8df248c3b698a52b65283b22c7fea68691f4"
+    },
+    {
+      "filename": "577_a_voice_message_reaches_a_human.sql",
+      "checksum": "8e3a545978b8433acf92b1d1c0f32182cc2d2e70f4632d1294ddd5c85f22ad23"
+    },
+    {
+      "filename": "577_seo_and_social_gaps.sql",
+      "checksum": "2c42766f718a4cb4b835d81cdf5278b6e78065b8c522379c269bd573ae3b0c45"
+    },
+    {
+      "filename": "578_clear_the_voice_spike_test_data.sql",
+      "checksum": "b3f42a09d0cfce407f1c69c0c396075a23399e5f208937bd1feb1fdee1f7cbcc"
+    },
+    {
+      "filename": "578_search_console_and_meta_adapters.sql",
+      "checksum": "859778dc9f8550b40be06fa89093c328a531797845cd77319b11cd46191f60dd"
+    },
+    {
+      "filename": "579_meta_comments_fields.sql",
+      "checksum": "dd3cd95834312fed3455311f7bdd71c23c5cc1afae605e50f47c6fc6ccbef3bf"
+    },
+    {
+      "filename": "580_a_connector_credential_nothing_can_read.sql",
+      "checksum": "610ff5f00b166710d008def5739e545d9ad9bcb3bdfeb7f03e858fd192eef349"
+    },
+    {
+      "filename": "581_write_bindings.sql",
+      "checksum": "ca992da0a84c624eed667aa7b1405fb585287e18fce2918b140db7d7b4cb2512"
+    },
+    {
+      "filename": "582_linkedin_and_tiktok_adapters.sql",
+      "checksum": "de13797fd7c5d840bd460d7ad9a61a829a7b11238701b475d05af4a7e3a91b4d"
+    },
+    {
+      "filename": "582_remove_the_stale_mcp_specialist_sources.sql",
+      "checksum": "d5fd9ad1b0faa816028445fd8961a4ef1273d6b9574e9ef54072207915fe3610"
+    },
+    {
+      "filename": "583_meta_test_op.sql",
+      "checksum": "4093b36fa120f5159699039ec7e1130d6d3d9acda61b34e1f0c495f29e2e7f3d"
+    },
+    {
+      "filename": "583_the_queue_stops_generating_its_own_work.sql",
+      "checksum": "d1de6e5b30cb0cd89dbc125ea7c29117a670d018183e19b09ca1dc02be3710b8"
+    },
+    {
+      "filename": "584_instagram_adapter.sql",
+      "checksum": "54ad1db803a10b283908b1e7cf003777479de9533ef87ea8b3acd3d6748ad222"
+    },
+    {
+      "filename": "584_the_trust_ladder_can_fire.sql",
+      "checksum": "80d8265fd6bf62c7fdedfc1af99da16e1dc2bd8825381e2d707ed53883cf1c08"
+    },
+    {
+      "filename": "585_an_unanswered_question_is_not_a_wrong_answer.sql",
+      "checksum": "d7bfc32fa3476a97b9b9d7e5d27e5648db9f12b13575c774d9c4826292e73c03"
+    },
+    {
+      "filename": "585_tiktok_publishing.sql",
+      "checksum": "b746414b01d313ebdb975a4186cfe3854b4cc099fe347d4282d244bb7d98a8e4"
+    },
+    {
+      "filename": "586_an_employee_excused_from_the_exam.sql",
+      "checksum": "468faa10fed0d27bb7b0f96824aeb26074d03fbf929ca4dd3b8a08fd4386b7cf"
+    },
+    {
+      "filename": "586_marketing_loose_ends.sql",
+      "checksum": "5d41bae60efe374e16529120aa0e15564797b84f7059cdb1cd11dfefa895110c"
+    },
+    {
+      "filename": "587_an_approval_with_no_name_on_it.sql",
+      "checksum": "da48230043ad8956c663a9c39a22b3ce262f8cd38d736674a3a9513967d73c97"
+    },
+    {
+      "filename": "588_every_pending_approval_gets_a_name.sql",
+      "checksum": "9d1329a761cb5cdbb2bf849a48261c3a0f14e9bb2fc2694170314f56f35880f3"
+    },
+    {
+      "filename": "589_the_ladder_nobody_was_climbing.sql",
+      "checksum": "60127b076a1ed7d37c0d07726f9992912a18242488131b10d555f92cd35dfe7e"
+    },
+    {
+      "filename": "590_an_approval_the_platform_cannot_carry_out.sql",
+      "checksum": "5f6e3e425044dd923ba3f9d00609e14aea947963846fdb3c10ce50051958446e"
+    },
+    {
+      "filename": "591_one_tree_for_people_and_employees.sql",
+      "checksum": "2c33e479d31f77b83ce60a36450371829b4728d63c3fd6eb429f554e865c565d"
+    },
+    {
+      "filename": "592_being_based_somewhere_is_not_supervising_it.sql",
+      "checksum": "d89164432a769dc52f46535be70c7d6bf1ad514ea05c57f4d36110a00ade1273"
+    },
+    {
+      "filename": "593_who_is_entitled_to_sign_this.sql",
+      "checksum": "2a471a747f513b01432b4cd47dd12782802477d27410bad8471c42d57cca8731"
+    },
+    {
+      "filename": "594_an_employee_record_worth_the_name.sql",
+      "checksum": "899a3882a4fec88b66a8773d95a212f9128b3e19cf528f13916aad7ee8caf00d"
+    },
+    {
+      "filename": "595_chase_the_customer_not_the_file.sql",
+      "checksum": "590b885685bb0219fd6df32171fe12a567961f77513cee822aaf8e0df5ca0498"
+    },
+    {
+      "filename": "596_say_which_chase_this_is.sql",
+      "checksum": "0cbdd72b97ddb122b8a2fb6126ad3c1ced9fd648846304c684f8663f671d2e7e"
+    },
+    {
+      "filename": "597_one_department_list.sql",
+      "checksum": "a943cc0c6a749f7e33c5a039807f7be4548e4f0eb8a952cd2fd7a74445fcdca3"
+    },
+    {
+      "filename": "598_the_team_list_carries_the_unit.sql",
+      "checksum": "54f7038de1b14af68d8a968fafbfc1c127598cbc9a91bdf0ab96e2131f60c065"
+    },
+    {
+      "filename": "599_an_invite_must_not_lose_its_department.sql",
+      "checksum": "770fc5869d2d26ec36ef1f74fa25fdc97127377a28cee544e67fc13f437f1879"
+    },
+    {
+      "filename": "600_one_workforce_one_tree.sql",
+      "checksum": "092c20e1dfa062a531e68328fdf30f11c20696241ccf150cefb9aad282637aa4"
+    },
+    {
+      "filename": "601_a_unit_belongs_to_one_workspace.sql",
+      "checksum": "5d6b032ec2c030f5011051928014ead804ece66c80b2a9e42a21f8c9e7a1a063"
+    },
+    {
+      "filename": "602_two_traps_nobody_had_sprung_yet.sql",
+      "checksum": "ac2edc34a44e3aa3a1957730e3faeb9209ca08048d723afefc707960b1a1d992"
+    },
+    {
+      "filename": "603_one_answer_to_what_a_customer_owes.sql",
+      "checksum": "9f5b0f436cf4bda0ecb970fd3d8de454acb70037a6005f779139dc4da54a2fcc"
+    },
+    {
+      "filename": "604_the_legacy_portal_store_is_closed.sql",
+      "checksum": "dd9b3eff49fcb377b131bec8767e53e2e5fbc3798f40883c30f3388a82a857f9"
+    },
+    {
+      "filename": "605_a_tool_list_the_model_will_accept.sql",
+      "checksum": "f51e0155c77c9f4f8d885814d375d3375b9e8e460c2e7e79b141efc83681222a"
+    },
+    {
+      "filename": "606_intake_for_the_idle_roles.sql",
+      "checksum": "4d58ccaa3c6ffcc28a43ac75f8cb8d877e8d59282151ae2332ce82a7b396b8e1"
+    },
+    {
+      "filename": "607_one_signal_one_watcher.sql",
+      "checksum": "3c24f858e305c1e574b5d4eac5c341cfbf74a5e54142ba2404617cf218e4129d"
+    },
+    {
+      "filename": "608_ingest_for_the_empty_sources.sql",
+      "checksum": "7e7a8eb664a4a5e0a5d65853dfa62651079469efbbb9935568c3e9e53226d395"
+    },
+    {
+      "filename": "609_somebody_to_contact.sql",
+      "checksum": "5f0adb8bae8de8880b8a74365fd52c92c23764f6124a86132b2e7ff18b2a340a"
+    },
+    {
+      "filename": "610_the_default_grant_nobody_revoked.sql",
+      "checksum": "110446dc3b99c2720df163be17d3c037165fb8edf121bcc70ad58c0ccdd20fbc"
+    },
+    {
+      "filename": "611_the_specialist_role_is_retired.sql",
+      "checksum": "8125ea1ca5368ce6bab81c38eaf090c2093fc5aec3fcadf5255a2799a8a51b04"
+    },
+    {
+      "filename": "612_one_answer_to_is_this_employee_working.sql",
+      "checksum": "f5bcf5869d924c0f53ff2b0a9e6a5a1cd12b63fdf821964c2f0e1baf0062e557"
+    },
+    {
+      "filename": "613_the_org_chart_shows_the_roster.sql",
+      "checksum": "b880a40447bf8b520638e8bbae788e7a5ceaca6e8b3dc79350601536a80dc630"
+    },
+    {
+      "filename": "614_one_action_one_executor.sql",
+      "checksum": "cd4b0a80f9f0e46ed27a0c3e449687f46d0808fe05b5572724351f880ffd72b0"
+    },
+    {
+      "filename": "615_drop_the_retrieval_nobody_calls.sql",
+      "checksum": "a2112cb74386bea80bcb1ad994243a1042cd8ed17d3e1c614056fd212d5c5e17"
+    },
+    {
+      "filename": "616_the_demo_provisioner_left_a_key_behind.sql",
+      "checksum": "4adad5209006ec37d06c82806f80376ea80f19c67412ab09c68405c7d5a7daea"
+    },
+    {
+      "filename": "617_one_answer_to_who_may_sign.sql",
+      "checksum": "4bbff716359bf1e4eb19e18c88da0e60badb1793439ad9b013d309c4c7e769d4"
+    },
+    {
+      "filename": "618_every_employee_its_own_rules.sql",
+      "checksum": "78712799a808f8d4e5824186d3c6e00142ade4f5e9fe302addc40dc2fc0985ec"
+    },
+    {
+      "filename": "619_call_each_dial_by_its_real_name.sql",
+      "checksum": "7fa3a59081680543772a4c972019d3c98fb72bb84358962edafc63b7d4ed9b59"
+    },
+    {
+      "filename": "620_one_set_de_autonomy_not_two.sql",
+      "checksum": "9e9db7e3a0ee152ef0344f2882b90bbff60e43b12136410f26c805b69d183aa1"
+    },
+    {
+      "filename": "621_trust_metrics_for_the_whole_workforce.sql",
+      "checksum": "9d456a5814bc3e205ba739f1540587bdb6aa29409719946901ff016fcda060fe"
+    },
+    {
+      "filename": "622_a_rate_needs_a_denominator_worth_dividing_by.sql",
+      "checksum": "e4cb1d11bd60e8ac3b7d00dea8fb4ed03a00c67d047601fcd645fce8d6edc990"
+    },
+    {
+      "filename": "623_the_action_gate_is_throwing.sql",
+      "checksum": "3c525d42baee5702d8a7635c1f36506a386b4f901fbe2b4f51ab68ea29ef8744"
+    },
+    {
+      "filename": "624_a_stop_button_for_the_whole_workforce.sql",
+      "checksum": "e12b3214119fe6279c2831c28e6ed8d57b18df2da00ba3474a65ba2cd95c7a7c"
+    },
+    {
+      "filename": "625_a_breaker_that_guards_nobody.sql",
+      "checksum": "29e0394d9f68b422817c58dca500cd0f13fa370a22ddbd7f18c47b493522503f"
+    },
+    {
+      "filename": "626_the_first_approval_limits.sql",
+      "checksum": "defc8df49e39c3399870a425e474413bb50b409120f918136ae9584a16e3ab80"
+    },
+    {
+      "filename": "627_approval_limits_everywhere.sql",
+      "checksum": "44c7036b09c5124fd7183b74fd7c77a9c4b4f0891499b771af94cc4e84e47ae0"
+    },
+    {
+      "filename": "628_the_index_i_swapped_under_four_upserts.sql",
+      "checksum": "418b8cba74c8f3e821693b813d661b6aabc32ac4374917df9835cf656a473002"
+    },
+    {
+      "filename": "629_the_embed_token_subsystem_has_no_consumer.sql",
+      "checksum": "aff8c635c7ef4f603229acfd97ad5a39b97720ceeb95745d730a4e55ce44b91a"
+    },
+    {
+      "filename": "630_revoking_public_was_never_enough.sql",
+      "checksum": "f647283215a8bbcc6752555178a1fa83fded818a50b2b150ba401a63fc20dd6a"
+    },
+    {
+      "filename": "631_two_triggers_that_trusted_their_input.sql",
+      "checksum": "130d908368ac9e0a806f097b30015d30b325df1ac32714f067246ad689b37fa7"
+    },
+    {
+      "filename": "632_a_spend_limit_the_spender_can_raise.sql",
+      "checksum": "04c8dca23f0db161856db8ceb74eba883a7c8d30ff725f34ae31e50857b10e18"
+    },
+    {
+      "filename": "633_who_pays_is_set_from_the_console.sql",
+      "checksum": "cb072d81b83d7b4d7a4d3afa49be1920a1177d2259c47eb10017932eee1beb34"
+    },
+    {
+      "filename": "634_the_knowledge_specialist_can_finally_curate.sql",
+      "checksum": "2ecd612e7ddd850ba011bcc31de372d5ac74db263ae826ee6d77a4a7554d078e"
+    },
+    {
+      "filename": "635_the_gap_the_row_trigger_could_not_see.sql",
+      "checksum": "0bc4abe8de769720fcfb9d697745725fcea61cc45cb4feccae46bd11e7379d7c"
+    }
+  ]
+}
