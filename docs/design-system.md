@@ -136,6 +136,7 @@ lists the words that stay in code and never reach a screen.
 | `EmptyState` | EVERY empty list — headline + why + next action | blank boxes, bare "No data" |
 | `Banner` | notices | ad-hoc colored divs |
 | `Field` + `INPUT_CLS` | every form control | unstyled inputs |
+| `SELECT_CLS` | a facet dropdown inside a `FilterBar` | a per-page select recipe |
 | `TabBar` | hub tabs, profile sub-tabs | local tab strips |
 | `TH`/`TD` + `TableScroll` | data tables (compact density) | tables that widen the page |
 | `Modal` / `Drawer` | overlays (8 local Modals existed) | new overlay variants |

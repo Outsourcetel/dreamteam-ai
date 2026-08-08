@@ -7,7 +7,7 @@
 import React from 'react';
 import {
   EmployeeCard, DecisionCard, FilterBar, SetupChecklist,
-  Button, Chip, PanelCard, INPUT_CLS, StatTile, DetailTile, TableScroll, TH, TD,
+  Button, Chip, PanelCard, INPUT_CLS, SELECT_CLS, StatTile, DetailTile, TableScroll, TH, TD,
 } from './primitives';
 import { Sidebar } from '../components/Sidebar';
 import { AuthProvider } from '../context/AuthContext';
@@ -131,8 +131,17 @@ export default function SchemaPreview() {
         <PanelCard title="FilterBar">
           <FilterBar
             presets={<><Chip tone="accent">30 days</Chip><Chip>7 days</Chip><Chip>90 days</Chip><Chip>This year</Chip></>}
-            facets={<Button kind="secondary" size="sm">Everyone ⌄</Button>}
-            search={<input className={INPUT_CLS} placeholder="Search…" />}
+            facets={<>
+              <select className={SELECT_CLS} defaultValue="" aria-label="Filter by person">
+                <option value="">Everyone</option>
+                <option value="me">Only me</option>
+              </select>
+              <select className={SELECT_CLS} defaultValue="" aria-label="Filter by source">
+                <option value="">Any source</option>
+                <option value="auto">Automatic</option>
+              </select>
+            </>}
+            search={<input className={INPUT_CLS} placeholder="Search…" aria-label="Search" />}
             views={<Button kind="ghost" size="sm">Saved views</Button>}
           />
         </PanelCard>

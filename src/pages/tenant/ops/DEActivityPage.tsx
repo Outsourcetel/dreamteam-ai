@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PageHeader } from '../../../components/ui';
+import { Button, FilterBar, INPUT_CLS, SELECT_CLS } from '../../../design/primitives';
 import { CustomerApiError } from '../../../lib/customerApi';
 import {
   listDEActivity, DEActivityRow, EvidenceStep, InquiryDecisionKind,
@@ -255,7 +256,6 @@ export default function DEActivityPage({ setPage }: { setPage: (p: Page) => void
 
   const filtersActive = bucket !== 'all' || subject !== 'all' || source !== 'all' || category !== 'all' || search.trim() !== '';
   const clearFilters = () => { setBucket('all'); setSubject('all'); setSource('all'); setCategory('all'); setSearch(''); };
-  const selectCls = 'text-xs bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body focus:outline-none focus:border-indigo-500';
 
   if (missingTables) {
     return (
@@ -306,34 +306,36 @@ export default function DEActivityPage({ setPage }: { setPage: (p: Page) => void
         ))}
       </div>
 
-      {/* Filter bar */}
-      <div className="flex items-center gap-2 flex-wrap mb-4">
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search item or account…"
-          className="flex-1 min-w-[200px] text-xs bg-dt-card border border-dt-border-strong rounded-lg px-3 py-1.5 text-dt-body placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-        />
-        <select value={subject} onChange={e => setSubject(e.target.value)} className={selectCls}>
-          <option value="all">All employees</option>
-          {subjects.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={source} onChange={e => setSource(e.target.value)} className={selectCls}>
-          <option value="all">Any source</option>
-          <option value="proactive_trigger">Automatic</option>
-          <option value="manual">Human-invoked</option>
-          <option value="manual_simulation">Simulation</option>
-        </select>
-        {categories.length > 0 && (
-          <select value={category} onChange={e => setCategory(e.target.value)} className={selectCls}>
-            <option value="all">Any system</option>
-            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+      <FilterBar
+        className="mb-4"
+        facets={<>
+          <select value={subject} aria-label="Filter by employee"
+            onChange={e => setSubject(e.target.value)} className={SELECT_CLS}>
+            <option value="all">All employees</option>
+            {subjects.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
-        )}
-        {filtersActive && (
-          <button onClick={clearFilters} className="text-xs px-2.5 py-1.5 rounded-lg text-dt-support hover:text-dt-body transition-colors">Clear</button>
-        )}
-      </div>
+          <select value={source} aria-label="Filter by what started it"
+            onChange={e => setSource(e.target.value)} className={SELECT_CLS}>
+            <option value="all">Any source</option>
+            <option value="proactive_trigger">Automatic</option>
+            <option value="manual">Human-invoked</option>
+            <option value="manual_simulation">Simulation</option>
+          </select>
+          {categories.length > 0 && (
+            <select value={category} aria-label="Filter by system"
+              onChange={e => setCategory(e.target.value)} className={SELECT_CLS}>
+              <option value="all">Any system</option>
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          )}
+        </>}
+        search={
+          <input value={search} aria-label="Search item or account"
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search item or account…" className={INPUT_CLS} />
+        }
+        views={filtersActive ? <Button kind="ghost" size="sm" onClick={clearFilters}>Clear</Button> : undefined}
+      />
 
       {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 

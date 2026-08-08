@@ -3,6 +3,7 @@ import { useAuth } from '../../../context/AuthContext'
 import type { CompanyId } from '../../../data/companies'
 import type { Page } from '../../../types'
 import { PageHeader } from '../../../components/ui'
+import { Button, FilterBar, INPUT_CLS, SELECT_CLS } from '../../../design/primitives'
 import { CustomerApiError } from '../../../lib/customerApi'
 import { listAuditEvents, verifyAuditChain } from '../../../lib/guardrailApi'
 import type { AuditEvent as LiveAuditEvent, AuditCategory, ChainVerification } from '../../../lib/guardrailApi'
@@ -480,38 +481,44 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
             ))}
           </div>
 
-          <div className="flex items-center gap-2 mb-4 flex-wrap">
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search action or actor…"
-              className="bg-dt-card border border-dt-border rounded-lg px-3 py-1.5 text-xs text-dt-support placeholder-slate-600 focus:outline-none focus:border-indigo-500 w-56" />
-            <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value as 'all' | AuditCategory)}
-              className="bg-dt-card border border-dt-border rounded-lg px-3 py-1.5 text-xs text-dt-support focus:outline-none focus:border-indigo-500">
-              <option value="all">All categories</option>
-              {(Object.keys(LIVE_CATEGORY_META) as AuditCategory[]).map(c => (
-                <option key={c} value={c}>{LIVE_CATEGORY_META[c].label}</option>
-              ))}
-            </select>
-            <select value={actorTypeFilter} onChange={e => setActorTypeFilter(e.target.value as 'all' | 'de' | 'human' | 'system')}
-              className="bg-dt-card border border-dt-border rounded-lg px-3 py-1.5 text-xs text-dt-support focus:outline-none focus:border-indigo-500">
-              <option value="all">All actor types</option>
-              <option value="de">Digital Employee</option>
-              <option value="human">Human</option>
-              <option value="system">System</option>
-            </select>
-            <select value={actorFilter} onChange={e => setActorFilter(e.target.value)}
-              className="bg-dt-card border border-dt-border rounded-lg px-3 py-1.5 text-xs text-dt-support focus:outline-none focus:border-indigo-500">
-              <option value="all">All actors</option>
-              {actors.map(a => <option key={a} value={a}>{a}</option>)}
-            </select>
-            <div className="flex-1" />
-            <button onClick={exportLiveCsv}
-              className="text-xs px-3 py-1.5 rounded-lg border border-dt-border text-dt-support hover:border-dt-border-strong transition-colors">
-              ↓ Export CSV
-            </button>
-            <button onClick={() => void verify()} disabled={verifying}
-              className="text-xs px-3 py-1.5 rounded-lg border border-emerald-700/50 text-emerald-300 hover:border-emerald-500 disabled:opacity-50 transition-colors">
-              {verifying ? 'Verifying…' : '⛓ Verify chain'}
-            </button>
-          </div>
+          <FilterBar
+            className="mb-4"
+            facets={<>
+              <select value={categoryFilter} aria-label="Filter by category"
+                onChange={e => setCategoryFilter(e.target.value as 'all' | AuditCategory)} className={SELECT_CLS}>
+                <option value="all">All categories</option>
+                {(Object.keys(LIVE_CATEGORY_META) as AuditCategory[]).map(c => (
+                  <option key={c} value={c}>{LIVE_CATEGORY_META[c].label}</option>
+                ))}
+              </select>
+              <select value={actorTypeFilter} aria-label="Filter by actor type"
+                onChange={e => setActorTypeFilter(e.target.value as 'all' | 'de' | 'human' | 'system')} className={SELECT_CLS}>
+                <option value="all">All actor types</option>
+                <option value="de">Digital Employee</option>
+                <option value="human">Human</option>
+                <option value="system">System</option>
+              </select>
+              <select value={actorFilter} aria-label="Filter by actor"
+                onChange={e => setActorFilter(e.target.value)} className={SELECT_CLS}>
+                <option value="all">All actors</option>
+                {actors.map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
+            </>}
+            search={
+              <input value={search} aria-label="Search action or actor"
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search action or actor…" className={INPUT_CLS} />
+            }
+            views={<>
+              <Button size="sm" onClick={exportLiveCsv}>↓ Export CSV</Button>
+              {/* Was a bespoke emerald outline. The chain result already
+                  announces itself in a coloured banner directly below — the
+                  button that asks the question does not need to be green too. */}
+              <Button size="sm" onClick={() => void verify()} disabled={verifying}>
+                {verifying ? 'Verifying…' : '⛓ Verify chain'}
+              </Button>
+            </>}
+          />
 
           {verification && (
             <div className={`mb-4 rounded-xl border px-4 py-3 text-xs ${verification.intact

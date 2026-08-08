@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Modal, Drawer, Button, Chip, Field, INPUT_CLS , Banner } from '../../../design/primitives';
+import { Modal, Drawer, Button, Chip, Field, INPUT_CLS, SELECT_CLS, FilterBar, Banner } from '../../../design/primitives';
 import { ConfirmDeleteModal } from '../../../components';
 import { useCanOpenPage } from '../../../lib/useRoleGate';
 import { PageHeader, th, td } from '../../../components/ui';
@@ -634,32 +634,37 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
 
       {/* Phase-1 (mig 279): server-side search + facets — the corpus never
           loads into the browser; every keystroke hits search_knowledge_docs. */}
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        <input value={query} onChange={e => { setPageIdx(0); setQuery(e.target.value); }}
-          placeholder="Search the knowledge base…"
-          className="flex-1 min-w-[14rem] bg-dt-page border border-dt-border-strong rounded-lg px-3 py-1.5 text-sm text-dt-body placeholder:text-dt-faint focus:outline-none focus:border-indigo-500" />
-        <select value={sourceFilter} onChange={e => { setPageIdx(0); setSourceFilter(e.target.value); }}
-          className="bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1.5 text-sm text-dt-support">
-          <option value="">All sources</option>
-          <option value="paste">Paste</option>
-          <option value="upload">Upload</option>
-          <option value="connector">Connector</option>
-        </select>
-        <select value={visFilter} onChange={e => { setPageIdx(0); setVisFilter(e.target.value); }}
-          className="bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1.5 text-sm text-dt-support">
-          <option value="">All access</option>
-          <option value="tenant">All employees</option>
-          <option value="role">Role-shared</option>
-          <option value="scoped">Scoped</option>
-        </select>
-        {reembed.enabled && reembed.pending > 0 && (
+      <FilterBar
+        className="mb-4"
+        facets={<>
+          <select value={sourceFilter} aria-label="Filter by source"
+            onChange={e => { setPageIdx(0); setSourceFilter(e.target.value); }} className={SELECT_CLS}>
+            <option value="">All sources</option>
+            <option value="paste">Paste</option>
+            <option value="upload">Upload</option>
+            <option value="connector">Connector</option>
+          </select>
+          <select value={visFilter} aria-label="Filter by who can see it"
+            onChange={e => { setPageIdx(0); setVisFilter(e.target.value); }} className={SELECT_CLS}>
+            <option value="">All access</option>
+            <option value="tenant">All employees</option>
+            <option value="role">Role-shared</option>
+            <option value="scoped">Scoped</option>
+          </select>
+        </>}
+        search={
+          <input value={query} aria-label="Search the knowledge base"
+            onChange={e => { setPageIdx(0); setQuery(e.target.value); }}
+            placeholder="Search the knowledge base…" className={INPUT_CLS} />
+        }
+        views={reembed.enabled && reembed.pending > 0 ? (
           <span title="Search embeddings are being recomputed in the background. Search keeps working the whole time."
-            className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border border-indigo-500/40 bg-indigo-500/10 text-indigo-300">
-            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
+            className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border border-dt-accent/40 bg-dt-accent-soft text-dt-accent-text">
+            <span className="w-1.5 h-1.5 rounded-full bg-dt-accent animate-pulse" />
             {reembed.pending.toLocaleString()} re-indexing
           </span>
-        )}
-      </div>
+        ) : undefined}
+      />
 
       {/* W4-E slice 1 (docs/16): the ✨ spine reaches the page where users
           actually manage knowledge — same AISessionPanel the roster and

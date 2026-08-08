@@ -184,6 +184,11 @@ export function Banner({ tone = 'info', children, className = '' }:
 
 /* ── Form field — label · hint · control · error ────────────────────────── */
 export const INPUT_CLS = 'w-full rounded-lg bg-dt-inset border border-dt-border-strong px-3 py-2 text-sm text-dt-body placeholder:text-dt-faint focus:outline-none focus:ring-2 focus:ring-dt-accent focus:border-transparent';
+/** A facet dropdown inside a FilterBar. Deliberately INPUT_CLS minus `w-full`
+ *  and the placeholder rule, so a select and a search box sitting side by side
+ *  are the same height — every hand-rolled filter row in the app had picked
+ *  its own padding and they never lined up. */
+export const SELECT_CLS = 'rounded-lg bg-dt-inset border border-dt-border-strong px-3 py-2 text-sm text-dt-support focus:outline-none focus:ring-2 focus:ring-dt-accent focus:border-transparent';
 export function Field({ label, hint, error, children }:
   { label: string; hint?: string; error?: string; children: React.ReactNode }) {
   return (
