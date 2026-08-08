@@ -159,7 +159,8 @@ await step('equip', 'a hired employee must receive its kit and its system bindin
   await S.client.rpc('install_role_systems', { p_de_id: S.deId, p_archetype_key: S.archetype });
   const n = await one(`select
       (select count(*) from de_connected_systems where de_id = ${lit(S.deId)}) as systems,
-      (select count(*) from de_guardrails      where de_id = ${lit(S.deId)}) as guardrails`);
+      (select count(*) from guardrail_rules
+        where scope_ref = ${lit(S.deId)} or tenant_id = ${lit(S.tenantId)}) as guardrails`);
   assert(Number(n.systems) + Number(n.guardrails) > 0,
     'the kit installed nothing observable — no systems and no guardrails');
   return `${n.systems} systems, ${n.guardrails} guardrails`;
@@ -190,16 +191,19 @@ await step('escalate', 'the employee must be able to raise a decision to a human
       + 'which is the core of the product, cannot be exercised here at all. '
       + 'Dev is 102 routines behind production and has NO migration ledger.');
   }
-  const { data, error } = await S.client.rpc('open_de_escalation', {
-    p_tenant_id: S.tenantId, p_de_id: S.deId, p_work_item_id: S.workItemId,
-    p_objective_id: null, p_title: `Approve golden path ${stamp}`,
-    p_reason: 'certification review: proving the human seam',
-    p_proposed_action: 'Publish the drafted reply',
-    p_justification: 'Grounded in the workspace knowledge base',
-    p_needs_input: true, p_sla_hours: 24,
-  });
-  if (error) throw new Error(`open_de_escalation: ${error.message}`);
-  S.escalationId = typeof data === 'string' ? data : data?.id ?? data?.escalation_id;
+  // Called as the SERVICE ROLE, deliberately. open_de_escalation is NOT
+  // executable by `authenticated` — in production either — because the
+  // EMPLOYEE raises the escalation from the server-side runtime, not the user
+  // from the browser. Calling it as the signed-in user would test a path that
+  // does not exist. (Verified: has_function_privilege('authenticated', …) is
+  // false on production as well as dev.)
+  const esc = await one(`select open_de_escalation(
+      ${lit(S.tenantId)}::uuid, ${lit(S.deId)}::uuid, ${lit(S.workItemId)}::uuid,
+      null::uuid, ${lit(`Approve golden path ${stamp}`)},
+      'certification review: proving the human seam',
+      'Publish the drafted reply', 'Grounded in the workspace knowledge base',
+      true, 24)::text as id`);
+  S.escalationId = esc?.id;
   const t = await one(`select id, status from human_tasks
      where tenant_id = ${lit(S.tenantId)} and de_id = ${lit(S.deId)}
      order by created_at desc limit 1`);
@@ -283,24 +287,31 @@ await step('evidence', 'the loop must leave an auditable trace', async () => {
 //     armed. This is the dial the whole governance story depends on.
 await step('trust', 'autonomy must resolve, and a new employee must not start autonomous', async () => {
   if (!S.deId) cannot('no employee exists — the hire step could not run in this environment');
-  // Prod takes a 5th p_playbook_id; dev does not. Call with the 4 both share.
-  const a = await one(`select resolve_de_autonomy(
-      ${lit(S.tenantId)}::uuid, 'action_execute', ${lit(S.deId)}::uuid, 'social')::text as verdict`);
-  assert(a.verdict && a.verdict !== 'null', 'resolve_de_autonomy returned nothing');
-  const v = JSON.parse(a.verdict);
-  const enabled = v.enabled === true || v.autonomous === true;
-  assert(!enabled, `a brand-new employee resolved to AUTONOMOUS: ${a.verdict}`);
-  return `not autonomous (${Object.keys(v).slice(0, 4).join(',')})`;
+  // RETURNS TABLE(enabled, max_amount_cents, min_confidence) — a set, not
+  // jsonb. Selecting the function bare yields a composite literal like "(f,,)"
+  // which is not JSON; the columns have to be expanded.
+  const a = await one(`select enabled, max_amount_cents, min_confidence
+      from resolve_de_autonomy(${lit(S.tenantId)}::uuid, 'action_execute',
+                               ${lit(S.deId)}::uuid, 'social')`);
+  assert(a !== undefined, 'resolve_de_autonomy returned no row');
+  assert(a.enabled !== true,
+    `a brand-new employee resolved to AUTONOMOUS: ${JSON.stringify(a)}`);
+  return `enabled=${a.enabled}, ceiling=${a.max_amount_cents ?? 'none'}, min_conf=${a.min_confidence ?? 'none'}`;
 });
 
 // ── Cleanup ────────────────────────────────────────────────────────────────
 if (!KEEP && S.tenantId) {
+  // The tenant CANNOT be deleted, and that is correct: audit_events is
+  // append-only and its trigger refuses the cascading delete. An audit trail
+  // you can erase by deleting the tenant is not an audit trail. So the run is
+  // marked instead — dev accumulates probe tenants, which costs nothing and is
+  // strictly better than a system that lets its own evidence be removed.
   try {
-    await sql(`delete from tenants where id = ${lit(S.tenantId)}`);
-    await sql(`delete from auth.users where id = ${lit(S.userId)}`);
-    console.log('  cleanup: tenant and user removed');
+    await sql(`update tenants set name = name || ' [golden-path probe, spent]'
+                where id = ${lit(S.tenantId)} and name not like '%spent%'`);
+    console.log('  cleanup: probe tenant marked spent (audit history is append-only, so it stays)');
   } catch (e) {
-    console.log(`  cleanup FAILED (dev only, harmless): ${String(e.message).slice(0, 120)}`);
+    console.log(`  cleanup note: ${String(e.message).slice(0, 120)}`);
   }
 } else if (KEEP) {
   console.log(`  kept: tenant ${S.tenantId} / user ${S.userId}`);

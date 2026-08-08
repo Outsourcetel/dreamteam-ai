@@ -238,6 +238,12 @@ const sections = [
   }),
   shell('migration-ledger', 'npm', ['run', '-s', 'migrate:status']),
   ...(FAST ? [] : [
+    // The core loop, run for real against dev. This is the only section that
+    // exercises WRITE paths end to end; everything else reads. It is also the
+    // gate that keeps dev synced — the moment dev falls behind production the
+    // loop stops closing and this goes red, which is exactly how the drift
+    // should have been caught the first time.
+    shell('golden-path', 'node', ['scripts/golden-path.mjs']),
     shell('role-gates', 'npm', ['run', '-s', 'audit:role-gates']),
     shell('silent-refusals', 'npm', ['run', '-s', 'audit:silent-refusals']),
     shell('design-drift', 'node', ['scripts/design-drift.mjs']),
