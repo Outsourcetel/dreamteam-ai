@@ -407,24 +407,29 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
 
   return (
     <div className="p-6">
-      {/* ⚠ THE ONE SENTENCE AN OWNER WILL REPEAT TO AN AUDITOR. It has to be
-          exactly as strong as what the database actually does, so I checked:
-            · trigger audit_events_no_update_delete fires on UPDATE and DELETE
-              and raises unconditionally — an edit is impossible for everyone,
-              including the service role, not just blocked in the app
-            · anon and authenticated hold SELECT and nothing else, so no path
-              through the product can even attempt a write
-            · every row is hash-chained to its predecessor and Verify checks it
-          Two things it does NOT cover, which is why this no longer says
-          "never deleted" flatly: the trigger lets a DELETE through when a
-          session sets app.allow_audit_purge, and a row trigger does not fire
-          on TRUNCATE, which service_role may issue. Both need direct database
-          access — neither is reachable from the product — but "never deleted,
-          including by us" would be a stronger claim than the schema earns, so
-          it says who it is guaranteed against instead of overstating. */}
+      {/* ⚠ THE ONE SENTENCE AN OWNER WILL REPEAT TO AN AUDITOR, so it says
+          exactly what the database does and nothing more. Verified by
+          attempting each operation against the live table inside a rollback:
+            · UPDATE — refused unconditionally, for every role including
+              service_role, and refused even with the purge flag set
+            · DELETE — refused, UNLESS a session sets app.allow_audit_purge
+            · TRUNCATE — refused (migration 635; the older trigger is FOR EACH
+              ROW and TRUNCATE produces no rows, so it never fired)
+            · anon and authenticated hold SELECT and nothing else, so nothing
+              in the product can even attempt a write
+            · every row is hash-chained and Verify walks the chain
+
+          ⚠ THE PURGE FLAG IS NOT A LOOPHOLE, AND MUST NOT BE CLOSED. Exactly
+          one thing sets it: delete_tenant. It is how a deleted workspace's
+          records go with the workspace, which is what a customer asking to be
+          erased is entitled to. That is why the sentence below is scoped to
+          "this product" and to the record's lifetime rather than claiming a
+          flat "never deleted" — deleting the workspace does remove it, on
+          purpose, and an auditor asking the follow-up question should get the
+          same answer from us either way. */}
       <PageHeader
         title="The record"
-        subtitle="Every DE action, guardrail check, human approval and playbook step, hash-chained in order. The database itself refuses to edit a record once written — nothing in this product can alter or remove one."
+        subtitle="Every DE action, guardrail check, human approval and playbook step, hash-chained in order. The database refuses to edit or truncate a record once written — nothing in this product can alter or remove one. Deleting your workspace takes its record with it."
       />
       {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
 
