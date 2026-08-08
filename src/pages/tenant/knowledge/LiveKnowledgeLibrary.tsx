@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Modal, Drawer, Button, Chip, Field, INPUT_CLS } from '../../../design/primitives';
+import { Modal, Drawer, Button, Chip, Field, INPUT_CLS , Banner } from '../../../design/primitives';
 import { ConfirmDeleteModal } from '../../../components';
+import { useCanOpenPage } from '../../../lib/useRoleGate';
 import { PageHeader, th, td } from '../../../components/ui';
 import KnowledgeTreePanel, { LifecycleChip, UNFILED_ID } from '../../../components/KnowledgeTreePanel';
 import {
@@ -99,6 +100,20 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   // publishes ask for an explicit, audited override. Client-side soft
   // gate v1 — the server-side hard gate is the hardening step.
   const [gateConfirm, setGateConfirm] = useState<{ gate: EvalGate; proceed: () => void } | null>(null);
+  // ── The gate's STATE, not just its refusal (handoff 10) ─────────────────
+  //
+  // The eval gate has always worked, and it has always been invisible until
+  // the moment you pressed save — after writing the document, pasting the
+  // URL, or picking the file. That is the worst possible moment to learn that
+  // the workforce is currently failing its own tests: the work is done, the
+  // cost is sunk, and "Publish anyway" is the path of least resistance.
+  // Read once on load so the page can say it up front, while adding anything
+  // is still a decision rather than a sunk one.
+  const [gate, setGate] = useState<EvalGate | null>(null);
+  // ⚠ This page is ALL_TENANT; the Proving Ground is MANAGE. A "see what
+  // failed" link offered to everyone would be a control that takes the click
+  // and does nothing — the exact class audit-role-gates now checks for.
+  const canOpenProvingGround = useCanOpenPage('intelligence_evals');
   // Ledger-3: version-history viewer over the stored previous_version_id chain.
   const [versionsFor, setVersionsFor] = useState<SearchDocRow | null>(null);
   const [versions, setVersions] = useState<KnowledgeDoc[] | null>(null);
@@ -129,13 +144,18 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   // threads a flag so call sites tag the doc 'eval-gate-override', which the
   // server trigger honors (the audit entry already records the override).
   const withEvalGate = async (docTitle: string, publish: (override?: boolean) => Promise<void>) => {
-    const gate = await getEvalGate();
-    if (gate?.status === 'failed') {
+    // Re-read rather than trusting the banner's copy: a run can finish while
+    // someone is mid-document, and the decision must be made against the
+    // state at SAVE time. The banner is told what was found either way, so
+    // the two can never disagree about what just happened.
+    const fresh = await getEvalGate();
+    setGate(fresh);
+    if (fresh?.status === 'failed') {
       setGateConfirm({
-        gate,
+        gate: fresh,
         proceed: () => {
           setGateConfirm(null);
-          void auditEvalGateOverride(gate, docTitle);
+          void auditEvalGateOverride(fresh, docTitle);
           void publish(true);
         },
       });
@@ -180,7 +200,11 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   };
 
   const loadReembed = async () => { try { setReembed(await getReembedStatus()); } catch { /* non-fatal — action stays hidden */ } };
-  useEffect(() => { void loadRevisions(); void loadReembed(); }, []);
+  // Non-fatal on purpose: getEvalGate already swallows its own errors and
+  // returns null, and a missing gate reading must never stop the library
+  // rendering. No banner is the honest fallback — it says nothing rather
+  // than claiming a pass.
+  useEffect(() => { void loadRevisions(); void loadReembed(); void getEvalGate().then(setGate); }, []);
   // Keep the "N re-indexing" pill honest: while a backlog is draining, poll the
   // status every 30s so it counts down to 0 as the cron works, then stops
   // polling (the dependency flips false when pending hits 0). Only runs where
@@ -507,6 +531,35 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
 
       {error && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 mb-4 text-xs text-red-300">{error}</div>
+      )}
+
+      {/* ── The gate, said BEFORE the work rather than after ────────────────
+          ⚠ WORDED TO WHAT THE CODE DOES, NOT TO THE DESIGN MOCK. The mock
+          read "Adding knowledge is paused". It isn't: withEvalGate prompts
+          and lets you continue, recording an override against your name and
+          tagging the document. Saying "paused" and then letting it through
+          would be the same overstatement as the audit-trail sentence — and
+          this one an owner would repeat to whoever asked why a bad answer
+          shipped. So it states the failure, the risk, and what happens if
+          you go ahead anyway. */}
+      {gate?.status === 'failed' && gate.total > 0 && (
+        <Banner tone="warn" className="mb-4">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <p className="font-medium">
+                Your employees are failing {gate.failed} of {gate.total} test questions.
+              </p>
+              <p className="text-xs mt-1 max-w-2xl">
+                Adding documents now can make answers worse before that is fixed. You can still add
+                them — each one is recorded against your name and tagged, so anyone reviewing later
+                can see it went in during a failing run.
+              </p>
+            </div>
+            {canOpenProvingGround && setPage && (
+              <Button size="sm" onClick={() => setPage('intelligence_evals')}>See what failed</Button>
+            )}
+          </div>
+        </Banner>
       )}
 
       {/* THE ARTICLES ARE THE POINT OF THIS PAGE.
@@ -1135,35 +1188,34 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
         </Drawer>
       )}
       {gateConfirm && (
-        <Modal size="md" onClose={() => setGateConfirm(null)} title="Publishing gated by the Proving Ground">
+        // Same facts as the banner above, in the same words. Both read the
+        // same gate, so they must not describe it differently — and "Last
+        // eval run failed (38/50 passed)" was the machinery's phrasing, not
+        // an answer to "should I add this?".
+        <Modal size="md" onClose={() => setGateConfirm(null)} title="Your employees are failing their tests">
           <div>
             <p className="text-sm text-dt-support mb-1">
-              Last eval run failed ({gateConfirm.gate.passed}/{gateConfirm.gate.total} passed). Publishing may worsen answers.
+              {gateConfirm.gate.failed} of {gateConfirm.gate.total} test questions are failing right now.
+              Adding this document can make answers worse before that is fixed.
             </p>
             <p className="text-xs text-dt-muted mb-5">
-              Publishing anyway is allowed but recorded in the audit trail. Recommended: review the failing questions first.
+              Adding it anyway is allowed. It is recorded against your name and the document is
+              tagged, so anyone reviewing later can see it went in during a failing run.
             </p>
             <div className="flex justify-end gap-2">
-              {setPage && (
-                <button
-                  onClick={() => { setGateConfirm(null); setPage('intelligence_evals'); }}
-                  className="text-sm px-4 py-2 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong transition-colors mr-auto"
-                >
-                  View Proving Ground
-                </button>
+              {/* ⚠ This was guarded by `setPage &&` alone — whether a
+                  navigation callback was passed, not whether the person can
+                  open where it goes. The Proving Ground is MANAGE and this
+                  page is ALL_TENANT, so for a knowledge_manager or a
+                  tenant_user the button appeared and did nothing. */}
+              {canOpenProvingGround && setPage && (
+                <Button size="md" className="mr-auto"
+                  onClick={() => { setGateConfirm(null); setPage('intelligence_evals'); }}>
+                  See what failed
+                </Button>
               )}
-              <button
-                onClick={() => setGateConfirm(null)}
-                className="text-sm px-4 py-2 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={gateConfirm.proceed}
-                className="text-sm px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-colors"
-              >
-                Publish anyway
-              </button>
+              <Button size="md" onClick={() => setGateConfirm(null)}>Don't add it</Button>
+              <Button kind="danger" size="md" onClick={gateConfirm.proceed}>Add it anyway</Button>
             </div>
           </div>
         </Modal>
