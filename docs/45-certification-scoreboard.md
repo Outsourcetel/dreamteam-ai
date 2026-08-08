@@ -53,7 +53,8 @@ money/reputation) → **Ring 2** (costs correctness) → **Ring 3** (polish).
 | R2.2 | Role-gated UI: every control's gate matches its RPC+RLS | **PROVEN** | `npm run audit:role-gates` |
 | R2.3 | No silent `{ok:false}`/HTTP-200 refusal dropped at a call site | **PROVEN** | `npm run audit:silent-refusals` |
 | R2.4 | Design system: no token/drift regression | **PROVEN** | `scripts/design-drift.mjs` |
-| R2.5 | The core loop closes end-to-end (hire→…→trust) | **UNPROVABLE HERE** | `npm run golden-path` — built; the dev project cannot run it (see below) |
+| R2.5 | The core loop closes end-to-end (hire→…→trust) | **PROVEN** | `npm run golden-path`, 10/10 — inside `certify` |
+| R2.6 | Dev can actually run the product (no silent drift) | **PROVEN** | `npm run dev:sync:check` + golden-path in `certify` |
 
 ---
 
@@ -64,8 +65,18 @@ equip → intake → escalate → **human decides** → gate → evidence → tr
 step asserts an *observable consequence*, not a return code. It runs against dev
 through the real public signup path — never a forged `auth.users` row.
 
-**Result: 2 of 10 steps proven. 8 CANNOT BE PROVEN — not because the product is
-broken, but because the dev project cannot run the product.**
+**RESOLVED 2026-08-09 — the loop now closes, 10/10, and is wired into
+`certify`.** The two verdicts that matter come back right: a destructive action
+for an untrusted employee resolves `human_gated_destructive`, and a *safe*
+action does **not** hit the destructive floor (`human_gated_trust`). A gate that
+refuses everything is as broken as one that permits everything; both halves are
+proven, on a live database, through the real public signup path.
+
+The rest of this section is kept as the record of what was wrong, because the
+*shape* of it recurs.
+
+**Original result: 2 of 10 steps proven. 8 CANNOT BE PROVEN — not because the
+product was broken, but because the dev project could not run the product.**
 
 | | dev | production | gap |
 |---|---|---|---|
@@ -94,12 +105,37 @@ and unbounded — nothing would ever have reported it. `certify` is green becaus
 its Ring-0 probes read production directly; the *write paths* have no
 pre-production proof at all.
 
-This is a **Ring-1 environment defect** and it is the highest-leverage fix
-available: it is the difference between a review that certifies today and a
-system that stays certified. Options, cheapest first: seed `role_archetypes` and
-sync the missing routines to dev; or rebuild dev from `full_schema.sql` (the
-restore drill already proves that file reproduces production exactly) and give
-dev a migration ledger so it can never silently drift again.
+### How it was closed — and four things an "idempotent" schema file cannot do
+
+`npm run dev:sync` converges dev on production **non-destructively** (dev's 185
+users and 190 test tenants survive; `full_schema.sql` explicitly cannot restore
+accounts, so a drop-and-rebuild would have destroyed them permanently).
+
+The file *is* genuinely idempotent — 284 `CREATE TABLE IF NOT EXISTS`,
+`CREATE OR REPLACE FUNCTION`, `DROP POLICY IF EXISTS` before every create, FKs
+wrapped in `duplicate_object`-swallowing `DO` blocks — and it **still could not
+converge dev on its own**. Worth remembering, because the instinct is to trust it:
+
+1. **Columns on tables that already exist.** 70 missing across 16 tables,
+   including `human_tasks.disposition` and 19 columns of `profiles`.
+2. **CHECK constraints on tables that already exist.** Dev still enforced the
+   pre-574 category list and *rejected every ads/social template*. A stale CHECK
+   is worse than a missing column — it actively refuses rows that are valid
+   upstream. Re-added `NOT VALID` so historical test data doesn't block the rule.
+3. **Constraints production has RETIRED.** The file can create and replace; it
+   can never *remove*. 24 dropped, including the one above.
+4. **Return-type changes.** `CREATE OR REPLACE` cannot widen a `RETURNS TABLE`.
+
+And the sync itself briefly **recreated the migration-562 trap**: applying
+production's definitions over older dev copies with *different argument lists*
+left both, so `decide_action_execution` had three overloads and every call
+failed `42725 is not unique`. **A sync that adds without removing manufactures
+ambiguity.**
+
+Dev now carries a migration ledger (657 rows) and `migrate:status --dev` reports
+zero drift. The golden path runs inside `certify`, so if dev falls behind again
+the loop stops closing and the bar goes red — which is how this should have been
+caught the first time.
 
 ## The spine — is there a product?
 
