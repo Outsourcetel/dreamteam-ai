@@ -18,12 +18,38 @@ import TrustArchitecturePage from './TrustArchitecturePage';
 // Trust & Architecture left for the DreamTeam console: an internal
 // architecture document, never a customer feature. It was already
 // platform-staff-only in navAccess, so this changes IA, not access.
+// Named for what an owner came here to find out, not for the subsystem that
+// answers it. This page is read under pressure — an audit, a security review,
+// something having gone wrong — by someone who does not work on it.
 const TABS: { page: Page; label: string }[] = [
-  { page: 'gov_compliance', label: 'Compliance & Guardrails' },
-  { page: 'gov_audit', label: 'Audit Trail' },
-  { page: 'gov_data_access', label: 'Data Access' },
-  { page: 'gov_identity_inventory', label: 'Identity & Credentials' },
+  { page: 'gov_compliance', label: 'Rules' },                     // was Compliance & Guardrails
+  { page: 'gov_audit', label: 'The record' },                     // was Audit Trail
+  { page: 'gov_data_access', label: 'Who can reach what' },       // was Data Access
+  { page: 'gov_identity_inventory', label: 'Logins & keys' },     // was Identity & Credentials
 ];
+
+// ── SIX ROUTES, FOUR TABS — settled, with the evidence ──────────────────
+//
+// App.tsx routes gov_security and gov_trust here too, and the body below
+// still renders both. The handoff asked whether they are retired or belong
+// in the tab bar. Neither, and nothing needs to move:
+//
+//   gov_trust  — PAGE_ACCESS lists it as `[]`, which in canAccessPage means
+//                platform staff only, alongside the platform_* pages. Its
+//                own entry says why: "an internal transparency doc (how
+//                DreamTeam is built · what we haven't done yet), not a
+//                tenant feature." A tenant must never see a tab for it.
+//
+//   gov_security — PAGE_ACCESS: ADMIN, so admins may open it, and it is NOT
+//                orphaned: SettingsPage renders the SAME SecurityAccessPage
+//                component for its `security` tab. Adding a governance tab
+//                would put one page in two navigations and start the drift.
+//
+// So the tab bar stays at four. The two routes stay because both pages are
+// genuinely reachable — gov_trust for platform staff, gov_security for any
+// link already handed out — and a dead URL is worse than a spare one.
+// ⚠ Do not "restore" these to TABS. They were removed on purpose: rendering
+// all six to everyone is the bug the filter below was added to fix.
 
 const GovernanceHubPage = ({ tab, setPage }: { tab: Page; setPage: (p: Page) => void }) => {
   // Tabs are permission-filtered. They were not: TABS.map rendered all six to

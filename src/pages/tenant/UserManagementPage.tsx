@@ -28,6 +28,15 @@ const STATUS_COLOR: Record<TeamMember['status'], string> = {
   deactivated: 'text-dt-muted bg-dt-panel',
 };
 
+// "pending" is the column value, not the fact. The fact is that an invitation
+// went out and nobody has clicked it — which is a thing the owner might need
+// to chase, and reads as nothing at all when it says "pending".
+const STATUS_WORD: Record<TeamMember['status'], string> = {
+  active: 'active',
+  pending: 'invite not accepted yet',
+  deactivated: 'switched off',
+};
+
 // ── Invite Modal ──────────────────────────────────────────────
 const InviteModal = ({
   onClose,
@@ -339,7 +348,7 @@ const UserManagementPage = ({ user, tenant, setPage }: { user?: AuthUser; tenant
                 {/* Status */}
                 <div className="col-span-2 flex items-center gap-2">
                   <span className={`text-xs px-2 py-0.5 rounded font-medium ${STATUS_COLOR[m.status]}`}>
-                    {m.status}
+                    {STATUS_WORD[m.status]}
                   </span>
                   {m.status === 'pending' && (
                     <button onClick={() => resendInvite(m.id)}

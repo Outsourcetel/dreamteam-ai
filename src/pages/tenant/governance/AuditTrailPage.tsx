@@ -407,9 +407,24 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
 
   return (
     <div className="p-6">
+      {/* ⚠ THE ONE SENTENCE AN OWNER WILL REPEAT TO AN AUDITOR. It has to be
+          exactly as strong as what the database actually does, so I checked:
+            · trigger audit_events_no_update_delete fires on UPDATE and DELETE
+              and raises unconditionally — an edit is impossible for everyone,
+              including the service role, not just blocked in the app
+            · anon and authenticated hold SELECT and nothing else, so no path
+              through the product can even attempt a write
+            · every row is hash-chained to its predecessor and Verify checks it
+          Two things it does NOT cover, which is why this no longer says
+          "never deleted" flatly: the trigger lets a DELETE through when a
+          session sets app.allow_audit_purge, and a row trigger does not fire
+          on TRUNCATE, which service_role may issue. Both need direct database
+          access — neither is reachable from the product — but "never deleted,
+          including by us" would be a stronger claim than the schema earns, so
+          it says who it is guaranteed against instead of overstating. */}
       <PageHeader
-        title="Audit Trail"
-        subtitle="Immutable, hash-chained record of every DE action, guardrail check, human approval, and playbook step — records can only be appended, never edited or deleted"
+        title="The record"
+        subtitle="Every DE action, guardrail check, human approval and playbook step, hash-chained in order. The database itself refuses to edit a record once written — nothing in this product can alter or remove one."
       />
       {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
 
@@ -436,7 +451,7 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
         <LiveEmptyState
           icon="⛓"
           title={days == null ? 'No audit events yet' : `No audit events in the last ${rangeLabel}`}
-          body="Every guardrail check, invoice, approval, and playbook step your Digital Employees perform is appended here as a hash-chained, immutable record. Widen the time window to see older activity."
+          body="Every guardrail check, invoice, approval and playbook step your digital employees perform is added here, in order, and never changed afterwards. Widen the time window to see older activity."
           primaryLabel="Go to Renewal & Expansion"
           onPrimary={() => setPage?.('entity_customer_renewal')}
         />

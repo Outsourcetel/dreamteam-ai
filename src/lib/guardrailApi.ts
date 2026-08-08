@@ -81,6 +81,45 @@ export async function listGuardrailRules(): Promise<GuardrailRule[]> {
   return (data ?? []) as GuardrailRule[];
 }
 
+/**
+ * How many times each rule has actually stopped something, and when it last
+ * did. Keyed by rule id; a rule that has never fired is simply absent.
+ *
+ * A rule that fires daily and a rule that has never fired once look identical
+ * in a list of rules — same row, same toggle — and they need completely
+ * different attention. One is load-bearing; the other is either redundant or
+ * written so it can never match.
+ *
+ * ⚠ The block→rule link was recorded as UNVERIFIED in the design handoff. It
+ * exists: guardrail blocks write `rule_id` into audit_events.detail, and 25 of
+ * the 28 that carry one resolve to a live rule. The other 3 point at rules
+ * that no longer exist, which is why this counts by joining IN SQL terms here
+ * — an unresolvable id contributes to nothing rather than to a wrong row.
+ */
+export async function getGuardrailBlockCounts(sinceDays = 30): Promise<Record<string, { count: number; last_at: string }>> {
+  const tid = await requireTenantId();
+  const since = new Date(Date.now() - sinceDays * 86400_000).toISOString();
+  const { data, error } = await supabase
+    .from('audit_events')
+    .select('detail, created_at')
+    .eq('tenant_id', tid)
+    .eq('category', 'guardrail_block')
+    .gte('created_at', since)
+    .order('created_at', { ascending: false })
+    .limit(2000);
+  // A missing count must never take the rules list down with it — the rules
+  // themselves are the point of the page; the counts are commentary.
+  if (error) return {};
+  const out: Record<string, { count: number; last_at: string }> = {};
+  for (const row of (data ?? []) as { detail: Record<string, unknown> | null; created_at: string }[]) {
+    const id = typeof row.detail?.rule_id === 'string' ? row.detail.rule_id : null;
+    if (!id) continue;
+    if (out[id]) out[id].count += 1;
+    else out[id] = { count: 1, last_at: row.created_at };   // ordered desc, so the first is the latest
+  }
+  return out;
+}
+
 export async function addGuardrailRule(
   r: Partial<GuardrailRule> & { rule: string; rule_type: GuardrailRuleType }
 ): Promise<GuardrailRule> {

@@ -8,6 +8,7 @@ import { PageHeader, th, td } from '../../../components/ui'
 import { CustomerApiError } from '../../../lib/customerApi'
 import {
   listGuardrailRules, addGuardrailRule, updateGuardrailRule, installStarterGuardrails,
+  getGuardrailBlockCounts,
 } from '../../../lib/guardrailApi'
 import type { GuardrailRule, GuardrailRuleType, GuardrailScope } from '../../../lib/guardrailApi'
 import { listDigitalEmployees } from '../../../lib/digitalEmployeesApi'
@@ -53,6 +54,8 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
   // guardrails ARE is most of the value of this page.
   const canEditGuardrails = useIsTenantAdmin();
   const [rules, setRules] = useState<GuardrailRule[]>([])
+  // How often each rule has actually stopped something, last 30 days.
+  const [blocks, setBlocks] = useState<Record<string, { count: number; last_at: string }>>({})
   const [loading, setLoading] = useState(true)
   const [missingTables, setMissingTables] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -76,9 +79,14 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
     setLoading(true)
     setError(null)
     try {
-      const [r, d] = await Promise.all([listGuardrailRules(), listDigitalEmployees().catch(() => [])])
+      const [r, d, b] = await Promise.all([
+        listGuardrailRules(),
+        listDigitalEmployees().catch(() => []),
+        getGuardrailBlockCounts().catch(() => ({})),
+      ])
       setRules(r)
       setDes(d)
+      setBlocks(b)
       setMissingTables(false)
     } catch (err) {
       if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true)
@@ -278,7 +286,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="border-b border-dt-border text-left">
-                    {['Rule', 'Type', 'Scope', 'Pattern / threshold', 'Severity', 'Version', 'Active', ''].map(h => (
+                    {['Rule', 'Has it stopped anything?', 'Type', 'Scope', 'Pattern / threshold', 'Severity', 'Version', 'Active', ''].map(h => (
                       <th key={h} className={th}>{h}</th>
                     ))}
                   </tr>
@@ -287,6 +295,24 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                   {focusedRules.map(r => (
                     <tr key={r.id} className={`border-b border-dt-border last:border-b-0 ${r.active ? '' : 'opacity-50'}`}>
                       <td className={`${td} text-dt-body text-xs`}>{r.rule}</td>
+                      {/* ⚠ THIS IS THE COLUMN THAT TELLS THEM APART. A rule
+                          that fires daily and a rule that has never matched
+                          anything looked identical here — same row, same
+                          toggle — and they need opposite attention: one is
+                          load-bearing, the other is redundant or written so it
+                          can never match. Counted from real guardrail_block
+                          events over 30 days, not from a setting. */}
+                      <td className={td}>
+                        {(() => {
+                          const b = blocks[r.id]
+                          if (!b) return <span className="text-xs text-dt-muted">Hasn't stopped anything</span>
+                          return (
+                            <span className="text-xs text-dt-warn" title={`Last stopped ${new Date(b.last_at).toLocaleString()}`}>
+                              Stopped {b.count} {b.count === 1 ? 'time' : 'times'}
+                            </span>
+                          )
+                        })()}
+                      </td>
                       <td className={td}>
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support">{ruleTypeMeta(r.rule_type).label}</span>
                       </td>
