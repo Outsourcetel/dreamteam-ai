@@ -31,6 +31,37 @@ function fmt(n: number) {
   return String(n);
 }
 
+// ── What you'd change there, not what it is built from ──────────────────
+// "AI Engine", "Widget & API", "Workforce Trust" and "Usage & Budgets" name
+// the subsystem. An owner opening Settings is looking for a decision.
+//
+// ⚠ KEYS ARE UNTOUCHED. Every one of these is still the exact SettingsTab
+// value that canAccessSettingsTab filters on, that the Getting Started guide
+// deep-links through `dt_settings_tab`, and that the ai_engine redirect
+// targets. Only the words the owner reads have changed.
+const SETTINGS_TAB_LABEL: Record<string, string> = {
+  general: 'General',
+  widget: 'The chat widget',
+  billing: 'Billing',
+  usage: "What you've used",
+  trust: 'What they can do alone',
+  ai_engine: 'The AI behind them',
+  security: 'Sign-in & security',
+  // Verified rather than guessed: this tab renders DomainClaimPanel,
+  // SsoPolicyPanel and ScimTokensPanel — claiming your domain, the SSO
+  // policy, and SCIM provisioning tokens. All three are how a company's own
+  // identity provider connects, so "Single sign-on" is right; SCIM sits
+  // under that umbrella for an owner even though it is provisioning.
+  identity: 'Single sign-on',
+  data: 'Your data',
+};
+
+const SETTINGS_GROUPS: { heading: string; tabs: string[] }[] = [
+  { heading: 'Your workspace', tabs: ['general', 'widget', 'billing', 'usage'] },
+  { heading: 'How your employees behave', tabs: ['trust', 'ai_engine'] },
+  { heading: 'Security & data', tabs: ['security', 'identity', 'data'] },
+];
+
 const SettingsPage = ({
   user,
   tenant,
@@ -373,20 +404,43 @@ const SettingsPage = ({
             examples={['What does the confidence floor do?', 'Explain the AI budget and what happens when it runs out', 'Which model are my employees using?']} />
         </div>
       )}
-      <div className="flex gap-1 bg-dt-panel rounded-xl p-1 mb-6 overflow-x-auto w-fit">
-        {tabList.map((t) => (
-          <button
-            key={t}
-            onClick={() => setActiveTab(t)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
-              activeTab === t ? 'text-white' : 'text-dt-support hover:text-white'
-            }`}
-            style={activeTab === t ? { backgroundColor: accentColor } : {}}
-          >
-            {t === 'ai_engine' ? 'AI Engine' : t === 'usage' ? 'Usage & Budgets' : t === 'widget' ? 'Widget & API' : t === 'trust' ? 'Workforce Trust' : t.charAt(0).toUpperCase() + t.slice(1)}
-          </button>
-        ))}
-      </div>
+      {/* ── Nine peers in a row is a list nobody reads ────────────────────
+          Nine tabs sat in one horizontal strip, several of them named for
+          the machinery ("AI Engine", "Widget & API", "Workforce Trust")
+          rather than for the decision behind them. Grouped into three
+          headings down the side, each tab says what you'd change there.
+          ⚠ EVERY KEY IS UNCHANGED and the list is still built from
+          `tabList`, which is ALL_SETTINGS_TABS filtered by
+          canAccessSettingsTab — this only regroups and relabels what that
+          filter already allowed. A group with nothing in it disappears
+          rather than rendering an empty heading. */}
+      <div className="flex gap-8 items-start">
+        <nav className="w-52 shrink-0 space-y-5">
+          {SETTINGS_GROUPS.map(g => {
+            const items = g.tabs.filter(t => tabList.includes(t as typeof activeTab));
+            if (!items.length) return null;
+            return (
+              <div key={g.heading}>
+                <p className="text-xs font-medium text-dt-faint uppercase tracking-wider px-3 mb-1.5">{g.heading}</p>
+                <div className="space-y-0.5">
+                  {items.map(t => (
+                    <button
+                      key={t}
+                      onClick={() => setActiveTab(t as typeof activeTab)}
+                      className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                        activeTab === t ? 'text-white' : 'text-dt-support hover:text-dt-body hover:bg-dt-inset'
+                      }`}
+                      style={activeTab === t ? { backgroundColor: accentColor } : {}}
+                    >
+                      {SETTINGS_TAB_LABEL[t] ?? t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </nav>
+        <div className="flex-1 min-w-0">
 
       {/* ── General ───────────────────────────────────────────────── */}
       {activeTab === 'general' && (
@@ -1049,6 +1103,8 @@ const userHash = crypto
           </div>
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 };

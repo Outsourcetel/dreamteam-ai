@@ -179,7 +179,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
     <div className="p-6">
       <PageHeader
         title="Compliance & Guardrails"
-        subtitle="Real guardrails, enforced in the real path — invoice approvals check them now; DE answers are checked at generation time. Every change lands in the immutable audit trail."
+        subtitle="Checked on every action before anything happens — invoice approvals check them now; answers are checked as they are written. Every change to a rule is written to the record."
       />
       {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
 

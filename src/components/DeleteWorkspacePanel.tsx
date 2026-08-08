@@ -224,15 +224,15 @@ export default function DeleteWorkspacePanel({ onExportFirst }: { onExportFirst?
         {workspace && (
           <dl className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
             <div>
-              <dt className="text-[10px] uppercase tracking-wide text-dt-muted">Workspace</dt>
+              <dt className="text-xs uppercase tracking-wide text-dt-muted">Workspace</dt>
               <dd className="text-dt-title font-medium">{workspace.name}</dd>
             </div>
             <div>
-              <dt className="text-[10px] uppercase tracking-wide text-dt-muted">Identifier to confirm</dt>
+              <dt className="text-xs uppercase tracking-wide text-dt-muted">Identifier to confirm</dt>
               <dd className="text-dt-title font-mono">{workspace.slug}</dd>
             </div>
             <div>
-              <dt className="text-[10px] uppercase tracking-wide text-dt-muted">Current status</dt>
+              <dt className="text-xs uppercase tracking-wide text-dt-muted">Current status</dt>
               <dd>
                 <Chip tone={workspace.status === 'suspended' ? 'warn' : 'ok'} dot>
                   {workspace.status}
