@@ -1,4 +1,4 @@
-import { useIsTenantManager } from '../../lib/useRoleGate';
+import { useIsTenantManager, useIsTenantAdmin } from '../../lib/useRoleGate';
 import { useConfirm } from '../../components/useDialog';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
@@ -23,7 +23,6 @@ import { appendAuditEvent } from '../../lib/guardrailApi';
 import { listDefinitions, setDefinitionDeBinding } from '../../lib/playbookBuilderApi';
 import type { PlaybookDefinition } from '../../lib/playbookBuilderApi';
 import { LiveLoadingSkeleton } from '../../components/LiveDataStates';
-import HireEmployeeWizard from '../../components/HireEmployeeWizard';
 import AISessionPanel from '../../components/AISessionPanel';
 import ScopedGuardrails from '../../components/ScopedGuardrails';
 import {
@@ -123,8 +122,15 @@ function draftFromDial(d: { enabled: boolean; max_amount_cents: number | null; m
 // capability (migration 037). Domain-agnostic: creates ANY future DE,
 // not just Account/Finance/etc. Simple enough for a non-technical
 // admin: name + role label are the only required fields.
-function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) {
+function RosterPanel({ onSelect, setPage }: { onSelect: (de: DigitalEmployee) => void; setPage: (p: Page) => void }) {
   const { currentTenant } = useAuth();
+  // ⚠ HIRING IS NOW A ROUTE, AND THE ROUTE IS ADMIN-ONLY. While the wizard
+  // was a modal this button always opened SOMETHING and the wizard disabled
+  // its own draft button for non-admins. As a page, handleSetPage simply
+  // refuses for anyone below admin — so an ungated button would take the
+  // click and do nothing at all, which reads as a broken product rather than
+  // as a boundary. Same tier as PAGE_ACCESS.workforce_hire, deliberately.
+  const canHire = useIsTenantAdmin();
   const [des, setDes] = useState<DigitalEmployee[] | null>(null);
   const [health, setHealth] = useState<Record<string, DEHealth>>({});
   // What each employee actually DID, from the same four sources the Results
@@ -133,7 +139,6 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
   const [work, setWork] = useState<Record<string, WorkSummary>>({});
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const [hiring, setHiring] = useState(false);
   // Which employee the plain-language editor is open for, if any.
   const [editingDe, setEditingDe] = useState<{ id: string; label: string } | null>(null);
   // Retired/archived employees are kept but hidden until asked for.
@@ -223,26 +228,26 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
               {showRetired ? 'Hide retired' : `Show retired (${retiredCount})`}
             </Button>
           )}
-          <Button kind="primary" size="sm" onClick={() => setHiring(true)}>✨ Hire with AI</Button>
+          {canHire && <Button kind="primary" size="sm" onClick={() => setPage('workforce_hire')}>✨ Hire with AI</Button>}
           <Button kind="secondary" size="sm" onClick={() => setAdding(true)}>+ Add manually</Button>
         </>
       )}
     >
       <div>
-      {hiring && (
-        <HireEmployeeWizard
-          onClose={() => setHiring(false)}
-          onFinished={() => { void refresh(); }}
-        />
-      )}
       {editingDe && (
-                // chrome={false}: AISessionPanel draws its own header and close
-        // button, so this would otherwise show two of each. It keeps its own
-        // chrome and gains Escape, scroll-lock and focus return from the
-        // primitive — which is exactly what it was missing.
-        <Modal size="2xl" chrome={false} padded={false}
-               panelClass="h-[600px] max-h-[85vh] overflow-hidden"
-               onClose={() => setEditingDe(null)}>
+        // ── A conversation belongs beside the list, not on top of it ────────
+        //
+        // This was a Modal at size="2xl" with a fixed h-[600px]. Changing how
+        // an employee behaves is a conversation you have WHILE looking at who
+        // you're changing — a dialog covers the roster with the answer to a
+        // question the roster was asking. As a drawer the list stays visible
+        // behind it, which is the context that makes the chat legible.
+        //
+        // chrome={false} because AISessionPanel draws its own header and close
+        // button; it still gains Escape, scroll-lock and focus return from the
+        // primitive, which is what it was missing when hand-rolled.
+        <Drawer wide chrome={false} padded={false} onClose={() => setEditingDe(null)}>
+          <div className="h-full flex flex-col overflow-hidden">
             <AISessionPanel
               subjectKind="de"
               subjectId={editingDe.id}
@@ -250,7 +255,8 @@ function RosterPanel({ onSelect }: { onSelect: (de: DigitalEmployee) => void }) 
               onChanged={() => { void refresh(); }}
               onClose={() => setEditingDe(null)}
             />
-        </Modal>
+          </div>
+        </Drawer>
       )}
       <p className="text-xs text-dt-muted mb-4">
         Everyone working for {des.length > 0 ? 'your company' : 'you'} today. Each one is set up independently below —
@@ -4391,7 +4397,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
           for a decision nobody made, which is the reason --dt-content-max
           exists. */}
       <div className="max-w-dt-content">
-        <RosterPanel onSelect={de => openFile(de.id)} />
+        <RosterPanel onSelect={de => openFile(de.id)} setPage={setPage} />
         <TeamsPanel />
       </div>
     </div>

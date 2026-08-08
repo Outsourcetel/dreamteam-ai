@@ -21,10 +21,18 @@ import type {
 
 type Step = 'brief' | 'meet' | 'working' | 'done' | 'tailor' | 'archetype_done';
 
-const EXAMPLES = [
-  'I need someone to answer billing questions — invoices, refunds within our 30-day policy, and payment problems. Anything about contract changes goes to a human.',
-  'A support employee for our telecom customers: troubleshooting connection issues step by step, checking known outages, and escalating anything that needs a truck roll.',
-  'Someone to handle order status questions for our online store — where is my order, returns, exchanges — always polite, never promises delivery dates we cannot keep.',
+// ⚠ THESE WERE UNREADABLE AS BUTTONS. Each full brief is ~160 characters and
+// the chip rendered `ex.slice(0, 64)…` at 11px — cut mid-word, so you saw
+// "I need someone to answer billing questions — invoices, refunds w…" and had
+// to click one to find out what it was. A label says which example it is; the
+// brief is what lands in the box, complete.
+const EXAMPLES: { label: string; brief: string }[] = [
+  { label: 'Billing questions',
+    brief: 'I need someone to answer billing questions — invoices, refunds within our 30-day policy, and payment problems. Anything about contract changes goes to a human.' },
+  { label: 'Technical support',
+    brief: 'A support employee for our telecom customers: troubleshooting connection issues step by step, checking known outages, and escalating anything that needs a truck roll.' },
+  { label: 'Order status & returns',
+    brief: 'Someone to handle order status questions for our online store — where is my order, returns, exchanges — always polite, never promises delivery dates we cannot keep.' },
 ];
 
 export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: () => void; onFinished: () => void }) {
@@ -159,23 +167,32 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
   const answeredCount = answers.filter((a) => a.trim()).length;
 
   return (
-    // The close button was hidden while busy, so a hire in flight could not be
-    // abandoned half-way. The primitive also closes on Escape and on backdrop
-    // click, so that guard has to live in onClose now or the new behaviour
-    // would quietly remove an existing protection.
-    <Modal
-      size="2xl"
-      padded={false}
-      onClose={() => { if (!busy) onClose(); }}
-      title={
-        <span className="block">
-          ✨ Hire a Digital Employee
-          <span className="block text-xs font-normal text-dt-muted mt-0.5">
-            Describe the role. The rest is a conversation.
-          </span>
-        </span>
-      }
-    >
+    // ── THIS IS A PAGE NOW, NOT A MODAL (handoff 11) ────────────────────────
+    //
+    // Five steps of conversation — describe the role, meet who it drafted,
+    // resolve a knowledge conflict, answer two interview questions, hire —
+    // is not dialog work. It was a Modal at size="2xl", which meant a
+    // backdrop click or Escape threw away everything typed, and the design
+    // system's own rule is: modals for confirmations and short forms, pages
+    // for anything with steps you might leave and come back to.
+    //
+    // ⚠ The work itself was never as fragile as it looked. draftNewHire()
+    // creates a REAL entity server-side at step one and returns its
+    // entity_id, so an abandoned wizard leaves a `designed` employee rather
+    // than nothing — 41 of those exist across the platform. What a stray
+    // click actually destroyed was the local state: the brief you typed, your
+    // answers, and which step you were on. That is still true here and is the
+    // one thing a route cannot fix on its own; persisting it is listed as new
+    // data in the handoff and is NOT built here.
+    <div className="p-6 max-w-4xl mx-auto">
+      <button onClick={() => { if (!busy) onClose(); }}
+        className="text-xs text-dt-support hover:text-dt-body mb-4 inline-flex items-center gap-1.5">
+        ← Back to your workforce
+      </button>
+      <div className="mb-5">
+        <h1 className="text-2xl font-semibold text-dt-title">Hire a digital employee</h1>
+        <p className="text-sm text-dt-support mt-1">Describe the role. The rest is a conversation.</p>
+      </div>
         <div className="px-6 pb-6 space-y-5">
           {error && <div className="rounded-xl border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{error}</div>}
 
@@ -195,9 +212,9 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
               />
               <div className="flex flex-wrap gap-2">
                 {EXAMPLES.map((ex, i) => (
-                  <button key={i} onClick={() => setBrief(ex)}
-                    className="text-[11px] px-2.5 py-1.5 rounded-lg bg-dt-card border border-dt-border text-dt-support hover:text-dt-body hover:border-dt-border-strong text-left max-w-full truncate">
-                    {ex.slice(0, 64)}…
+                  <button key={i} onClick={() => setBrief(ex.brief)} title={ex.brief}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-dt-card border border-dt-border text-dt-support hover:text-dt-body hover:border-dt-border-strong">
+                    {ex.label}
                   </button>
                 ))}
               </div>
@@ -264,44 +281,46 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                 </div>
               </div>
 
-              {/* docs/17 C5: the pre-hire job description — what you are
-                  actually signing up for, before any rehearsal runs. */}
-              <div className="rounded-xl bg-dt-card border border-dt-border p-3 grid sm:grid-cols-2 gap-x-4 gap-y-2">
+              {/* ── What you are actually signing up for (docs/17 C5) ──────
+                  Four real facts, in the words someone would use out loud.
+                  ⚠ An earlier design pass proposed replacing these with two
+                  capability lists — "she'll be able to…" and "she'll always
+                  ask you first". That is wrong on the facts: at hire she is
+                  fully supervised and drafts only, so there is nothing she
+                  does alone yet and the first list would have been empty or,
+                  worse, invented. These four stay; only the words change.
+                  The labels were 11px over 12px body — the reassuring half
+                  set smaller than the claim it reassures about. */}
+              <div className="rounded-xl bg-dt-card border border-dt-border p-4 grid sm:grid-cols-2 gap-x-5 gap-y-3">
                 <div>
-                  <p className="text-[11px] uppercase tracking-wide text-dt-muted">Autonomy at hire</p>
-                  <p className="text-xs text-dt-support mt-0.5">Fully supervised — drafts only; every outbound needs your approval until trust is earned.</p>
+                  <p className="text-xs font-medium text-dt-body">On her first day</p>
+                  <p className="text-xs text-dt-support mt-0.5">She drafts everything and sends nothing. You approve every message until she's earned more.</p>
                 </div>
                 <div>
-                  <p className="text-[11px] uppercase tracking-wide text-dt-muted">Rollout plan</p>
-                  <p className="text-xs text-dt-support mt-0.5">Draft → supervised → trusted, promoted by evidence (rehearsal scores, live accuracy) — never by a toggle.</p>
+                  <p className="text-xs font-medium text-dt-body">How she earns more</p>
+                  {/* The most reassuring sentence in the product, and it was
+                      the smallest thing on the card. */}
+                  <p className="text-xs text-dt-support mt-0.5">By getting things right — test scores and real accuracy. Never by you flipping a switch.</p>
                 </div>
                 <div>
-                  <p className="text-[11px] uppercase tracking-wide text-dt-muted">Running cost</p>
-                  <p className="text-xs text-dt-support mt-0.5">Typically a fraction of a cent per answer in AI usage, hard-capped by your monthly AI budget.</p>
+                  <p className="text-xs font-medium text-dt-body">What she costs</p>
+                  <p className="text-xs text-dt-support mt-0.5">A fraction of a cent per answer, capped by the monthly budget you set.</p>
                 </div>
                 <div>
-                  <p className="text-[11px] uppercase tracking-wide text-dt-muted">Risk overlay</p>
-                  <p className="text-xs text-dt-support mt-0.5">Workspace guardrails apply from the first answer, plus any compliance packs this role or your workspace requires — {persona} cannot switch them off.</p>
+                  <p className="text-xs font-medium text-dt-body">What she can't do</p>
+                  <p className="text-xs text-dt-support mt-0.5">Your rules apply from her first answer, and {persona} can't switch them off.</p>
                 </div>
               </div>
 
-              {/* docs/18 Move 2: the buy-vs-build math, cited. Third-party
-                  figures only — labeled as such, never presented as ours. */}
-              <div className="rounded-xl bg-dt-card border border-dt-border p-3">
-                <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1.5">The alternative, measured by others</p>
-                <ul className="space-y-1 text-xs text-dt-support">
-                  <li>
-                    · Internal agent builds succeed roughly half as often as vendor partnerships (~33% vs ~67%), and 95% of enterprise GenAI pilots showed no P&L impact —{' '}
-                    <a href="https://mlq.ai/media/quarterly_decks/v0.1_State_of_AI_in_Business_2025_Report.pdf" target="_blank" rel="noreferrer" className="text-indigo-300 hover:underline">MIT NANDA, 2025 ↗</a>
-                  </li>
-                  <li>
-                    · Over 40% of agentic-AI projects are predicted to be canceled by end-2027, mostly on governance and risk-control gaps —{' '}
-                    <a href="https://www.gartner.com/en/newsroom/press-releases/2025-06-25-gartner-predicts-over-40-percent-of-agentic-ai-projects-will-be-canceled-by-end-of-2027" target="_blank" rel="noreferrer" className="text-indigo-300 hover:underline">Gartner, Jun 2025 ↗</a>
-                  </li>
-                  <li>· Enterprise single-function agent contracts commonly run $200–350k in year one (published pricing teardowns of Sierra-class vendors, 2026 — third-party estimates).</li>
-                  <li className="text-dt-body">· This hire: supervised from day one, spend hard-capped by your AI budget, metered per resolved outcome — and it starts today.</li>
-                </ul>
-              </div>
+              {/* ⚠ THE BUY-VS-BUILD CITATION BLOCK WAS HERE AND IS DELIBERATELY
+                  GONE. Four external links (MIT NANDA, Gartner, competitor
+                  pricing teardowns) sat mid-setup, on the screen AFTER someone
+                  had already clicked Hire. Selling to a customer who has
+                  bought costs their attention at the exact moment they are
+                  being asked to check a name, resolve a knowledge conflict and
+                  answer two questions — and three of the four links led out of
+                  the product. The argument belongs on a marketing page, not in
+                  a setup flow. */}
 
               {draft.study.coverage && (
                 <div className="rounded-xl bg-dt-card border border-dt-border p-3">
@@ -576,6 +595,6 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
             </>
           )}
         </div>
-    </Modal>
+    </div>
   );
 }

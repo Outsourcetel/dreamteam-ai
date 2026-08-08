@@ -45,6 +45,7 @@ export type TenantPage =
 
   // ── Workforce (DE management) ─────────────────────
   | 'workforce_des'             // Digital Employees roster (incl. individual profiles)
+  | 'workforce_hire'            // Hiring wizard — a page, not a modal (handoff 11)
   | 'workforce_de_file'         // Employee File — one DE's page (?de=<id> deep link)
   | 'workforce_chat'            // Conversational Workforce Hub (manage DEs via chat)
 

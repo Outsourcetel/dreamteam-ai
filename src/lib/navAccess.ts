@@ -68,6 +68,11 @@ const PAGE_ACCESS: Partial<Record<Page, UserRole[]>> = {
 
   // ── Everyday workspace ────────────────────────────────────────────────────
   dashboard: ALL_TENANT,
+  // Hiring calls create_digital_employee / advance_de_lifecycle /
+  // install_role_systems — all owner/admin writes. The wizard already refuses
+  // to draft without useIsTenantAdmin; this stops the ROUTE being reachable by
+  // anyone who cannot finish it, rather than letting them walk into a dead end.
+  workforce_hire: ADMIN,
   workforce_des: ALL_TENANT,
   workforce_de_file: ALL_TENANT,
   workforce_chat: ALL_TENANT,

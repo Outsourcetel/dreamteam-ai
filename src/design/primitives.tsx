@@ -304,18 +304,33 @@ export function Modal({ title, onClose, children, wide, size, padded = true, chr
     </div>
   );
 }
-export function Drawer({ title, onClose, children }:
-  { title: React.ReactNode; onClose: () => void; children: React.ReactNode }) {
+export function Drawer({ title, onClose, children, wide, padded = true, chrome = true }:
+  { title?: React.ReactNode; onClose: () => void; children: React.ReactNode;
+    /** For a drawer holding a conversation rather than a record. */
+    wide?: boolean;
+    /** Off when the body manages its own padding and height. */
+    padded?: boolean;
+    /** Off when the CHILD draws its own header and close button — same
+     *  contract as Modal, and for the same reason: without it a panel that
+     *  already has a header shows two of them, which is exactly why such
+     *  panels stayed hand-rolled and silently missed Escape and focus return. */
+    chrome?: boolean }) {
   const panelRef = useDialogBehaviour(onClose);
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
+      {/* ⚠ WAS max-w-xl — a Tailwind default standing in for a decision, on a
+          surface the layout tokens already had an answer for. --dt-drawer is
+          min(560px, 90vw) and --dt-drawer-wide is min(760px, 95vw), so the
+          panel narrows on a small screen instead of running off it. */}
       <div ref={panelRef} tabIndex={-1}
-        className="w-full max-w-xl h-full bg-dt-page border-l border-dt-border-strong overflow-y-auto p-6 focus:outline-none"
+        className={`w-full ${wide ? 'max-w-dt-drawer-wide' : 'max-w-dt-drawer'} h-full bg-dt-page border-l border-dt-border-strong overflow-y-auto focus:outline-none ${padded ? 'p-6' : ''}`}
         onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
-        <div className="flex items-start justify-between gap-3 mb-4">
-          <h3 className="text-lg font-semibold text-dt-title">{title}</h3>
-          <button onClick={onClose} aria-label="Close" className="text-dt-muted hover:text-dt-body text-xl leading-none">×</button>
-        </div>
+        {chrome && (
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <h3 className="text-lg font-semibold text-dt-title">{title}</h3>
+            <button onClick={onClose} aria-label="Close" className="text-dt-muted hover:text-dt-body text-xl leading-none">×</button>
+          </div>
+        )}
         {children}
       </div>
     </div>

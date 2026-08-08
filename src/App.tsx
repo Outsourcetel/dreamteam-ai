@@ -42,6 +42,7 @@ import BrowserOperatorPage from './pages/tenant/autonomy/BrowserOperatorPage';
 import { InsightsPage } from './pages/tenant/intelligence/IntelligencePages';
 import WorkforceHubPage from './pages/tenant/WorkforceHubPage';
 import EmployeeFilePage from './pages/tenant/EmployeeFilePage';
+import HireEmployeeWizard from './components/HireEmployeeWizard';
 import CompanySetupPage from './pages/tenant/CompanySetupPage';
 import OnboardingArchitectPage from './pages/tenant/OnboardingArchitectPage';
 import { WorkforceChatHubPage } from './pages/tenant/WorkforceChatHubPage';
@@ -407,6 +408,13 @@ function AppShell() {
       case 'intelligence_evals':
       case 'intelligence_learning':
         return <WorkforceHubPage tab={currentPage} setPage={handleSetPage} />;
+      // Hiring is a five-step conversation, so it gets a route of its own
+      // rather than a modal over the roster (handoff 11). Leaving goes back
+      // to the roster, which is where a new hire will appear.
+      case 'workforce_hire':
+        return <HireEmployeeWizard
+          onClose={() => handleSetPage('workforce_des')}
+          onFinished={() => handleSetPage('workforce_des')} />;
       case 'workforce_de_file':
         return <EmployeeFilePage setPage={handleSetPage} />;
       case 'workforce_chat':

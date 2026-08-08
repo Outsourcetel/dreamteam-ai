@@ -49,6 +49,7 @@ export const PAGE_TO_URL: Record<Page, string> = {
   outcome_risk:       '/outcomes/risk',
   // Workforce (DEs)
   workforce_des:       '/workforce/des',
+  workforce_hire:      '/workforce/hire',
   workforce_de_file:   '/workforce/employee',
   workforce_chat:      '/workforce/chat',
   // Knowledge
