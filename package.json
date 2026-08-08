@@ -26,7 +26,10 @@
     "baseline:generate": "node scripts/generate-baseline.mjs > supabase/baseline/000_baseline_core.sql",
     "backup:schema": "node scripts/backup-schema.mjs > supabase/baseline/full_schema.sql",
     "backup:data": "node scripts/backup-data.mjs",
-    "restore:drill": "node scripts/restore-drill.mjs"
+    "restore:drill": "node scripts/restore-drill.mjs",
+    "certify": "node scripts/certify.mjs",
+    "certify:fast": "node scripts/certify.mjs --fast",
+    "certify:mutation": "node scripts/certify-mutation-test.mjs"
   },
   "dependencies": {
     "@sentry/react": "^10.64.0",

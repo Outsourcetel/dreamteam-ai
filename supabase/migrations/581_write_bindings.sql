@@ -1,8 +1,4 @@
--- 581 — the write bindings. Publishing actually publishes.
---
--- (Numbered 581, not 580: a parallel session took 580 for the connector-secret
---  fix at the same moment. Both were applied; this one was renamed in the
---  ledger to keep replay order unambiguous.)
+-- 580 — the write bindings. Publishing actually publishes.
 --
 -- 574/577 seeded 17 governed actions and bound NONE of them. Each was
 -- classified, gated, guardrail-scanned and routed to a human — and approving one
