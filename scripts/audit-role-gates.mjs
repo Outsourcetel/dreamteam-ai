@@ -299,6 +299,28 @@ for (const cmd of ['INSERT', 'UPDATE', 'DELETE']) {
 
 /** Table writes in a body, as synthetic action names. `.upsert` is an insert
  *  for policy purposes; the chained call may sit on the next line. */
+/**
+ * Navigations to a page with a LITERAL key: setPage('workforce_hire'),
+ * handleSetPage("gov_security"), openTab('trust').
+ *
+ * ⚠ DELIBERATELY ONLY LITERALS. A hub that does `onSelect={setPage}` over a
+ * tabs array is passing a VARIABLE, and those hubs already filter their tab
+ * list through canAccessPage — reading them as one control pointing at every
+ * page would flag the four correctly-filtered hubs and bury the real
+ * findings. A noisy checker gets ignored, which is how this drift arrived.
+ * The cost is stated rather than hidden: a hub that FORGOT to filter is not
+ * caught by this pass. PAGE_ACCESS completeness, checked separately, is what
+ * covers the case where such a page has no tier at all.
+ */
+function navTargets(body) {
+  const out = new Set();
+  for (const m of body.matchAll(/\b(?:handleSetPage|setPage|openTab|onSelect)\s*\(\s*['"]([a-z0-9_]+)['"]/g)) {
+    const name = navAction(m[1]);
+    if (needsGate.has(name)) out.add(name);
+  }
+  return out;
+}
+
 function tableWrites(body) {
   const out = new Set();
   for (const m of body.matchAll(/\.from\(\s*['"]([a-z0-9_]+)['"]\s*\)\s*(?:\r?\n\s*)*\.(insert|update|upsert|delete)\b/g)) {
@@ -344,6 +366,32 @@ const pageRoles = {};
   const re = /^\s{2}([a-z_]+):\s*(OWNER|ADMIN|MANAGE|KNOWLEDGE|APPROVALS|ALL_TENANT|\[\])/gm;
   let m; while ((m = re.exec(block)) !== null) pageRoles[m[1]] = m[2] === '[]' ? [] : TIER[m[2]];
 }
+// ── THE THIRD SURFACE: a control that OPENS a page it cannot open ────────
+//
+// ⚠⚠ THIS CHECKER WAS SILENT ON THIS CLASS THREE TIMES.
+//   · support_calls — a TAB that took the click and did nothing
+//   · the governance hub — Security & Access rendered to every role, and a
+//     manager clicking it went nowhere
+//   · "✨ Hire with AI" — introduced by me, converting the hire wizard from a
+//     modal to an ADMIN-only route and leaving the button ungated
+//
+// Every one is the same defect and none of them touched an RPC or a table, so
+// the two surfaces above could not see any of them. handleSetPage refuses
+// silently when canAccessPage says no, which means the control looks live,
+// takes the click, and does nothing — worse than being absent, because it
+// reads as a broken product rather than as a boundary.
+//
+// A navigation target is an ACTION whose allowed roles are the page's own, so
+// it folds into needsGate and every downstream comparison works unchanged: a
+// finding is a viewer who can SEE the control but cannot OPEN what it opens.
+const navAction = (page) => `open ${page}`;
+for (const [page, roles] of Object.entries(pageRoles)) {
+  // `[]` is platform-staff-only. A tenant-facing control pointing at one is a
+  // real finding, and the isDTUser idiom in GATE_RE already clears the
+  // legitimate cases, so these are included rather than skipped.
+  needsGate.set(navAction(page), roles);
+}
+
 const compOfPage = {}; {
   // ⚠ CASE LABELS STACK. Four support pages share one component:
   //     case 'support_command_center':
@@ -470,7 +518,7 @@ function viewersOf(file, depth = 0) {
 // because a resolver that fails to find a component's render site returns no
 // viewers and the file is skipped WITHOUT SAYING SO.
 const SKIPPED = [];
-const COMPARED = { n: 0, pages: 0, components: 0, area: '' };
+const COMPARED = { n: 0, pages: 0, components: 0, nav: 0, area: '' };
 function controlsMissingGate(src, wrapperMap) {
   const L = src.split(/\r?\n/);
   // ⚠⚠ DERIVE the gate names from this file rather than hard-coding them.
@@ -497,7 +545,16 @@ function controlsMissingGate(src, wrapperMap) {
   for (let i = 0; i < L.length; i++) {
     const m = L[i].match(/^(\s+)const ([a-zA-Z0-9_]+)\s*=\s*(?:async\s*)?(?:\(|function)/);
     if (!m) continue;
-    const stop = new RegExp('^' + m[1] + '(?:const |function |export )');
+    // ⚠ A HANDLER BODY ENDS AT THE COMPONENT'S `return`, TOO. The stop
+    // pattern was const/function/export at the same indent, so a handler that
+    // is the LAST declaration before the JSX kept reading — up to 120 lines —
+    // straight through `return (` and into the markup. `submit` in the roster
+    // ends at line 215 and never navigates, but the scan swallowed the hire
+    // button at 231 and attributed `open workforce_hire` to it. This was
+    // never nav-specific either: any handler in that position inherited every
+    // RPC and table write rendered below it, which over-attributes silently
+    // and is only visible when the action happens to be one you can check.
+    const stop = new RegExp('^' + m[1] + '(?:const |function |export |return\\b)');
     let body = '';
     for (let j = i + 1; j < L.length && j - i < 120; j++) {
       if (j > i + 1 && stop.test(L[j])) break;
@@ -507,6 +564,7 @@ function controlsMissingGate(src, wrapperMap) {
     for (const n of needsGate.keys()) {
       if (body.includes(`rpc('${n}'`) || body.includes(`rpc("${n}"`)) acts.add(n);
     }
+    for (const p of navTargets(body)) acts.add(p);   // …and navigations to a restricted page
     for (const a of tableWrites(body)) acts.add(a);   // …and writes straight to a table
     // …and through a lib wrapper, which the direct-rpc scan alone cannot see.
     for (const [fn, rpcs] of Object.entries(wrapperMap)) {
@@ -515,7 +573,13 @@ function controlsMissingGate(src, wrapperMap) {
     }
     if (acts.size) handlers.set(compAt(i) + ':' + m[2], { name: m[2], acts: [...acts], comp: compAt(i) });
   }
-  if (!handlers.size) return [];
+  // ⚠ THIS USED TO `return []` WHEN NO HANDLER TOUCHED A GATED ACTION, which
+  // skipped the whole tag walk. The control that prompted this pass —
+  //     <Button onClick={() => setPage('workforce_hire')}>Hire with AI</Button>
+  // — is an INLINE navigation in a file whose named handlers call nothing
+  // gated, so the early return would have skipped the very case it was added
+  // to catch. The walk below is cheap and judges tags directly; there is no
+  // reason it needed a handler to exist first.
   // ⚠ A control is ALSO gated when an ANCESTOR withholds it —
   //     {canDecide && ( <button onClick={decide}/> )}
   //     {!isAdmin ? null : ( <form/> )}
@@ -533,7 +597,17 @@ function controlsMissingGate(src, wrapperMap) {
     // > 0 && canDecide && (` stops a non-greedy `(&&|\?)` at the first `&&`,
     // leaving `pending.length > 0` — no gate token — so the checker reported
     // four controls I had just gated. Anchor on `&& (` or `?` instead.
-    const cond = head.match(/^([^{}]*?)(?:&&\s*\(|\?)/);
+    // ⚠⚠ SIXTH IDIOM FAILURE, AND THIS ONE WAS BLIND ON EVERY SURFACE.
+    // The anchor was `&&\s*\(` — a gate followed by a PARENTHESISED block:
+    //     {canDecide && ( <button …/> )}
+    // But the most compact form in this codebase has no parenthesis at all:
+    //     {canHire && <Button onClick={() => setPage('workforce_hire')}>…}
+    // and that is the exact line I had just written to FIX the hire button.
+    // The checker reported my own gate as a missing gate. Worse, this was
+    // never nav-specific: any RPC control withheld by `{gate && <Comp …>}`
+    // was invisible to the two older surfaces too, for as long as they have
+    // existed. Accept `<` as well as `(`.
+    const cond = head.match(/^([^{}]*?)(?:&&\s*[(<]|\?)/);
     if (!cond || !isGate(cond[1])) continue;
     // ⚠⚠ A FUNCTION BODY IS NOT A JSX CONDITIONAL. A component opening
     //     { const canManage = useCanManageDe(); const [x] = useState(a ? b : c);
@@ -581,7 +655,23 @@ function controlsMissingGate(src, wrapperMap) {
     // checker stayed silent. Restricting to onClick keeps the primitive and
     // still drops the notification props.
     const lower = /^[a-z]/.test(tag.slice(1));
-    if (!(lower ? /on[A-Z][a-zA-Z]+\s*=/ : /onClick\s*=/).test(tag)) continue;
+    // ⚠ A PARENT IS NOT ITS CHILD'S CONTROL. The brace-aware reader above
+    // deliberately swallows a whole multi-line tag — which means a component
+    // taking JSX in a prop swallows that JSX too:
+    //     <PanelCard actions={!adding && (<Button onClick={…}/>)}>
+    // The outer tag then appears to carry the inner button's onClick and its
+    // action, judged against the OUTER tag's attributes, where no gate lives.
+    // That reported the roster's PanelCard as an ungated hire button while
+    // the real button two lines below was correctly gated. The nested element
+    // is visited on its own iteration of this loop, so attributing it twice
+    // adds a false positive and never a true one: judge only what precedes it.
+    // ⚠ Search PAST this tag's own opening bracket. `tag.search(/<[A-Za-z]/)`
+    // finds index 0 — the `<PanelCard` we are standing on — so the guard
+    // `nested > 0` was never true and this whole fix was a no-op that still
+    // reported the right number of findings for the wrong reason.
+    const rel = tag.slice(1).search(/<[A-Za-z]/);
+    const own = rel >= 0 ? tag.slice(0, rel + 1) : tag;
+    if (!(lower ? /on[A-Z][a-zA-Z]+\s*=/ : /onClick\s*=/).test(own)) continue;
     const line = src.slice(0, i).split('\n').length - 1;
     // Count the comparison BEFORE judging it. `0 findings from 0 comparisons`
     // is indistinguishable from a clean sweep, and both of my earlier
@@ -600,7 +690,7 @@ function controlsMissingGate(src, wrapperMap) {
     const seen = new Set();
     for (const h of handlers.values()) {
       if (h.comp !== compAt(line)) continue;                       // scope, not name
-      if (!new RegExp(`\\b${h.name}\\s*[(}]`).test(tag)) continue;
+      if (!new RegExp(`\\b${h.name}\\s*[(}]`).test(own)) continue;   // own, not tag — see the nesting note above
       for (const a of h.acts) seen.add(a);
     }
     // ⚠ NOT EVERY CONTROL GOES THROUGH A NAMED HANDLER.
@@ -612,13 +702,15 @@ function controlsMissingGate(src, wrapperMap) {
       if (!new RegExp(`\\b${fn}\\s*\\(`).test(tag)) continue;
       for (const a of acts) if (needsGate.has(a)) seen.add(a);
     }
-    for (const a of tableWrites(tag)) seen.add(a);
+    for (const a of tableWrites(own)) seen.add(a);
+    for (const p of navTargets(own)) seen.add(p);
     for (const n of needsGate.keys()) {
       if (tag.includes(`rpc('${n}'`) || tag.includes(`rpc("${n}"`)) seen.add(n);
     }
     for (const a of seen) {
       COMPARED.n++;
       COMPARED[COMPARED.area]++;
+      if (a.startsWith('open ')) COMPARED.nav++;   // counted apart — see the floor note
       if (!guarded) out.push({ action: a, line: line + 1 });
     }
   }
@@ -680,6 +772,18 @@ if (COMPARED.n < FLOOR) {
   console.error('A clean result from too few comparisons is not a clean result. The scan is broken.');
   process.exit(2);
 }
+// ⚠ AND A FLOOR PER SURFACE. One total hides a surface that has stopped
+// working: if navTargets' regex were mangled the way two earlier ones in this
+// file were, nav comparisons would fall to zero while the RPC scan alone kept
+// the total far clear of 40 — and the run would look clean. Every surface has
+// to prove it still looked. Set far below the current 29 for the same reason
+// the total is: this catches a BREAK, not a refactor.
+const NAV_FLOOR = 8;
+if (COMPARED.nav < NAV_FLOOR) {
+  console.error(`ABORT: only ${COMPARED.nav} navigation controls compared (floor ${NAV_FLOOR}).`);
+  console.error('The page-navigation surface is not being scanned. Check navTargets().');
+  process.exit(2);
+}
 // ── the nav map itself ───────────────────────────────────────────────────
 //
 // ⚠⚠ THREE PAGES WENT MISSING FROM PAGE_ACCESS AND NOBODY NOTICED.
@@ -709,6 +813,7 @@ const navGaps = [];
 console.log(`role-gated functions: ${rows.length}   (self-aware, subject always allowed: ${selfAware})`);
 console.log(`pages offered in the UI but missing from PAGE_ACCESS: ${navGaps.length}${navGaps.length ? '  ⇒ ' + navGaps.join(', ') : ''}`);
 console.log(`controls compared against their action's gate: ${COMPARED.n}   (pages ${COMPARED.pages}, components ${COMPARED.components})`);
+console.log(`  of those, controls that OPEN a page: ${COMPARED.nav}`);
 // ⚠ Name the files that were skipped. A component whose render site the
 // resolver cannot find is indistinguishable from one nobody renders, and
 // silence there is how a whole file goes unexamined while the report reads
