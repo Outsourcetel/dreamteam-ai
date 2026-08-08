@@ -585,7 +585,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
     return (
       <div className="p-6">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <PageHeader title="Business Insights" subtitle="What needs your attention, and what to do about it" />
+          <PageHeader title="What needs your attention" subtitle="Worked out from what your employees actually did — not a survey, not an estimate." />
           <RangeSelector value={range} onChange={setRange} />
         </div>
         <LiveLoadingSkeleton rows={4} />
@@ -600,8 +600,8 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
     <div className="p-6">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <PageHeader
-          title="Business Insights"
-          subtitle="What needs your attention, and what to do about it — from real workforce activity"
+          title="What needs your attention"
+          subtitle="Worked out from what your employees actually did — not a survey, not an estimate."
         />
         <RangeSelector value={range} onChange={setRange} />
       </div>
@@ -615,28 +615,50 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
             <p className="text-sm font-semibold text-white">Benchmark — honest numbers</p>
             <p className="text-[11px] text-dt-muted">all traffic counted, nothing cherry-picked · recountable from raw data</p>
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* ── THE DEFINITIONS WERE IN TOOLTIPS ────────────────────────────
+              get_benchmark_report ships a written definition for every number
+              — and they are the most careful sentences in the product:
+              "every escalation, hand-off, and guardrail block counts in the
+              denominator. Nothing is excluded", "Never inferred or imputed".
+              All four were reachable only by hovering an 11px caption, which
+              on a touch screen means not at all. A metric whose definition
+              nobody can read is a metric nobody can trust, and these are the
+              numbers a customer would ask us to defend. They are on the page
+              now, at the same size as everything else. */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <p className="text-2xl font-semibold text-emerald-400">{benchmark.outcomes.resolution_rate_pct != null ? `${benchmark.outcomes.resolution_rate_pct}%` : '—'}</p>
-              <p className="text-[11px] text-dt-muted mt-0.5" title={benchmark.definitions.resolution_rate_pct}>resolution rate — every escalation & block counts in the denominator</p>
+              <p className="text-xs font-medium text-dt-body mt-0.5">closed without a human</p>
+              <p className="text-xs text-dt-muted mt-1">{benchmark.definitions.resolution_rate_pct}</p>
             </div>
             <div>
               <p className="text-2xl font-semibold text-dt-body">{benchmark.judged_quality.pass_rate_pct != null ? `${benchmark.judged_quality.pass_rate_pct}%` : '—'}</p>
-              <p className="text-[11px] text-dt-muted mt-0.5" title={benchmark.definitions.judged_quality}>judged quality · {benchmark.judged_quality.graded} answer{benchmark.judged_quality.graded === 1 ? '' : 's'} graded by an independent AI judge</p>
+              <p className="text-xs font-medium text-dt-body mt-0.5">
+                answers judged good · {benchmark.judged_quality.graded} graded
+              </p>
+              <p className="text-xs text-dt-muted mt-1">{benchmark.definitions.judged_quality}</p>
             </div>
             <div>
               <p className="text-2xl font-semibold text-dt-body">{benchmark.csat.positive_pct != null ? `${benchmark.csat.positive_pct}%` : '—'}</p>
-              <p className="text-[11px] text-dt-muted mt-0.5" title={benchmark.definitions.csat}>CSAT positive · {benchmark.csat.ratings} submitted rating{benchmark.csat.ratings === 1 ? '' : 's'} (never inferred)</p>
+              <p className="text-xs font-medium text-dt-body mt-0.5">
+                customers happy · {benchmark.csat.ratings} rating{benchmark.csat.ratings === 1 ? '' : 's'}
+              </p>
+              <p className="text-xs text-dt-muted mt-1">{benchmark.definitions.csat}</p>
             </div>
             <div>
               <p className="text-2xl font-semibold text-white">{benchmark.cost.cost_per_resolution_cents != null ? `$${(benchmark.cost.cost_per_resolution_cents / 100).toFixed(2)}` : '—'}</p>
-              <p className="text-[11px] text-dt-muted mt-0.5" title={benchmark.definitions.cost_per_resolution_cents}>real AI cost per resolution</p>
+              <p className="text-xs font-medium text-dt-body mt-0.5">per thing resolved</p>
+              <p className="text-xs text-dt-muted mt-1">{benchmark.definitions.cost_per_resolution_cents}</p>
             </div>
           </div>
           {benchmark.capability.status !== 'no_simulation_yet' && (
-            <p className="text-[11px] text-dt-muted mt-3 pt-3 border-t border-dt-border">
-              Latest certification-grade simulation: {benchmark.capability.passed}/{benchmark.capability.total} passed
-              {benchmark.capability.avg_score != null ? ` · avg score ${Math.round(Number(benchmark.capability.avg_score))}` : ''} · {benchmark.capability.status}
+            <p className="text-xs text-dt-muted mt-3 pt-3 border-t border-dt-border">
+              {/* ⚠ `status` was printed raw beside a score — an owner reading
+                  "· passing" is fine, but "· needs_improvement" is a column
+                  value, not a sentence. Said in words, or not at all. */}
+              Latest certification-grade simulation: {benchmark.capability.passed} of {benchmark.capability.total} passed
+              {benchmark.capability.avg_score != null ? `, averaging ${Math.round(Number(benchmark.capability.avg_score))}` : ''}.
+              {' '}{benchmark.definitions.capability}
             </p>
           )}
         </div>
@@ -659,7 +681,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
       )}
 
       {!hasAnySignal ? (
-        <LiveEmptyState icon="◎" title="Nothing needs attention right now" body="No failed actions, approval backlogs, escalation spikes, guardrail overrides, or Proving Ground failures in this period." />
+        <LiveEmptyState icon="◎" title="Nothing needs attention right now" body="Your workforce is running clean for this period — nothing failed, nothing is piling up, and nothing was overridden." />
       ) : (
         <div className="space-y-3">
           {/* Failed actions — the most urgent operational signal */}

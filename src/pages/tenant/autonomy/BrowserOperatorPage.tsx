@@ -130,7 +130,8 @@ const BrowserOperatorPage = ({ setPage }: { setPage: (p: Page) => void }) => {
 
       {state && (
         <div className="space-y-8">
-          <Section title="Waiting for you" count={pending.length} hint="Approve or decline what a digital employee wants to do.">
+          <Section title="Waiting for you" count={pending.length} alert
+            hint="Nothing happens until you say yes.">
             {pending.length === 0
               ? <EmptyState headline="Nothing needs your approval right now." />
               : pending.map(t => <TaskCard key={t.id} t={t} onOpen={() => setOpenTaskId(t.id)} />)}
@@ -163,11 +164,19 @@ const BrowserOperatorPage = ({ setPage }: { setPage: (p: Page) => void }) => {
 };
 
 // ── page-specific pieces (compose from primitives) ──
-function Section({ title, count, hint, children }: { title: string; count: number; hint?: string; children: React.ReactNode }) {
+// ⚠ "Waiting for you" is the whole point of this screen and it was set as a
+// 14px uppercase LABEL — the same weight as History, which is a filing
+// cabinet. An employee is asking to act as you on a site you do not control;
+// that section should read as a question being put to you, not as a heading.
+function Section({ title, count, hint, children, alert }: {
+  title: string; count: number; hint?: string; children: React.ReactNode; alert?: boolean;
+}) {
   return (
     <div>
       <div className="flex items-baseline gap-2 mb-3">
-        <h2 className="text-sm font-semibold text-dt-body uppercase tracking-wide">{title}</h2>
+        {alert && count > 0
+          ? <h2 className="text-lg font-semibold text-dt-warn">{title}</h2>
+          : <h2 className="text-sm font-semibold text-dt-body uppercase tracking-wide">{title}</h2>}
         <span className="text-xs text-dt-muted">{count}</span>
         {hint && <span className="text-xs text-dt-faint ml-2">{hint}</span>}
       </div>
@@ -194,12 +203,41 @@ function TaskCard({ t, onOpen }: { t: BrowserTaskRow; onOpen: () => void }) {
         </div>
         <Chip tone={s.tone} dot pulse={s.pulse} className="shrink-0">{s.label}</Chip>
       </div>
-      <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-dt-muted">
+      {/* ── What you are actually agreeing to ──────────────────────────────
+          Every fact below was already on this card, run together in one 11px
+          line — "Marcus · Browser DOM · Vault login · up to 20 steps · 3
+          recorded" — and rendered identically whether the task was asking for
+          permission or had finished a week ago. On the one screen in this
+          product where an employee acts AS YOU on a site we do not control,
+          the pending card now states the two things consent turns on.
+          ⚠ NOT SHOWN: a read-vs-write split. The handoff proposed "✓ read
+          pages ✕ change anything", and computer_use_tasks has no column that
+          says so — engine and credential_policy describe HOW it acts, not
+          what it may change. A tick-list invented on a consent screen is
+          worse than no tick-list. */}
+      {t.status === 'pending_approval' ? (
+        <div className="mt-3 space-y-1 border-t border-dt-border pt-2.5">
+          <p className="text-xs text-dt-body">
+            {t.credential_policy === 'vault_injected'
+              ? <>⚠ <span className="font-medium">It will sign in using a login you have saved.</span> Anything it does there will look like you did it.</>
+              : t.credential_policy === 'human_login'
+                ? <>It cannot sign in on its own — you log it in and stay in control of that step.</>
+                : <>It has no login for these sites, so it only sees what any visitor sees.</>}
+          </p>
+          <p className="text-xs text-dt-support">
+            It may take up to {t.max_steps} {t.max_steps === 1 ? 'step' : 'steps'} and stops there, whether or not it finished.
+          </p>
+        </div>
+      ) : null}
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-dt-muted">
         <span>{t.de_name ?? 'Employee'}</span>
         <span>· {ENGINE_LABEL[t.engine]}</span>
-        <span>· {CRED_LABEL[t.credential_policy]}</span>
-        <span>· up to {t.max_steps} steps</span>
-        <span>· {t.steps} recorded</span>
+        {/* Progress, from the audit trail's own length against the ceiling —
+            both real fields. It read "3 recorded", which is a number without
+            the thing it is out of. */}
+        {t.status === 'running' || t.status === 'claimed'
+          ? <span className="text-dt-body">· step {t.steps} of {t.max_steps}</span>
+          : <span>· {t.steps} of {t.max_steps} steps used</span>}
         <span className="ml-auto">{timeAgo(t.created_at)}</span>
       </div>
     </button>
