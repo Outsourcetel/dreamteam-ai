@@ -686,10 +686,16 @@ export default function SecurityAccessPage() {
           title="Security & Access"
           subtitle="Platform RBAC, human users, SSO, API keys, session policy, and network controls"
         />
-        <button onClick={() => handleSetPage('gov_trust')}
+        {/* ⚠ gov_trust is PAGE_ACCESS [] — platform staff only, an internal
+            transparency doc, not a tenant feature. This link was offered to
+            every admin who opened Security & Access and did nothing for all
+            of them, owners included: the one finding here that no tenant role
+            could ever follow. isDTUser keeps it working for platform staff
+            reading a tenant workspace, which is who it was written for. */}
+        {isDTUser && <button onClick={() => handleSetPage('gov_trust')}
           className="flex-shrink-0 text-xs px-3 py-1.5 rounded-lg bg-dt-panel border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors">
           Trust &amp; Architecture →
-        </button>
+        </button>}
       </div>
 
       <div className="space-y-6">

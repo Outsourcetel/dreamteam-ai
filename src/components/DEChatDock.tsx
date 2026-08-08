@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import AISessionPanel from './AISessionPanel';
 import { useAuth } from '../context/AuthContext';
+import { useCanOpenPage } from '../lib/useRoleGate';
 import type { Page } from '../types';
 import type { CompanyId } from '../data/companies';
 import { askDE, DEAnswerError } from '../lib/knowledgeApi';
@@ -200,6 +201,10 @@ const prefersReducedMotion = () =>
 
 export default function DEChatDock() {
   const { currentPage, activeCompanyId, handleSetPage, currentTenant } = useAuth();
+  // The dock follows a DE anywhere, so this offer reaches every role — and
+  // Human Tasks is APPROVALS-tier. Without this the escalation notice hands a
+  // read_only user a link that silently does nothing.
+  const canOpenTasks = useCanOpenPage('ops_human_tasks');
   const isLive = true;   // legacy demo mode decommissioned — always live
   const threadId = isLive ? 'live' : activeCompanyId;
   const [open, setOpen] = useState(false);
@@ -573,12 +578,12 @@ export default function DEChatDock() {
                     {msg.escalated && !msg.blocked && (
                       <div className="mt-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 px-2 py-1.5 text-[11px] text-amber-300">
                         I've escalated this to your team —{' '}
-                        <button
+                        {canOpenTasks && <button
                           onClick={() => handleSetPage('ops_human_tasks')}
                           className="underline underline-offset-2 hover:text-white transition-colors"
                         >
                           view Human Tasks →
-                        </button>
+                        </button>}
                       </div>
                     )}
                     {msg.actions && msg.actions.length > 0 && (

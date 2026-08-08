@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../components/useDialog';
+import { useCanOpenPage } from '../../lib/useRoleGate';
 import type { Page } from '../../types';
 import { listDigitalEmployees, type DigitalEmployee } from '../../lib/digitalEmployeesApi';
 import { listDeHealth, DE_HEALTH_LABELS, type DEHealth } from '../../lib/deHealthApi';
@@ -189,6 +190,11 @@ function ObjectiveCheckIns({ objectiveId }: { objectiveId: string }) {
 }
 
 function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => void }) {
+  // Two links off this tab point at pages narrower than the Employee File
+  // itself, which is ALL_TENANT — approvals is APPROVALS-tier, the activity
+  // cockpit is MANAGE. Offered to everyone, they did nothing for most people.
+  const canOpenApprovals = useCanOpenPage('ops_human_tasks');
+  const canOpenActivity = useCanOpenPage('ops_de_activity');
   // upsert_de_objective is owner/admin; the Employee File is ALL_TENANT.
   // Reading what an employee is working towards is for everyone; setting it
   // is not. The list stays; the Add/Edit/Done controls go.
@@ -287,7 +293,7 @@ function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => v
           {awaitingYou.length} task{awaitingYou.length === 1 ? '' : 's'} need{awaitingYou.length === 1 ? 's' : ''} a person
           {blockedBehind.length > 0 && <> — and {blockedBehind.length} more {blockedBehind.length === 1 ? 'is' : 'are'} queued behind {blockedBehind.length === 1 ? 'it' : 'them'}</>}
           . Longest wait: {waitedFor}.{' '}
-          <button onClick={() => setPage('ops_human_tasks' as Page)} className="underline hover:text-white">Review approvals →</button>
+          {canOpenApprovals && <button onClick={() => setPage('ops_human_tasks' as Page)} className="underline hover:text-white">Review approvals →</button>}
         </Banner>
       )}
 
@@ -420,7 +426,7 @@ function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => v
 
       <PanelCard
         title="Recent decisions & answers"
-        actions={<Button kind="ghost" size="sm" onClick={() => setPage('ops_de_activity')}>Open the At Work cockpit →</Button>}
+        actions={canOpenActivity ? <Button kind="ghost" size="sm" onClick={() => setPage('ops_de_activity')}>Open the At Work cockpit →</Button> : undefined}
       >
         {activity.length === 0 ? (
           <EmptyState icon="🗒️" headline="No recorded decisions yet">

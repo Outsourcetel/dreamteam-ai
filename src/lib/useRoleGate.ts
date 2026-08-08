@@ -1,4 +1,6 @@
 import { useAuth } from '../context/AuthContext';
+import { canAccessPage } from './navAccess';
+import type { Page } from '../types';
 
 // ════════════════════════════════════════════════════════════════════════
 // Role gates for the UI, matching the gates the DATABASE actually enforces.
@@ -66,4 +68,36 @@ export function useCanCurateKnowledge(): boolean {
 export function useCanScheduleKnowledgeSync(): boolean {
   const { authedUser, isDTUser } = useAuth();
   return isDTUser || ['tenant_owner', 'tenant_admin', 'tenant_manager', 'knowledge_manager'].includes(authedUser?.role ?? '');
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// ⚠ CAN THIS PERSON OPEN THAT PAGE?
+//
+// Every hook above answers "may they do this THING". This one answers "may
+// they go THERE", which is a different question with a different owner:
+// PAGE_ACCESS, read through canAccessPage. It exists because a link is a
+// control too, and handleSetPage refuses silently — so a "View the full
+// audit trail →" offered to a role that cannot open the audit trail takes
+// the click and does nothing, which reads as a broken product rather than
+// as a boundary. audit-role-gates found eight of those across five files.
+//
+// ⚠⚠ IT MUST ASK THE SAME QUESTION handleSetPage ASKS, not a copy of the
+// answer. Writing `useIsTenantManager()` at each of those eight call sites
+// would work today and drift the first time a page changed tier — the link
+// and the destination would disagree, and nothing would catch it. Calling
+// canAccessPage with the same arguments makes disagreement impossible.
+//
+// ⚠ Naming matters here: audit-role-gates derives a file's gate names from
+// its `const x = use(Is|Can)…()` bindings, so a hook called useCanOpenPage
+// is recognised as a gate automatically. A name outside that shape would be
+// invisible to the checker that found these in the first place.
+// ════════════════════════════════════════════════════════════════════════
+export function useCanOpenPage(page: Page): boolean {
+  const { authedUser } = useAuth();
+  return canAccessPage(
+    (authedUser?.role ?? 'read_only') as Parameters<typeof canAccessPage>[0],
+    page,
+    authedUser?.layer,
+    authedUser?.deRelations,
+  );
 }

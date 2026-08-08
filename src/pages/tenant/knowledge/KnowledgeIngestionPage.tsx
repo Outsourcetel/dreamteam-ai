@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { PageHeader, th, td } from '../../../components/ui';
 import type { Page } from '../../../types';
 import { CustomerApiError } from '../../../lib/customerApi';
-import { useCanScheduleKnowledgeSync } from '../../../lib/useRoleGate';
+import { useCanScheduleKnowledgeSync, useCanOpenPage } from '../../../lib/useRoleGate';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
 import {
   listConnectors, connectorHealth, hubSync, PROVIDERS, setConnectorSchedule,
@@ -27,6 +27,10 @@ const HEALTH_META: Record<string, { label: string; dot: string; text: string }> 
 };
 
 function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
+  // Connected systems is MANAGE; this page admits the knowledge specialist,
+  // who cannot open it. Two links pointed there — one of them the ONLY thing
+  // on an empty state, which would have been a dead end on first arrival.
+  const canOpenConnectors = useCanOpenPage('systems_connectors');
   // Whether a connected source re-syncs daily. Manage tier plus the knowledge
   // specialist since migration 634 — matching this page's own tier exactly,
   // because deciding how fresh the knowledge stays is curation.
@@ -188,8 +192,8 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
           icon="⟷"
           title="No sources connected yet"
           body="Connect a system like Zendesk, Confluence, or Salesforce to pull its content into the knowledge base automatically. You can also add a document directly below."
-          primaryLabel="Go to Connectors"
-          onPrimary={() => setPage('systems_connectors')}
+          primaryLabel={canOpenConnectors ? 'Go to Connectors' : undefined}
+          onPrimary={canOpenConnectors ? () => setPage('systems_connectors') : undefined}
         />
       ) : (
         <>
@@ -341,9 +345,9 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
                   </div>
                 </div>
               )}
-              <button onClick={() => setPage('systems_connectors')} className="w-full text-xs text-indigo-400 hover:text-indigo-300 transition-colors text-center">
+              {canOpenConnectors && <button onClick={() => setPage('systems_connectors')} className="w-full text-xs text-indigo-400 hover:text-indigo-300 transition-colors text-center">
                 Manage connectors →
-              </button>
+              </button>}
             </div>
           </div>
         </>

@@ -1,4 +1,4 @@
-import { useIsTenantManager, useIsTenantAdmin } from '../../lib/useRoleGate';
+import { useIsTenantManager, useIsTenantAdmin, useCanOpenPage } from '../../lib/useRoleGate';
 import { useConfirm } from '../../components/useDialog';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
@@ -409,6 +409,7 @@ const INCIDENT_KIND_LABELS: Record<string, string> = {
 // Exported: rendered on the Employee File's Record tab (docs/31 — incidents
 // are the disciplinary half of the employment record, not a governance rule).
 export function DeIncidentsPanel({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => void }) {
+  const canOpenAudit = useCanOpenPage('gov_audit');
   const canManage = useCanManageDe();
   const [incidents, setIncidents] = useState<DEIncident[] | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -512,11 +513,13 @@ export function DeIncidentsPanel({ de, setPage }: { de: DigitalEmployee; setPage
           ))}
         </div>
       )}
-      <p className="mt-4 text-[11px] text-dt-muted">
-        <button onClick={() => setPage('gov_audit')} className="text-indigo-400 hover:text-indigo-300 transition-colors">
-          View the full Audit Trail →
-        </button>
-      </p>
+      {canOpenAudit && (
+        <p className="mt-4 text-xs text-dt-muted">
+          <button onClick={() => setPage('gov_audit')} className="text-indigo-400 hover:text-indigo-300 transition-colors">
+            View the full Audit Trail →
+          </button>
+        </p>
+      )}
     </div>
   );
 }
@@ -1594,6 +1597,7 @@ function DeGovernancePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: 
 // 029): per connector/category, at what permission. Read-only here;
 // managed centrally under Governance → Data Access.
 function DeSystemAccessPanel({ deId, setPage }: { deId: string; setPage: (p: Page) => void }) {
+  const canOpenDataAccess = useCanOpenPage('gov_data_access');
   const [grants, setGrants] = useState<Array<{ id: string; resource_kind: string; resource_id: string | null; resource_category: string | null; permission: string }> | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -1628,9 +1632,11 @@ function DeSystemAccessPanel({ deId, setPage }: { deId: string; setPage: (p: Pag
           ))}
         </div>
       )}
-      <button onClick={() => setPage('gov_data_access')} className="mt-3 text-xs text-indigo-400 hover:text-indigo-300">
-        Manage under Governance → Data Access →
-      </button>
+      {canOpenDataAccess && (
+        <button onClick={() => setPage('gov_data_access')} className="mt-3 text-xs text-indigo-400 hover:text-indigo-300">
+          Manage under Governance → Data Access →
+        </button>
+      )}
     </div>
   );
 }
@@ -3894,6 +3900,7 @@ export function DeTrustAutonomySection({ de, setPage, onUpdated }: {
   // database — known limit, founder-decision territory. Below that tier the
   // override controls render read-only instead of refusing after an edit.
   const canOverride = isDTUser || ['tenant_owner', 'tenant_admin'].includes(authedUser?.role ?? '');
+  const canOpenAuditFromPlan = useCanOpenPage('gov_audit');
   const [surface, setSurface] = useState<TrustSurfaceEntry[] | null>(null);
   const [gate, setGate] = useState<{ gated: boolean; reasons: string[] } | null>(null);
   const [thresholdCents, setThresholdCents] = useState<number | null>(null);
@@ -4183,10 +4190,12 @@ export function DeTrustAutonomySection({ de, setPage, onUpdated }: {
         )}
 
         <p className="mt-4 text-[11px] text-dt-muted">
-          Every change is recorded as a config_change event on the immutable audit trail.{' '}
-          <button onClick={() => setPage('gov_audit')} className="text-indigo-400 hover:text-indigo-300 transition-colors">
-            View Audit Trail →
-          </button>
+          Every change is recorded as a config_change event on the audit trail.{' '}
+          {canOpenAuditFromPlan && (
+            <button onClick={() => setPage('gov_audit')} className="text-indigo-400 hover:text-indigo-300 transition-colors">
+              View Audit Trail →
+            </button>
+          )}
         </p>
       </div>
 
