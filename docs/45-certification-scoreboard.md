@@ -141,9 +141,40 @@ caught the first time.
 
 | Metric | Value | Note |
 |---|---|---|
-| **Approve-clean rate** | **UNMEASURABLE from history** | `draft_responses` is empty (0 rows ever); `de_learning_edits` = 2 all-time; 905 messages all `sent`. The capture instrument was never populated, so the single most important number cannot be read from the past. **The Benchmark must generate it forward.** |
+| **Approve-clean rate** | **UNMEASURABLE — n=1, needs 20** | `npm run benchmark`. Two reasons, neither "the metric is broken" — see below. |
 | Escalation (30d) | 151 escalated / 149 resolved | `activity_events`; ~50% — the dominant *cost*, and the real efficiency metric |
-| Completion (30d) | 641 created / 22 decided | the [[project_queue_self_amplification]] gap, unchanged |
+| Completion (30d) | 641 created / 22 decided | the completion gap, unchanged |
+
+### Why the spine number is still unknown — and it is not the metric's fault
+
+**1. No draft has ever been decided.** Of 32 decided `human_tasks`, **20 were
+`action_approval`** — a yes/no gate on an action, which has *no text to edit*.
+Counting those as "approved clean" would inflate the rate with decisions that
+contained no draft at all, which is the easiest way to make this number lie. The
+harness therefore counts only draft-shaped work — and **62 of those
+(58 `inquiry_review` + 4 `knowledge_revision`) are sitting PENDING**.
+
+> The rate is not broken. It is **unsampled**. Decide ~20 drafts and it appears.
+
+**2. The support path destroys its own denominator.** `approve_draft_reply`
+overwrites `de_messages.delivery` from `draft_pending` to `sent`, so a message
+that *was* a draft is indistinguishable from one that never was. 905 sent, zero
+recoverable as approved-untouched; only the **2 edits** survive in
+`de_learning_edits`. A metric whose numerator is recorded and whose denominator
+is erased can only ever look bad, and cannot be trusted in either direction.
+**Fix is a product change** — stop erasing the fact that a draft existed —
+deliberately flagged rather than quietly patched.
+
+**Two rules the harness will not break.** It measures the *work*, never an exam
+(a metric that scores the test instead of the job always closes its own loop and
+always looks good — this codebase has been bitten by exactly that). And it
+**refuses to publish a rate below n=20**: three samples is not 67%, it is noise
+wearing a percentage sign, and a number in a slide deck outlives every caveat
+attached to it.
+
+Samples accumulate in `benchmark_samples` (migration 637), one row per run, so
+the curve survives changes to the underlying tables. A curve you can recompute
+retroactively is a curve you can talk yourself into. `npm run benchmark:history`.
 
 ---
 
