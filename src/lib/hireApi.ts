@@ -418,12 +418,25 @@ export async function promoteAsFarAsGatesAllow(deId: string, startStage: string)
       return { reachedStage: current, blockedAt: target, todo: [], message: error.message };
     }
     const res = data as { ok?: boolean; blocked?: boolean; reason?: string; readiness?: { criteria?: Record<string, Record<string, boolean>> } };
-    if (res?.blocked) {
+    // ⚠ READ `ok`, NOT JUST `blocked`. advance_de_lifecycle refuses in the
+    // payload with a 200, and today its single refusal happens to carry
+    // blocked:true as well — so reading `blocked` alone works by luck, not by
+    // contract. Any future refusal without that flag would fall straight
+    // through this branch, `current = target` would run, and the wizard would
+    // announce an employee had reached 'active' while the database refused
+    // every promotion. That is the loudest lie this flow could tell.
+    if (res?.blocked || !res?.ok) {
       const failing = res.readiness?.criteria?.[target] ?? {};
       const todo = Object.entries(failing)
         .filter(([, ok]) => !ok)
         .map(([key]) => CRITERIA_LABELS[key] ?? key.replace(/_/g, ' '));
-      return { reachedStage: current, blockedAt: target, todo, message: null };
+      // A refusal with no readiness block leaves `todo` empty, which would
+      // stop the wizard on a stage with nothing said about why. Fall back to
+      // the reason only in that case, so the working path is untouched.
+      return {
+        reachedStage: current, blockedAt: target, todo,
+        message: todo.length ? null : (res?.reason ?? 'The database declined this promotion.'),
+      };
     }
     current = target;
   }

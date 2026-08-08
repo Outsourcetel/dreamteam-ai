@@ -388,9 +388,27 @@ export async function assignTaskToDe(toDeId: string, title: string, context?: st
   return (data ?? { ok: false, error: 'no_response' }) as { ok: boolean; error?: string; detail?: string; request_id?: string };
 }
 
+// ⚠ respond_de_task REFUSES IN THE PAYLOAD, not on the error channel. It
+// returns {ok:false, error:'not_responsible_for_de' | 'not_tenant_member' |
+// 'not_found' | 'bad_status'} with a perfectly successful HTTP 200, so
+// checking `error` alone proves only that the call was made. This discarded
+// `data` entirely: a colleague who isn't responsible for the employee could
+// click Accept, have the database decline it, and watch the list reload
+// unchanged with nothing said. Turn the refusal into a throw — the caller
+// already has a catch, and the 32 other wrappers over refusing functions all
+// do exactly this.
 export async function respondDeTask(requestId: string, status: string, result?: string): Promise<void> {
-  const { error } = await supabase.rpc('respond_de_task', { p_request_id: requestId, p_status: status, p_result: result ?? null });
+  const { data, error } = await supabase.rpc('respond_de_task', { p_request_id: requestId, p_status: status, p_result: result ?? null });
   if (error) raise('respondDeTask', error);
+  const r = data as { ok?: boolean; error?: string } | null;
+  if (!r?.ok) {
+    throw new Error(
+      r?.error === 'not_responsible_for_de' ? "You're not responsible for this employee, so you can't answer its tasks."
+      : r?.error === 'not_tenant_member' ? 'You no longer have access to this workspace.'
+      : r?.error === 'not_found' ? 'That task no longer exists — it may have been withdrawn.'
+      : r?.error === 'bad_status' ? 'That is not a valid response for this task.'
+      : r?.error || 'Could not record the response.');
+  }
 }
 
 // ── Supervisor designation (T1.3, mig 270): one supervisor DE per tenant

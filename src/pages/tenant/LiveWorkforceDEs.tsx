@@ -1193,7 +1193,7 @@ function DelegationPanel({ de }: { de: DigitalEmployee }) {
   const respond = async (id: string, status: string) => {
     setBusy(true); setErr(null);
     try { await respondDeTask(id, status); await load(); }
-    catch (e) { setErr(String(e)); } finally { setBusy(false); }
+    catch (e) { setErr(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
   };
 
   const badge = (s: string) => <span className={`text-[10px] px-1.5 py-0.5 rounded ${TASK_STATUS_STYLE[s] || 'bg-slate-600/50 text-dt-support'}`}>{s.replace('_', ' ')}</span>;
