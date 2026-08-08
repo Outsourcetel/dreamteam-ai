@@ -217,7 +217,7 @@ function LiveKnowledgeQuality() {
           {/* Coverage matrix */}
           <div className="rounded-2xl border border-dt-border bg-dt-card overflow-hidden mb-6">
             <div className="px-4 py-3 border-b border-dt-border">
-              <h3 className="text-sm font-semibold text-white">Coverage matrix</h3>
+              <h3 className="text-base font-semibold text-dt-title">Coverage matrix</h3>
               <p className="text-xs text-dt-muted mt-0.5">Real per-tag visibility — a tag's documents may be tenant-wide or scoped to specific Digital Employees.</p>
             </div>
             {tags.length === 0 || deDes.length === 0 ? (
@@ -259,7 +259,7 @@ function LiveKnowledgeQuality() {
             <div className="rounded-2xl border border-dt-border bg-dt-card overflow-hidden mb-6">
               <div className="px-4 py-3 border-b border-dt-border flex items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-semibold text-white">Coverage vs demand</h3>
+                  <h3 className="text-base font-semibold text-dt-title">Coverage vs demand</h3>
                   <p className="text-xs text-dt-muted mt-0.5">What your employees needed but couldn’t answer, set against what your knowledge actually gets cited for.</p>
                 </div>
                 {coverage.trend.length > 0 && (
@@ -338,7 +338,7 @@ function LiveKnowledgeQuality() {
           {(conflictEnabled || conflicts.length > 0) && (
             <div className="rounded-2xl border border-dt-border bg-dt-card overflow-hidden mb-6">
               <div className="px-4 py-3 border-b border-dt-border">
-                <h3 className="text-sm font-semibold text-white">Conflicts &amp; duplicates</h3>
+                <h3 className="text-base font-semibold text-dt-title">Conflicts &amp; duplicates</h3>
                 <p className="text-xs text-dt-muted mt-0.5">Documents that contradict or duplicate each other. Pick the source of truth (nudges its authority) or dismiss.</p>
               </div>
               {conflicts.length === 0 ? (
@@ -387,7 +387,7 @@ function LiveKnowledgeQuality() {
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
             {/* Freshness histogram */}
             <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
-              <h3 className="text-sm font-semibold text-white mb-1">Freshness</h3>
+              <h3 className="text-base font-semibold text-dt-title mb-1">Freshness</h3>
               <p className="text-xs text-dt-muted mb-4">Documents by time since last verification (or creation, if never verified).</p>
               <div className="flex items-end gap-4 h-36">
                 {buckets.map(b => (
@@ -402,7 +402,7 @@ function LiveKnowledgeQuality() {
 
             {/* Confidence calibration */}
             <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
-              <h3 className="text-sm font-semibold text-white mb-1">Confidence calibration</h3>
+              <h3 className="text-base font-semibold text-dt-title mb-1">Confidence calibration</h3>
               <p className="text-xs text-dt-muted mb-4">Real cited documents where DE confidence disagreed with human feedback.</p>
               {calibration.length === 0 ? (
                 <p className="text-xs text-dt-muted">No documents have enough citations and feedback yet to compare confidence against outcomes.</p>
@@ -435,7 +435,7 @@ function LiveKnowledgeQuality() {
           <div className="rounded-2xl border border-dt-border bg-dt-card overflow-hidden">
             <div className="px-4 py-3 border-b border-dt-border flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-semibold text-white">Stale queue</h3>
+                <h3 className="text-base font-semibold text-dt-title">Stale queue</h3>
                 <p className="text-xs text-dt-muted mt-0.5">Documents unverified for more than 90 days.</p>
               </div>
               <span className={`text-xs px-2 py-0.5 rounded-full ${staleQueue.length > 0 ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'}`}>

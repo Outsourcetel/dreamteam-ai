@@ -33,6 +33,21 @@ import KnowledgeGroupsPanel from '../../../components/KnowledgeGroupsPanel';
 const LEVEL_TONE = (n: number): Tone =>
   n >= 5 ? 'accent' : n >= 3 ? 'ok' : n >= 1 ? 'info' : 'neutral';
 
+// What each rung actually lets someone do, in the order preview_space_access
+// numbers them (6 down to 0). Same wording as PERMISSION_LEVELS' blurbs, keyed
+// by the level the RPC returns rather than by the grant string, because this
+// list shows EFFECTIVE access — which can come from a role or a group and so
+// has no grant row of its own to read a blurb from.
+const LEVEL_MEANS: Record<number, string> = {
+  6: 'can do anything, including delete',
+  5: 'can manage spaces and who sees them',
+  4: 'can approve and publish',
+  3: 'can edit and organise',
+  2: 'can write drafts',
+  1: 'can read',
+  0: '',
+};
+
 export default function KnowledgePermissionsPage() {
   const [spaces, setSpaces] = useState<KnowledgeSpaceAdmin[]>([]);
   const [myLevel, setMyLevel] = useState(0);
@@ -243,9 +258,18 @@ function SpaceAccessDrawer({ space, canManage, onClose, onChanged }: {
                   <div className="min-w-0">
                     <p className="text-sm text-dt-body truncate">{p.full_name}</p>
                     {/* The WHY. Without it this list is just another grid. */}
-                    <p className="text-[11px] text-dt-muted truncate">{p.reason}</p>
+                    <p className="text-xs text-dt-muted truncate">{p.reason}</p>
                   </div>
-                  <Chip tone={LEVEL_TONE(p.level)}>{p.level_name}</Chip>
+                  {/* ⚠ "Publisher" is a rung, not an answer. The tier names are
+                      only meaningful against a scale printed somewhere else on
+                      the page, which is the same defect as showing a raw
+                      health_score. PERMISSION_LEVELS already carries the plain
+                      sentence for each rung — it just was not being shown next
+                      to the rung it explains. */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs text-dt-support hidden sm:inline">{LEVEL_MEANS[p.level] ?? ''}</span>
+                    <Chip tone={LEVEL_TONE(p.level)} title={LEVEL_MEANS[p.level]}>{p.level_name}</Chip>
+                  </div>
                 </li>
               ))}
             </ul>

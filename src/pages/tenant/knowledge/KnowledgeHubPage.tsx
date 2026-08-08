@@ -14,11 +14,17 @@ import { getKnowledgeOverview, type KnowledgeOverview } from '../../../lib/knowl
 // Phase-2 WS4: a corpus-level "state of your knowledge" strip (mig 283) turns the
 // header into a real command surface — every tile is a live count that jumps to
 // the tab where you act on it.
+// ⚠ FIVE TABS STAY FIVE TABS — renamed, never merged. An earlier design pass
+// proposed folding Quality into two columns of the documents table. Reading
+// the tab body settled it: KnowledgeQualityPage is a six-panel workspace —
+// coverage matrix, coverage-vs-demand, conflict and duplicate resolution, a
+// freshness histogram, confidence calibration and a stale queue. None of that
+// survives being a column.
 const TABS: { page: Page; label: string }[] = [
-  { page: 'knowledge_library', label: 'Library' },
-  { page: 'knowledge_ingestion', label: 'Sources & Ingestion' },
-  { page: 'knowledge_gaps', label: 'Gap Detection' },
-  { page: 'knowledge_quality', label: 'Quality & Coverage' },
+  { page: 'knowledge_library', label: 'Documents' },              // was Library
+  { page: 'knowledge_ingestion', label: 'Where it comes from' },  // was Sources & Ingestion
+  { page: 'knowledge_gaps', label: "What's missing" },            // was Gap Detection
+  { page: 'knowledge_quality', label: 'Health' },                 // was Quality & Coverage
   { page: 'knowledge_permissions', label: 'Who can see what' },
 ];
 

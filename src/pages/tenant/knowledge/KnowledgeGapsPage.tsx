@@ -1,6 +1,7 @@
 import { useCanCurateKnowledge } from '../../../lib/useRoleGate';
 import React, { useEffect, useState } from 'react';
-import { Drawer } from '../../../design/primitives';
+import { Drawer, Chip } from '../../../design/primitives';
+import type { Tone } from '../../../design/primitives';
 import AISessionPanel from '../../../components/AISessionPanel';
 import { useAuth } from '../../../context/AuthContext';
 import type { CompanyId } from '../../../data/companies';
@@ -89,12 +90,17 @@ const SEVERITY_CLS = { high: 'text-red-400', medium: 'text-amber-400', low: 'tex
 
 type RepInfo = { inquiry: string; de_id: string | null; created_at: string };
 
-function severityTier(c: KnowledgeGapCluster, policy: KnowledgeGapPolicy | null): { label: string; cls: string } {
-  if (c.recurred_after_fix) return { label: 'Recurred after fix', cls: 'text-red-400' };
+// Severity is a STATE of the gap, so it wears the shared status vocabulary
+// rather than three bare colours of text. recurred_after_fix is a real
+// column that carried no visual weight at all — it is the loudest of the four,
+// because a question coming back after you answered it means the answer you
+// published did not cover what people were actually asking.
+function severityTier(c: KnowledgeGapCluster, policy: KnowledgeGapPolicy | null): { label: string; tone: Tone; means: string } {
+  if (c.recurred_after_fix) return { label: 'Came back', tone: 'danger', means: 'You fixed this once and people are asking again — the published answer may not cover what they mean.' };
   const bar = policy?.min_cluster_size ?? 3;
-  if (c.severity_score >= bar * 1.5) return { label: 'High', cls: 'text-red-400' };
-  if (c.severity_score >= bar) return { label: 'Medium', cls: 'text-amber-400' };
-  return { label: 'Low', cls: 'text-dt-support' };
+  if (c.severity_score >= bar * 1.5) return { label: 'High', tone: 'danger', means: 'Asked far more often than your threshold for acting on a gap.' };
+  if (c.severity_score >= bar) return { label: 'Medium', tone: 'warn', means: 'Asked often enough to cross your threshold for acting on a gap.' };
+  return { label: 'Low', tone: 'neutral', means: 'Below the cluster size you set as worth acting on.' };
 }
 
 const LIVE_STATUS_META: Record<KnowledgeGapCluster['status'], { label: string; cls: string }> = {
@@ -365,7 +371,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
                           </span>
                         ) : <span className="text-xs text-dt-faint">—</span>}
                       </td>
-                      <td className={td}><span className={`text-xs font-medium ${tier.cls}`}>{tier.label}</span></td>
+                      <td className={td}><Chip tone={tier.tone} title={tier.means}>{tier.label}</Chip></td>
                       <td className={td}><span className={`text-xs px-2 py-0.5 rounded-full font-medium ${LIVE_STATUS_META[c.status]?.cls}`}>{LIVE_STATUS_META[c.status]?.label ?? c.status}</span></td>
                     </tr>
                   );

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Modal, Drawer } from '../../../design/primitives';
+import { Modal, Drawer, Button, Chip, Field, INPUT_CLS } from '../../../design/primitives';
 import { ConfirmDeleteModal } from '../../../components';
 import { PageHeader, th, td } from '../../../components/ui';
 import KnowledgeTreePanel, { LifecycleChip, UNFILED_ID } from '../../../components/KnowledgeTreePanel';
@@ -67,6 +67,17 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   // effect that wrote it are gone with the sidebar they described.
   const [treeDrawer, setTreeDrawer] = useState(false);
   const [collectionDoc, setCollectionDoc] = useState<SearchDocRow | null>(null); // doc whose collections modal is open
+  // ── Four browser dialogs replaced ────────────────────────────────────────
+  // window.prompt for a collection name and a bulk tag, window.confirm before
+  // a bulk delete and a bulk re-index. They are OS chrome in the middle of a
+  // designed product: unstyled, unthemed, untranslatable, impossible to
+  // explain a consequence in, and on a delete they gave the destructive
+  // button OS default focus. The two states below drive real dialogs.
+  const [askText, setAskText] = useState<
+    { title: string; label: string; placeholder: string; cta: string; onSubmit: (v: string) => Promise<void> } | null>(null);
+  const [askTextValue, setAskTextValue] = useState('');
+  const [confirmAction, setConfirmAction] = useState<
+    { title: string; message: string; cta: string; run: () => Promise<void> } | null>(null);
   const [docCollIds, setDocCollIds] = useState<Set<string>>(new Set());
   // Phase-3 WS6: lifecycle governance modal (owner / review cadence / authority / expiry).
   const [governDoc, setGovernDoc] = useState<KnowledgeDoc | null>(null);
@@ -189,11 +200,18 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
   }, [query, sourceFilter, visFilter, collectionFilter, pageIdx]);
 
   // ── Collections: create + open the per-doc membership modal ──
-  const newCollection = async () => {
-    const name = window.prompt('New collection name:');
-    if (!name?.trim()) return;
-    try { await createKnowledgeCollection(name.trim()); await load(); }
-    catch (e) { setError((e as Error).message); }
+  const newCollection = () => {
+    setAskTextValue('');
+    setAskText({
+      title: 'New collection',
+      label: 'What should it be called?',
+      placeholder: 'e.g. Refunds & returns',
+      cta: 'Create it',
+      onSubmit: async (name) => {
+        try { await createKnowledgeCollection(name); await load(); }
+        catch (e) { setError((e as Error).message); }
+      },
+    });
   };
   const openCollections = async (doc: SearchDocRow) => {
     setCollectionDoc(doc);
@@ -254,15 +272,31 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
     catch (e) { setError((e as Error).message); }
     setBulkBusy(false);
   };
-  const bulkTag = async () => { const t = window.prompt('Tag to add to the selected documents:'); if (t?.trim()) await runBulk(() => bulkAddTag([...selected], t.trim())); };
-  const bulkVerify = () => runBulk(() => bulkMarkVerified([...selected]));
-  const bulkDelete = async () => { if (window.confirm(`Delete ${selected.size} document(s)? This can’t be undone.`)) await runBulk(() => bulkDeleteDocs([...selected])); };
-  const bulkCollection = async (collectionId: string) => { if (collectionId) await runBulk(() => bulkAssignCollection([...selected], collectionId)); };
-  const bulkReembed = async () => {
-    if (!window.confirm(`Re-index ${selected.size} document(s)? Each document's chunks re-embed in the background; search keeps working the whole time.`)) return;
-    await runBulk(() => bulkReembedDocs([...selected]));
-    await loadReembed();
+  const nDocs = (n: number) => `${n} ${n === 1 ? 'document' : 'documents'}`;
+  const bulkTag = () => {
+    setAskTextValue('');
+    setAskText({
+      title: `Tag ${nDocs(selected.size)}`,
+      label: 'Which tag?',
+      placeholder: 'e.g. refunds',
+      cta: 'Add the tag',
+      onSubmit: async (t) => { await runBulk(() => bulkAddTag([...selected], t)); },
+    });
   };
+  const bulkVerify = () => runBulk(() => bulkMarkVerified([...selected]));
+  const bulkDelete = () => setConfirmAction({
+    title: `Delete ${nDocs(selected.size)}?`,
+    message: `Your employees will stop being able to answer from ${selected.size === 1 ? 'it' : 'them'}. This can't be undone.`,
+    cta: 'Delete them',
+    run: async () => { await runBulk(() => bulkDeleteDocs([...selected])); },
+  });
+  const bulkCollection = async (collectionId: string) => { if (collectionId) await runBulk(() => bulkAssignCollection([...selected], collectionId)); };
+  const bulkReembed = () => setConfirmAction({
+    title: `Re-index ${nDocs(selected.size)}?`,
+    message: 'Each document is read again in the background so search stays accurate. Nothing goes offline — search keeps working the whole time.',
+    cta: 'Re-index them',
+    run: async () => { await runBulk(() => bulkReembedDocs([...selected])); await loadReembed(); },
+  });
 
   const decideRevision = async (r: KnowledgeRevisionRequest, decision: 'approved' | 'rejected') => {
     setDecidingRevisionId(r.id);
@@ -295,14 +329,27 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
       }));
   };
 
+  // ── Whether this document can actually be FOUND ─────────────────────────
+  //
+  // ⚠ THIS BADGE USED TO LIE BY OMISSION. `embedded > 0` rendered "Indexed ·
+  // {chunks} chunks" — the TOTAL, not the embedded count. A document with 18
+  // of 40 chunks embedded therefore read "Indexed · 40 chunks" while more
+  // than half of it was unsearchable, and nothing anywhere said so: the
+  // employee simply failed to find the part that had not finished. Partial
+  // indexing is now its own state, and it counts what is actually ready.
   const IndexBadge = ({ docId, chunks, embedded }: { docId: string; chunks: number; embedded: number }) => {
-    if (indexingIds.has(docId)) {
-      return <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">Indexing…</span>;
+    if (indexingIds.has(docId)) return <Chip tone="info">Preparing…</Chip>;
+    if (embedded === 0) {
+      return <Chip tone="neutral" title="Findable by keyword, but not yet by meaning — re-index to make it fully searchable.">Keyword only</Chip>;
     }
-    if (embedded > 0) {
-      return <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">Indexed · {chunks} chunk{chunks === 1 ? '' : 's'}</span>;
+    if (chunks > 0 && embedded < chunks) {
+      return (
+        <Chip tone="warn" title={`Only ${embedded} of ${chunks} parts of this document can be found so far. The rest is still being prepared.`}>
+          Preparing · {embedded} of {chunks}
+        </Chip>
+      );
     }
-    return <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted">Keyword only</span>;
+    return <Chip tone="ok" title="Fully searchable — your employees can find any part of it.">Ready</Chip>;
   };
 
   // ── Scope modal (Who can use this) ──
@@ -1128,6 +1175,49 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
           confirmLabel="Delete"
           onClose={() => setRemoveTarget(null)}
           onConfirm={async () => { await remove(removeTarget.id); setRemoveTarget(null); }}
+        />
+      )}
+
+      {/* The two window.prompt replacements. Enter submits and Escape closes,
+          both via the Modal primitive's own dialog behaviour. */}
+      {askText && (
+        <Modal title={askText.title} size="sm" onClose={() => setAskText(null)}>
+          <Field label={askText.label}>
+            <input
+              autoFocus
+              className={INPUT_CLS}
+              value={askTextValue}
+              placeholder={askText.placeholder}
+              onChange={e => setAskTextValue(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && askTextValue.trim()) {
+                  const { onSubmit } = askText;
+                  const v = askTextValue.trim();
+                  setAskText(null);
+                  void onSubmit(v);
+                }
+              }}
+            />
+          </Field>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button onClick={() => setAskText(null)}>Cancel</Button>
+            <Button kind="primary" disabled={!askTextValue.trim()}
+              onClick={() => { const { onSubmit } = askText; const v = askTextValue.trim(); setAskText(null); void onSubmit(v); }}>
+              {askText.cta}
+            </Button>
+          </div>
+        </Modal>
+      )}
+      {/* The two window.confirm replacements. ConfirmDeleteModal already owns
+          the busy state and the destructive styling, and unlike the OS dialog
+          it can say what the consequence actually is. */}
+      {confirmAction && (
+        <ConfirmDeleteModal
+          title={confirmAction.title}
+          message={confirmAction.message}
+          confirmLabel={confirmAction.cta}
+          onClose={() => setConfirmAction(null)}
+          onConfirm={async () => { await confirmAction.run(); setConfirmAction(null); }}
         />
       )}
     </div>
