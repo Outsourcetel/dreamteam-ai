@@ -1213,7 +1213,15 @@ export default function LiveConnectorsPage() {
                   <div className="mb-4 rounded-xl border border-dt-border-strong bg-dt-inset p-3 flex gap-2 flex-wrap">
                     <Button size="sm" disabled={isBusy || !meta?.implemented} onClick={() => void doTest(c)}>Test connection</Button>
                     <Button size="sm" disabled={isBusy || !meta?.implemented} onClick={() => void doHealthCheck(c)}>Run health check</Button>
-                    <Button size="sm" disabled={isBusy} onClick={() => setFieldMapFor(fieldMapFor === c.id ? null : c.id)}>Field mapping</Button>
+                    {/* ⚠ connectors.update is owner/admin in RLS and this
+                        page is MANAGE, so a manager could open the field map,
+                        edit it and press Save — and RLS would refuse as a
+                        zero-row SUCCESS, which reads as "saved" and is not.
+                        I moved this button behind Settings earlier today
+                        without checking its tier; the checker found it. */}
+                    {canManageConnectors && (
+                      <Button size="sm" disabled={isBusy} onClick={() => setFieldMapFor(fieldMapFor === c.id ? null : c.id)}>Field mapping</Button>
+                    )}
                     {(['sharepoint', 'gdrive', 'notion', 'box', 'dropbox'] as ConnectorProvider[]).includes(c.provider) && (
                       <Button size="sm" disabled={isBusy} onClick={() => setIngestFor(ingestFor === c.id ? null : c.id)}>What gets ingested</Button>
                     )}
@@ -1224,7 +1232,12 @@ export default function LiveConnectorsPage() {
                   <p className="text-xs text-dt-warn mb-3">Registered, but this system's adapter is not built yet — every call returns an honest "not implemented" until it ships.</p>
                 )}
 
-                {fieldMapFor === c.id && (
+                {/* The role goes on the EDITOR, not only on the button that
+                    opens it. Gating the entry point alone leaves the form one
+                    stale state flag away from rendering for someone whose
+                    save the database will refuse — and a guard you have to
+                    reach the right way to be protected by is not a guard. */}
+                {fieldMapFor === c.id && canManageConnectors && (
                   <FieldMapEditor connector={c} isBusy={isBusy} onSave={(m) => void saveFieldMap(c, m)} />
                 )}
 

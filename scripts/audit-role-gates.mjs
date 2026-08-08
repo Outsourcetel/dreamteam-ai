@@ -124,6 +124,96 @@ const GATE_RE = /canOverride|canEdit|canManage|isDTUser|isAdmin|canApprove|canOp
 // reported a freshly-gated page as ungated. That is the FIFTH time a detector
 // has failed to learn an idiom I had just introduced, and the fix is not
 // another name in the list — it is to stop keeping two lists.
+// ── IS THIS COMPONENT A CONTROL, OR DOES IT CONTAIN ONE? ─────────────────
+//
+// A capitalised tag's on* props are two different things wearing one prefix,
+// and the checker used to approximate the difference by accepting onClick
+// alone. That dropped every control not called onClick — <LiveEmptyState
+// onPrimary> (17 sites, often the ONLY control on an empty state),
+// <Toggle onChange>, <TabBar onSelect>, <LiveErrorNotice onRetry> — and two
+// real defects hid there, both of which I ended up finding by reading.
+//
+// ⚠ TENSE IS NOT THE SIGNAL. I tried that first: present tense commands,
+// past tense reports. It classified all 109 handler props in the repo and
+// looked right, then produced five findings that were all the same false
+// positive — a parent handing a callback to a child that renders the actual
+// control. `<FieldMapEditor onSave={…}>` is present tense and is still not a
+// button.
+//
+// THE SIGNAL IS IN THE COMPONENT'S OWN DEFINITION. A leaf control wires the
+// prop straight into a native element's handler:
+//     LiveEmptyState:  onClick={onPrimary}
+//     Toggle:          onClick={() => !disabled && onChange(!enabled)}
+// A container calls it after doing something else, in a function body:
+//     SystemCard:      try { await fn(); onChange(); }
+// The first IS the control. The second is a refresh notification, and the
+// child's real controls are judged on their own pass — counting the parent
+// too is how three refresh callbacks on Browser Operator once got reported
+// as dead buttons.
+const componentSrc = {};
+for (const body of Object.values(FILES)) {
+  const re = /(?:^|\n)(?:export\s+)?(?:default\s+)?(?:function\s+([A-Z][A-Za-z0-9_]*)|const\s+([A-Z][A-Za-z0-9_]*)\s*=\s*(?:\([^)]*\)|[A-Za-z0-9_]+)\s*(?::[^=]*)?=>)/g;
+  let m;
+  while ((m = re.exec(body)) !== null) {
+    const name = m[1] || m[2];
+    // Next definition at the same level, or end of file.
+    const rest = body.slice(m.index + m[0].length);
+    const nxt = rest.search(/\n(?:export\s+)?(?:function\s+[A-Z]|const\s+[A-Z][A-Za-z0-9_]*\s*=)/);
+    componentSrc[name] = (componentSrc[name] ?? '') + rest.slice(0, nxt < 0 ? 12000 : nxt);
+  }
+}
+/** Does <Comp prop={…}> put `prop` behind a real handler inside Comp? */
+function isControlProp(comp, prop) {
+  if (prop === 'onClick') return true;              // native semantics, always
+  const src = componentSrc[comp];
+  if (!src) return false;                           // unknown component: stay quiet
+  // ⚠ IT MUST BE A NATIVE ELEMENT'S HANDLER. My first version accepted the
+  // prop inside ANY on*={…}, and the self-test below caught it immediately:
+  // SystemCard passes onChange down through a CHILD's notification —
+  //     <LoginForm onDone={() => { setShowLogin(false); onChange(); }} />
+  // — which is still plumbing, one level further down. Only a lowercase tag
+  // is the user actually clicking something.
+  const re = /\bon[A-Z][a-zA-Z]*\s*=\s*(\{(?:[^{}]|\{[^{}]*\})*\})/g;
+  let h;
+  while ((h = re.exec(src)) !== null) {
+    if (!new RegExp(`\\b${prop}\\b`).test(h[1])) continue;
+    // Walk back to the tag this attribute belongs to; lowercase means native.
+    const open = src.lastIndexOf('<', h.index);
+    if (open >= 0 && /^<[a-z]/.test(src.slice(open, open + 2))) return true;
+  }
+  return false;
+}
+const isCommandProp = (p) => p === 'onClick';       // kept for the enforcing filter below
+
+// ⚠ PINNED IN BOTH DIRECTIONS. A rule that quietly reclassified everything as
+// plumbing would make this checker report less and still "pass" — the failure
+// mode it has had more than once. Three it must now see, three it must not.
+// ⚠ <Modal onClose> IS classified a control, and that is correct: Modal's ×
+// is a real <button onClick={onClose}>. I first pinned it as "not a control"
+// because dismissing a dialog is not a gated action — but that confuses what
+// a control IS with whether it happens to reach anything gated. It reaches
+// nothing gated, so it produces no comparison and no finding; asserting the
+// mechanism should mis-classify it to get the outcome I expected would have
+// been fixing the instrument to match my guess. The pin tests the thing that
+// actually matters: a LEAF control is seen, a CONTAINER's callback is not.
+for (const [comp, prop, want] of [
+  ['LiveEmptyState', 'onPrimary', true],   // the empty-state CTA that hid a dead end
+  ['Toggle', 'onChange', true],            // the inversion test that used to miss
+  ['SystemCard', 'onChange', false],       // a container's refresh callback
+]) {
+  // ⚠ I ALSO PINNED <FieldMapEditor onSave> AS "not a control" AND WAS WRONG
+  // AGAIN. Its definition is `<button onClick={() => onSave(map)}>` — one
+  // Save button whose action IS that prop. Twice in a row I asserted an
+  // outcome I expected and the mechanism disagreed, and twice the mechanism
+  // was right. Only pins I have actually read the definition for belong here;
+  // the rest is triaged from the output, not legislated into it.
+  if (isControlProp(comp, prop) !== want) {
+    console.error(`ABORT: <${comp} ${prop}> should ${want ? 'BE' : 'NOT be'} treated as a control.`);
+    console.error('The component-definition reader is broken; every judgement below is unreliable.');
+    process.exit(2);
+  }
+}
+
 function localGateNames(src) {
   return [...new Set([...src.matchAll(/const\s+([a-zA-Z0-9_]+)\s*=\s*use(?:Is|Can)[A-Za-z0-9_]*\s*\(/g)].map((m) => m[1]))];
 }
@@ -671,7 +761,32 @@ function controlsMissingGate(src, wrapperMap) {
     // reported the right number of findings for the wrong reason.
     const rel = tag.slice(1).search(/<[A-Za-z]/);
     const own = rel >= 0 ? tag.slice(0, rel + 1) : tag;
-    if (!(lower ? /on[A-Z][a-zA-Z]+\s*=/ : /onClick\s*=/).test(own)) continue;
+    // ⚠⚠ A COMPONENT'S CONTROL IS NOT ALWAYS CALLED onClick.
+    //
+    // This used to accept only onClick on a capitalised tag, to drop the
+    // refresh callbacks a container hands its children —
+    // `<SystemCard onChange={() => loadCfg(id)}>` is a notification, not a
+    // button. The cost was everything else: <LiveEmptyState onPrimary> (17
+    // call sites, and often the ONLY control on an empty state),
+    // <Toggle onChange>, <TabBar onSelect>, <LiveErrorNotice onRetry>. Two
+    // real defects hid there — the knowledge-ingestion empty state that was
+    // a knowledge specialist's dead end, and the eval-gate dialog's Proving
+    // Ground button — and I found both by reading, not by running this.
+    //
+    // The separation is in the NAMES, and it is a convention this codebase
+    // keeps: present tense COMMANDS the component (onChange, onSelect,
+    // onPrimary, onRetry, onOpen), past tense REPORTS to the parent
+    // (onChanged, onUpdated, onApplied, onSaved, onProposed, onDone), and
+    // onClose/onCancel/onDismiss dismiss a dialog. Only commands are
+    // controls; the thing that did an onChanged is elsewhere and is judged
+    // on its own pass. Verified against all 109 distinct component handler
+    // props in the repo before being wired in, and pinned in both
+    // directions by the self-test below.
+    const compName = (tag.match(/^<([A-Za-z][A-Za-z0-9_]*)/) || [])[1] || '';
+    const hasControl = lower
+      ? /on[A-Z][a-zA-Z]+\s*=/.test(own)                       // native: any handler is the user acting
+      : [...own.matchAll(/\b(on[A-Z][a-zA-Z]+)\s*=/g)].some((m) => isControlProp(compName, m[1]));
+    if (!hasControl) continue;
     const line = src.slice(0, i).split('\n').length - 1;
     // Count the comparison BEFORE judging it. `0 findings from 0 comparisons`
     // is indistinguishable from a clean sweep, and both of my earlier
@@ -684,8 +799,31 @@ function controlsMissingGate(src, wrapperMap) {
     // `!canResolve` from three buttons that still carried that title and the
     // checker reported nothing. Only the attributes that actually stop a click
     // count — plus withholding the control entirely, which insideGate covers.
-    const enforcing = [...tag.matchAll(/\b(?:disabled|readOnly|aria-disabled|onClick|onChange|onSelect|enabled)\s*=\s*(\{(?:[^{}]|\{[^{}]*\})*\})/g)]
-      .map((m) => m[1]).join(' ');
+    // ⚠ THE ENFORCING LIST HAS TO KNOW THE SAME PROPS THE CONTROL TEST DOES.
+    // It named onClick/onChange/onSelect explicitly, so a gate written inside
+    // any other command prop was invisible:
+    //     onPrimary={canOpenConnectors ? () => setPage('systems_connectors') : undefined}
+    // is a real gate — I wrote that one myself — and the checker reported it
+    // as ungated because `onPrimary` was not in this list. Two lists that
+    // disagree about what a control is, which is the same defect as keeping
+    // two definitions of "has a gate". Derive the handler half from the one
+    // classifier instead of naming props twice.
+    // ⚠ A GATE HANDED TO THE CHILD IS STILL A GATE.
+    //     <TrustSurfaceCard canOverride={canOverride} onSaveDial={…} />
+    // TrustSurfaceCard's own comment says set_de_autonomy is owner/admin in
+    // the database, and it takes the permission as a prop and applies it
+    // inside. Judging only disabled/readOnly/handlers reported that as
+    // ungated. `can*`/`is*`-NAMED props whose VALUE is a gate expression
+    // count too.
+    // ⚠ THE PROP NAME MATTERS, NOT JUST THE VALUE. Accepting any attribute
+    // carrying a gate token would re-admit the tooltip case this checker was
+    // burned by once already —
+    //     title={canResolve ? undefined : 'an admin does this'}
+    // explains a permission without applying it. A prop actually NAMED for a
+    // capability is the permission being passed down; `title` is prose.
+    const enforcing = [...tag.matchAll(/\b(disabled|readOnly|aria-disabled|enabled|can[A-Z][a-zA-Z]*|is[A-Z][a-zA-Z]*|on[A-Z][a-zA-Z]+)\s*=\s*(\{(?:[^{}]|\{[^{}]*\})*\})/g)]
+      .filter((m) => !/^on[A-Z]/.test(m[1]) || isControlProp(compName, m[1]))
+      .map((m) => m[2]).join(' ');
     const guarded = isGate(enforcing) || insideGate(i);
     const seen = new Set();
     for (const h of handlers.values()) {
