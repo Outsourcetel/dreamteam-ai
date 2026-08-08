@@ -32,7 +32,9 @@
     "certify:mutation": "node scripts/certify-mutation-test.mjs",
     "golden-path": "node scripts/golden-path.mjs",
     "dev:sync": "node scripts/dev-sync.mjs",
-    "dev:sync:check": "node scripts/dev-sync.mjs --dry-run"
+    "dev:sync:check": "node scripts/dev-sync.mjs --dry-run",
+    "benchmark": "node scripts/benchmark.mjs",
+    "benchmark:history": "node scripts/benchmark.mjs --history"
   },
   "dependencies": {
     "@sentry/react": "^10.64.0",
