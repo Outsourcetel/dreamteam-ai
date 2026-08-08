@@ -11,6 +11,7 @@ import type {
   ApprovalAuthority,
 } from '../../lib/orgApi';
 import { LiveLoadingSkeleton, LiveErrorNotice } from '../../components/LiveDataStates';
+import { useConfirm, usePromptText } from '../../components/useDialog';
 import {
   Button, Chip, EmptyState, PanelCard, StatTile, Banner, Field, INPUT_CLS,
   TableScroll, TH, TD, Modal, TabBar,
@@ -103,6 +104,7 @@ function UnitRow({
   isOpen: boolean;
   onToggle: () => void;
 }) {
+  const { promptText, promptUI } = usePromptText();
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
   const [pick, setPick] = useState('');
@@ -257,9 +259,14 @@ function UnitRow({
             size="sm"
             kind="ghost"
             disabled={busy}
-            onClick={() => {
-              const next = window.prompt('Rename this unit', unit.name);
-              if (next && next.trim() && next !== unit.name) run(() => renameUnit(unit.id, next));
+            onClick={async () => {
+              const next = await promptText({
+                title: `Rename ${unit.name}`,
+                label: 'What should it be called?',
+                initialValue: unit.name,
+                confirmLabel: 'Rename it',
+              });
+              if (next && next !== unit.name) run(() => renameUnit(unit.id, next));
             }}
           >Rename</Button>
           <Button
@@ -270,6 +277,7 @@ function UnitRow({
           >{unit.is_active ? 'Deactivate' : 'Reactivate'}</Button>
         </div>
       </div>
+      {promptUI}
     </div>
   );
 }
@@ -326,6 +334,7 @@ function UnitBranch({
 }
 
 export default function OrganisationPage() {
+  const { confirm, confirmUI } = useConfirm();
   const [tab, setTab] = useState<TabId>('structure');
   const [tree, setTree] = useState<OrgUnit[]>([]);
   const [people, setPeople] = useState<AssignablePerson[]>([]);
@@ -547,7 +556,11 @@ export default function OrganisationPage() {
                               size="sm"
                               kind="ghost"
                               onClick={async () => {
-                                if (window.confirm(`Delete "${r.name}"? Work it used to route will fall to the next matching rule.`)) {
+                                if (await confirm({
+                                  title: `Delete the "${r.name}" rule?`,
+                                  message: 'Work this rule used to route will fall through to the next rule that matches it — or to nobody, if none does.',
+                                  confirmLabel: 'Delete the rule',
+                                })) {
                                   await deleteRule(r.id); await refresh();
                                 }
                               }}
@@ -632,7 +645,11 @@ export default function OrganisationPage() {
                                 size="sm"
                                 kind="ghost"
                                 onClick={async () => {
-                                  if (window.confirm('Remove this limit? Anyone relying on it will no longer be able to approve.')) {
+                                  if (await confirm({
+                                    title: 'Remove this approval limit?',
+                                    message: 'Whoever relied on it stops being able to approve at this level, and anything waiting on them will need someone else.',
+                                    confirmLabel: 'Remove the limit',
+                                  })) {
                                     await deleteApprovalAuthority(a.id); await refresh();
                                   }
                                 }}
@@ -878,6 +895,7 @@ export default function OrganisationPage() {
           </div>
         </Modal>
       )}
+      {confirmUI}
     </div>
   );
 }

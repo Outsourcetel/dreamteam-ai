@@ -1,4 +1,5 @@
 import { useIsTenantManager } from '../../lib/useRoleGate';
+import { useConfirm } from '../../components/useDialog';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabase';
@@ -2962,6 +2963,7 @@ type TeamMemberRow = {
 };
 function TeamsPanel() {
   const canManage = useCanManageDe();
+  const { confirm, confirmUI } = useConfirm();
   const [teams, setTeams] = useState<TeamRow[] | null>(null);
   const [members, setMembers] = useState<TeamMemberRow[]>([]);
   const [des, setDes] = useState<Array<{ id: string; name: string; lifecycle_status: string }>>([]);
@@ -3056,9 +3058,16 @@ function TeamsPanel() {
               <div key={team.id} className="rounded-xl border border-dt-border bg-dt-page p-3">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm text-white font-medium">{team.name}</span>
-                  <button onClick={() => { if (window.confirm(`Archive "${team.name}"? Its fallback chain will stop applying.`)) void run(() => supabase.rpc('archive_workforce_team', { p_team_id: team.id })); }}
+                  <button onClick={async () => {
+                    if (!await confirm({
+                      title: `Archive the "${team.name}" team?`,
+                      message: 'Its fallback chain stops applying, so work that used to pass down this team goes wherever the next matching rule sends it.',
+                      confirmLabel: 'Archive it',
+                    })) return;
+                    void run(() => supabase.rpc('archive_workforce_team', { p_team_id: team.id }));
+                  }}
                     disabled={busy || !canManage}
-                    className="ml-auto text-[10px] text-dt-muted hover:text-rose-300">
+                    className="ml-auto text-xs text-dt-muted hover:text-rose-300">
                     Archive
                   </button>
                 </div>
@@ -3105,6 +3114,7 @@ function TeamsPanel() {
           })}
         </div>
       )}
+      {confirmUI}
     </div>
   );
 }

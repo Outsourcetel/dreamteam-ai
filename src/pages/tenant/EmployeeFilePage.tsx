@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useConfirm } from '../../components/useDialog';
 import type { Page } from '../../types';
 import { listDigitalEmployees, type DigitalEmployee } from '../../lib/digitalEmployeesApi';
 import { listDeHealth, DE_HEALTH_LABELS, type DEHealth } from '../../lib/deHealthApi';
@@ -692,6 +693,7 @@ const domainShort = (c: string): string => CATEGORY_SHORT[c as SystemCategory] ?
 function RoleTemplatePanel({
   de, role, onApplied,
 }: { de: DigitalEmployee; role: RoleContext | null; onApplied: () => void }) {
+  const { confirm, confirmUI } = useConfirm();
   const [open, setOpen] = useState(false);
   const [kits, setKits] = useState<RoleArchetype[] | null>(null);
   const [choice, setChoice] = useState('');
@@ -713,10 +715,14 @@ function RoleTemplatePanel({
       // Re-roling is confirmed here rather than passed blindly: the server
       // refuses without it, and the operator should know why.
       const rerole = !!current && current !== choice;
-      if (rerole && !window.confirm(
-        `${de.persona_name ?? de.name} is currently a ${role?.archetype_name ?? current}. `
-        + `Applying a different template changes what it watches and what it is allowed to do. `
-        + `Its existing work is not deleted. Continue?`)) { setBusy(false); return; }
+      if (rerole && !await confirm({
+        title: `Change what ${de.persona_name ?? de.name} does?`,
+        message: <>They are set up as a <span className="text-dt-body font-medium">{role?.archetype_name ?? current}</span> today.
+          A different template changes what they watch and what they are allowed to do.
+          Work they have already done is kept.</>,
+        confirmLabel: 'Change the role',
+        tone: 'primary',
+      })) { setBusy(false); return; }
       const res = await applyRoleKitToEmployee(de.id, choice, rerole);
       setDone(res); setOpen(false); onApplied();
     } catch (e) {
@@ -789,6 +795,7 @@ function RoleTemplatePanel({
           </div>
         </div>
       )}
+      {confirmUI}
     </div>
   );
 }

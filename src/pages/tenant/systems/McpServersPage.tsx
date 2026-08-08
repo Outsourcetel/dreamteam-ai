@@ -1,4 +1,5 @@
 import { useIsTenantAdmin } from '../../../lib/useRoleGate';
+import { useConfirm } from '../../../components/useDialog';
 import React, { useState, useEffect, useCallback } from 'react';
 import type { Page } from '../../../types';
 import {
@@ -137,6 +138,7 @@ function ServerCard({ s, onChanged }: { s: McpServer; onChanged: () => void }) {
   // disconnecting are owner/admin writes on a MANAGE page. Reading which
   // servers and tools exist stays open.
   const canManageConnectors = useIsTenantAdmin();
+  const { confirm, confirmUI } = useConfirm();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -171,7 +173,13 @@ function ServerCard({ s, onChanged }: { s: McpServer; onChanged: () => void }) {
   };
 
   const remove = async () => {
-    if (!window.confirm(`Disconnect "${s.connector.display_name}"?\n\nIts registered tools stop being available to your digital employees.`)) return;
+    if (!await confirm({
+      title: `Disconnect "${s.connector.display_name}"?`,
+      message: s.tools.length
+        ? `Its ${s.tools.length} registered ${s.tools.length === 1 ? 'tool stops' : 'tools stop'} being available to your digital employees straight away.`
+        : 'Its registered tools stop being available to your digital employees straight away.',
+      confirmLabel: 'Disconnect it',
+    })) return;
     setBusy(true);
     try { await deleteConnector(s.connector.id); onChanged(); }
     catch (e) { setErr(e instanceof Error ? e.message : 'Could not disconnect.'); }
@@ -229,6 +237,7 @@ function ServerCard({ s, onChanged }: { s: McpServer; onChanged: () => void }) {
       {open && !preview && s.tools.length > 0 && (
         <div className="mt-3 pt-3 border-t border-dt-border"><ToolTable tools={s.tools} /></div>
       )}
+      {confirmUI}
     </PanelCard>
   );
 }
@@ -287,6 +296,7 @@ function ConnectForm({ onDone }: { onDone: () => void }) {
 function Allowlist({ hosts, onChanged, setPage }: {
   hosts: McpAllowedHost[]; onChanged: () => void; setPage: (p: Page) => void;
 }) {
+  const { confirm, confirmUI } = useConfirm();
   const [host, setHost] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
@@ -297,9 +307,15 @@ function Allowlist({ hosts, onChanged, setPage }: {
     const clean = normalizeHost(host);
     if (!clean) { setErr('Enter the server hostname, for example mcp.example.com'); return; }
     if (hosts.some((h) => h.host === clean)) { setErr(`${clean} is already allowed.`); return; }
-    if (!strict && !window.confirm(
-      `Restrict this workspace to listed MCP servers only?\n\nRight now any public MCP server may be connected. Adding "${clean}" switches to strict mode: only listed servers can be reached.`,
-    )) return;
+    // ⚠ The FIRST entry silently changes the workspace's posture from open to
+    // closed. That is the whole point of the question, so it leads.
+    if (!strict && !await confirm({
+      title: 'This closes the workspace to everything else',
+      message: <>Right now any public MCP server may be connected. Adding <span className="text-dt-body font-medium">{clean}</span> switches
+        to a strict list: from then on, only servers you have listed here can be reached.</>,
+      confirmLabel: 'Add it and go strict',
+      tone: 'primary',
+    })) return;
     setBusy(true); setErr(null);
     try { await addMcpAllowedHost(clean, note); setHost(''); setNote(''); onChanged(); }
     catch (e) { setErr(e instanceof Error ? e.message : 'Could not add the host.'); }
@@ -307,9 +323,14 @@ function Allowlist({ hosts, onChanged, setPage }: {
   };
 
   const remove = async (h: McpAllowedHost) => {
-    if (hosts.length === 1 && !window.confirm(
-      `Remove "${h.host}" — the last entry?\n\nThis returns the workspace to OPEN: any public MCP server could then be reached. Private and loopback addresses stay blocked either way.`,
-    )) return;
+    // Removing the LAST entry re-opens the workspace. Same reasoning as
+    // above, in the other direction — and this one is the dangerous one.
+    if (hosts.length === 1 && !await confirm({
+      title: 'This is the last entry — removing it re-opens the workspace',
+      message: <>With nothing listed, any public MCP server can be reached again. Private and
+        loopback addresses stay blocked either way.</>,
+      confirmLabel: 'Remove it anyway',
+    })) return;
     setBusy(true);
     try { await removeMcpAllowedHost(h.id); onChanged(); }
     catch (e) { setErr(e instanceof Error ? e.message : 'Could not remove the host.'); }
@@ -363,6 +384,7 @@ function Allowlist({ hosts, onChanged, setPage }: {
           set under Governance → Data access.
         </span>
       </div>
+      {confirmUI}
     </PanelCard>
   );
 }

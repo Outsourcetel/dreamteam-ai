@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Modal, Button, Chip, Banner } from '../../../design/primitives';
 import { supabase } from '../../../supabase';
 import AISessionPanel from '../../../components/AISessionPanel';
+import { useConfirm } from '../../../components/useDialog';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
 import { CustomerApiError } from '../../../lib/customerApi';
 import { useIsTenantAdmin } from '../../../lib/useRoleGate';
@@ -842,6 +843,7 @@ export default function LiveConnectorsPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [fieldMapFor, setFieldMapFor] = useState<string | null>(null);
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
+  const { confirm, confirmUI } = useConfirm();
   const [ingestFor, setIngestFor] = useState<string | null>(null);
 
   // Read-through search demo
@@ -947,7 +949,13 @@ export default function LiveConnectorsPage() {
   };
 
   const doDisconnect = async (c: Connector) => {
-    if (!window.confirm(`Disconnect ${c.display_name || PROVIDERS[c.provider]?.label}? The stored credential is purged immediately.`)) return;
+    const who = grantsFor(c).map(g => g.name);
+    if (!await confirm({
+      title: `Disconnect ${c.display_name || PROVIDERS[c.provider]?.label}?`,
+      message: <>The stored credential is deleted straight away, and you'll need it again to reconnect.
+        {who.length > 0 && <> {who.length === 1 ? `${who[0]} will stop being able` : `${who.join(', ')} will stop being able`} to reach this system.</>}</>,
+      confirmLabel: 'Disconnect it',
+    })) return;
     setBusy(c.id);
     try {
       await disconnectConnector(c);
@@ -969,7 +977,11 @@ export default function LiveConnectorsPage() {
   };
 
   const doRemove = async (c: Connector) => {
-    if (!window.confirm(`Remove ${c.display_name || PROVIDERS[c.provider]?.label} from the list? This permanently deletes the connector.`)) return;
+    if (!await confirm({
+      title: `Remove ${c.display_name || PROVIDERS[c.provider]?.label}?`,
+      message: 'It disappears from this list and its settings go with it. Connecting the same system again starts from scratch.',
+      confirmLabel: 'Remove it',
+    })) return;
     setBusy(c.id);
     try {
       await deleteConnector(c.id);
@@ -1325,6 +1337,7 @@ export default function LiveConnectorsPage() {
       {showConnect && <ConnectWizard reconnect={reconnectTarget ?? undefined} onClose={() => { setShowConnect(false); setReconnectTarget(null); }} onDone={m => { showToast(m); void load(); }} onCustom={() => setShowBuilder(true)} />}
       {showBuilder && <TemplateBuilderModal onClose={() => setShowBuilder(false)} onDone={m => { showToast(m); void load(); }} />}
       {useTemplate && <ConnectFromTemplateModal template={useTemplate} onClose={() => setUseTemplate(null)} onDone={m => { showToast(m); void load(); }} />}
+      {confirmUI}
     </div>
   );
 }

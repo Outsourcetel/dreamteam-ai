@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useIsTenantAdmin } from '../../../lib/useRoleGate';
 import { useAuth } from '../../../context/AuthContext';
+import { useConfirm } from '../../../components/useDialog';
 import { Modal } from '../../../design/primitives';
 import type { Page } from '../../../types';
 import { PageHeader } from '../../../components/ui';
@@ -66,6 +67,7 @@ function ProjectDetail({ project, onBack, onChanged, setPage }: {
   project: OnboardingProject; onBack: () => void; onChanged: () => void;
   setPage?: (p: Page) => void;
 }) {
+  const { confirm, confirmUI } = useConfirm();
   const [version, setVersion] = useState<TemplateVersion | null>(null);
   const [proj, setProj] = useState<OnboardingProject>(project);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -121,7 +123,11 @@ function ProjectDetail({ project, onBack, onChanged, setPage }: {
   };
 
   const changeProjectStatus = async (status: 'active' | 'on_hold' | 'cancelled') => {
-    if (status === 'cancelled' && !window.confirm('Cancel this onboarding project? This cannot be undone.')) return;
+    if (status === 'cancelled' && !await confirm({
+      title: 'Cancel this onboarding?',
+      message: 'The project stops where it is and its remaining steps are abandoned. You can\'t restart it — a new customer onboarding would begin from the template again.',
+      confirmLabel: 'Cancel the onboarding',
+    })) return;
     setStatusBusy(true); setErr(null);
     try {
       await setProjectStatus(proj.id, status);
@@ -294,6 +300,7 @@ function ProjectDetail({ project, onBack, onChanged, setPage }: {
           );
         })
       )}
+      {confirmUI}
     </div>
   );
 }
@@ -558,6 +565,7 @@ function TemplateEditor({ template, onClose, onSaved }: {
 // ── Page ──────────────────────────────────────────────────────────
 export default function CustomerOnboardingLive({ setPage }: { setPage?: (p: Page) => void }) {
   const { liveTenantName } = useAuth();
+  const { confirm: confirmPage, confirmUI: confirmPageUI } = useConfirm();
   const [tab, setTab] = useState<'projects' | 'templates'>('projects');
   const [projects, setProjects] = useState<OnboardingProject[]>([]);
   const [templates, setTemplates] = useState<OnboardingTemplate[]>([]);
@@ -615,7 +623,11 @@ export default function CustomerOnboardingLive({ setPage }: { setPage?: (p: Page
   };
 
   const removeTemplate = async (t: OnboardingTemplate) => {
-    if (!window.confirm(`Delete template "${t.name}"? Published versions already used by projects are kept.`)) return;
+    if (!await confirmPage({
+      title: `Delete the "${t.name}" template?`,
+      message: 'New onboardings can no longer start from it. Projects already running keep the published version they started on, so nothing in flight is disturbed.',
+      confirmLabel: 'Delete the template',
+    })) return;
     setBusy(true);
     try { await deleteTemplate(t.id); await refresh(); }
     catch (e) { setError((e as Error).message); }
@@ -765,6 +777,7 @@ export default function CustomerOnboardingLive({ setPage }: { setPage?: (p: Page
       {editTemplate && (
         <TemplateEditor template={editTemplate} onClose={() => setEditTemplate(null)} onSaved={() => void refresh()} />
       )}
+      {confirmPageUI}
     </div>
   );
 }
