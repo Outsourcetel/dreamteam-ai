@@ -245,13 +245,46 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
   const policyFor = (category: string | null): KnowledgeGapPolicy | null =>
     policies.find(p => p.category === category) ?? policies.find(p => p.category === null) ?? null;
 
+  // ⚠⚠ APPROVED IS NOT APPLIED, AND THIS CLAIMED IT WAS.
+  //
+  // The old body was `await resolveKnowledgeRevision(...)` followed
+  // unconditionally by "Article published — the knowledge base was updated
+  // immediately." It never looked at the result. apply_knowledge_revision
+  // returns its refusals IN THE PAYLOAD — request_not_found, not_pending
+  // (someone else decided it first), not_tenant_member — as ok:false with a
+  // 200, so the promise resolves and nothing throws. A refusal therefore
+  // showed a success message about a knowledge fix that had not happened,
+  // and the list refreshed underneath it.
+  //
+  // That is the same shape as the .rpc() sweep: a resolved promise is not a
+  // completed action. The status enum makes the distinction explicit —
+  // draft | pending_approval | approved | rejected | applied — and only
+  // `applied` means a document changed. The proof is new_doc_id: the RPC
+  // creates the new version and returns its id, so the message is now tied
+  // to that rather than to the absence of an exception.
+  const DECISION_REFUSALS: Record<string, string> = {
+    request_not_found: 'That draft no longer exists — it may have been decided already.',
+    not_pending: 'Somebody else already decided this one.',
+    not_tenant_member: "You don't have permission to decide this.",
+  };
   const decide = async (requestId: string, decision: 'approved' | 'rejected') => {
     setDeciding(true);
+    setError(null);
     try {
-      await resolveKnowledgeRevision(requestId, decision);
-      setToast(decision === 'approved'
-        ? 'Article published — the knowledge base was updated immediately.'
-        : 'Draft rejected — this gap reopened and will keep accumulating for the next detection pass.');
+      const res = await resolveKnowledgeRevision(requestId, decision);
+      if (!res?.ok) {
+        setError(DECISION_REFUSALS[res?.error ?? ''] ?? res?.error ?? 'That decision could not be recorded.');
+        await refresh();          // show what the record actually says now
+        return;
+      }
+      if (decision === 'rejected') {
+        setToast('Draft rejected — this gap reopened and will keep accumulating for the next detection pass.');
+      } else if (res.new_doc_id) {
+        setToast('Published — a new version of the document is live and searchable.');
+      } else {
+        // Approved, but no document came back. Do not call that published.
+        setToast('Approved, but no document was written — check the knowledge base before relying on this.');
+      }
       await refresh();
     } catch (err) {
       setError((err as Error)?.message || 'Failed to record decision.');

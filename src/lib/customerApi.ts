@@ -867,7 +867,20 @@ export async function decideHumanTask(
   if (task.related_table === 'knowledge_revision_requests' && task.related_id) {
     try {
       const { resolveKnowledgeRevision } = await import('./knowledgeApi');
-      await resolveKnowledgeRevision(task.related_id, decision);
+      // ⚠ THE RESULT WAS DISCARDED. apply_knowledge_revision returns its
+      // refusals in the PAYLOAD as ok:false with a 200 — not_pending,
+      // not_tenant_member, request_not_found — so awaiting it proves only
+      // that the call was made, never that the document changed. Approving
+      // the human task therefore reported success while the knowledge base
+      // was untouched, which is worse here than on the gaps page: this is
+      // the approval queue, and the task closes either way.
+      // The block below already treats a thrown error as fatal to the
+      // decision; an in-payload refusal is the same failure wearing a 200.
+      const rev = await resolveKnowledgeRevision(task.related_id, decision);
+      if (!rev?.ok) throw new Error(`knowledge revision not applied: ${rev?.error ?? 'unknown reason'}`);
+      if (decision === 'approved' && !rev.new_doc_id) {
+        throw new Error('knowledge revision approved but no document was written');
+      }
     } catch (err) {
       console.error('knowledge revision hook:', err);
       throw err;
