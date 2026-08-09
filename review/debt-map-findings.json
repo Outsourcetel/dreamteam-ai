@@ -1,0 +1,1051 @@
+{
+ "all": [
+  {
+   "dim": "giants",
+   "title": "Playbook branch executor implements 6 of the 9 step types its own validator accepts — update_record, check_knowledge and read_reference are silently skipped",
+   "category": "code",
+   "evidence": "Three sources, read directly. (a) supabase/functions/playbook-execute/index.ts:212-216 — `const BRANCH_ALLOWED = new Set(['instruction','checklist','wait','log_activity','update_record','connector_action','guardrail_check','check_knowledge','read_reference'])` = 9 keys, enforced by validateBranch at L254. (b) The executor for branch steps, `runBranchStep` at L938-1003 (nested inside executeDefinitionSteps), switches on only 6: AST switch-case extraction reports `playbook-execute:947 switch(bs.key) cases=6 default=true -> instruction checklist wait log_activity guardrail_check connector_action`. (c) Its default clause, L998-1001: `bs.status = 'skipped'; bs.at = now(); bs.detail = `skipped: \"${bs.key}\" not executed in branch preview path`;` — status 'skipped', the run is NOT failed. Set difference: update_record, check_knowledge, read_reference pass validation and are then dropped. `wait` is worse-shaped still — it has a case (L960-964) that hard-codes `bs.status = 'skipped'`. The browser side offers a tenth: src/lib/playbookBuilderApi.ts:66-70 `BRANCH_PRIMITIVES` adds `consult_specialist`, which L160-162 of the same file declares RETIRED.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 5,
+   "effort_1_5": 3,
+   "why_it_matters": "An owner builds a playbook with a decision step — \"if the invoice is overdue, mark the record and check the knowledge base\" — the builder offers those steps inside the branch, the server accepts the playbook as valid, it publishes, it runs, and it reports COMPLETED having done neither. The builder already carries a loud warning about this exact failure mode (LivePlaybookBuilder.tsx:1931-1942: \"the playbook reports completed having done nothing\"), but that safety net only catches step types missing from the registry — these three are IN the registry, so nothing flags them. This is the one finding here that can produce a wrong business outcome rather than just slow work down."
+  },
+  {
+   "dim": "giants",
+   "title": "LiveWorkforceDEs.tsx is two disjoint files sharing exactly four lines",
+   "category": "architecture",
+   "evidence": "AST reachability over src/pages/tenant/LiveWorkforceDEs.tsx (4,414 lines, 71 top-level declarations, 41 of them components). Closure from the default export `LiveWorkforceDEs`: 6 declarations / 412 lines (RosterPanel 224, TeamsPanel 157, the page shell 22, TeamMemberRow 4, useCanManageDe 4, TeamRow 1). Closure from the seven symbols src/pages/tenant/EmployeeFilePage.tsx:33-37 imports (DeProfileSections, DeIncidentsPanel, DeKpisPanel, DeEconomicsPanel, DeDevelopmentPanel, DeReviewsPanel, DeSkillsPanel): 65 declarations / 3,649 lines. Intersection: one declaration, `useCanManageDe`, 4 lines. The default export itself is L4393-4414 — 22 lines rendering exactly two panels. State is not entangled either: 189 useState calls spread across 41 components, the largest holder (DeTrustAutonomySection) has 16 = 8% of the file's total, so no god-component owns shared state.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 4,
+   "risk_1_5": 2,
+   "effort_1_5": 2,
+   "why_it_matters": "The file is named for a page whose actual code is 412 lines; the other 3,649 belong to a different page (the Employee File). Anyone touching the roster opens a 4,414-line file and scrolls past thirty panels they will never change, and two people working on unrelated screens collide in the same file. Because the two halves share four lines and no state, this is the cheapest large-line-count cleanup available — a move, not a rewrite."
+  },
+  {
+   "dim": "giants",
+   "title": "connector-hub's four-method adapter contract is honoured 280 times and enforced by nothing — the dispatch map is `Record<string, any>` and tsc never sees the file",
+   "category": "architecture",
+   "evidence": "supabase/functions/connector-hub/index.ts declares 19 interfaces (grep '^interface|^export interface|^type ' — HubItem, AdapterResult, TestResult, SyncDoc, SyncResult, Ctx, McpToolDef, ActionRenderResult, ActionRunResult, NativeAction, TemplateExec, TemplateOpResult, IngestFilters, Candidate, ActionDefRow, LearnedRender, ActionRenderOutcome, OpParams, OpTranslator). None of them describes an adapter. The dispatch map at L6294-6306 is preceded by `// deno-lint-ignore no-explicit-any` and typed `const adapters: Record<string, any>`; the selection at L6307-6308 carries the same suppression (`grep -c no-explicit-any` = 2). Meanwhile the AST tally shows all 70 object-literal adapters implement test/search/fetchRecord/listRecent — a real 4-method contract, 280 implementations, zero declarations. And tsconfig.json has `\"include\": [\"src\"]` with no reference to supabase, so the whole directory is outside `tsc` (the same tsconfig also sets `\"strict\": false`).",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 4,
+   "effort_1_5": 2,
+   "why_it_matters": "Adding the 75th connector is the most common change this file will ever see, and the one thing that would make it safe — \"here is the shape an adapter must have\" — is written down nowhere the compiler can read. A misspelled `fetchRecord` ships green and fails in production for one provider, in one tenant, on the first fetch. Declaring the interface and typing the map is a small change that converts a runtime class of failure into a build-time one."
+  },
+  {
+   "dim": "giants",
+   "title": "connector-hub's 1,268-line request handler is the accidental half of the file, with a 332-line execute_action branch inside it",
+   "category": "code",
+   "evidence": "AST composition of supabase/functions/connector-hub/index.ts (7,375 lines, 233 top-level statements): provider adapter objects 74 = 2,894 lines; native action packages (*Actions) 20 = 938 lines; PROVIDER_OP_TRANSLATORS = 391 lines; serve() handler = 1,268 lines; everything else = 1,205 lines; remainder ~679 lines of top-level comments and blanks. The serve handler at L6108-7375 is the codebase's 2nd-longest function. Its action branches, measured individually: execute_action L7036-7367 = 332, sync L6869-6979 = 111, sync_business_records = 95, sync_mcp_tools = 91, category_op = 70, sync_financials = 48, template_dry_run = 43, preview_action = 42, sync_ledger = 38, reconcile_financials = 34, search/fetch/list = 31, discover = 29, health_check = 9, test = 7 — about 980 lines of branches, leaving ~288 lines of shared preamble (auth, tenant resolution, feature gate, secret load, template resolution, adapter selection, audit/health/access closures). The 1,205 lines of \"everything else\" hold at least four distinct subsystems: the declarative template engine (templateAuthHeaders 100, runTemplateOp 114, templateAdapter 28, resolveTemplate), the action-definition registry (resolveActionDefinition 60, renderRegisteredAction 39, runRegisteredAction 88, renderLearnedHttp 52), OAuth/token acquisition (googleAccessToken 27, oauthAccessToken 24, zohoToken 26, fhirBackendToken 24, clientCredsToken, nsAuthHeader 21), and binary file→text extraction (pdfBytesToText, sharepointFetchText 21, gdriveFetchText 23, boxFileText, dropboxFileText).",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 3,
+   "effort_1_5": 4,
+   "why_it_matters": "The honest read on this file is that 4,223 of its 7,375 lines (57%) are per-provider data and should stay exactly where they are — one block per connected system is the right shape and splitting it would make things worse. The debt is the other half: a single function that authenticates, gates features, resolves credentials, picks an adapter and then dispatches sixteen unrelated operations, with the most safety-critical one (execute_action, which actually writes to a customer's live system) buried 900 lines in. That is where reviewers get lost and where the file resists being reasoned about."
+  },
+  {
+   "dim": "giants",
+   "title": "executeDefinitionSteps is the longest function in the codebase at 1,389 lines, and ~161 lines of nested closures are what prevent splitting it",
+   "category": "code",
+   "evidence": "Codebase-wide AST scan of 7,800 functions across 295 files ranks supabase/functions/playbook-execute/index.ts:811 `executeDefinitionSteps` first at 1,389 lines. It is 81% switch: the dispatch at L1052-2180 spans 1,129 lines with 19 cases plus default, case bodies totalling 1,032 (largest: connector_action 259, generate_invoice 124, agentic_step 116, start_onboarding 76, read_reference 75). The residue is four nested closures that capture `run`, `ctx`, `admin` and `tenantId` from the enclosing scope: runBranchStep L938-1003 (66), execRegisteredAction L866-933 (68), resolveRunDeId L833-850 (18), stepAudit L818-826 (9) = 161 lines. Distribution context from the same scan: 5 functions exceed 1,000 lines, 16 exceed 500, 42 exceed 300, 198 exceed 100.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 2,
+   "effort_1_5": 4,
+   "why_it_matters": "Unlike the React giants this one cannot be split by moving text — the cases read four variables that only exist inside the function, so extracting them requires first defining an explicit run-context object to thread through. That is why it grew to 1,389 lines rather than being broken up along the way, and it is also why the second half-implementation of branch semantics (the top finding) appeared instead of delegation. Sizing note: the switch itself is fine and should survive any restructuring."
+  },
+  {
+   "dim": "giants",
+   "title": "The 19-step-type contract is hand-maintained in five places across the browser/edge boundary with no automated gate",
+   "category": "architecture",
+   "evidence": "AST extraction of every site. Edge: playbook-execute/index.ts:171 `PRIMITIVES` array = 19 keys; :300 validation switch = 18 cases (omits check_account, no default); :947 branch switch = 6 cases; :1052 dispatch switch = 19 cases + default. Browser: src/lib/playbookBuilderApi.ts:81 `PRIMITIVE_REGISTRY` = 19 entries; src/pages/tenant/systems/LivePlaybookBuilder.tsx:102 `StepParamsEditor` switch = 15 cases + default. I diffed the two 19-key lists: `in EDGE not in REGISTRY: (none)` / `in REGISTRY not in EDGE: (none)` — they agree today. The UI switch carries one case (`consult_specialist`) present in neither list. No `contract-parity` script covers these: grep for contract-parity/contractParity/CONTRACT_PARITY across the repo returns exactly one file, docs/45-certification-scoreboard.md, and no script in scripts/ matches.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 4,
+   "effort_1_5": 2,
+   "why_it_matters": "Adding or renaming a step type means editing five hand-maintained lists in two languages on two sides of a network boundary. They happen to agree right now, which is luck plus discipline, not a mechanism. The failure mode when they stop agreeing is the same silent one as the branch finding: a playbook validates, publishes, runs, and reports success while skipping work. This is the cheapest defence to add and it protects the highest-consequence contract in the runtime."
+  },
+  {
+   "dim": "giants",
+   "title": "Worst signature in the codebase is 17 positional parameters (runLoop), not the 16 of dispatchTool — and both sit in files tsc never checks",
+   "category": "code",
+   "evidence": "Codebase-wide AST parameter sweep, 7,802 functions / 295 files. Ranking: supabase/functions/agentic-step-execute/index.ts:260 `runLoop` = 17 (admin, tenantId, runId, goal, deName, model, escalationModel, escalationThreshold, tools, policy, deId, contextDocuments, charter, playbookRunId, onGate, stepIndex, entityRef); supabase/functions/de-work/index.ts:548 `dispatchTool` = 16, declared on a single 617-character line; supabase/functions/_shared/guardrailAdjudicator.ts:324 `logAdjudication` = 11; then a cliff to supabase/functions/eval-run/index.ts:454 `auditCompletion` = 8. Each of the top two has exactly ONE call site — runLoop at agentic-step-execute:539-545, dispatchTool at de-work:1450. Both contain runs of three adjacent same-typed parameters: runLoop's `contextDocuments = '', charter = '', playbookRunId = ''` are all defaulted strings; dispatchTool's `entityName?: string|null, ctxAccountForContacts?: string|null, caseEntityRef?: string|null` are all nullable strings, and de-work:1450 fills them positionally with `entityName, contactsFor, entityRef`. tsconfig.json includes only \"src\", so neither file is type-checked at all.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 3,
+   "effort_1_5": 1,
+   "why_it_matters": "To answer the question as asked: dispatchTool is not typical and it is not the worst — 99.4% of this codebase's functions take three parameters or fewer, and only two functions exceed eleven. So this is a localized wart, not a house style. It still deserves fixing because in both cases three neighbouring arguments have the same type, so transposing two of them compiles clean, and these are precisely the files the type checker is configured to ignore. With one call site each, converting both to a named-options object is an afternoon."
+  },
+  {
+   "dim": "giants",
+   "title": "connector-hub carries a private copy of PDF extraction that dropped the 15 MB size cap the shared version enforces",
+   "category": "code",
+   "evidence": "supabase/functions/_shared/pdfExtract.ts:12-16 defines `pdfToText`, and :10 exports `MAX_PDF_BYTES = 15 * 1024 * 1024`. Its own header (L2-4) says it was \"Extracted from extract-document so the automated/dispatch ingestion paths (demo-ingest, connector-driven ingestion) can handle PDFs too\" — i.e. it was extracted for connector-hub. connector-hub/index.ts:1755-1761 nonetheless defines `pdfBytesToText`, whose three-line body is identical to the shared function apart from a try/catch. Both other consumers import the shared one and enforce the cap: extract-document/index.ts:18,66,89 and knowledge-ingest-drain/index.ts:37,166-170 (`if (buf.byteLength > MAX_PDF_BYTES) throw ...`). connector-hub's five PDF call sites — L1952, L1957, L2055, L2825, L5436 — apply only a post-extraction `.slice(0, MAX_DOC_CHARS)`, with no byte-size check before decoding.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 1,
+   "risk_1_5": 3,
+   "effort_1_5": 1,
+   "why_it_matters": "A twin copy inside a giant that has already drifted on a resource limit — the exact pattern this codebase has been bitten by before. A large PDF sitting in a customer's SharePoint, Drive, Box or Dropbox gets fully decoded in an edge function with no ceiling, where every other path in the system would have refused it. The fix is one import and one guard, and it also deletes seven lines from the biggest file."
+  },
+  {
+   "dim": "giants",
+   "title": "A retired step type still ships a working 24-line editor and is still offered inside decision branches",
+   "category": "code",
+   "evidence": "src/lib/playbookBuilderApi.ts:160-162 declares `export const RETIRED_PRIMITIVES: Record<string, string> = { consult_specialist: 'Consult specialist — retired, this step is skipped' };`. Despite that: (a) src/pages/tenant/systems/LivePlaybookBuilder.tsx:153-176 still holds a full `case 'consult_specialist':` in StepParamsEditor with profile picker, confidence floor and on-low behaviour — 24 lines; (b) src/lib/playbookBuilderApi.ts:66-70 still lists `consult_specialist` in `BRANCH_PRIMITIVES`, which LivePlaybookBuilder.tsx:615-620 renders directly as \"+ …\" buttons inside a decision branch; (c) the edge-side `BRANCH_ALLOWED` (playbook-execute:212-216) does NOT include it, so validateBranch:254 would reject it with `branch_primitive_not_allowed`.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 1,
+   "risk_1_5": 2,
+   "effort_1_5": 1,
+   "why_it_matters": "The builder still shows a button for a step type the server will reject, inside decision branches. A user clicks it, fills in the editor, and gets a validation error on publish with no explanation of why an offered step is illegal. It is small and self-contained, but it is the kind of thing that makes people distrust the whole builder."
+  },
+  {
+   "dim": "giants",
+   "title": "Ranking giants by file size hides the worst function-level giants — LiveKnowledgeLibrary is one 1,238-line function in a 1,284-line file",
+   "category": "code",
+   "evidence": "Codebase-wide function-length scan (7,800 functions, 295 files). Top 6: playbook-execute:811 executeDefinitionSteps 1,389; connector-hub:6108 serve handler 1,268; src/pages/tenant/knowledge/LiveKnowledgeLibrary.tsx:45 `LiveKnowledgeLibrary` 1,238; src/pages/tenant/SettingsPage.tsx:75 `SettingsPage` 1,046; supabase/functions/de-answer/index.ts:367 serve handler 1,046; src/pages/tenant/ops/HumanTasksPage.tsx:269 `LiveHumanTasks` 937. Against file sizes from wc -l: LiveKnowledgeLibrary.tsx is 1,284 lines, so 96% of the file is one function; SettingsPage.tsx is 1,122 lines, so 93% is one function. By contrast LivePlaybookBuilder.tsx (2,023 lines, on the giants list) has a longest function of 410 and 30 top-level components.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 2,
+   "effort_1_5": 3,
+   "why_it_matters": "File size and function size are different debts and they do not rank the same. LivePlaybookBuilder is twice the file but has been decomposed into thirty named pieces; LiveKnowledgeLibrary is half the file and has been decomposed into essentially nothing. If the goal is \"code a person can hold in their head\", the second is the harder one to work in, and it was not on the list."
+  },
+  {
+   "dim": "giants",
+   "title": "An exported component with zero call sites, and a dead string concatenation in the branch executor",
+   "category": "code",
+   "evidence": "(a) `ReadOnlyNote` is exported at src/pages/tenant/LiveWorkforceDEs.tsx:90-96 with a docstring explaining it exists so \"you cannot edit this\" reads the same everywhere. Grep for `ReadOnlyNote` across src/ returns one file and one occurrence — its own definition. It is rendered nowhere, and the AST reachability run confirms it: `UNREACHED from any root: 1 -> ReadOnlyNote(7)`. (b) supabase/functions/playbook-execute/index.ts:977-978 reads `bs.detail = 'Re-checked in branch — no invoice in this run to re-verify' + (ctx.invoice_id ? '' : '');` — both arms of the ternary are the empty string, so the concatenation is a no-op. Note tsconfig.json sets `\"noUnusedLocals\": false`, and supabase/functions is outside tsc entirely, so neither would ever be flagged.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 1,
+   "risk_1_5": 1,
+   "effort_1_5": 1,
+   "why_it_matters": "Both are trivially small, but they are the visible symptom of the same cause as everything above: these files are large enough that things stop being noticed. A component written specifically to standardise permission wording never got wired to a single panel, and a guardrail branch has a conditional that decides between two identical outcomes. Neither costs anything today; both are evidence that nothing is watching."
+  },
+  {
+   "dim": "duplication",
+   "title": "The escalation rules that decide \"stop, get a human\" are hand-copied into two of the three paths that enforce them — and the shared loader built for exactly this job is used by only one",
+   "category": "code",
+   "evidence": "`supabase/functions/_shared/escalation.ts:81` exports `loadEscalationRuleset(admin, tenantId, deId)`, documented at line 78-80 as: \"Shared by every enforcement path so they all read the same rules.\"\n\n`grep -rn \"loadEscalationRuleset\" src/ supabase/functions/` returns only THREE lines — the definition, plus one import and one call, both in `de-work/index.ts:30` and `:1210`. No other caller exists.\n\nMeanwhile `de-answer/index.ts:512-535` and `widget-ask/index.ts:251-274` each contain a 24-line inline re-implementation. My clone detector flagged them as a 17-line exact match. Reading both: they issue the identical `admin.rpc('resolve_de_escalation', ...)` + `admin.from('de_escalation_rules').select('custom_rules, de_id')` pair, then build the same four-field `EscRuleset` ({frustration_threshold, always_escalate_topics, de_rules, tenant_rules}). The ONLY differences are the autonomy `p_action_type` string ('answer_dock' vs 'answer_widget') and a comment. Both files DO import `evaluateEscalation` from the shared module (`de-answer:31`, `widget-ask:36`) — so the evaluator half is shared and the loader half is copied.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 4,
+   "effort_1_5": 2,
+   "why_it_matters": "This is the mechanism that pulls a human in when an AI employee is out of its depth. There are three doorways into it and only one uses the shared lock; the other two have their own copies of the same lock, filed by hand. Change the rules in the shared place — add a signal, fix how tenant-wide defaults merge with per-employee ones — and the change reaches the work queue but silently does NOT reach the support chat dock or the website widget, which are the two paths a customer actually touches. Nothing errors; escalation just quietly keeps using the old logic on the customer-facing surfaces. This also qualifies a claim already on record that the answer paths were consolidated: the evaluator was consolidated, the loader was not."
+  },
+  {
+   "dim": "duplication",
+   "title": "The permission check that decides which tenant a caller may write to is copy-pasted verbatim into four editing functions",
+   "category": "code",
+   "evidence": "My clone detector's second-largest group by redundant lines: 4 copies × 15 lines = 45 redundant lines, at `entity-amend/index.ts:49-64`, `entity-draft/index.ts:54-69`, `playbook-amend/index.ts:58-73`, `playbook-draft/index.ts:77-92`.\n\nThe duplicated block is the authorization preamble itself:\n```\nlet tenantId: string | null = null;\nconst bearer = (req.headers.get('Authorization') ?? '').replace(/^Bearer\\s+/i, '');\nif ((dispatch && req.headers.get('x-dispatch-secret') === dispatch) || bearer === svc) {\n  tenantId = typeof body.tenant_id === 'string' ? body.tenant_id : null;\n  if (!tenantId) return json({ error: 'tenant_id required for service/dispatch calls' }, 400);\n} else {\n  const { data: u } = await admin.auth.getUser(bearer);\n  if (!u?.user) return json({ error: 'unauthorized' }, 401);\n  ...\n  tenantId = await resolveTenantWithRemoteAccess(admin, u.user.id, prof?.tenant_id, prof?.layer, body?.tenant_id);\n  if (!tenantId) return json({ error: 'no_tenant' }, 403);\n```\nThe same 4 files also share a separate 8-line `serve()` entry block (`entity-amend:36-43` et al).\n\nScope check: `grep -rln \"x-dispatch-secret\" supabase/functions/` = 36 files; `grep -rln \"resolveTenantWithRemoteAccess\" supabase/functions/` = 30 files. So the tenant *resolver* is shared by 30, but the trust decision *wrapped around* it is not.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 4,
+   "effort_1_5": 2,
+   "why_it_matters": "This block answers \"who is calling, and whose data may they touch\" — the boundary that keeps one customer's data away from another's. It exists as four separate hand-written copies. Six of the 36 functions that accept the internal dispatch secret don't use the shared tenant resolver at all. A tightening applied to one copy — a new check, a stricter fallback — leaves three copies at the old standard, and there is no test comparing them. The four affected functions are the ones that create and amend playbooks and business records, so they are exactly the write paths where a boundary slip would matter most. Note this code is not type-checked either: tsc excludes supabase/functions, so a divergence here has no compiler catching it."
+  },
+  {
+   "dim": "duplication",
+   "title": "The website-widget login key is hashed by three separate hand-written copies of the same function",
+   "category": "code",
+   "evidence": "`grep -rn \"function sha256Hex\" src/ supabase/functions/` returns three definitions: `src/lib/widgetApi.ts:36`, `supabase/functions/voice-relay/index.ts:35`, `supabase/functions/widget-ask/index.ts:70`.\n\nThey are already textually divergent — the browser copy builds the byte array with `Array.from(new Uint8Array(buf))`, both edge copies use `[...new Uint8Array(buf)]`. (Same result today; different code.)\n\nThis is the credential contract, not a utility. `src/lib/widgetApi.ts:47` computes `const key_hash = await sha256Hex(plaintext)` and stores it (`:50`). The edge copies compute the hash to look the key back up: `widget-ask:133,150,177` and `voice-relay:86`, each feeding `.from('widget_keys').select(...).eq('key_hash', keyHash).eq('active', true)`.\n\nBecause the function is only 3 lines, it is BELOW my 8-line detection window — no line-based tool in this repo would ever flag it.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 3,
+   "effort_1_5": 1,
+   "why_it_matters": "One side mints the key customers embed on their website; two other sides verify it. All three must hash identically forever, and nothing enforces that — not the parity test, not the type checker (edge code is excluded from tsc), not a shared module. If anyone ever changes the hashing (adds a salt, moves to SHA-512, trims differently), whichever copies they miss stop recognising valid keys: every embedded chat widget and voice line on that tenant's site goes dead with an auth failure, not an error message. The three copies have already drifted in style, which is how they drift in substance later."
+  },
+  {
+   "dim": "duplication",
+   "title": "The parity test guards the two twin files but only asserts 4 of their ~14 shared exports — the rest are unwatched twins",
+   "category": "test",
+   "evidence": "`tests/contract-parity.test.ts` compares exactly: `CATEGORIES`, `CATEGORY_OPS`, `CATEGORY_LABELS`, `AUTH_TYPES`, plus behavioral checks on `isFrameworkPlaceholder`, `dateValues`, `renderTemplate`, and `validateAdapterDefinition` (two fixtures).\n\n`grep -n \"^export\"` on both copies shows these symbols exist in BOTH trees but are never asserted:\n- categoryContracts: `getCategoryOp` (src:126 / edge:122), `legalOps` (src:130 / edge:126), `MAPPABLE_FIELDS` (src:146 / edge:148), `computeHealth` (src:159 / edge:153), `HEALTH_LABELS` (src:171 / edge:165)\n- adapterTemplates: `AUTH_META` (:30 both), `validateActionBinding` (:270 both), `walkPath` (:367 both), `renderBody` (:400 both), `renderAction` (src:428 / edge:429)\n\nI diffed `computeHealth` directly (src:159-169 vs edge:153-163) — byte-identical today, including the thresholds `failures >= 3 → 'down'`, `failures >= 1 → 'degraded'`. My detector independently flagged this pair as a 17-line clone (`src/lib/categoryContracts.ts:157-175` ≡ `_shared/categoryContracts.ts:151-169`) and `legalOps` as a 15-line clone.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 3,
+   "effort_1_5": 1,
+   "why_it_matters": "The safety net is real but smaller than it looks — it covers the vocabulary lists and skips most of the behavior. `computeHealth` is the clearest example: it decides whether a customer's connected system is shown as healthy, degraded, or down. Two identical copies, zero assertions. If the screen's copy and the engine's copy ever disagree on the failure threshold, the dashboard says a connection is fine while the engine has already given up on it — the exact class of lie this repo has been burned by before. This is the cheapest fix on the list: the test file already imports both copies, so covering the remaining exports is added assertions, not new machinery."
+  },
+  {
+   "dim": "duplication",
+   "title": "55 of 60 edge functions hand-roll their own CORS block and 23 hand-roll their own json() helper — there is no shared HTTP module at all",
+   "category": "architecture",
+   "evidence": "`grep -rln \"const CORS\" supabase/functions/ | wc -l` = 55, against `ls supabase/functions/*/index.ts | wc -l` = 60.\n`grep -rln \"const json = (body\" supabase/functions/ | wc -l` = 23.\n`ls supabase/functions/_shared/ | grep -i \"cors|http|response\"` returns nothing, and `grep -rn \"Access-Control-Allow-Origin\" supabase/functions/_shared/` returns nothing — despite 35 other modules living in `_shared/`.\n\nThis is my detector's single most-copied block: 7 exact copies of the same 8 lines (`connector-hub:95-103`, `connector-zendesk:28-36`, `eval-run:30-38`, `invite-team-member:39-47`, `playbook-execute:103-111`, `specialist-consult:66-74`, `verify-domain:49-57`), plus a 6-copy import+CORS variant.\n\nThe copies have already drifted. Tallying the method line across all copies:\n```\n33  'Access-Control-Allow-Methods': 'POST, OPTIONS',\n 2  \"Access-Control-Allow-Methods\": \"POST, OPTIONS\",   <- different quote style\n 1  'GET, POST, PATCH, DELETE, OPTIONS',\n 1  'GET, POST, OPTIONS',\n 1  'GET, OPTIONS',\n```\nTotal footprint measured by summing each file's CORS block plus json() helper: ~304 lines.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 2,
+   "effort_1_5": 2,
+   "why_it_matters": "Every one of the 60 server functions re-declares which websites are allowed to call it and what an error response looks like. That is ~300 lines of pure ceremony, and more importantly it means a browser-access policy change is a 55-file edit rather than a one-file edit. Today all copies allow all origins ('*'), so the day someone needs to restrict that — a security review, an enterprise customer asking who can call the API — it becomes a 55-file sweep where missing one leaves a door open. The five files that already differ show the copies do drift in practice. This is low-risk to fix and it is the biggest single line-count win available, but it buys tidiness and future agility, not correctness today."
+  },
+  {
+   "dim": "duplication",
+   "title": "Three different functions are all named renderTemplate, and one is a silent partial copy of another's placeholder vocabulary",
+   "category": "code",
+   "evidence": "`grep -rn \"function renderTemplate\" src/ supabase/functions/` finds four definitions — the guarded twin pair plus two independents:\n- `_shared/adapterTemplates.ts:387` — `renderTemplate(tpl, values, urlEncode)` → `{out, missing}`, uses single-brace `{key}` placeholders\n- `playbook-execute/index.ts:620` — `renderTemplate(t, ctx, runId, steps?)` → string, uses mustache `{{token}}`, and handles `account.name`, `invoice.amount`, `run.id`, `event.ref`, `event.note`, `invoice.external_ref`, `party.*`\n- `onboarding-verify/index.ts:59` — `renderTemplate(tpl, accountName)` → string, body is one line: `tpl.replace(/\\{\\{account\\.name\\}\\}/g, accountName).trim()`\n\nThe last is a strict subset of playbook-execute's token set: it recognises `{{account.name}}` and nothing else, silently leaving every other mustache token as literal text in the output.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 3,
+   "effort_1_5": 1,
+   "why_it_matters": "Two hazards in one name. First, three functions with the same name and three different signatures means anyone reading or grepping this code can easily reason about the wrong one — and the one in the guarded twin file is guarded, so a reader who checks 'is renderTemplate protected?' gets a misleading yes. Second and concretely: `onboarding-verify` understands exactly one placeholder. When someone adds a token to the playbook renderer, any template that flows through onboarding verification renders it as raw `{{invoice.amount}}` text rather than a number — no error, just a broken-looking message in front of a brand-new customer during onboarding, which is the worst possible audience for it."
+  },
+  {
+   "dim": "duplication",
+   "title": "connector-hub re-implements the adapter request-rendering pipeline that _shared/renderAction already performs",
+   "category": "code",
+   "evidence": "My detector flagged a 3-copy cross-tree group: `src/lib/adapterTemplates.ts:434-442` ≡ `supabase/functions/_shared/adapterTemplates.ts:435-443` ≡ `supabase/functions/connector-hub/index.ts:1526-1534`.\n\nImportant correction to my own first read: connector-hub does NOT re-implement the helpers — `index.ts:81-84` imports them from `../_shared/adapterTemplates.ts`. What is duplicated is the ~20-line sequence built on top of them. `connector-hub`'s `runTemplateOp` (index.ts:1513+) and `_shared`'s `renderAction` (:429+) both perform the same ordered pipeline: seed `dateValues(new Date())` first then overlay tenant vars, render base URL, render path with `urlEncode=true`, loop `query_params` accumulating `missing`, conditionally `renderBody` for POST, filter `missing` down to real ones, then merge per-op headers BEFORE auth headers.\n\nconnector-hub is the largest file in the repo at 7,375 lines and carries 93 duplicated lines total by my per-file count — the highest of any unguarded file.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 2,
+   "effort_1_5": 3,
+   "why_it_matters": "There are two places that turn a customer's connector configuration into an actual outbound HTTP request — one for read operations, one for actions — and they were written by copying rather than sharing. The ordering rules inside are load-bearing and subtle: tenant variables must beat framework date defaults, and per-operation headers must merge before auth headers so a connector definition can never overwrite the Authorization header. That second rule is a security property, and it currently holds in both copies because someone wrote it twice correctly. The shared file's own comment says the point of `renderAction` is that preview and execute 'can never drift' — the same argument applies to this third copy, which sits outside that guarantee. Higher effort than the others because the two pipelines have genuinely different return shapes, so this is a real refactor, not a lift-and-shift."
+  },
+  {
+   "dim": "duplication",
+   "title": "The demo tenant's UUID is hardcoded in four places across three different languages",
+   "category": "code",
+   "evidence": "`grep -rn \"a0000000-0000-0000-0000-000000000001\" src/ supabase/functions/ scripts/` returns four hits:\n- `src/context/AuthContext.tsx:40` — `export const DEMO_TENANT_ID = '...'`\n- `supabase/functions/knowledge-gap-detect/index.ts:33` — `const DEMO_TENANT_ID = '...'`\n- `supabase/functions/learned-behavior-detect/index.ts:30` — `const DEMO_TENANT_ID = '...'`\n- `scripts/sql/cleanup_empty_test_tenants.sql:44` — `v_demo constant uuid := '...'; -- never touch`\n\nThe two edge copies sit inside an 18-line block my detector flagged as identical between those two files (`knowledge-gap-detect:33-56` ≡ `learned-behavior-detect:30-53`). Note the frontend one IS exported, so the two edge functions are re-declaring a constant that already has a canonical home.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 1,
+   "risk_1_5": 2,
+   "effort_1_5": 1,
+   "why_it_matters": "A single magic identifier written out four times, once in a cleanup script whose comment reads 'never touch'. The frontend already exports it as a named constant; the two server functions ignore that and re-type the raw string. It is a small thing, but it is the kind of value where a typo in one copy is invisible — the code runs, it just silently operates on no tenant or the wrong one, and one of the four copies governs what a deletion script refuses to delete. Cheap to fix, and the two edge copies would collapse naturally if the shared 18-line preamble they sit in were factored out."
+  },
+  {
+   "dim": "schema",
+   "title": "Four writeback tables and three activity tables are byte-for-byte the same table with one column swapped",
+   "category": "architecture",
+   "evidence": "Column-set Jaccard over information_schema.columns for all 285 tables. account_writeback_requests / continuity_writeback_requests / invoice_writeback_requests / opportunity_writeback_requests share 14 IDENTICAL columns (applied_at, composed, created_at, created_by, de_id, decided_at, id, objective_id, op, request_summary, result, status, task_id, tenant_id) and differ ONLY by which single FK they carry: account_id / (none) / invoice_id / opportunity_id. Column-Jaccard 0.88-0.93. All four have 0 rows (query_to_xml exact count). Same pattern one level down: account_activities / invoice_activities / opportunity_activities share 8 identical columns (created_at, de_id, detail, id, kind, objective_id, summary, tenant_id), differ only by account_id / invoice_id / opportunity_id, all 0 rows. Carrying cost measured via pg_policies/pg_index: the writeback family carries 4 RLS policies + 8 indexes, the activities family 3 policies + 6 indexes. Duplication has already propagated into SQL: pg_proc scan (sql/12_routinerefs.sql) shows 4+3+3+4 = 14 separate routines for the writeback family and 2+1+2 = 5 for the activities family.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 4,
+   "risk_1_5": 3,
+   "effort_1_5": 4,
+   "why_it_matters": "Every new business object you support — the next one after account, invoice and opportunity — currently costs a new table, a new RLS policy, two new indexes and three or four new database routines, all copies of code that already exists. Seven tables and nineteen routines are doing the work of two tables. Because none of them has ever held a row, this is the cheapest moment there will ever be to collapse them; the cost of leaving it grows with every object type you add."
+  },
+  {
+   "dim": "schema",
+   "title": "Nine business concepts exist as two or three competing tables, and the live one is not the obvious one",
+   "category": "architecture",
+   "evidence": "Prefixed-twin scan across all 285 table names, with exact row counts from query_to_xml. conversations(3r) / de_conversations(455r) / workforce_conversations(0r); messages(6r) / de_messages(905r); exceptions(11r) / de_exceptions(19r); knowledge_docs(2005r) / platform_knowledge_docs(65r); knowledge_chunks(0r) / knowledge_doc_chunks(5035r) / platform_knowledge_chunks(276r); usage_metrics(73r) / tenant_usage_metrics(0r); compliance_packs(3r) / tenant_compliance_packs(6r); platform_config(34r) / platform_runtime_config(2r); audit_logs(3r) / audit_events(59382r). The exceptions pair is the sharpest case: BOTH are live (11 rows and 19 rows) and each is referenced by its own routines (2 and 6 respectively per sql/12_routinerefs.sql). I verified the legacy conversations table is at least no longer written: sql/13_convrefs.sql returned inserts_conversations=false and updates_conversations=false for all four matching routines, and the four matches proved to be prose in a message string and a comment, not table access.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 4,
+   "risk_1_5": 4,
+   "effort_1_5": 3,
+   "why_it_matters": "When two tables have almost the same name and one holds 455 rows while the other holds 3, anyone — human or AI — writing new code has a coin-flip chance of picking the dead one. Nothing errors. The write succeeds, the row lands in the wrong table, and the feature silently shows nothing. audit_logs versus audit_events is the one to worry about most: a compliance query pointed at the 3-row table instead of the 59,382-row one would report a clean history that does not exist."
+  },
+  {
+   "dim": "schema",
+   "title": "Ninety of 285 tables have never held a row, yet they carry 27% of the security rules and 29% of the indexes",
+   "category": "architecture",
+   "evidence": "Exact count(*) via query_to_xml across all 285 public base tables: 90 have exactly 0 rows (31.6%). Full distribution: 90 at zero, 95 with 1-9 rows, 60 with 10-99, 35 with 100-999, 5 with 1000+. So 185 of 285 tables (65%) hold fewer than 10 rows. Census via pg_policies / pg_index / pg_trigger: the 90 empty tables carry 101 of 379 RLS policies (27%), 223 of 763 indexes (29%), and 35 of 278 triggers (13%). Reachability split for those 90 (comment-stripped access-shaped matcher): 34 are wired into app code but have never been written to, 52 are reachable only via SQL routines, 4 are reachable from nowhere. Most-wired-yet-empty: eval_batch_jobs (10 edge-function sites), connector_actions (6), connector_ingest_candidates (6), connector_objects (6), commercial_agreements (5), voice_messages (5).",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 2,
+   "effort_1_5": 3,
+   "why_it_matters": "More than a quarter of the access-control surface guards data that does not exist. Those 101 RLS policies have never been exercised against a real row, so their correctness is unproven — the first row written to any of these tables is also the first live test of its security rule. It also means the schema badly overstates what the product actually does: someone reading the database would conclude 285 features ship, when the evidence supports about 100."
+  },
+  {
+   "dim": "schema",
+   "title": "created_by and updated_by are modelled on 67 table-columns and populated 24 times in the entire database",
+   "category": "architecture",
+   "evidence": "sql/09_crosscut.sql, exact counts via query_to_xml. created_by: present on 55 tables; of the 34 that contain rows, 25 are 100% NULL; total non-null created_by values across the ENTIRE database = 23. updated_by: present on 12 tables; of the 4 that contain rows, 3 are 100% NULL; total non-null values database-wide = 1. account_id: present on 21 tables, 6 of the 16 populated ones are 100% NULL, 154 values total. IMPORTANT COUNTER-EVIDENCE that changes the reading: sql/10b_audit.sql shows audit_events holds 59,382 rows with actor 100% filled across 79 distinct actors, current to today. So provenance IS captured — just not in these columns.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 3,
+   "effort_1_5": 2,
+   "why_it_matters": "This is redundant modelling, not a governance hole — I checked before concluding, and the real audit trail is healthy. The danger is narrower but sharper: 55 tables advertise a created_by column that is almost always NULL, so any future report, permission check or 'who did this' screen built on it will return blank and look like a data problem rather than a design one. The column promises an answer the schema never intended to store."
+  },
+  {
+   "dim": "schema",
+   "title": "230 columns are 100% NULL, but only 43 are genuinely dead — the rest are working UI fields nobody has filled in",
+   "category": "code",
+   "evidence": "Exact count(col) via query_to_xml over all 1,153 nullable columns in public base tables: 230 are 100% NULL in a table that HAS rows, spread across 93 tables. Stratified by table size so the claim is not built on 2-row tables: 126 dead columns sit in tables with >=10 rows, 67 in tables with >=50 rows. Split by comment-stripped grep of src/ + supabase/functions/: 43 truly dead (name absent from all app code), 132 wired-but-unused, 55 generic names not attributable by grep. Top offender profiles: 21 rows, 15 dead columns (employee_number, employment_type, end_date, hire_date, job_title, last_seen_at, locale, middle_name, mobile_phone, preferred_name, pronouns, reports_to_user_id, time_zone, work_location, work_phone) — yet job_title has a live editable input at src/components/EmployeeProfileDrawer.tsx:159-160. Next: de_conversations 455r/8 dead, human_tasks 413r/6 dead, knowledge_docs 2005r/6 dead.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 1,
+   "effort_1_5": 2,
+   "why_it_matters": "The headline number is misleading and I nearly reported it as-is: most of these are not junk to delete but finished features starved of data — the employee-profile form works, no one has typed into it. The real cost is that you cannot tell the two apart by looking. Anyone cleaning up the schema has to check each column against the UI first, so a job that sounds like an afternoon is actually 230 individual judgement calls."
+  },
+  {
+   "dim": "schema",
+   "title": "The rollback path on action_executions has never once been used",
+   "category": "architecture",
+   "evidence": "action_executions holds 186 rows. Its three rollback columns — rollback_of, rollback_receipt, rolled_back_at — are all 100% NULL (exact count(col) via query_to_xml). Independently, none of the three column names appears anywhere in src/ or supabase/functions/ under comment-stripped grep, placing all three in the 'truly dead' bucket rather than the 'wired but unused' bucket. Same pattern on de_deployment_stages (12 rows, rollback_reason 100% NULL).",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 3,
+   "effort_1_5": 2,
+   "why_it_matters": "186 actions have been executed and not one has ever been rolled back — and the undo machinery is not merely unused, it is unreferenced by any code that could invoke it. For a product whose pitch is governed, reversible AI action-taking, the reverse gear exists on the schema diagram and nowhere else. If a digital employee does something wrong today, nothing in this database is positioned to undo it."
+  },
+  {
+   "dim": "schema",
+   "title": "Eight to ten tables exist that nothing anywhere can reach",
+   "category": "architecture",
+   "evidence": "Cross of two independent scans: comment-stripped access-shaped grep over src/ + supabase/functions/, and comment-stripped access-shaped scan of all 890 routines, 5 views, 278 triggers and 379 policies (sql/15_strictrefs.sql). Loose matching yields 8 unreachable tables, strict matching 10 — a tight and consistent range. Both sets contain: commercial_catalog_items(4r), analytics_query_defs(2r), unguarded_secdef_writers(2r), benchmark_samples(1r), connector_sync_cursors(0r), de_channels(0r), extraction_templates(0r), knowledge_tags(0r). Verified independently with ripgrep over supabase/migrations: each appears in only 1-2 migration files, i.e. the CREATE TABLE and nothing else. connector_sync_cursors' single code hit is a comment at supabase/functions/connector-hub/index.ts:1692 reading 'paging the rest via connector_sync_cursors is the deferred follow-up'.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 1,
+   "risk_1_5": 1,
+   "effort_1_5": 1,
+   "why_it_matters": "This is the good news dressed as a finding: on a 285-table schema, only eight to ten tables are true orphans, and four of them still hold a handful of rows from a one-off experiment. It is the smallest category in this report and the easiest to clear. I am listing it mainly so the number is on record — the schema does not have an orphan problem."
+  },
+  {
+   "dim": "routines",
+   "title": "94 of 772 app-authored routines (12.2%) have no caller anywhere — 109 KB of orphaned database logic",
+   "category": "code",
+   "evidence": "Method: dumped every non-extension routine in `public` (772 rows, `pg_depend deptype='e'` excluded) with DB-internal reachability flags, then cross-referenced against every call site in src/, supabase/functions/, scripts/. Scripts: C:\\Users\\SPECTRE\\AppData\\Local\\Temp\\claude\\D--Dream-Team-AI\\9e864d5e-6118-4763-aad0-aba6670c7478\\scratchpad\\q\\06_reach.sql and xref2.mjs. A routine counts as LIVE if bound to a trigger, named in another routine's prosrc, in an RLS policy, a view, a DDL expression, a cron command, or appearing in a string literal in non-comment application code. Output: {total: 772, db_reachable: 327, string_literal_callsite: 429, DEAD_strict_no_callsite: 94, dead_strict_secdef: 92}. Dead bodies total 109,303 bytes. 83 of the 94 are not mentioned outside migrations AT ALL; the remaining 11 appear only inside comments — I hand-verified every one of those 11 with `grep -rn <name> src supabase/functions scripts`, e.g. src/lib/digitalEmployeesApi.ts:269 reads `// transfer_de_ownership (DB) still exists, but its frontend wrapper is gone —`. Largest offenders: detect_exceptions (7,514 B), resolve_jit_membership (4,998), decide_inquiry_triage (4,961), ingest_document (4,785), install_role_watchers (4,565), reconcile_invoice_payments (3,323), propose_invoice_from_agreement (3,113), get_tenant_details (2,968), upsert_action_definition (2,963), calculate_tenant_monthly_cost (2,636).",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 3,
+   "effort_1_5": 2,
+   "why_it_matters": "An eighth of the database's custom logic is code nobody runs. Every future security sweep, permissions audit, type regeneration and schema review has to read, reason about and re-secure it — that cost is paid on every pass, forever, for zero product value. It also actively misleads: an engineer or an audit reading `reconcile_invoice_payments` reasonably assumes invoice reconciliation is wired up, when nothing calls it."
+  },
+  {
+   "dim": "routines",
+   "title": "The security gate has frozen an API surface that is 10% dead — 62 uncalled routines are pinned as permanently callable",
+   "category": "infrastructure",
+   "evidence": "D:\\Dream Team AI\\scripts\\certify.mjs:34 sets ALLOWLIST_FILE = 'supabase/baseline/execute-allowlist.json'; lines 72-101 pin the anon/authenticated EXECUTE surface and fail certify on ANY diff in either direction (line 100: 'allowlisted grant VANISHED (revoked or fn dropped)'). Joining that pin file against my dead list: pinned_at 2026-08-08T20:03:52.572Z, 629 pinned routines, of which 62 are dead — apply_config_template, audit_chain_head, calculate_tenant_monthly_cost, certify_digital_employee, detect_exceptions, export_tenant_config, get_all_tenants_with_summary, get_tenant_details, ingest_document, is_feature_enabled, match_doc_chunks, resolve_jit_membership, sso_login_compliance, transfer_de_ownership, update_tenant_billing, update_tenant_features, upsert_action_definition, … (62 total). Separately measured: 464 of 772 routines are SECURITY DEFINER *and* EXECUTE-able by `authenticated`; 66 are EXECUTE-able by `anon`.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 3,
+   "effort_1_5": 2,
+   "why_it_matters": "The gate does its job — it stops NEW holes opening. But because it fails on removal as well as addition, it has cemented the dead surface: deleting an uncalled routine now breaks the build until someone deliberately re-pins. The safety mechanism has quietly become the reason the cleanup never happens, and one in ten published endpoints is code no part of the product calls."
+  },
+  {
+   "dim": "routines",
+   "title": "91% of routines are SECURITY DEFINER — every access check is hand-rolled, with no systemic enforcement",
+   "category": "architecture",
+   "evidence": "01_counts.sql over pg_proc/pg_namespace: public schema has 885 functions + 4 aggregates + 1 procedure = 890 routines, of which 703 functions are prosecdef. Excluding the 118 extension-owned routines (03_app_owned.sql): {app_routines: 772, security_definer: 704, distinct_names: 771} → 704/772 = 91.2%. Of those, 464 are also EXECUTE-able by `authenticated`. Spot-reading bodies (14_guards.sql) confirms the guard is written by hand and differs per routine: get_tenant_details opens `IF NOT is_platform_admin() THEN RAISE EXCEPTION 'Unauthorized'`, is_feature_enabled uses `resolve_platform_capability(auth.uid(),'tenants.view') or exists(select 1 from profiles …)`, compute_account_health uses `coalesce(auth.role(),'') <> 'service_role'`, is_ancestor_of uses `caller_has_tenant_relationship(...)`. Four different guard idioms across four routines.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 4,
+   "effort_1_5": 5,
+   "why_it_matters": "SECURITY DEFINER means the routine runs with the owner's privileges and bypasses row-level security — so for 704 routines the ONLY thing standing between a logged-in user and other tenants' data is a hand-written IF at the top of each body. There is no shared guard primitive and no gate that checks one is present. A single routine shipped without its check is a cross-tenant breach, and nothing in the build would notice. This is the single biggest structural liability in the routine layer."
+  },
+  {
+   "dim": "routines",
+   "title": "`decide_inquiry_triage` is a 4,961-byte dead twin of the live `decide_work_item_triage`",
+   "category": "code",
+   "evidence": "Near-duplicate detection over 706 normalized bodies using 5-gram token shingles (dup.mjs): top non-identical pair is `decide_work_item_triage(4873) <-> decide_inquiry_triage(4961,DEAD)` at Jaccard 0.771. Reachability: decide_work_item_triage → code=1, live; decide_inquiry_triage → routine=0 cron=0 code=0, DEAD. The only two repo mentions of the dead one are comments, and supabase/functions/specialist-consult/index.ts:696 names the relationship outright: `//      sibling of decide_inquiry_triage: guardrail-always-wins, then`. It is still referenced by 16 migration files, most recently 459_trust_unbrick_registered_actions.sql.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 3,
+   "effort_1_5": 1,
+   "why_it_matters": "Two 5 KB near-identical triage decision routines exist and only one runs. Any future change to triage rules has a coin-flip chance of being applied to the dead copy — the change appears to ship, tests touching the live path stay green, and behaviour never changes. This is exactly the failure mode that wastes a day and ends in 'but I DID fix it'."
+  },
+  {
+   "dim": "routines",
+   "title": "The `*_writeback` family is 10 copy-pasted routines (~31 KB) differing only by entity — and one member is already dead",
+   "category": "architecture",
+   "evidence": "dup.mjs clustering (Jaccard >= 0.55) produced 21 clusters covering 49 routines and 84,055 bytes. Three of those clusters are the same family: propose_account_writeback(5512) / propose_continuity_writeback(5390) / propose_opportunity_writeback(5231) / propose_invoice_writeback(4558); resolve_opportunity_writeback(1279) / resolve_continuity_writeback(1274) / resolve_account_writeback(1249); apply_account_writeback_internal(2254) / apply_opportunity_writeback_internal(2131) / apply_invoice_writeback_internal(1936). Total 30,814 bytes across 10 routines. The family is asymmetric: `resolve_invoice_writeback` (747 B) is DEAD (routine=0 cron=0 code=0) while its three resolve_* siblings are live, and there is no `resolve_*` for the invoice path at all in the live set.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 3,
+   "effort_1_5": 3,
+   "why_it_matters": "Adding an eleventh entity type means hand-copying three more routines; fixing a bug in the writeback logic means finding and fixing it ten times. The asymmetry is the proof this already fails — the invoice path is missing the resolve step its siblings have, and nothing flagged that gap. Copy-paste families drift silently, and the drift shows up as one entity type behaving differently from the rest."
+  },
+  {
+   "dim": "routines",
+   "title": "Dead routines are still consuming engineering effort — one was re-secured at migration 636 of 651",
+   "category": "code",
+   "evidence": "churn.mjs / churn2.mjs indexed all 672 migration files. The 94 dead routines are named across 232 migration files. Excluding timestamp-named migrations, 19 dead routines were last touched by a sequential migration >= 500 (highest sequential is 651), and 3 at >= 600. Worst case: `install_role_watchers` (4,565 B, dead) — 5 migrations, last touched at 636_cross_tenant_write_holes.sql. `grep -n install_role_watchers supabase/migrations/636_cross_tenant_write_holes.sql` shows it being re-secured at lines 55, 73 and 86, and line 29 states plainly: `-- install_role_watchers is called only from migrations and provisioning, both`. Also recently touched: get_tenant_details and update_tenant_features (mig 624), get_all_tenants_with_summary / list_kpi_metrics / save_de_config (mig 559).",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 2,
+   "effort_1_5": 1,
+   "why_it_matters": "This is the compounding cost made visible. Security hardening passes are spending real effort locking down functions that nothing calls — migration 636 even documents that the routine has no application caller, and secures it anyway rather than dropping it. Every sweep re-pays this, and the bill grows with each new dead routine."
+  },
+  {
+   "dim": "routines",
+   "title": "One app-authored function overload remains: `get_de_config`",
+   "category": "code",
+   "evidence": "04_app_overloads.sql (extension functions excluded via pg_depend deptype='e') returned exactly one row: `get_de_config`, n=2, signatures `(p_de_id uuid)  |  (p_tenant_id uuid, p_entity_kind text, p_entity_id uuid)`. For contrast, the unfiltered query (02_overloads.sql) returned 13 names — the other 12 are all pgvector (array_to_vector, cosine_distance, l2_distance, l2_normalize, subvector, …). Both get_de_config signatures appear in the certify EXECUTE allowlist.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 1,
+   "risk_1_5": 2,
+   "effort_1_5": 1,
+   "why_it_matters": "Overloaded routine names are what caused a live outage here before (Postgres error 42725, 'function is not unique'). The good news is the class is 99% eliminated — this is the last one. The two signatures use entirely different parameter names, so PostgREST can currently tell them apart; the risk is that a future third signature, or a caller passing a partial argument set, reintroduces the ambiguity. Worth closing precisely because it is the only one left."
+  },
+  {
+   "dim": "routines",
+   "title": "`sync_de_department` and `sync_profile_department` are byte-identical after normalization",
+   "category": "code",
+   "evidence": "13_dupbodies.sql grouped 706 bodies by md5 of the comment-and-whitespace-normalized source; exactly ONE group had count > 1: `sync_de_department == sync_profile_department` (856 and 852 raw bytes). dup.mjs independently scored the pair at Jaccard 1.0. Both are trigger functions and both are bound to live triggers (bound_to_trigger=1 for each), firing on different tables.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 1,
+   "risk_1_5": 2,
+   "effort_1_5": 1,
+   "why_it_matters": "Two triggers on two different tables run logic that is character-for-character the same. A department-sync rule change has to be made twice, and if it is made once the two tables silently diverge — profiles saying one thing about a person's department and digital employees saying another. Small, but it is the only exact duplication in the whole 706-body corpus, so it is cheap to eliminate."
+  },
+  {
+   "dim": "routines",
+   "title": "`p_workspace_period_end` is a function accidentally named after a parameter",
+   "category": "code",
+   "evidence": "16_odd.sql returned the full body: `SELECT period_end FROM public.close_workspaces WHERE id=p_workspace_id;` — 75 bytes, signature `(p_workspace_id uuid)`, returns date, SECURITY DEFINER, dead (no caller in DB or repo), not granted to authenticated or anon. It is named with the `p_` prefix this codebase reserves for parameters. Referenced by 3 migrations, last at 040. Neighbouring oddity in the same dead set: `get_user_id_by_email(p_email text)`, 74 bytes, SECURITY DEFINER, body `select id from auth.users where lower(email) = lower(p_email) limit 1;` — an uncalled helper that reads the auth.users table.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 1,
+   "risk_1_5": 1,
+   "effort_1_5": 1,
+   "why_it_matters": "A function called `p_workspace_period_end` is almost certainly a typo that got committed and then survived 600+ migrations because nothing ever forced a review of the routine inventory. It is harmless on its own; it matters as evidence that routines can be created by accident here and nothing ever notices. `get_user_id_by_email` in the same dead set is the sharper version of that point — an uncalled SECURITY DEFINER function that reads the authentication table."
+  },
+  {
+   "dim": "ui",
+   "title": "Zero automated tests cover any screen — 73,790 lines of UI, 0 component tests",
+   "category": "test",
+   "evidence": "`grep -rln \"src/components\\|src/pages\" tests/ | wc -l` → 0. `ls tests/` → 11 .test.ts files (approval-learning-capture, confidence-parity, continuity-format, contract-parity, google-ads-template, knowledge-acl-invariants, marketing-adapters, response-window, tenant-isolation, write-bindings) — none import a component or page. `node -e \"console.log(require('./package.json').devDependencies)\"` → no @testing-library/*, no jsdom, no happy-dom. src line count: `Get-ChildItem src -Recurse -Include *.ts,*.tsx | Measure-Object -Line` → 73,790 lines across 201 files.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 4,
+   "risk_1_5": 5,
+   "effort_1_5": 4,
+   "why_it_matters": "Every visual or behavioural regression in the product's entire user-facing surface can only be caught by a person clicking. There is no safety net under the screens where customers approve money, grant permissions, and read what their digital employees did. The one place the codebase invests heavily in verification (certify, drift gates, DB tests) stops at the browser."
+  },
+  {
+   "dim": "ui",
+   "title": "No linter exists, yet 22 places in the code suppress a lint rule that nothing runs",
+   "category": "infrastructure",
+   "evidence": "No eslint config at repo root (`ls -a | grep -i eslint` → none); eslint absent from package.json dependencies and devDependencies; `ls node_modules/.bin/ | grep -i eslint` → not installed. Meanwhile `grep -rn \"eslint-disable\" src/ | wc -l` → 26, of which `grep -rn \"exhaustive-deps\" src/ | wc -l` → 22. Example: src/App.tsx:156 `}, [currentPage, location.pathname, authedUser]); // eslint-disable-line react-hooks/exhaustive-deps`.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 4,
+   "effort_1_5": 2,
+   "why_it_matters": "React's stale-data bug class (a screen showing yesterday's numbers because a dependency was forgotten) is exactly what the react-hooks rule catches. 22 places have consciously waved it off — but there is no checker behind the wave-off, so a NEW forgotten dependency produces no warning at all. The suppressions are decorative and read, misleadingly, as evidence a checker is watching."
+  },
+  {
+   "dim": "ui",
+   "title": "One page file has grown to 4,414 lines holding ~30 separate panels, 190 pieces of state and 24 direct database calls",
+   "category": "code",
+   "evidence": "`Get-ChildItem src -Recurse | Measure-Object -Line` → src/pages/tenant/LiveWorkforceDEs.tsx = 4,414 lines (next largest non-generated: LivePlaybookBuilder.tsx 2,024). `grep -c useState` → 190; `grep -c useEffect` → 26; `grep -c \"\\.rpc(\"` → 24; `grep -n \"^\\(export \\)\\?\\(function\\|const\\) [A-Z]\"` → 45 top-level declarations. Largest internal component DeTrustAutonomySection ≈362 lines. src/pages/tenant/LiveWorkforceDEs.tsx:2166 `DeKpisPanel` declares 12 useState and calls `supabase.rpc('get_de_kpi_status')` inline in the rendering component.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 4,
+   "risk_1_5": 3,
+   "effort_1_5": 4,
+   "why_it_matters": "This is the digital-employee management screen — the product's centrepiece. Any change to it means loading 4,400 lines into working memory, and two people cannot safely work on different panels at once because they are in the same file. It is also the only page that reaches past the data-access layer straight into the database 24 times, so its query behaviour is invisible to the shared API layer everything else uses."
+  },
+  {
+   "dim": "ui",
+   "title": "The design system is LAW on paper but supplies under a quarter of the buttons — and the drift gate does not measure that",
+   "category": "architecture",
+   "evidence": "`grep -rh \"<button\" src/ --include='*.tsx' --exclude-dir=design | grep -v '^[[:space:]]*\\(//\\|\\*\\)' | wc -l` → 653 raw. `grep -rh \"<Button\"` same filters → 195. Inputs: 329 raw `<input` vs 125 references to the kit's INPUT_CLS. Tables: 50 raw `<table` vs 9 `<TableScroll>`. Adoption by file: 62 of 128 .tsx files import src/design/primitives. `node scripts/design-drift.mjs` → 8 metrics tracked (bg-slate, border-slate, radius, card padding, StatCard-likes, hand-rolled dialogs, inline styles, raw hex) — none of them counts button/input/table primitive adoption.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 3,
+   "effort_1_5": 4,
+   "why_it_matters": "A fix made once in the kit (a focus ring, a disabled state, a touch target) reaches roughly one control in four. The rest have to be found and edited by hand, which is how screens drift apart visually. The gate that is supposed to enforce the system watches cosmetic tokens and passes green while the biggest adoption gap goes uncounted — so 'no drift regressions' overstates how much is actually under control. Caveat: some raw buttons are legitimately bespoke (nav rows, tab strips, whole-card buttons), so 653 is an upper bound, not 653 defects."
+  },
+  {
+   "dim": "ui",
+   "title": "The whole app ships as one 2.1 MB JavaScript file, and the size warning has been turned off",
+   "category": "infrastructure",
+   "evidence": "dist/assets (build dated 2026-08-05): single `index-91224d7a.js` = 2,114.5 KB plus `index-d99de113.css` = 72 KB — no other chunks. vite.config.ts sets `chunkSizeWarningLimit: 5000` (Vite's default is 500). `grep -rc \"React.lazy\" src/` → exactly 1 file (src/main.tsx:40, a dev-only design gallery behind `import.meta.env.DEV`). `grep -c \"^import .* from './pages\" src/App.tsx` → 41 eagerly imported page modules.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 2,
+   "effort_1_5": 2,
+   "why_it_matters": "Every visitor downloads all 67 screens — platform console, playbook builder, connector hub — before the login box appears. On a phone or a poor connection that is the first impression. The warning that would have flagged this was raised tenfold in the build config, so the number will keep growing silently. Note: the bundle figure comes from a dist/ folder built 4 days ago; the source has moved since, so treat 2.1 MB as a floor."
+  },
+  {
+   "dim": "ui",
+   "title": "A legacy compatibility shim still fronts the design kit for 30 files, and its own comment reports the wrong number",
+   "category": "architecture",
+   "evidence": "src/components/ui.tsx is 8 lines and re-exports `InHubContextV2 as InHubContext, PageHeaderV2 as PageHeader, TH as th` from design/primitives plus a local `td`. Its header comment claims '37 call sites keep importing from here'; `grep -rl \"components/ui'\" src/ --include='*.tsx' | wc -l` → 30. Only ONE file imports the real name directly (src/pages/tenant/systems/LivePlaybookBuilder.tsx:6, aliased back to PageHeader). src/components/Modal.tsx is a second such adapter (11 lines wrapping the kit's Modal) and is still re-exported from src/components/index.ts:4.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 2,
+   "effort_1_5": 2,
+   "why_it_matters": "Two names for the same thing means new work has to guess which is current, and a stale count in the comment means the migration's own progress tracker is wrong. It is cheap to finish — 30 import lines — and until it is, the page-header contract looks unadopted when it is actually adopted through an alias."
+  },
+  {
+   "dim": "ui",
+   "title": "Five design-kit components are built and documented but effectively unused; one is fully dead",
+   "category": "code",
+   "evidence": "Repo-wide grep excluding the definition file: `QueueCard` → 0 uses anywhere (its own replacement's comment at src/design/primitives.tsx:458 admits 'Replaces QueueCard, which nothing imports'). `DetailTile` → used only in src/design/SchemaGallery.tsx (the dev-only preview), 0 production screens. `EmployeeCard` → 1 screen. `SetupChecklist` → 1 screen. `TimelineStep` → 2 screens. Also dead: `ReadOnlyNote` (src/pages/tenant/LiveWorkforceDEs.tsx:90, appears once — its own definition), `DEAvatars` and `K_TYPES` in src/pages/tenant/knowledge/KnowledgeLibraryPage.tsx.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 1,
+   "risk_1_5": 1,
+   "effort_1_5": 1,
+   "why_it_matters": "Small, but it is the design system telling on itself: components were designed and shipped ahead of the screens that were meant to use them. Someone reading the kit sees a richer vocabulary than the product actually speaks."
+  },
+  {
+   "dim": "ui",
+   "title": "Five tables are wrapped in overflow-hidden or nothing, which clips columns instead of letting them scroll",
+   "category": "code",
+   "evidence": "For every file containing `<table`, checked for `<TableScroll>` or `overflow-x-auto`: 3 files have neither — src/pages/tenant/intelligence/LiveProvingGround.tsx (2 tables), src/pages/tenant/knowledge/KnowledgeQualityPage.tsx (2), src/pages/tenant/systems/LiveConnectorsPage.tsx (1). Two of them explicitly clip: LiveProvingGround.tsx:266 `<div className=\"rounded-2xl border border-dt-border bg-dt-card overflow-hidden mb-6\">` immediately above `<table>` at :267; LiveConnectorsPage.tsx:1252 `<div className=\"rounded-xl border border-dt-border overflow-hidden mb-4\">` above `<table>` at :1253.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 2,
+   "effort_1_5": 1,
+   "why_it_matters": "On a narrower window the right-hand columns of these tables are cut off with no way to reach them — the data is on the page but unreadable. The design kit already ships TableScroll for exactly this; 41 of 50 tables simply do not use it, and these 5 have no fallback either."
+  },
+  {
+   "dim": "ui",
+   "title": "Two source files, and a 10,080-line generated types file, are imported by nothing",
+   "category": "code",
+   "evidence": "Import-graph walk from src/main.tsx across all 201 src files: 196 reachable, 5 not. Of those, src/vite-env.d.ts is ambient (expected) and src/components/workforce/index.ts is an unused 6-line barrel. Genuinely orphaned code: src/data/people.ts (24 lines) and src/lib/amendmentMetricsApi.ts (135 lines). Separately, src/types/database.types.ts (10,080 lines) is produced by `npm run gen:types` but `grep -rn \"database.types\"` across the whole repo returns exactly one hit — the package.json script that generates it.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 1,
+   "risk_1_5": 2,
+   "effort_1_5": 1,
+   "why_it_matters": "The orphan files are trivial. The generated types file is the interesting one: 10,080 lines describing every database table are regenerated and committed, but no code imports them, so the Supabase client is untyped everywhere. A column rename in the database produces no compile error in the app — it produces a blank screen at runtime."
+  },
+  {
+   "dim": "tests",
+   "title": "Almost the entire verification apparatus is manual-only — CI runs 3 of 10 test files and none of the 11 production probes",
+   "category": "infrastructure",
+   "evidence": "MEASURED. `grep -rn \"certify|golden-path|design-drift|audit:\" .github/` → NO MATCHES (grep exit=1). `.github/workflows/ci.yml` runs exactly four commands: `npm run build`, `npm run test:unit`, `npm run test:isolation`, `npm run test:invariants`. package.json:20 `\"test:unit\": \"vitest run tests/continuity-format.test.ts\"` — ONE file, 6 assertions. So CI covers continuity-format (6), tenant-isolation (4), knowledge-acl-invariants (21) = 31 of the 86 it-blocks across the suite, and 3 of 10 test files. The other 7 files (approval-learning-capture, confidence-parity, contract-parity, google-ads-template, marketing-adapters, response-window, write-bindings), all 11 Ring-0 probes, the EXECUTE-perimeter allowlist, the edge-typecheck ratchet, golden-path E2E, the role-gate audit, the silent-refusal audit and design-drift run ONLY under `node scripts/certify.mjs`, which requires a production Management API token from a developer's `.env.local` and is invoked by no workflow.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 5,
+   "risk_1_5": 5,
+   "effort_1_5": 2,
+   "why_it_matters": "Your best safety checks are the ones that depend on a person remembering. In the last 30 days you shipped 855 commits; `review/certify-last.json` was committed 15 times. The gap between those two numbers is how many changes reached the repo without the full check ever running."
+  },
+  {
+   "dim": "tests",
+   "title": "Only 8 of 296 source modules are exercised by any test — and the five biggest, fastest-changing ones are not among them",
+   "category": "test",
+   "evidence": "MEASURED. Enumerating every `from '../…'` import across tests/*.test.ts yields exactly 8 modules: src/lib/{adapterTemplates, categoryContracts, continuityFormat, responseWindow} and supabase/functions/_shared/{adapterTemplates, categoryContracts, confidence, contentHash}. Denominator: `find src -name '*.ts*'` = 201, `find supabase/functions -name '*.ts'` = 95 → 296 (2.7%). Churn on the untested critical modules, via `git log --since='30 days ago' --oneline -- <file> | wc -l`: connector-hub/index.ts 7,375 lines / 72 commits; src/pages/tenant/LiveWorkforceDEs.tsx 4,414 lines / 67; playbook-execute/index.ts 2,950 / 21; de-work/index.ts 1,669 / 52; de-answer/index.ts 1,412 / 50; src/lib/connectorApi.ts 1,882 / 27. Every one of those has zero test importing it.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 5,
+   "risk_1_5": 4,
+   "effort_1_5": 5,
+   "why_it_matters": "The connector engine and the digital-employee runtime are where the product actually does work for a customer, and they change several times a week with nothing that can tell you a change broke them. A regression there surfaces as a customer noticing, not as a red build."
+  },
+  {
+   "dim": "tests",
+   "title": "Cross-tenant data isolation is behaviourally proven on 1 table out of 242",
+   "category": "test",
+   "evidence": "MEASURED against production via scripts/db-query.mjs: 285 public tables, 242 carrying a `tenant_id` column, 285 with RLS enabled, 387 policies across 259 tables (so 26 tables have RLS on and zero policies). `tests/tenant-isolation.test.ts` has 4 assertions and touches exactly one table — `customer_accounts` (lines 22-27, 39-83). certify's Ring-0 probe `rls-on-every-public-table` (scripts/certify.mjs:105) proves RLS is ENABLED, never that a policy is CORRECT. knowledge-acl-invariants covers the knowledge surface plus 4 global perimeter checks, but asserts on catalog SHAPE, not on what a signed-in user of tenant B can actually read from tenant A.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 5,
+   "risk_1_5": 5,
+   "effort_1_5": 4,
+   "why_it_matters": "Cross-tenant leakage is the one bug that ends a B2B company. You have an excellent test for it — pointed at 0.4% of the tables it could be pointed at. Widening it is cheap per table because the harness (tests/helpers/testTenant.ts, real signup, real sessions) already exists."
+  },
+  {
+   "dim": "tests",
+   "title": "The action gate — the permission boundary that decides what a digital employee may do — has no test, only a manual production probe",
+   "category": "test",
+   "evidence": "MEASURED. `grep -rhoE \"(de_may_use_action|get_agentic_tools_for_de|decide_human_task|complete_signup|...)\" tests/` returns only `complete_signup` (5 hits) and `decide_human_task` (8 hits). The gate functions `de_may_use_action` and `get_agentic_tools_for_de` appear in zero test files. Their only check is scripts/certify.mjs:135 probe `role-restricted-actions-stay-restricted`, whose own comment says the offer list IS the authorisation boundary and cites mig 643 (\"22 employees, incl. Marketing and Accounting, could hire staff\"). That probe is production-only, manual-only, and is NOT among the cases in scripts/certify-mutation-test.mjs. golden-path.mjs:233 exercises `decide_action_execution` but through the Management API superuser connection, and only for the destructive/trust floor — not for who-may-use-what.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 5,
+   "risk_1_5": 5,
+   "effort_1_5": 3,
+   "why_it_matters": "The single most expensive permission bug you have shipped (a marketing employee able to hire staff) is guarded today by a check that runs only when someone types `npm run certify`, and no test would catch it coming back."
+  },
+  {
+   "dim": "tests",
+   "title": "Two of certify's audit gates are structurally incapable of failing",
+   "category": "infrastructure",
+   "evidence": "MEASURED. scripts/audit-role-gates.mjs:971 `if (STRICT && (findings.length || navGaps.length)) process.exit(1);` and scripts/audit-silent-refusals.mjs:245 (identical shape). package.json:24-25 define `audit:role-gates` and `audit:silent-refusals` WITHOUT `--strict`. scripts/certify.mjs:291 grades a section purely on `ok: r.status === 0`. I ran both: each printed its report and returned EXIT=0. They exit non-zero only on internal self-test failure (exit 2). Currently both are CLEAN (role-gates: \"UI call sites offering a gated action with no role check: 0\"; silent-refusals: 0 in every bad bucket) — so this is a latent hole, not a live false green.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 4,
+   "effort_1_5": 1,
+   "why_it_matters": "Two of your nine green ticks would stay green with a hundred findings underneath them. One word (`--strict`) in package.json closes it, and closing it while the reports are clean is free."
+  },
+  {
+   "dim": "tests",
+   "title": "golden-path reports PASS to certify even when it could not prove the loop",
+   "category": "infrastructure",
+   "evidence": "MEASURED. scripts/golden-path.mjs:337 `process.exit(failed === 0 ? 0 : 1);` — the `cannotProve` counter, incremented at line 92 for every step the environment cannot exercise, does not affect the exit code. Lines 334-336 print \"GOLDEN PATH INCOMPLETE — N/10 proven\" to the console, but scripts/certify.mjs:291 reads only the exit code, so certify prints `PASS golden-path`. The CANNOT-PROVE branches are real code paths: golden-path.mjs:136 (empty role_archetypes) and :240 (dev lacking the `p_content` gate parameter). Today those should not fire — I measured dev has 13 active role_archetypes and exactly 1 `decide_action_execution` overload, carrying p_content — but the mechanism is exactly the one .github/workflows/ci.yml lines 15-25 condemns in writing.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 4,
+   "effort_1_5": 1,
+   "why_it_matters": "Your end-to-end product proof can degrade to proving nothing and still report success. The fix is one character: `failed === 0 && cannotProve === 0`."
+  },
+  {
+   "dim": "tests",
+   "title": "Only 5 of the 11 Ring-0 probes are mutation-tested, and the mutation test is not part of certify",
+   "category": "test",
+   "evidence": "MEASURED. scripts/certify.mjs defines 11 probes (regex on `^\\s*name: '[a-z0-9_-]+',$` → 11). scripts/certify-mutation-test.mjs CASES cover 5 distinct probes (no-unattended-public-speech, money-param-is-amount_cents, template-op-contract-classes ×3 variants, rls-on-every-public-table, audit-chain-verifies-hq) plus execute-perimeter marked MANUAL. Not mutation-tested: role-restricted-actions-stay-restricted, workspace-admin-has-an-owner, guard-bypass-setters-pinned, secdef-search-path-ratchet, active-template-actions-are-bound, migration-files-match-ledger-checksums. `certify:mutation` is a separate npm script (package.json:29); scripts/certify.mjs's `sections` array does not invoke it. The mutation cases also re-implement each predicate as a synthesised SELECT rather than executing the probe's own SQL, so a probe can drift away from its mutation case silently.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 3,
+   "effort_1_5": 2,
+   "why_it_matters": "The probes are your best defence, and you have proof that only five of them can actually fire. The action-gate probe — the one that caught the hiring-permission hole — is among the six unproven."
+  },
+  {
+   "dim": "tests",
+   "title": "Zero UI tests exist, and the configuration makes them impossible to add without changing it",
+   "category": "test",
+   "evidence": "MEASURED. `find src tests -name '*.test.tsx' -o -name '*.spec.tsx' | wc -l` = 0, against 55 files in src/components and 67 in src/pages. vitest.config.ts:6 `include: ['tests/**/*.test.ts']` — a `.tsx` test would not be collected. vitest.config.ts:4 `environment: 'node'` — no DOM. `ls -d node_modules/jsdom node_modules/@testing-library` → both absent; neither appears in package.json devDependencies. `find src supabase -type d -name '__tests__' | wc -l` = 0. No Playwright, Cypress or Jest config in the repo root.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 3,
+   "effort_1_5": 3,
+   "why_it_matters": "Every screen your customers touch — including the 4,414-line LiveWorkforceDEs page changed 67 times in 30 days — is verified only by someone looking at it. The design system being LAW is enforced by a grep script (design-drift.mjs, 78 lines), not by anything that renders a component."
+  },
+  {
+   "dim": "tests",
+   "title": "Two fully-offline test files are excluded from CI's 'unit tests' step — including the only guard on the browser/edge twin copies",
+   "category": "test",
+   "evidence": "MEASURED. I ran all three offline files together: `npx vitest run tests/continuity-format.test.ts tests/response-window.test.ts tests/contract-parity.test.ts` → 3 files, 27 tests passed, 1.81s, zero network. package.json:20 `test:unit` names only continuity-format (6 tests), so CI leaves 21 network-free assertions on the floor — including all 4 in tests/contract-parity.test.ts, which is the ONLY thing comparing the two twin file pairs (src/lib/adapterTemplates.ts 454 lines vs supabase/functions/_shared/adapterTemplates.ts 455; src/lib/categoryContracts.ts 176 vs _shared 170 — MEASURED as the only two shared basenames between those directories).",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 3,
+   "effort_1_5": 1,
+   "why_it_matters": "Twenty-one free assertions, 1.8 seconds, no credentials required. The twin-copy drift guard in particular protects against a class of bug this codebase has hit before, and it runs on nobody's machine automatically."
+  },
+  {
+   "dim": "tests",
+   "title": "A test carries a hand-copy of production logic and claims a back-reference that does not exist",
+   "category": "test",
+   "evidence": "MEASURED. tests/google-ads-template.test.ts:90-92 comment: \"The EXACT list-selection branch from runTemplateOp (connector-hub). Kept in step deliberately: if that logic changes, this must change with it, and the comment there points here.\" `grep -n \"google-ads-template|selectList|tests/\" supabase/functions/connector-hub/index.ts` → NO OUTPUT. The copy (function `selectList`, lines 93-101) does currently match connector-hub/index.ts:1584-1601 semantically, but connector-hub carries no marker telling an editor the copy exists.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 3,
+   "effort_1_5": 1,
+   "why_it_matters": "The test will keep passing on a stale copy after connector-hub changes, and will report green about logic that no longer runs — the exact failure mode the comment was written to prevent."
+  },
+  {
+   "dim": "tests",
+   "title": "Four of the ten test files silently skip themselves when the admin token is absent",
+   "category": "test",
+   "evidence": "MEASURED. `describe.skip(...)` on missing token at tests/confidence-parity.test.ts:19, tests/google-ads-template.test.ts:103, tests/marketing-adapters.test.ts:208, tests/write-bindings.test.ts:61 — 29 of the suite's 86 it-blocks. Only tests/knowledge-acl-invariants.test.ts:29 does the right thing and throws. Because none of those four run in CI, a local run without `.env.local` reports a clean green over 29 assertions that never executed.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 3,
+   "effort_1_5": 1,
+   "why_it_matters": "One file in this repo already chose to fail loudly rather than skip, with a written argument for why. The other four make the opposite choice — an inconsistency that will eventually be read as a pass."
+  },
+  {
+   "dim": "tests",
+   "title": "tests/README.md materially misstates the test environment, discouraging tests that could be written today",
+   "category": "documentation",
+   "evidence": "MEASURED. tests/README.md lines 61-68 claim dev is \"stale relative to production for anything from migration 071 onward (~19 tables missing)\" and lines 124-129 claim behavioural knowledge-ACL tests are blocked because dev lacks knowledge_collections and everything from mig 294 on. Actual table-set diff (db-query vs dev-query on `pg_tables`): production 285, dev 292; in prod and missing from dev = 1 (`benchmark_samples`); in dev and not prod = 8 (de_specialist_assignments, embed_tokens, media_assets, scribe_requests, sod_policies, spec_consultations, specialist_profiles, specialist_sources). Routine counts: prod 886, dev 903. Ledger rows: prod 672, dev 657 — the README's \"dev has NO migration ledger (0 rows)\", echoed at scripts/golden-path.mjs:64, is also wrong. golden-path.mjs:326 prints a hardcoded \"(production: 881 / 284 / 657)\" against measured 886 / 285 / 672.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 2,
+   "effort_1_5": 1,
+   "why_it_matters": "The document people read before writing a test tells them the environment cannot run it. It can. That is a self-inflicted brake on the one activity this dimension needs most."
+  },
+  {
+   "dim": "tests",
+   "title": "Coverage has never been measured in this repo — no instrumentation exists",
+   "category": "infrastructure",
+   "evidence": "MEASURED. `grep -c coverage package.json` = 0. `ls node_modules/@vitest/` → expect, pretty-format, runner, snapshot, spy, utils — no coverage-v8, no coverage-istanbul. vitest.config.ts has no `coverage` block, no `setupFiles`, no `exclude` (so vitest defaults apply), and `include: ['tests/**/*.test.ts']` alone. Consequence: the 2.7% module-import figure in this report is the only breadth number obtainable, and nobody has ever been able to answer 'what fraction of this file is exercised'.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 2,
+   "effort_1_5": 1,
+   "why_it_matters": "You cannot ratchet what you cannot count. Every other quality gate here is a ratchet with a pinned baseline (EXECUTE perimeter, edge type errors, design drift, unguarded-writer debt) — test coverage is the one place that pattern was never applied, and adding the instrumentation is a one-package change."
+  },
+  {
+   "dim": "deps",
+   "title": "The 60 edge functions have no lockfile and 68 floating version imports — production dependencies resolve fresh at every deploy",
+   "category": "dependency",
+   "evidence": "MEASURED. Searched for a Deno manifest: `Get-ChildItem -Path supabase -Recurse -Include deno.json,deno.jsonc,import_map.json,deno.lock` returned NOTHING, and the same search at repo root returned NOTHING. Then tabulated every remote URL across the 95 .ts files in supabase/functions: `https://esm.sh/@supabase/supabase-js@2` appears 68 times. `@2` is a floating major — esm.sh serves whatever the newest 2.x is at fetch time. `npm view @supabase/supabase-js version` = 2.112.2 today, while package.json locks the browser half at ^2.39.0 resolved to 2.109.0 (`npm ls --depth=0`: @supabase/supabase-js@2.109.0). Same library, two halves of the system, two different versions, and only one of them is written down anywhere.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 4,
+   "risk_1_5": 5,
+   "effort_1_5": 2,
+   "why_it_matters": "Every time an edge function is deployed it downloads a fresh copy of the Supabase client library from a public CDN. Nobody records which version shipped. If the supplier publishes a change that breaks something, production behaviour changes with no commit, no review, and nothing to roll back to — and you would have no way to prove what was running last Tuesday. This is the single largest supply-chain gap in the codebase, and it sits under the half of the system that talks to customer data."
+  },
+  {
+   "dim": "deps",
+   "title": "CI and the declared runtime floor are Node 20, which passed end-of-life 101 days ago",
+   "category": "infrastructure",
+   "evidence": "MEASURED. package.json:6-8 declares `\"engines\": { \"node\": \">=20\" }`. .github/workflows/ci.yml pins `node-version: 20` in all three jobs (lines 34, 55, 77). Fetched the Node Foundation's own release schedule (https://raw.githubusercontent.com/nodejs/Release/main/schedule.json): v20 `\"end\": \"2026-04-30\"`, v22 `\"end\": \"2027-04-30\"`. Today is 2026-08-09 — 101 days past v20's end date. Node 20 no longer receives security patches from upstream.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 4,
+   "effort_1_5": 1,
+   "why_it_matters": "Your build and test machines run a version of the JavaScript runtime that stopped getting security fixes in April. Any vulnerability found in Node 20 from here on will simply never be patched. Moving to Node 22 is a one-line change in two files and is the cheapest risk reduction available in this whole report."
+  },
+  {
+   "dim": "deps",
+   "title": "The repo has its own security gate, it fails today, and nothing runs it",
+   "category": "infrastructure",
+   "evidence": "MEASURED. package.json:13 defines `\"audit\": \"npm audit --audit-level=high\"`. I ran it: `npm run audit` → EXITCODE=1, output ends `6 vulnerabilities (3 moderate, 3 high)`. So the gate is red right now. Then I searched for any caller: `Select-String -Path scripts\\*.mjs -Pattern \"npm audit|audit-level|npm run audit\"` returned NO MATCHES across all 25 .mjs scripts including certify.mjs. .github/workflows/ci.yml runs exactly four commands — `npm run build`, `npm run test:unit`, `npm run test:isolation`, `npm run test:invariants` — and none is the audit. The gate is defined and invoked by nobody.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 3,
+   "effort_1_5": 1,
+   "why_it_matters": "Somebody built the alarm and never wired it to a bell. This is the same 'wired and starved' pattern the certification review already found elsewhere: the control exists, so a reviewer ticks the box, but it has never once blocked a bad build. Connecting it to CI is one line — but note that connecting it TODAY turns CI red, which is exactly why it is worth knowing before someone flips the switch."
+  },
+  {
+   "dim": "deps",
+   "title": "Vite is 4 majors behind with no patch path — clearing its 2 high-severity advisories requires jumping 4→8",
+   "category": "dependency",
+   "evidence": "MEASURED. `npm outdated --json`: vite current 4.5.14, wanted 4.5.14, latest 8.2.1. `npm audit --json` lists 7 advisories against vite, including two rated high: GHSA-c27g-q93r-2cwf (launch-editor command injection on Windows) and GHSA-fx2h-pf6j-xcff (server.fs.deny bypass, CVSS 7.5). The fix field reads `\"fixAvailable\": {\"name\": \"vite\", \"version\": \"8.2.1\", \"isSemVerMajor\": true}` — npm found no patched release anywhere on the 4.x line. The bundled esbuild is also flagged (GHSA-67mh-4wv8-2f99, moderate) with the same 8.2.1 escape hatch. IMPORTANT CONTEXT: vite is a devDependency, and `npm audit --omit=dev` returns 0 high — none of this reaches a customer browser.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 4,
+   "risk_1_5": 3,
+   "effort_1_5": 4,
+   "why_it_matters": "This is the largest single-package gap in the tree, and it is deferred debt rather than live danger — the vulnerabilities only expose a developer's own machine while running the dev server. But there is no cheap exit: the only way out is a four-major upgrade that also drags @vitejs/plugin-react from 4 to 6 and touches how the whole app is built. The longer it sits, the bigger that jump gets."
+  },
+  {
+   "dim": "deps",
+   "title": "react-router-dom is the only production dependency carrying open advisories — and the app isn't actually using it as a router",
+   "category": "dependency",
+   "evidence": "MEASURED, two parts. (a) `npm audit --omit=dev` returns exactly two entries: `react-router sev=moderate direct=False` and `react-router-dom sev=moderate direct=True`. The installed version is 6.30.4 (`npm ls --depth=0`), and advisory GHSA-jjmj-jmhj-qwj2 (\"React Router: Open redirect leading to XSS\", CVSS 6.9) has range `>=6.30.2 <=6.30.4` — the installed version sits exactly inside it. A second advisory, GHSA-wrjc-x8rr-h8h6, is specifically an open redirect via `<Link>` and `useNavigate`. (b) Grepping src/ for `<Routes>|<Route |createBrowserRouter|RouterProvider|useRoutes` returns \"No matches found\". Only 4 files import the library at all: src/App.tsx:2 (BrowserRouter, useNavigate, useLocation), src/lib/employeeFileRoute.ts:2, src/pages/tenant/EmployeeFilePage.tsx:18, src/pages/tenant/WorkforceChatHubPage.tsx:2 (useParams). Routing is hand-rolled — src/App.tsx:59 imports `PAGE_TO_URL, URL_TO_PAGE` from src/lib/pageRoutes.ts (93 lines), and App.tsx:68 defines a `URLSync()` component whose own comment says it \"Syncs the auth-context page state with the browser URL bidirectionally\". And `useNavigate` — named in the advisory — is one of the four hooks actually in use.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 3,
+   "effort_1_5": 2,
+   "why_it_matters": "Of everything in this report, this is the only dependency risk that reaches a customer's browser. You are shipping an entire routing library to use four of its hooks as a URL-history shim, while the real page routing is a hand-written lookup table — and that barely-used library is the one thing carrying an open cross-site-scripting advisory. Either upgrade it (6→7 is a major) or notice that a 93-line hand-rolled router is already doing the job and the dependency may not need to be there at all."
+  },
+  {
+   "dim": "deps",
+   "title": "Two different major versions of Vite in one tree: tests run on Vite 8, production builds on Vite 4",
+   "category": "test",
+   "evidence": "MEASURED. Parsed package-lock.json for packages installed at more than one tree location. Four exist, and the significant one is vite: `node_modules/vite = 4.5.14` (what `npm run build` uses, via vercel.json `\"buildCommand\": \"npm run build\"`) versus `node_modules/vitest/node_modules/vite = 8.1.3` (what `npm run test`, `test:unit`, `test:isolation`, `test:invariants` all use). vitest 4.1.10 is fully up to date and pulls Vite 8; the app is pinned to Vite 4. Four major versions apart, in the same install, at the same time.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 3,
+   "effort_1_5": 3,
+   "why_it_matters": "Your tests are compiled by different machinery than your product. A green test run is weaker evidence than it looks: code can transform correctly under Vite 8's pipeline and differently under Vite 4's, so a passing suite does not prove the shipped bundle behaves the same way. This is a quiet one — it will never announce itself, it will just mean a test passed for a build that was never produced."
+  },
+  {
+   "dim": "deps",
+   "title": "56 of 60 edge functions import from deno.land, a host that now redirects to JSR, pinned to a 2022-era standard library",
+   "category": "dependency",
+   "evidence": "MEASURED. `grep -rho \"deno.land/std@[0-9.]*\"` across supabase/functions gives exactly two pins: 55 files on `deno.land/std@0.168.0` and 1 file on `deno.land/std@0.177.0` (supabase/functions/de-mission/index.ts — a lone straggler). By deployable unit that is 56 of the 60 function directories. I then fetched https://deno.land/std and got `301 Moved Permanently` to `https://jsr.io/@std` — the registry has moved. The versioned URLs do still serve: I successfully fetched https://deno.land/std@0.168.0/http/server.ts and its first line reads `// Copyright 2018-2022 the Deno authors. All rights reserved. MIT license.` There is no vendored copy and no lockfile (see finding 1), so these are fetched live at deploy.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 4,
+   "effort_1_5": 3,
+   "why_it_matters": "Fifty-six of your sixty server-side functions boot by downloading a file from a domain whose front page now redirects somewhere else, at a version last touched in 2022. The old URLs still work today. If they ever stop — a sunset, an outage, a policy change at that host — 56 functions fail to start simultaneously and there is no cached or vendored copy to fall back on. This is a concentration risk on a single external host that nobody chose deliberately; it accumulated one copy-pasted import at a time."
+  },
+  {
+   "dim": "deps",
+   "title": "No dependency-update automation of any kind",
+   "category": "infrastructure",
+   "evidence": "MEASURED. Tested for all six standard config locations — .github/dependabot.yml, .github/dependabot.yaml, renovate.json, .renovaterc, .renovaterc.json, .github/renovate.json — every one reported `absent`. .github/workflows contains exactly two files: ci.yml and provision-on-deploy.yml, neither of which touches dependencies. Combined with the unwired audit script (finding 3), nothing in this repo will ever tell anyone that a dependency moved or that a new advisory landed.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 3,
+   "effort_1_5": 1,
+   "why_it_matters": "Every number in this report was discovered by someone deliberately going to look. Nothing here surfaces on its own. The reason 9 packages drifted a full major behind is not neglect of a warning — there was never a warning. This is the cheapest structural fix available and it is what stops the report you are reading from needing to be run by hand again next quarter."
+  },
+  {
+   "dim": "deps",
+   "title": "Two competing HTTP-server idioms coexist across the edge layer",
+   "category": "architecture",
+   "evidence": "MEASURED. 56 function directories import the standard-library shim (`import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'`). Four use the runtime's own native API instead — `grep -rl \"Deno\\.serve\" supabase/functions` returns approved-action-driver, extract-document, oauth-callback, oauth-start. Both do the same job; the native one needs no external download at all. Total deployable function dirs: 60.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 2,
+   "effort_1_5": 2,
+   "why_it_matters": "This is genuine duplicated purpose — two ways of doing the identical thing, split 56/4, with no rule about which to use. It means a developer writing function 61 has to guess, and it means the fix for the deno.land concentration risk above is already half-built and half-abandoned. The four native ones are the pattern that has no external dependency."
+  },
+  {
+   "dim": "deps",
+   "title": "A type-only pin freezes 6 edge functions' Supabase client types at 2.45.4 while they run ~2.112",
+   "category": "code",
+   "evidence": "MEASURED. supabase/functions/_shared/modelCall.ts:22 reads `import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';` — I confirmed via grep that this is the ONLY supabase-js import in that file, and the `import type` keyword means it is erased at runtime, so this is a type mismatch and not a runtime version conflict. Six functions import it: ai-session, compile-trust-plan, entity-amend, entity-draft, playbook-amend, playbook-draft. Their actual runtime client comes from the floating `@2` (2.112.2 today) — roughly 67 minor releases of API drift from the shape they are type-checked against. Compounding it, per the house's own record `tsc` excludes supabase/functions entirely, so this type is never checked by the build in the first place.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 2,
+   "effort_1_5": 1,
+   "why_it_matters": "Six functions describe their database client using a 2024-era definition while calling a 2026-era object. Nothing fails today because the definition is never actually enforced, which is the real point: it is a safety label on a box nobody opens. Low urgency, but it is the visible tip of finding 1 — it only exists because there is no single place that says which version this project uses."
+  },
+  {
+   "dim": "deps",
+   "title": "Installs use `npm install` rather than `npm ci` everywhere, including the production deploy",
+   "category": "infrastructure",
+   "evidence": "MEASURED. Five call sites, all `npm install`: .github/workflows/ci.yml lines 36, 56 and 79; .github/workflows/provision-on-deploy.yml line 28; and vercel.json line 4, `\"installCommand\": \"npm install\"` — that last one is the production build. HONEST CAVEAT, and it matters: I checked for actual drift with `npm install --dry-run` and it reported \"up to date in 3s\", so package.json, package-lock.json and node_modules currently agree. There is no drift right now. The gap is enforcement, not a present defect: `npm ci` fails loudly when the lockfile and manifest disagree, `npm install` silently reconciles them.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 2,
+   "effort_1_5": 1,
+   "why_it_matters": "Today this costs nothing — the lockfile happens to be in sync. But the production deploy is configured so that if it ever stops being in sync, the build quietly installs something other than what was committed and reports success. It is a missing tripwire rather than an active wound, and I want to be clear about that distinction rather than inflate it."
+  },
+  {
+   "dim": "deps",
+   "title": "unpdf pinned at 0.12.1, one major behind, in the PDF path",
+   "category": "dependency",
+   "evidence": "MEASURED. `https://esm.sh/unpdf@0.12.1` appears in 2 files: supabase/functions/connector-hub/index.ts and supabase/functions/_shared/pdfExtract.ts. `npm view unpdf version` = 1.8.0, last modified 2026-07-24. So the pin is a full major behind and still on a pre-1.0 release line. Unlike the supabase-js imports this one IS pinned exactly, which is the correct instinct — it has just never been revisited. The other exact Deno pin, `deno.land/x/denomailer@1.6.0` in _shared/sendEmail.ts, sits on the same deno.land host flagged in finding 7.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 1,
+   "risk_1_5": 2,
+   "effort_1_5": 2,
+   "why_it_matters": "Small and contained: document text extraction is one major version behind, and pre-1.0 libraries change shape freely between majors. Worth noting mainly because it shows the pinning discipline is inconsistent rather than absent — someone pinned this one properly and floated 68 others."
+  },
+  {
+   "dim": "infra",
+   "title": "The documented one-command deploy cannot apply migrations — both runners call a database function that does not exist",
+   "category": "infrastructure",
+   "evidence": "scripts/DEPLOY_SETUP.md documents `node scripts/deploy.mjs` as THE deploy command (\"applies pending migrations + deploys edge functions + verifies\"). Both halves of its migration path are dead against the real database.\n\n(1) It reads the wrong ledger. scripts/deploy.mjs:70 `await sb.from('_supabase_migrations').select('name')`. Probing PostgREST with the anon key: `GET /rest/v1/_supabase_migrations?select=name&limit=1` -> `HTTP 404 {\"code\":\"PGRST205\",\"hint\":\"Perhaps you meant the table 'public.schema_migrations'\",\"message\":\"Could not find the table 'public._supabase_migrations' in the schema cache\"}`. The same query against `schema_migrations` returns HTTP 200. Because that read errors, `appliedMax` stays null and deploy.mjs:77 hits `die('Cannot determine applied state...')` on every run without an explicit --mig/--since.\n\n(2) It applies SQL through a nonexistent RPC. scripts/deploy.mjs:86 `await sb.rpc('exec_sql', { sql })`. Production query `select n.nspname, p.proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace where p.proname ilike '%exec_sql%'` returned `[]` — no such function in any schema.\n\n(3) The same two defects are in `npm run migrate:apply` -> scripts/apply-migration.mjs:30, :46, :55 (which additionally builds its client from SUPABASE_ANON_KEY at :20).\n\nThe path that actually works is scripts/db-query.mjs, which posts to the Supabase Management API and then records the file via `record_migration_applied` (db-query.mjs:70). Production ledger provenance confirms it: `select provenance, count(*) ... from public.schema_migrations group by provenance` -> `applied_by_runner 304` (first 2026-07-26, last 2026-08-09), `assumed_pre_ledger 368`.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 4,
+   "risk_1_5": 4,
+   "effort_1_5": 2,
+   "why_it_matters": "The written-down deploy procedure and the procedure that actually works are two different things, and only one person's habit bridges the gap. Anyone new — or the same person under pressure at 2am — follows the documentation, gets an error, and starts improvising against the production database. It also means there is no single command that ships a change end to end, so \"did the database part actually go out?\" is answered by memory rather than by a tool."
+  },
+  {
+   "dim": "infra",
+   "title": "No automated backups, the only full data export is 14 days old and excludes every user account, and no data-restore path exists",
+   "category": "infrastructure",
+   "evidence": "backups/2026-07-26-09-23-53/_manifest.json: `exported_at 2026-07-26T09:38:15Z`, `total_rows 57033`, `vectors_omitted: true`, `not_included: [\"auth.users — user accounts and credentials live in the auth schema\", \"storage objects\", \"vault secrets ...\", \"pg_cron schedules\"]`. Today is 2026-08-09, so that is 14 days stale, and restoring it would give every tenant their records back with nobody able to log in. The only other directory, backups/outsourcetel-hq-2026-07-30/, is one tenant and has an empty `_manifest.json` (`{}`).\n\nNothing schedules these: `grep -n \"schedule|cron\" .github/workflows/*.yml` returns nothing across both workflow files. scripts/backup-data.mjs:8-13 states the Supabase org is on the FREE plan and the backups endpoint returns an empty list, so there is no platform-side backup either.\n\nThere is no restore script for data. `grep -rn restore scripts/*.mjs` finds restore only in backup-*.mjs comments and in scripts/restore-drill.mjs — and that drill is SCHEMA-only: restore-drill.mjs:32-35 restores supabase/baseline/full_schema.sql into schema `bkp_verify` on the DEV project, and its comparison (the `census` query at :126-144) compares object COUNTS — tables, views, functions, triggers, policies, rls_enabled, columns — not definitions.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 4,
+   "risk_1_5": 5,
+   "effort_1_5": 3,
+   "why_it_matters": "If the database is lost or corrupted today, the recoverable position is 16 tenants' data as of two weeks ago, with no user accounts, no uploaded files, and no connector credentials. That is not a backup you can run a business on. It is also a laptop-local copy of real customer PII, which is a second exposure the script's own header calls out."
+  },
+  {
+   "dim": "infra",
+   "title": "The project's real quality gate — 9 sections that pass in under 3 minutes — is not in CI",
+   "category": "infrastructure",
+   "evidence": "`grep -rn \"certify|golden-path|design-drift|audit:role-gates\" .github/workflows/` returns nothing. CI (.github/workflows/ci.yml) runs exactly: `npm run build`, `npm run test:unit`, `npm run test:isolation`, `npm run test:invariants`.\n\n`npm run test:unit` is `vitest run tests/continuity-format.test.ts` (package.json:20) — ONE file. tests/ holds 10 test files; CI names 3 of them. Not run by CI: approval-learning-capture, confidence-parity, contract-parity, google-ads-template, marketing-adapters, response-window, write-bindings.\n\nMeanwhile scripts/certify.mjs runs 9 sections (typecheck, ring0-probes, migration-ledger, edge-typecheck ratchet, golden-path, role-gates, silent-refusals, design-drift, and the FULL `npx vitest run`). review/certify-last.json shows the most recent run: `at 2026-08-09T12:36:54Z, mode full, failed 0`, all 9 PASS, section times summing to ~160 seconds.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 4,
+   "risk_1_5": 4,
+   "effort_1_5": 2,
+   "why_it_matters": "The gate that catches real regressions is fast enough to run on every push and simply isn't wired to one. It only fires when a human remembers to type it, on a laptop that holds production credentials. A green tick on GitHub therefore means far less than it appears to, and the day someone ships without running certify locally there is nothing to catch it."
+  },
+  {
+   "dim": "infra",
+   "title": "Alerts fire correctly and reach nobody unless someone happens to be looking at a dashboard — 78 sit unresolved right now",
+   "category": "infrastructure",
+   "evidence": "Production: `select kind, count(*), max(created_at), count(*) filter (where resolved_at is null) from ops_alerts group by kind` returns 240 alerts across 8 kinds, of which 78 are unresolved: de_objective_wake_spin 52 (newest 2026-08-09), edge_function_error 23 (newest 2026-08-05), dispatch_failure 2 (newest 2026-08-09 13:07), ai_budget_approaching 1.\n\nThe only reader of ops_alerts in the entire codebase is src/components/OpsAlertsBanner.tsx (`grep -rl ops_alerts src/` returns that one file). It is rendered in exactly one place, src/pages/tenant/DashboardPage.tsx:317. It calls `list_ops_alerts` with `p_hours: 720` (OpsAlertsBanner.tsx:62), polls every 300s (:73), and displays `alerts.slice(0, 6)` (:114). There is no email, SMS, push or pager path anywhere — and the file's own header (:9-15) records the precedent: an \"AI budget EXHAUSTED, digital employees have stopped answering\" alert sat unread in production for four days.\n\n52 of the 78 unresolved are one kind (de_objective_wake_spin), which is more than the banner's 6-row window on its own.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 4,
+   "risk_1_5": 4,
+   "effort_1_5": 3,
+   "why_it_matters": "Detection works; delivery does not. The system correctly notices when it has stopped working for a customer, writes it down, and then waits for a platform admin to log in and scroll. With 78 unresolved and 52 of them a single repeating kind, the banner is already past the point where a genuinely urgent alert is visible above the noise."
+  },
+  {
+   "dim": "infra",
+   "title": "The JWT gate for 59 production edge functions exists only inside Supabase — nothing in the repo records it",
+   "category": "infrastructure",
+   "evidence": "Management API `/v1/projects/rfsvmhcqeiyrxivbmpel/functions`: 59 deployed, 47 with `verify_jwt=false`, 12 with `verify_jwt=true`.\n\n`find supabase -maxdepth 2 -name config.toml` returns nothing — there is no config.toml. The only record of intent in the repo is the hardcoded 4-name set at scripts/deploy.mjs:113-118 (scim, mcp-demo-server, voice-turn, voice-webhook); mcp-demo-server is not deployed, so 3 of the 47 are represented. The remaining ~44 functions' setting is stored nowhere but Supabase's own state.\n\nThe file documents the trade-off itself at deploy.mjs:103-112: introducing a config.toml would make it the source of truth and \"silently flip every function it does not mention back to verify_jwt=true, which would break the anonymous widget (widget-ask), the inbound email hook, the OAuth callback and 45 others.\" The current mechanism is that `supabase functions deploy` with no flag preserves whatever the function already has.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 5,
+   "effort_1_5": 3,
+   "why_it_matters": "Whether a public endpoint is open or closed is decided by remote state nobody can read in a code review, and preserved only by a CLI behaviour that could change under you. Rebuilding this project from the repo — a new Supabase project, a disaster recovery, a second region — produces 44 functions gated the wrong way, and the failure is silent in one direction (a widget stops working) and dangerous in the other. It is also the single hardest thing here to reconstruct if the current project is lost."
+  },
+  {
+   "dim": "infra",
+   "title": "Dev is not a smaller production — it is a divergent one, with 8 tables prod doesn't have and no active tenant at all",
+   "category": "infrastructure",
+   "evidence": "Same census query run against both projects via scripts/db-query.mjs and scripts/dev-query.mjs.\n\nSchema — PROD: 285 tables / 890 routines / 379 policies / 5 views. DEV: 292 / 907 / 390 / 5. Diffing table names: in DEV not in PROD — de_specialist_assignments, embed_tokens, media_assets, scribe_requests, sod_policies, spec_consultations, specialist_profiles, specialist_sources (8). In PROD not in DEV — benchmark_samples (1).\n\nData — PROD: 16 tenants, 117 digital employees, 21 profiles, 3 knowledge articles, 455 de_conversations. DEV: 239 tenants, 904 digital employees, 234 profiles, 0 knowledge articles, 0 conversations.\n\nBy tenant status — PROD: active 13 tenants/98 DEs, suspended 2/14, trial 1/5. DEV: trial 239 tenants/904 DEs, and NO active tenant whatsoever.\n\ncertify.mjs runs its only write-path section (golden-path, certify.mjs:352) against this dev project, and its comment claims the section \"keeps dev synced.\"",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 3,
+   "effort_1_5": 3,
+   "why_it_matters": "The environment used to prove changes work has 15x the tenants, zero knowledge articles, zero conversations, and not one tenant in the state real customers are in. Bugs that only appear with real content — retrieval, conversation history, anything gated on an active tenant — cannot be reproduced there, and code paths that exist only in dev (8 tables' worth) can pass a check that means nothing for production."
+  },
+  {
+   "dim": "infra",
+   "title": "55% of the schema history is recorded as 'believed applied, never verified'",
+   "category": "infrastructure",
+   "evidence": "`npm run -s migrate:status` against production (rfsvmhcqeiyrxivbmpel): \"672 files in supabase/migrations, 672 in the ledger — APPLIED 304 recorded by the runner, file unchanged; ASSUMED 368 predates the ledger, believed applied, never verified; DRIFTED 0; PENDING 0; ORPHANED 0.\" Confirmed directly against the table: `select provenance, count(*) from public.schema_migrations group by provenance` -> assumed_pre_ledger 368, applied_by_runner 304.\n\nThe ledger itself only exists from migration 364 (supabase/migrations/364_migration_ledger.sql:38), and scripts/migration-status.mjs:67-71 backfills everything older as ASSUMED without checking.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 4,
+   "effort_1_5": 4,
+   "why_it_matters": "Rebuilding the database by replaying migrations — the fallback if the schema dump ever fails — is unproven for more than half the history. Combined with the schema backup being count-compared rather than definition-compared, there are two independent recovery routes and neither has been shown to reproduce production exactly."
+  },
+  {
+   "dim": "infra",
+   "title": "The production anon key is baked into migration files, so rotating it means editing history",
+   "category": "infrastructure",
+   "evidence": "`git grep -n eyJhbGciOiJIUzI1NiIs -- supabase` hits supabase/migrations/119_dispatch_cron_jwt_fix.sql:27 (`v_anon text := 'eyJ...'`), supabase/migrations/161_de_work_cron.sql:19, and 8 sites in supabase/baseline/full_schema.sql. Those dispatch functions are what 49 active pg_cron jobs invoke.\n\nPartially mitigated: the baseline occurrences are `coalesce((select value from platform_runtime_config where key = 'supabase_anon_key'), 'eyJ...')` — config first, literal as fallback (the mechanism scripts/set-runtime-config.mjs:4-11 describes, added in migration 383). Migrations 119 and 161 have the bare literal with no config lookup.\n\nThis is not a secret leak — the anon key is public by design and already ships in the browser bundle.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 3,
+   "effort_1_5": 2,
+   "why_it_matters": "If that key ever has to be rotated — a compromise, a project move, a Supabase-side change — the scheduled jobs that run the whole digital workforce keep presenting the old one from a hardcoded fallback, and the symptom is queues quietly not draining rather than a visible error."
+  },
+  {
+   "dim": "docs",
+   "title": "No README, no index, no way in — 140 docs with no front door",
+   "category": "documentation",
+   "evidence": "`ls README* readme*` at repo root → \"No such file or directory\". `ls docs/ | grep -i -E \"index|readme|start|contents|00\"` → only the directory `32-pre-start-reports`; no index file. `git ls-files \"docs/*.md\" | wc -l` → 140. Searched every .md in the repo for local setup instructions: `grep -rln \"npm run dev\\|npm install\" docs/*.md *.md tests/README.md scripts/DEPLOY_SETUP.md` → one hit, docs/45-certification-scoreboard.md, and only incidentally in a certify context. CLAUDE.md (the file that loads every session, D:\\Dream Team AI\\CLAUDE.md, 62 lines read in full) is a working agreement about AI process ceremony — it contains no architecture, no build command, no repo map, no directory guide.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 5,
+   "risk_1_5": 4,
+   "effort_1_5": 2,
+   "why_it_matters": "A new engineer joining this project has nothing to open first. There is no page that says what the system is, how to install it, or how to run it. Worse, the absence of a front door creates an ordering trap: the docs are numbered, so a newcomer naturally starts at 05, 06, 08, 09 — which are the four most inaccurate documents in the repository — and may never discover docs/45 and docs/design-system.md, which are the two most accurate. The documentation is not just incomplete, it is sorted worst-first."
+  },
+  {
+   "dim": "docs",
+   "title": "docs/08_Database_Design.md declares 53 tables; 46 do not exist in production",
+   "category": "documentation",
+   "evidence": "Extracted every table from the doc's DDL: `grep -oE \"CREATE TABLE (IF NOT EXISTS )?[a-z_]+\" docs/08_Database_Design.md | sort -u` → 53 names. Checked all 53 against production with a single read-only `to_regclass('public.'||name) is not null` query via scripts/db-query.mjs. Only 7 exist: capabilities, connectors, conversations, digital_employees, escalations, tenants, workspaces. The 46 that do NOT exist include the doc's entire core: agents, users, teams, organisations, workflows, workflow_runs, capability_runs, execution_plans, audit_trail, approval_requests, approval_decisions, knowledge_items, knowledge_bases, control_fabric_policies, policy_evaluations, model_providers, ai_token_usage, billing_subscriptions. Header reads \"Version 1.0 | 2026-07-01\"; `git log -1 --date=short -- docs/08_Database_Design.md` → 2026-07-01, never revised.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 4,
+   "risk_1_5": 4,
+   "effort_1_5": 4,
+   "why_it_matters": "The document titled \"Database Design\" is 87% wrong about the database. It is not labelled as aspirational — it presents concrete, copy-pasteable SQL under headings like \"Core Platform Tables\". Anyone who trusts it will design against tables that were never created, and will use the wrong vocabulary in every conversation (it says `users` and `organisations`; the live system has neither). The real schema is 290 tables, so this is not a case of the doc running slightly ahead — it describes a different system."
+  },
+  {
+   "dim": "docs",
+   "title": "docs/09 documents a 38-endpoint public REST API that exists nowhere in the code",
+   "category": "documentation",
+   "evidence": "Extracted declared endpoints: `grep -oE \"(GET|POST|PATCH|DELETE|PUT) +/[a-zA-Z0-9/_{}.-]+\" docs/09_API_and_Integration_Standards.md | sort -u | wc -l` → 38 unique, across three surfaces (`/v1/...`, `/platform/v1/...`, `/partner/v1/...`), e.g. `POST /v1/capabilities/{capability_id}/run`, `GET /v1/capability-runs/{run_id}`, `POST /platform/v1/tenants/{tenant_id}/suspend`, `PUT /partner/v1/marketplace/listings/{id}`. Searched the whole codebase for any of them: `grep -rn \"/v1/capabilities\\|/v1/capability-runs\\|/partner/v1\\|/platform/v1\" supabase/functions src --include=*.ts --include=*.tsx` → zero matches. The actual integration surface is 61 flat-named Supabase edge functions (`ls supabase/functions | wc -l` → 61): de-answer, de-work, connector-hub, playbook-execute, etc. The doc is 86KB, the largest of the numbered set, and is titled \"Standards\" with section 16 called \"Public API Future\" — implying sections 1-15 describe the present.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 3,
+   "effort_1_5": 4,
+   "why_it_matters": "A document called \"API and Integration Standards\" that describes zero of the actual API is worse than no document: an engineer building a new integration will follow its versioning, idempotency and webhook conventions for a REST layer that does not exist, instead of learning the edge-function conventions that do. It is also a sales risk — it reads as a shipped public API and a partner marketplace."
+  },
+  {
+   "dim": "docs",
+   "title": "The only deploy runbook is contradicted on three concrete points and tells you to rebuild a script that exists",
+   "category": "documentation",
+   "evidence": "docs/DEPLOYMENT.md, `git log -1 --date=short` → 2026-07-08, never revised since. (1) Line 3 claims \"no CI/CD pipeline connected to GitHub or Vercel's own auto-deploy\" — but `.github/workflows/ci.yml` exists and `git log --diff-filter=A -- .github/workflows/ci.yml` → added 2026-07-17; it runs typecheck, build and unit tests on every push to main and every PR, plus two gated integration jobs. (2) Line 55 claims \"There is still no automated test suite\" — `ls tests/` → 11 .test.ts files (tenant-isolation, contract-parity, knowledge-acl-invariants, write-bindings, …) and package.json line 15 wires `\"test\": \"vitest run\"`. (3) Line 51 says a Node deploy script \"has been used throughout this project's development; recreate it from the API shape above if it's not already at hand\" — `scripts/deploy.mjs` exists, `git log --diff-filter=A` → added 2026-07-22.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 4,
+   "risk_1_5": 4,
+   "effort_1_5": 1,
+   "why_it_matters": "This document exists precisely because deployment knowledge lived in one person's head — its own opening paragraph says so and calls that an operational risk. It is now reproducing the failure it was written to prevent. A new engineer following it would hand-rebuild a deploy script that already exists, and would believe nothing is checked automatically before shipping. This is the cheapest finding on the list to fix and the one with the most direct operational cost."
+  },
+  {
+   "dim": "docs",
+   "title": "PROTOTYPE-PRODUCTION-BOUNDARY.md — self-declared single source of truth — is pinned at migration 052 of 651",
+   "category": "documentation",
+   "evidence": "The doc's own opening: it is \"the single source of truth for what is demo-only, what carries forward to the enterprise product, and what is now live. Read this before building or selling anything.\" Header: \"_Last updated: 2026-07-07 (Platform-owner security model, migration 052)_\"; `git log -1 --date=short` confirms 2026-07-07, and the highest migration it references is 052 (`grep -oE \"migration[s]? [0-9]{3}\" | sort -n | tail` → 050, 052). The repo is at 651. It is 194,897 bytes. Concrete contradictions I tested: its section 2 table lists nine \"legacy pages awaiting Phase-4 migration\" — `find src -iname \"*<name>*\"` returns 0 files for CustomerPortal, FinanceControlTower, ImplementationWorkspace, DataConnectors, Playbooks and Approvals (6 of 9 already gone). Its section 3 cites `WorkforceDEsPage.tsx` as where production-intent TypeScript interfaces live — that file does not exist. It lists the \"rule-based 'agent brain' (keyword scorer + FT search)\" as demo-only pending replacement \"by real LLM orchestration layer\", while supabase/functions contains de-answer, de-orchestrate and de-mission and 8 edge functions reference an LLM provider.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 4,
+   "risk_1_5": 4,
+   "effort_1_5": 3,
+   "why_it_matters": "This is the document that instructs the reader to consult it before building or selling anything, and it is the single largest doc in the repo. It draws the demo-versus-real line roughly 600 migrations ago. Someone using it to decide what is safe to demo to a customer would understate the product in some places and misdescribe it in others. Its stated job — separating prototype from production — is the exact job it can no longer do."
+  },
+  {
+   "dim": "docs",
+   "title": "Staleness banners cover 5% of the corpus, and one doc from the same batch was missed",
+   "category": "documentation",
+   "evidence": "`grep -rlE \"SUPERSEDED|⚠ STALE|OUT OF DATE|HISTORICAL RECORD|no longer accurate\" docs/*.md *.md` → 7 files out of 140 tracked docs. Age distribution: iterating `git log -1 --date=format:%Y-%m` over all 140 docs gives 123 last touched in 2026-07 and 17 in 2026-08. The gap is visible inside a single batch: GO_LIVE_READINESS_FINAL.md, GO_LIVE_EXECUTION_READY.md and GO_LIVE_STATUS_REPORT.md all carry a dated \"⚠ SUPERSEDED 2026-08-06\" banner naming the removed /embed route and its replacement — but PLATFORM_ROLLOUT_VERIFICATION.md, created 2026-07-20 and last touched in the same 2026-08-06 commit, carries no banner and still reads \"**Status**: 🟢 GLOBAL DEPLOYMENT READY\" above a checklist of unticked `[ ]` boxes.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 3,
+   "risk_1_5": 3,
+   "effort_1_5": 2,
+   "why_it_matters": "The house already knows how to mark a document stale and does it well when it remembers. But at 5% coverage the banner is not a system, it is a habit — so its absence carries no information. A reader cannot infer that an unbannered document is current, which means the seven good banners do not actually make the other 133 documents safer to read. A green \"DEPLOYMENT READY\" status over unticked checkboxes is the specific shape that misleads fastest."
+  },
+  {
+   "dim": "docs",
+   "title": "The generated schema reference still declares five tables production dropped",
+   "category": "documentation",
+   "evidence": "src/types/database.types.ts — the file every developer's autocomplete reads as the schema of record — contains table definitions at lines 2881 (de_specialist_assignments), 4719 (media_assets), 6099 (scribe_requests), 6289 (specialist_profiles), 6362 (specialist_sources). Verified against production with `to_regclass` via scripts/db-query.mjs: all five return false (do not exist). Migration 611_the_specialist_role_is_retired.sql drops them and the file's own header documents the drop. Confirms the file has not been regenerated (`npm run gen:types`) since migration 611.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 2,
+   "effort_1_5": 1,
+   "why_it_matters": "Generated types are documentation whether or not anyone calls them that — they are what an engineer trusts when deciding whether a table exists. Five phantom tables will typecheck cleanly and fail at runtime. It is a one-command fix, but it also means the freshness of this file is nobody's job."
+  },
+  {
+   "dim": "docs",
+   "title": "18 colliding migration numbers and 6 filenames the migration README does not cover",
+   "category": "documentation",
+   "evidence": "`ls supabase/migrations/*.sql | cut -d_ -f1 | sort | uniq -d` → 18 numbers each used twice: 514, 520, 526, 540, 541, 542, 543, 544, 574, 575, 576, 577, 578, 582, 583, 584, 585, 586. The collisions are two parallel work streams sharing a counter — e.g. 526_blocked_on_people_is_not_a_deadlock.sql vs 526_erpnext_autonomous_dunning.sql; 584_the_trust_ladder_can_fire.sql vs 584_instagram_adapter.sql. Separately, 6 files use date prefixes instead of the numeric convention (20260719225435_, 20260719225526_, and four 20260720_ files). Three numbers are unused (335, 463, 464). supabase/migrations/README.md is 5 lines and documents only the 001-010 legacy split and the Management-API application route — it says \"New migrations continue this numbering\" and mentions neither the collisions nor the date-prefixed set. Note this is a narrative problem, not a correctness one: the ledger is intact (672 rows, 672 files, 0 null checksums).",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 2,
+   "effort_1_5": 2,
+   "why_it_matters": "The migration sequence is otherwise the best-documented thing in the repo, which is exactly why the collisions matter — anyone reconstructing why a change was made will hit 18 points where \"migration 584\" is ambiguous and the README offers no help. Left unaddressed the collision rate grows with every parallel work stream, and the one genuinely reliable historical record starts to need archaeology after all."
+  },
+  {
+   "dim": "docs",
+   "title": "Twelve dated planning documents sit at the repo root, outside docs/",
+   "category": "documentation",
+   "evidence": "`ls *.md` at repo root returns 13 files; only CLAUDE.md is current (2026-08-09). The other 12 are dated build plans: WEEK1_STARTING_TASKS.md, WEEK1_FOUNDATION_COMPLETION.md, WEEK2_SUPPORT_AGENT_BUILD_PLAN.md, WEEK2_PARALLEL_PREREQUISITES.md, WEEK2_CODEBASE_AUDIT_AND_AMENDMENTS.md, SOPHIE_CONFIGURATION_FRAMEWORK.md, OUTSOURCETEL_SOPHIE_CONFIGURATION.md (all created 2026-07-19), DEPLOYMENT_READY.md, TENANT_MANAGEMENT_BUILD.md (2026-07-20), plus BACKEND_RPC_REQUIREMENTS.md, DEPLOYMENT_COMPLETE_VERIFICATION.md and WORK_ANALYSIS_48HR_2026_07_20.md. BACKEND_RPC_REQUIREMENTS.md is still written in the future tense (\"Database Schema Changes Required\", \"Backend RPC Stubs\") but 8 of the 9 objects it specifies now exist in production — verified via to_regclass/pg_proc: decide_human_task, has_approval_authority, get_metric_value, apply_playbook_amendment, reject_playbook_amendment, sync_entity_amendment_decision, human_tasks, workforce_entity_amendments all present; only customer_metrics is absent.",
+   "measured_or_inferred": "MEASURED",
+   "impact_1_5": 2,
+   "risk_1_5": 1,
+   "effort_1_5": 1,
+   "why_it_matters": "These are the first files a newcomer sees, because there is no README to look at instead — three weeks of superseded week-by-week plans presented at the same level as the source tree. The requirements doc is the sharper problem: it reads as a backlog of unbuilt work when nearly all of it shipped, so it invites someone to build things twice."
+  }
+ ],
+ "challenges": [
+  {
+   "confirmed_worst": [
+    "infra — the one-command deploy cannot apply migrations. CONFIRMED and worse than stated. MEASURED: a pg_proc query for exec_sql / exec / execute_sql / run_sql returned ZERO rows, and `_supabase_migrations` does not exist as a relation (only `schema_migrations` does). Both runners are dead: D:\\Dream Team AI\\scripts\\deploy.mjs:70 reads `_supabase_migrations` and :86 calls `sb.rpc('exec_sql', { sql })`; D:\\Dream Team AI\\scripts\\apply-migration.mjs:30/46/55 does the same. ADDITION the infra agent missed: apply-migration.mjs:21 is `createClient(SUPABASE_URL, SUPABASE_ANON_KEY)` — an anon client, which could not execute DDL even if exec_sql existed. deploy.mjs at least fails loudly (it `die()`s with 'Cannot determine applied state').",
+    "tests — two certify sections are structurally incapable of failing. CONFIRMED exactly, by reading all three files. scripts/certify.mjs:352-353 `shell('role-gates','npm',['run','-s','audit:role-gates'])` and `shell('silent-refusals', …)`; package.json:24-25 define both WITHOUT `--strict`; scripts/audit-role-gates.mjs:971 `if (STRICT && (findings.length || navGaps.length)) process.exit(1);` and scripts/audit-silent-refusals.mjs:245 are identical in shape; scripts/certify.mjs:291 grades purely on `ok: r.status === 0`. Two of certify's nine green ticks are unconditional.",
+    "tests — golden-path reports PASS to certify when it could not prove the loop. CONFIRMED. scripts/golden-path.mjs final statement is `process.exit(failed === 0 ? 0 : 1)`; the `cannotProve` counter incremented at :90 in the `CannotProve` catch branch is printed ('GOLDEN PATH INCOMPLETE') but never reaches the exit code. certify reads only the exit code.",
+    "routines — the dead-routine count survives independent reproduction. I rebuilt the pipeline from scratch (pg_proc minus pg_depend deptype='e', flags for other-routine bodies / triggers / cron.job / pg_policies, then a comment-stripped scan of src+supabase/functions+scripts+tests). MEASURED: 772 app routines (exact match with theirs), 439 with no DB-internal caller, 334 of those called from app code, 12 invoked only from migrations, and 93 with no caller anywhere totalling 102,053 bytes. Their 94 / ~109 KB is within noise of my 93 / 102 KB.",
+    "routines — dead routines are pinned into the security allowlist. CONFIRMED, and my count is higher than theirs. supabase/baseline/execute-allowlist.json holds 629 pinned routines (pinned_at 2026-08-08T20:03:52.572Z); intersecting on bare name against my own dead list gives 66 (they said 62). Mitigating detail worth keeping: 0 of the 66 are anon-reachable — they are `authenticated`-callable only.",
+    "docs — docs/08_Database_Design.md is 87% fiction. CONFIRMED exactly, reproduced independently: 53 unique names from `CREATE TABLE [IF NOT EXISTS] x`, checked in one `to_regclass` query. 7 exist (capabilities, connectors, conversations, digital_employees, escalations, tenants, workspaces); 46 do not. Same numbers they reported.",
+    "ui/tests — zero UI tests, and the config forbids adding one. CONFIRMED. tests/ holds 10 `.test.ts` files and zero `.tsx`; vitest.config.ts sets `environment: 'node'` and `include: ['tests/**/*.test.ts']`, so a `.tsx` test is not even collected; `ls node_modules` shows no jsdom, no @testing-library, no happy-dom.",
+    "tests — CI runs 3 of 10 test files. CONFIRMED by reading .github/workflows/ci.yml end to end: the only commands are `npm run build`, `npm run test:unit`, `npm run test:isolation`, `npm run test:invariants`, and package.json:20 makes `test:unit` a single file. Worth adding: certify DOES run the whole suite (scripts/certify.mjs:355 `shell('suite','npx',['vitest','run'])`), so the gap is purely that the good gate is human-triggered.",
+    "schema — the four writeback tables are not just identical, they are unused. CONFIRMED and understated: exact counts give account_writeback_requests 0, continuity_writeback_requests 0, invoice_writeback_requests 0, opportunity_writeback_requests 0. Four copy-pasted tables plus (per the routines audit) ~10 copy-pasted routines, and not one row has ever been written.",
+    "giants — LiveWorkforceDEs.tsx really is two files. CONFIRMED: 4,414 lines, and exactly two consumers — src/pages/tenant/WorkforceHubPage.tsx:11 imports the default export, while src/pages/tenant/EmployeeFilePage.tsx:33-37 imports seven unrelated named panels (DeProfileSections, DeIncidentsPanel, DeKpisPanel, DeEconomicsPanel, DeDevelopmentPanel, DeReviewsPanel, DeSkillsPanel)."
+   ],
+   "missed": [
+    "THE is_active HALF OF USER DEACTIVATION IS NOT ENFORCED ON 53 TABLES. MEASURED. `pg_get_functiondef` shows public.auth_tenant_id() resolves tenant via `select tenant_id from profiles where user_id = auth.uid() and coalesce(is_active,true) = true`. 244 policies across 166 tables route through it. But 55 policies across 53 tables query `profiles` directly with NO is_active predicate — among them customer_accounts, opportunities, invoice_payments, payment_promises, posting_drafts, de_memory, de_work_items, de_objectives. Deactivating a user therefore cuts them off from 166 tables and leaves 53 readable, including the commercially sensitive ones. Zero live exposure today (0 of 21 profiles are inactive), which is precisely why no audit dimension caught it — every agent looked at policy PRESENCE, none at predicate EQUIVALENCE.",
+    "THE ONE BEHAVIOURALLY-TESTED TABLE IS THE UNREPRESENTATIVE ONE. MEASURED via pg_policies: 379 policies over 256 tables collapse to 70 distinct predicate shapes. The dominant shape `(tenant_id = auth_tenant_id())` accounts for 113 + 30 + 19 policies. But `customer_accounts` — the sole table tests/tenant-isolation.test.ts exercises — uses neither: its policies are `tenant_id IN (SELECT profiles.tenant_id FROM profiles WHERE user_id = auth.uid())` for SELECT and an EXISTS-on-profiles for ALL. So the only behavioural RLS test proves the minority mechanism, and proves nothing about the predicate guarding 166 tables.",
+    "work_watchers — THE DE INTAKE MECHANISM — EXISTS FOR 1 OF 16 TENANTS. MEASURED per tenant: outsourcetel-hq 22 watchers / 19 matches; sonic 2 watchers / 0 matches; the other 14 tenants have 0 watchers despite 30 active digital employees between them. Cause: install_role_watchers has 0 routines containing its name (pg_proc.prosrc scan), 0 bound triggers, 0 cron jobs, and is invoked only from supabase/migrations/606_intake_for_the_idle_roles.sql:163 (loop over tenants) and 607_one_signal_one_watcher.sql:172 (`perform install_role_watchers(id) from tenants where slug = 'outsourcetel-hq'`). Migration 636_cross_tenant_write_holes.sql:29 asserts in a comment that it 'is called only from migrations and provisioning' — the provisioning half does not exist, so every tenant created after 606/607 got nothing. This is a shipped-to-one-tenant feature, not dead code.",
+    "A GUARDRAIL THAT ALWAYS PASSES, INSIDE THE SWITCH EVERY AGENT ALREADY READ. supabase/functions/playbook-execute/index.ts:975-979 — `case 'guardrail_check'` inside runBranchStep sets `bs.status = 'done'` unconditionally, with detail `'Re-checked in branch — no invoice in this run to re-verify' + (ctx.invoice_id ? '' : '')`, a ternary yielding '' on both arms. It evaluates nothing and can never fail. The giants audit counted this as one of the 'six implemented' branch step types and filed the dead ternary separately as a cosmetic I1. A guardrail reporting done without checking is strictly worse than the three step types that skip loudly — those at least leave a 'skipped' status on the step.",
+    "AN ENTIRE ACCOUNTING / COLLECTIONS WORKFLOW IS BUILT, SECURED, AND UNREACHABLE. Direct grep over src/ and supabase/functions/ returns ZERO hits for submit_draft_for_review, get_pending_drafts_for_de, get_pending_draft, get_posting_draft, record_payment_promise, propose_invoice_from_agreement, reconcile_invoice_payments. approve_draft also has no real call site — its 4 apparent grep hits are the different routine `approve_draft_reply` (src/lib/supportInboxApi.ts:92,188; database.types.ts:7741) plus a comment at src/lib/customerApi.ts:700. Their tables are empty: posting_drafts 0, posting_draft_lines 0, payment_promises 0, invoice_payments 0 (renewal_invoices has 10). Each routine is invoked exactly once, from the self-test in its own migration (529, 531, 537, 538, 555). The routines audit files these inside '109 KB of orphaned database logic' to be sized as deletable debt; they are the opposite — a feature built and never wired, where deletion is the wrong move.",
+    "THE DRIFT BASELINE IN golden-path.mjs IS A HARDCODED STALE LITERAL. scripts/golden-path.mjs prints `(production: 881 / 284 / 657)` as the reference for routines / tables / ledger rows. I measured production today at 890 routines, 285 tables, 672 ledger rows. The constant that tells an operator whether dev has drifted is itself 9 routines and 15 migrations behind."
+   ],
+   "refuted": [
+    "deps, 'The 60 edge functions have no lockfile and 68 floating version imports — production dependencies resolve fresh at every deploy' (I4/R5) — REFUTED on its central fact. `deno.lock` EXISTS at the repo root, is git-tracked (`git ls-files deno.lock`), is lockfile version 5, was added 2026-07-29 in d800f41 and last updated TODAY (2026-08-09, 2302fbe). Its `redirects` block pins the exact import the agent flagged: `\"https://esm.sh/@supabase/supabase-js@2\": \"https://esm.sh/@supabase/supabase-js@2.110.9\"`, and it carries 31 integrity-hashed remote entries covering deno.land/std@0.168.0, std@0.173.0, denomailer@1.6.0, unpdf@0.12.1 and supabase-js. The agent's own stated method — 'the same search at repo root returned NOTHING' — produced a false negative. WHAT SURVIVES, much smaller: of the 6 real module specifiers in supabase/functions (I extracted all 107 remote URLs and separated imports from API endpoints), exactly 2 are absent from the lock — `deno.land/std@0.177.0/http/server.ts`, used only by de-mission, and `esm.sh/@supabase/supabase-js@2.45.4`, which is `import type` and erased at runtime. So the honest finding is 'one unlocked runtime import in 1 of 60 functions', not 'no lockfile'. HONEST CAVEAT I could not close read-only: whether `supabase functions deploy` (CLI 2.113.0, invoked at scripts/deploy.mjs:172 with no --import-map) honours the root lock is unproven; `deno check`, which certify runs from repo root at certify.mjs:265, does.",
+    "giants, 'Playbook branch executor implements 6 of the 9 step types its own validator accepts — update_record, check_knowledge and read_reference are SILENTLY skipped' (I3/R5) — the arithmetic is right, 'silently' is wrong, and R5 is badly wrong. (a) NOT SILENT: supabase/functions/playbook-execute/index.ts:998-1001, the default arm, sets `bs.status = 'skipped'` and `bs.detail = `skipped: \"${bs.key}\" not executed in branch preview path`` — the step key is named in a recorded, surfaced detail string, and in-code comments at :859-861 and :984-990 document the limitation deliberately. (b) ZERO PRODUCTION EXPOSURE: I unnested every then_steps/else_steps array across playbook_definitions and playbook_versions. Only TWO branch step types have ever been authored — `checklist` (6 occurrences, 4 definitions) and `connector_action` (4 occurrences, 4 definitions). update_record, check_knowledge and read_reference appear ZERO times. (c) Even the one live risk closes: all 4 authored connector_action branch steps carry an action_key (send_payment_reminder, send_final_notice), which is exactly the form runBranchStep DOES execute. Nothing in production hits this gap.",
+    "routines, '`install_role_watchers` (4,565 B, dead)' — REFUTED as dead. It is invoked from SQL the audit did not treat as a call site: supabase/migrations/606_intake_for_the_idle_roles.sql:163 `v_res := install_role_watchers(t.id);` inside a loop over tenants, and 607_one_signal_one_watcher.sql:172 `perform install_role_watchers(id) from tenants where slug = 'outsourcetel-hq';`. The audit counted the 232 migrations naming dead routines as CHURN evidence while excluding migrations from its call-site set, so a migration-invoked routine reads as dead. I re-ran the classification with migrations included: 12 of the orphan candidates are migration-invoked, not dead. This is the exact failure mode the brief warned about — 'a dead routine may be called from SQL you did not grep'. The real problem with install_role_watchers is the opposite of dead code; see MISSED.",
+    "docs, 'No README, no index, no way in — 140 docs with no front door' (I5) — overstated on the facts, sound on the conclusion. TWO substantive READMEs exist: `tests/README.md` and `supabase/migrations/README.md`. The agent's grep enumerated `docs/*.md *.md tests/README.md scripts/DEPLOY_SETUP.md` and so structurally could not see supabase/migrations/README.md. The conclusion nonetheless survives: there is genuinely no root README, and CLAUDE.md — the only current root doc — is 61 lines whose four headings are 'Working agreement', 'Match the ceremony to the task', 'What never yields', 'Scope discipline'. It is a behavioural contract for an agent, not orientation for an engineer. I5 is still too high for a navigation problem; I3 fits.",
+    "ui, 'The whole app ships as one 2.1 MB JavaScript file' — conclusion correct, evidence invalid. The measurement was taken from `dist/`, which .gitignore:2 excludes, git does not track, and which is a stale local build (index-91224d7a.js, 2,165,241 bytes, timestamped Aug 5 10:32 — four days old). That directory is not what ships. The finding is rescued only by the infra agent's independent live fetch of a DIFFERENT hash (index-a608ddf6.js, 2,167,978 bytes). Reporting a bundle size off an untracked stale build directory is not a measurement of production."
+   ],
+   "scoring_corrections": [
+    "deps 'no lockfile' I4/R5/E2 → the finding as written is refuted; the surviving residue (std@0.177.0 unlocked in de-mission/index.ts, one function of 60) is I1/R2/E1. This was the single highest-scored dependency risk in the map and it should not appear in a remediation plan at all in its current form.",
+    "giants 'branch executor skips 3 step types' I3/R5/E3 → R5 is indefensible: MEASURED zero occurrences of the three types across every playbook definition and version in production, and the skip is recorded on the step with the key named. Correct score I2/R1/E3. The effort estimate is the only part worth keeping.",
+    "routines '94 dead routines, 109 KB' I3/R3/E2 → the COUNT is confirmed (my independent run: 93 routines, 102,053 bytes) but the CHARACTERISATION is wrong for roughly a fifth of the set, which changes what the number is for. 12 are migration-invoked one-shots (install_role_watchers, seed_default_grants, create_config_schema, verified_domain_tenant …) and ~8 are an unwired-but-complete accounting workflow. Sizing all 93 as deletable debt overstates the recoverable bytes and, worse, points remediation at deletion when the correct action for the second group is wiring. Split it: ~73 genuinely inert, ~12 one-shot installers, ~8 built-not-wired.",
+    "schema 'four writeback tables are byte-for-byte the same' I4/R3/E4 → impact is right but the decisive fact is missing: all four have exactly 0 rows. That moves it from 'duplication risks a wrong write' to 'speculative generality shipped four times over, never exercised', which lowers R (nothing can go wrong in a table nothing writes to) and lowers E substantially (there is no data to migrate). Suggest I3/R1/E2.",
+    "tests 'isolation proven on 1 table of 242' I5/R5/E4 → confirmed, but both the denominator and the effort are wrong. The right denominator is 70 distinct RLS predicate shapes (MEASURED over 379 policies), not 242 tables — and E4 understates the work because customer_accounts uses the MINORITY predicate, so covering the dominant `auth_tenant_id()` path is a new test against a new mechanism, not a copy-paste of the existing one.",
+    "infra 'deploy cannot apply migrations' I4/R4/E2 → E2 is too low. Both runners are dead AND scripts/apply-migration.mjs:21 authenticates with the anon key, so fixing it is not a one-line ledger-name swap; it needs a working privileged execution path chosen and built. E3-E4.",
+    "routines 'security gate has frozen an API surface that is 10% dead' I3/R3/E2 → my count is 66, not 62, but R3 is too high: 0 of the 66 are anon-reachable (all are `authenticated`-only). Against 'authenticated = the internet' this still matters, but it is a smaller surface than the finding implies. R2."
+   ]
+  },
+  {
+   "refuted": [
+    "INFRA'S SCARIEST CLAIM IS WRONG: 'No automated backups' (scored I4/R5/E3). Supabase IS taking automated daily physical backups. GET https://api.supabase.com/v1/projects/rfsvmhcqeiyrxivbmpel/database/backups returns walg_enabled:true and 6 COMPLETED physical backups — newest 2026-08-09T03:24:49Z (TODAY), then 08-08, 08-06, 08-05, 08-04, 08-03, i.e. a ~03:25 UTC daily job. Physical backups are whole-cluster, so they DO include auth.users — the exact thing the repo's own JSON export excludes and which the finding built its horror on ('every tenant their records back with nobody able to log in'). What survives: pitr_enabled:false is confirmed, so RPO is up to 24h rather than seconds, and a restore has never been drilled. That is a real but ordinary gap, not 'no backups'. The agent measured the repo's supplementary export and concluded the platform had none.",
+    "'The documented one-command deploy cannot apply migrations' (I4/R4/E2) is TRUE but wrong about severity, and its stated cause is incomplete. I confirmed BOTH halves are dead against production: to_regclass('public._supabase_migrations') is false, and the exec_sql RPC does not exist in ANY schema (select count(*) from pg_proc join pg_namespace where proname='exec_sql' -> 0). The house memory blames only a missing SUPABASE_SERVICE_ROLE_KEY; in fact even with that key deploy.mjs would still fail, because the function it calls was never created. But operationally this is near-harmless: deploy.mjs:70-78 dies at 'Cannot determine applied state' BEFORE touching anything, and apply-migration.mjs surfaces '❌ Migration failed'. It fails closed and loud. Meanwhile a proven working path is in daily use (POST /v1/projects/<ref>/database/query with the access token) and the ledger shows 672 rows against 672 files on disk. Nothing is blocked; two dead scripts are lying in the docs.",
+    "GIANTS' TOP CODE FINDING OVERSTATES BOTH 'SILENTLY' AND REACH. 'Playbook branch executor... update_record, check_knowledge and read_reference are silently skipped' (I3/R5/E3). The skip is not silent: playbook-execute/index.ts:998-1001 sets bs.status='skipped' with an explanatory bs.detail, and it is persisted into playbook_runs.steps. More importantly the defect has never fired: across 100 playbook_definitions, the count where a definition contains a then_steps/else_steps branch AND any of update_record|check_knowledge|read_reference|guardrail_check is ZERO, and across 111 playbook_runs the count whose steps text contains any branch-skip message ('not executed in branch', 'wait is not supported', 'only the action_key form') is ZERO. R5 is not defensible for a path with no production incidence.",
+    "THE DOCS DIMENSION'S PREMISE ('a new engineer would start by reading the most wrong documents first') does not hold for this operator. CLAUDE.md is 61 lines and contains ZERO references to docs/ (grep -n 'docs/' CLAUDE.md returns nothing). The MEMORY.md index that routes every session names docs/15, 23, 24, 29, 31, 32, 37, 38, 39, 40, 41, 42, 44, 45, 46 — and never docs/08 or docs/09. So the 46 phantom tables in docs/08 and the 38 phantom endpoints in docs/09 sit behind no routing path from either thing that actually loads each session. There is one non-technical founder and no incoming engineer; these documents currently have no reader.",
+    "A CORRECTION TO MY OWN FIRST MEASUREMENT, because it changes the conclusion. I initially queried playbook branches with LIKE '%\"then\"%' and got defs_with_branch = 0, which would have let me call the whole branch-executor family dead. That filter cannot match the real key, which is \"then_steps\" — the character after 'then' is an underscore, not a quote. Re-run with then_steps/else_steps: 2 of 100 definitions branch, 104 of 111 runs carry branch structures, and 44 runs actually took a branch (steps contain branch_taken). So decision branches are live and hot; only the three defective step types have never been placed inside one. The house rule that a filter must never be able to say 'all clear' earned its keep here."
+   ],
+   "confirmed_worst": [
+    "THE ALERT NUMBERS ARE EXACT AND THE PIPE IS STILL DARK. select kind, count(*), count(*) filter (where resolved_at is null), max(created_at) from ops_alerts group by kind: 240 total, 78 unresolved — matching infra exactly. Breakdown: de_objective_wake_spin 52 unresolved (newest 2026-08-09, i.e. still firing today), edge_function_error 23 unresolved (newest 2026-08-05, so those have stopped), dispatch_failure 1 of 137, ai_budget_approaching 1. The only reader in the codebase is src/components/OpsAlertsBanner.tsx, and its own line 59 says list_ops_alerts 'is platform-admin only and raises for everyone else'. Confirmed as scored.",
+    "CERTIFY IS THE REAL GATE AND IT IS GENUINELY NOT IN CI. .github/workflows/ci.yml's only run: lines are npm install (x3), npm run build, npm run test:unit, npm run test:isolation, npm run test:invariants. review/certify-last.json records a full run at 2026-08-09T12:36:54Z with failed:0 and all 9 sections ok (typecheck 20.1s, ring0-probes 28.9s, migration-ledger 5.8s, edge-typecheck 6.7s, golden-path 37.3s, role-gates 8.6s, silent-refusals 2.9s, design-drift 1.4s, suite 48.3s — ~160s total). A 160-second gate that catches real things and runs only when a human remembers to type it is the correct top infra finding. Both tests and infra flagged it independently; they are right.",
+    "A MONEY GUARDRAIL INSIDE A DECISION BRANCH ALWAYS REPORTS PASS AND WRITES NO AUDIT ROW. This is the same function giants looked at, but they filed only the cosmetic half. Compare the two cases directly. Top level, playbook-execute/index.ts:1258-1278: loads guardrail_rules where rule_type='require_approval_over_cents', compares ctx.invoice_amount_cents against the threshold, sets detail to 'within' or 'EXCEEDS', and calls audit(...) with result passed|gated_with_approval. Branch, same file :975-979: sets step.status='done' unconditionally, loads no rule, compares no amount, and makes NO audit call — its detail is the hardcoded string 'Re-checked in branch — no invoice in this run to re-verify' even when an invoice IS in context, which is precisely why the dead concatenation (ctx.invoice_id ? '' : '') is sitting there. Giants scored that dead concatenation I1/R1/E1; the defect it is a symptom of is a money check that cannot fail.",
+    "THE FLOATING EDGE DEPENDENCIES ARE REAL, THOUGH BOTH HOSTS RESOLVE TODAY. Confirmed the counts myself: grep -rho over supabase/functions gives 68 imports of esm.sh/@supabase/supabase-js@2 (floating major) plus 1 pinned at 2.45.4, and 55 files on deno.land/std@0.168.0 plus 1 on @0.177.0. I then tested live resolution: deno.land/std@0.168.0/http/server.ts returns HTTP 200, and esm.sh/@supabase/supabase-js@2 returns HTTP 200 with header X-Esm-Path: /@supabase/supabase-js@2.112.2/es2022/supabase-js.mjs — so the floating major silently resolves to 2.112.2 right now. The exposure is genuine (a redeploy can change production behaviour with no repo diff) but it has not bitten in a year of operation, which is why I re-score rather than confirm at I4/R5."
+   ],
+   "missed": [
+    "NOT ONE OF EIGHT AGENTS LOOKED AT WHETHER THE PRODUCT WORKS, AND IT DOES NOT CLOSE ITS CORE LOOP. select status, count(*) from de_objectives: 18 blocked, 1 in_progress, 19 total — ZERO objectives have ever reached a terminal state. I closed the obvious hole in that claim: no routine deletes them. Of the 29 public routines whose source mentions de_objectives, the delete-from test is false for every single one (conclude_objective_verified and set_de_objective_status UPDATE the status), so the absence of completed rows is real and not an artifact of cleanup. 15 of the 19 exceed a wake budget of 12 and 15 carry an attention_flag. Historical alert payloads show wake_count reaching 124, 90, 67 and 44 against wake_budget 12 — all in tenant 5bb802e1, the founder's own production tenant. Eight dimensions of structural debt and nobody checked the runtime outcome.",
+    "THE ACTUAL BOTTLENECK IS HUMAN DECISIONS, NOT CODE, AND IT IS MEASURABLE. select status, count(*), min(created_at), count(*) filter (where created_at < now()-interval '7 days') from human_tasks: 381 pending (318 of them older than 7 days, oldest 2026-07-05 — five weeks), against 24 approved, 2 rejected and 6 expired in the system's entire history. That is a lifetime decision throughput of 32. The DEs are blocked because 381 decisions are queued behind one non-technical founder. This is the honest explanation for the zero-completion finding above, and it means NO amount of the debt paydown proposed across these eight reports moves the product. A founder handed eight SIGNIFICANT verdicts would reasonably fund a refactoring sprint; the measurement says the machine is fine and starved.",
+    "NOBODY PRODUCED A COST NUMBER, SO HERE IS ONE: TOTAL AI SPEND IS $15.23, ALL TIME. Joined de_token_usage (2,021 rows, the real telemetry) to ai_model_pricing: claude-sonnet-5 989 calls / 1.74M in / 338k out = $10.28; claude-haiku-4-5-20251001 1,027 calls / 3.44M in / 299k out = $4.94; claude-haiku-4-5 5 calls = $0.01. First usage 2026-07-11, last 2026-08-09. Everything measured falls inside a 30-day window, so the run rate is roughly $15/month. This is the number that should govern the whole exercise: no finding in any of the eight reports is costing this business money. The wake-spin loop burning 124 wakes is burning cents.",
+    "THE COST OBSERVABILITY TABLE IS COMPLETELY DEAD WHILE THE COST CONTROL IS STRUCTURALLY INERT. ai_usage_events is the only place with a per-call cost model (estimated_cost_usd, model_provider, purpose, duration_ms, success) and it has 0 rows, 0 references in src/ or supabase/functions/, and 0 routines mentioning it (prosrc scan over all public routines). Separately de_budget_policies has 0 rows and de_spend_ledger sums to 0 cents — yet check_de_budget is called from four hot paths (de-work/index.ts:1550, :1590, :1652 and de-orchestrate/index.ts:148) and reads exactly those tables, and record_de_spend has a single caller in connector-hub whose own comment at :7347 admits mig 235 'shipped the ledger + cap enforcement but left record_de_spend' unwired. So the per-DE AI spend ceiling the founder believes is on cannot bind, and the only table that could answer 'what did that cost' is empty. Harmless at $15/month; it is the control that would matter first if usage ever scaled.",
+    "THE WAKE BUDGET IS ADVISORY, NOT ENFORCED. The de_objective_wake_spin alert payload carries wake_budget:12 alongside wake_count values of 124, 90, 67, 44 and 15. The system detects the overrun and raises an alert into a table only a platform admin can read; it does not stop the objective. That is why 52 of these are unresolved and one fired today. Cheap now, but it is the mechanism by which a per-tenant cost incident would happen later, and it is invisible to the person who would pay for it."
+   ],
+   "scoring_corrections": [
+    "infra 'No automated backups' I4/R5/E3 -> I2/R2/E1. Daily physical backups exist and completed today; the residual gap is pitr_enabled:false and an undrilled restore. Enabling PITR is a billing toggle, not engineering, and pre-revenue with one live tenant a 24h RPO is a rational choice. The one thing worth doing is a restore drill, which is E1-E2, not E3.",
+    "infra 'one-command deploy cannot apply migrations' I4/R4/E2 -> I2/R3/E1. It fails closed and loud, a proven path is in daily use, and 672/672 migrations are applied. The fix is deleting or redirecting two dead scripts and one paragraph of DEPLOY_SETUP.md — an hour, not a project. Impact 4 implies shipping is blocked; it is not.",
+    "giants 'branch executor silently skips 3 step types' I3/R5/E3 -> I2/R2/E2, AND split out a new higher item: 'guardrail_check inside a decision branch returns done without evaluating anything or auditing' at I4/R2/E1. The skip has zero production incidence and is loudly recorded; the guardrail false-pass is on the money path, is a ~6-line fix, and sits in a feature that IS live (44 runs took a branch). Giants inverted the priority — they scored the harmless half at R5 and the dangerous half at I1/R1/E1.",
+    "docs 'docs/08 declares 53 tables, 46 do not exist' I4/R4/E4 -> I1/R1/E1, and docs/09's 38 phantom endpoints I3/R3/E4 -> I1/R1/E1. Neither CLAUDE.md nor the MEMORY.md index routes anything to these files, so reach is near zero. And E4 prices the wrong fix: nobody should document 46 tables — a two-line staleness banner or a git rm is the correct remedy, which is E1.",
+    "deps 'Vite is 4 majors behind, 2 high-severity advisories' I4/R3/E4 -> I2/R2/E4. The deps agent's own FINE section already established that all three high-severity advisories are dev-tooling only and never reach a browser (npm audit --omit=dev returns 2 moderate, 0 high, 0 critical), then scored the finding at I4 anyway. A command injection in launch-editor requires an attacker at the founder's local dev server. Keep E4 — the 4->8 jump is genuinely expensive — which is exactly why impact 2 means do not do it this month.",
+    "deps 'Node 20 is 101 days EOL' I2/R4/E1 -> I1/R1/E1. Nothing in production runs Node: Supabase edge functions are Deno and the frontend ships as static assets. Node 20 is the CI runner and the Vercel build box. R4 overstates it; there is no production surface.",
+    "schema '90 of 285 tables have never held a row' I3/R2/E3 -> I1/R1/E2, and routines '94 of 772 routines have no caller' I3/R3/E2 -> I1/R2/E2. Empty tables and uncalled functions cost nothing at this scale — 144MB database, 3MB of unused indexes by the schema agent's own measurement. The one part worth keeping at its score is the security agent's angle that 62 dead routines are pinned as permanently callable in the execute allowlist, because that is attack surface rather than clutter.",
+    "tests 'Zero automated tests cover any screen — 73,790 lines of UI' I4/R5/E4 -> I2/R3/E4. With one live tenant and a founder who looks at the screens daily, UI component tests are the lowest-return test investment available, and E4 is honest about the cost (no jsdom, no testing-library, vitest configured environment:'node' and include:'tests/**/*.test.ts'). By contrast tests' OWN finding that the action gate — de_may_use_action and get_agentic_tools_for_de — has no test at I5/R5/E3 is correctly scored and is the one test to write. Do not let the big UI number outrank the small permission-boundary one.",
+    "deps 'edge functions have no lockfile, 68 floating imports' I4/R5/E2 -> I3/R3/E2. Real and worth fixing cheaply (pin the 68 to an exact version — that IS an E2 afternoon), but R5 implies it is biting now. Both hosts resolve today (verified HTTP 200 on deno.land/std@0.168.0 and esm.sh/@supabase/supabase-js@2 -> 2.112.2) and there is no recorded incident from it in a year. edge_function_error alerts stopped 2026-08-05.",
+    "ui 'the whole app ships as one 2.1 MB JavaScript file' I3/R2/E2 — confirmed exactly (dist/assets/index-91224d7a.js = 2,165,241 bytes = 2,114.5 KB, built 2026-08-05) and I would hold it at I3/R2/E2 rather than cut it. It is one of the few findings in the corpus that a prospect actually experiences, on the first load of a pilot demo, and React.lazy on the 41 eagerly-imported pages is a genuinely small change. Of everything scored 'aesthetic-adjacent' across eight reports, this is the one I would not de-prioritise."
+   ]
+  },
+  {
+   "confirmed_worst": [
+    "MEASURED — giants' branch-executor claim survives independent verification. `D:\\Dream Team AI\\supabase\\functions\\playbook-execute\\index.ts:212-216` declares BRANCH_ALLOWED with 9 names; `runBranchStep` at L938-1003 contains exactly 6 `case` labels (instruction, checklist, wait, log_activity, guardrail_check, connector_action) plus a `default`. update_record, check_knowledge and read_reference are accepted by the validator and silently hit the default. Confirmed as written.",
+    "MEASURED — infra's ops_alerts census survives. `select kind, count(*), count(*) filter (where resolved_at is null) from ops_alerts group by kind` returns 240 total across 8 kinds and 77 unresolved today (de_objective_wake_spin 52, edge_function_error 23, dispatch_failure 1, ai_budget_approaching 1). Their 78 vs my 77 is one dispatch_failure resolved between the two runs, not an error. de_objective_wake_spin is still growing — newest 2026-08-09 00:30.",
+    "MEASURED — the AI budget gate is real, armed on every tenant, and has actually blocked production. All 16 tenants have `monthly_token_budget > 0` (0 null, 0 <=0). `ops_alerts` where kind like 'ai_budget%' returns three rows: ai_budget_exhausted for Outsourcetel on 2026-07-22 at used=566850 / budget=400000, then ai_budget_approaching on 2026-07-23 (776,981/970,000) and 2026-07-29 (4,015,279/5,000,000). The ceiling was raised twice within days of the alerts. This is one of the few governors in the codebase provably exercised in anger.",
+    "MEASURED — the service-role tenant boundary in the edge layer is genuinely sound, and no dimension said so. Chain-extraction scan over all 95 .ts files in supabase/functions: 112 write chains (.update/.delete/.upsert) against tenant-scoped tables — 20 carry an explicit tenant_id predicate, 90 are bounded by a primary or foreign key, and the remaining 2 are bounded by something equally tight (`D:\\Dream Team AI\\supabase\\functions\\connector-hub\\index.ts:6965` by connector_id + external_ref; `D:\\Dream Team AI\\supabase\\functions\\oauth-callback\\index.ts:45` by a random state token). Zero unbounded cross-tenant writes. Since edge functions run as service_role and bypass RLS entirely, this hand-written boundary — not the 379 policies — is what actually protects the majority of production traffic."
+   ],
+   "missed": [
+    "MEASURED — 37.3% of all production database CPU is one 5-minute cron job that has produced 76 rows in its entire life. `pg_stat_statements` (stats_since 2026-06-22, 4,907 of 5,000 slots used, only 59 evictions) totals 11.64 hours of execution time. `select detect_de_incidents_internal()` alone is 8,304 calls / 15,634,488 ms = 4.34 hours = 37.3%, mean 1,882.77 ms. Corroborated from a second source: `cron.job_run_details` jobid 10 ('de-incident-sweep-5min', '*/5 * * * *', active) shows 8,305 runs since 2026-07-11, avg 1.89 s, max 26.59 s, 0 failed. The body at `D:\\Dream Team AI\\supabase\\migrations\\430_suspended_tenant_dispatch_guard.sql:1374-1470` re-scans a rolling `now() - interval '30 days'` window across evidence_run_decisions, audit_events (TWICE), eval_runs and human_tasks on every run and throws the duplicates away with `on conflict ... do nothing`. Output: `de_incidents` has n_tup_ins = 76 lifetime, count(*) = 54, newest row 2026-08-05 — roughly 1,150 runs ago. That is ~206 seconds of database CPU per row ever produced. Second-order damage: audit_events shows seq_scan 15,151 / seq_tup_read 520,485,071 (34,353 rows per scan against a 58,503-row table ≈ 2 full scans per sweep), and one of the two predicates is `a.detail->>'kind' = 'trust_demoted'` while audit_events carries 0 indexes mentioning `detail`. No dimension measured query time at all — the schema report looked only at UNUSED indexes and concluded 'index bloat is a non-issue and should not be touched'.",
+    "MEASURED — a second 11.5% of database CPU is two pollers asking a 5,035-row table whether there is anything to do. From the same pg_stat_statements window: `SELECT id, content FROM knowledge_doc_chunks WHERE embedding IS NULL LIMIT $1` = 12,106 calls, mean 227.45 ms, 2,753 s total; `... WHERE reembed_pending = $1 LIMIT $2` = 8,390 calls, mean 222.75 ms, 1,869 s total. Together 1.34 h = 11.5%. Drivers are cron jobs 'embed-backfill-drain' (*/15) and 'knowledge-reembed-drain' (*/10). Combined with the incident sweep, 48.8% of all measured database execution time is background work that finds nothing. Important correction to my own first hypothesis: this is NOT a missing vector index — `knowledge_doc_chunks_embedding_idx` is a real HNSW index, and `knowledge_ann_retrieval` is default_enabled=true in feature_registry with 0 tenant overrides, so `hybrid_match_knowledge` runs with v_ann_pool=200 and `hnsw.iterative_scan='relaxed_order'`. Retrieval is fine; the drains are the cost.",
+    "MEASURED — a retirement migration dropped a live playbook table, and two production code paths still write to it. I ran the reverse check nobody ran: code -> schema rather than schema -> code. Extracting every `.from('X')` and `.rpc('Y')` from all of src/ + supabase/functions/ (comment lines stripped) gives 157 distinct tables and 391 distinct routines; checked against production with `to_regclass` and `pg_proc`, all 391 routines exist and exactly TWO tables do not: `media_assets` and `specialist_sources`. `D:\\Dream Team AI\\supabase\\migrations\\611_the_specialist_role_is_retired.sql:216` runs `drop table if exists media_assets cascade;` under the heading 'Drop the specialist-only tables', justified by its own header line 11: '0 specialist_sources, 0 scribe_requests, 0 media_assets'. But `D:\\Dream Team AI\\supabase\\migrations\\031_playbook_document.sql:48-50` had repurposed that table for playbook step media 580 migrations earlier (`alter table media_assets add column if not exists definition_id uuid references playbook_definitions(id)`). Surviving live callers: `D:\\Dream Team AI\\src\\lib\\playbookBuilderApi.ts:976` (INSERT, executed AFTER a successful upload to the `playbook-media` storage bucket — which does exist in production, created 2026-07-05) and `:996`, both reached from `D:\\Dream Team AI\\src\\pages\\tenant\\systems\\LivePlaybookBuilder.tsx:363, :488, :700`; plus `D:\\Dream Team AI\\supabase\\functions\\playbook-execute\\index.ts:2132`, the `read_reference` kind='asset' path. Net effect in production: a Playbook Builder document/media upload stores the file, then throws PGRST205 and leaves an orphan; asset-backed instruction steps render nothing and report 'not found'. `storage.objects` is currently empty, so nobody has hit it yet. The row count was zero because the feature was UNUSED, not dead — the drop was validated on rows instead of on callers, which is exactly the trap the repo's own history keeps warning about.",
+    "MEASURED — the AI cost and safety governors are applied by hand per function, and the two functions that most need them have none. 19 edge functions call the LLM (grep for callModel|llmMessages|llmComplete). Per-function tally: `check_tenant_ai_budget` present in 17/19; `record_de_token_usage` in 13/19; the prompt-injection firewall (`_shared/injectionSafety.ts`) imported by 17/19; `cache_control` used by 3/19. `voice-turn` and `conflict-probe-drain` score 0 on ALL FOUR. voice-turn is the public telephony brain — one LLM call per conversational turn, authenticated by a shared `x-voice-secret`, with the caller's transcript and the third-party platform's own tool definitions passed straight into the prompt (`D:\\Dream Team AI\\supabase\\functions\\voice-turn\\index.ts:375-386`, whose comment says 'names/schemas pass through') and no `wrapUntrusted` / `FIREWALL_RULES`; its only mitigation is the output-side blocking-guardrail seam. conflict-probe-drain feeds ingested knowledge chunks into Haiku unmarked (`index.ts:77`) on cron 'knowledge-conflict-probe-drain' */15, 6,091 runs to date. The metering half matters because the gate is armed and biting (see confirmed items): `get_tenant_token_usage_this_month` sums ONLY de_token_usage + tenant_ai_usage, so compile-trust-plan, de-improve, de-mission, de-simulate, conflict-probe-drain and voice-turn spend entirely invisibly — four of those six check the budget they never charge. And the two functions that DO cache compute cache_creation/cache_read tokens and only `console.log` them (`de-work/index.ts:476-479`, `agentic-step-execute/index.ts:163-165`); de_token_usage has no columns for them (id, tenant_id, de_id, model_id, input_tokens, output_tokens, created_at), so cached prefixes — billed at 1.25x on write — never reach the ceiling.",
+    "MEASURED — 10 of 13 active tenants have an AI budget of about three model calls per month. `select slug, monthly_token_budget, count(*), avg(input_tokens+output_tokens) from tenants join de_token_usage ...`: 10 active tenants sit at monthly_token_budget = 10000, while their own observed averages run 1,370-4,461 tokens per metered call. sonic burned 211,318 lifetime tokens against that 10,000 ceiling; first-community-cu 71,415; ontrac 59,248. Given `check_tenant_ai_budget` returns allowed=false the moment used >= budget, a demo tenant's digital employees stop answering after roughly three questions — and de-work runs up to 6 turns on a single work item."
+   ],
+   "refuted": [
+    "REFUTED (my own hypothesis, and by implication the framing that AI spend is a lever here) — model token cost is not debt at this scale. `select model_id, count(*), sum(input_tokens), sum(output_tokens) from de_token_usage group by model_id` returns 2,021 metered calls lifetime: claude-haiku-4-5-20251001 (1,027 calls, 3,442,918 in / 299,264 out), claude-sonnet-5 (989, 1,735,283 / 338,338), claude-haiku-4-5 (5, 8,318 / 1,326). Priced against `ai_model_pricing` — which I checked covers every model_id actually in use, with zero orphans — that is roughly $15 of model spend across four weeks. Prompt caching sitting at 3 of 19 call sites is therefore worth almost nothing in dollars today; the reason to care about the metering gap is that the budget NUMBER drives founder decisions, not the bill.",
+    "REFUTED — infra's 'Alerts fire correctly and reach nobody unless someone happens to be looking at a dashboard' (I4/R4/E3) is overstated on the evidence. The three ai_budget alerts in ops_alerts show a human acting within a day each time: ai_budget_exhausted fired 2026-07-22 against budget=400000; the very next alert on 2026-07-23 records budget=970000, and the 2026-07-29 alert records budget=5000000. The ceiling was raised twice in direct response. Alerts on at least one kind demonstrably reached a decision-maker and changed production config. The finding is right that there is no push channel; it is wrong that the loop is dead.",
+    "REFUTED (a risk nobody claimed but that the RLS-heavy framing invites) — the RLS write surface has no fail-open policy. Querying pg_policies for PERMISSIVE INSERT policies granted to public/anon whose `with_check` is null or literally true returns ZERO rows. The four `using(true)` SELECT policies exposed to public are all non-tenant reference data: ai_model_pricing, system_categories, watch_source_catalog, watch_source_fields. Separately, `anon` holds SELECT on 237 public tables and zero INSERT/UPDATE/DELETE anywhere; `authenticated` holds SELECT on 266 and writes on ~245. The grant surface is wide, but nothing behind it is unguarded.",
+    "REFUTED — my own first read of the vector-search path was wrong and I am correcting it rather than reporting it. knowledge_doc_chunks shows 46,298 sequential scans reading 228,162,292 rows against an HNSW index with only 310 scans, which looks like a missing-index disaster. It is not: `feature_registry` shows knowledge_ann_retrieval default_enabled=true with 0 tenant overrides, and `hybrid_match_knowledge`'s body sets v_ann_pool=200 and `set local hnsw.iterative_scan='relaxed_order'` on that branch, so retrieval does use the index. The seq scans belong to the backfill and reembed pollers. Reporting this as a retrieval defect would have been a plausible-sounding number attached to the wrong cause."
+   ],
+   "scoring_corrections": [
+    "docs — 'The generated schema reference still declares five tables production dropped' is scored I2/R2/E1 and filed as documentation. That is the wrong dimension and the wrong impact. The same drop (migration 611) left LIVE WRITE PATHS behind, not just stale autocomplete: src/lib/playbookBuilderApi.ts:976/:996 and supabase/functions/playbook-execute/index.ts:2132 all reference `media_assets`, which `to_regclass` confirms does not exist in production. Should be re-filed as code/correctness at I4/R4/E2 — the Playbook Builder's document upload is broken in production today, and the fix is a table restore or a code removal, not a doc edit.",
+    "schema — the dimension is scored entirely on shape (90 empty tables I3/R2/E3; 763 indexes with 3 MB of bloat declared 'a non-issue') and never measured TIME. On measured runtime the biggest single item in the whole database is a scheduling decision, not a structure: one cron job at 37.3% of 11.64 total hours, with an effort to fix of E1-E2 (add an incremental watermark, or lengthen the interval from */5). Nothing in any of the nine dimensions carries an I4-with-E1/E2 profile; this one does, and it should outrank every structural schema item on the roadmap.",
+    "tests — 'Cross-tenant data isolation is behaviourally proven on 1 table out of 242' is scored I5/R5/E4. The impact and risk hold up: I verified `authenticated` holds SELECT on 266 public tables and INSERT/UPDATE/DELETE on ~245, and `anon` holds SELECT on 237, so RLS genuinely is the only gate on that surface. But E4 is wrong for the first 80% of the value. tests/tenant-isolation.test.ts is already a parameterised probe against one table; the browser only ever queries 126 distinct tables (measured: 310 `.from()` call sites across src/, 126 distinct names), so extending the existing loop over the real browser surface is E2, not E4. Scoring it E4 makes the cheapest high-impact test in the repo look expensive.",
+    "deps — 'CI and the declared runtime floor are Node 20, which passed end-of-life 101 days ago' at I2/R4/E1. R4 is too high. INFERRED, and labelled as such: production runs Deno on Supabase edge functions plus Postgres, with Vercel doing a static build; Node exists only in the CI runner and the build step, both ephemeral and not internet-facing. An unpatched Node 20 in a build container is a supply-chain-adjacent concern, not a production exposure. R2/E1 is the honest score, which also stops it competing with the genuinely unbounded item in the same report (no Deno lockfile, 68 floating `esm.sh/@supabase/supabase-js@2` imports resolving fresh at every deploy — that one I would leave at R5)."
+   ]
+  }
+ ]
+}
