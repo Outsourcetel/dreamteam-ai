@@ -21,7 +21,7 @@ import { listAssignablePeople } from '../../../lib/orgApi';
 // ── Types ─────────────────────────────────────────────────────────
 
 type TaskType = 'approval_gate' | 'review_gate' | 'escalation' | 'override' | 'training_feedback' | 'trust_promotion' | 'trust_demotion_notice' | 'checklist' | 'knowledge_revision' | 'inquiry_review' | 'action_approval';
-type TaskStatus = 'pending' | 'approved' | 'rejected' | 'completed';
+type TaskStatus = 'pending' | 'approved' | 'rejected' | 'completed' | 'expired';
 
 interface OpsTask {
   id: string;
@@ -190,8 +190,14 @@ function statusBadge(status: TaskStatus) {
     approved: 'bg-emerald-500/15 text-emerald-400',
     rejected: 'bg-red-500/15 text-red-400',
     completed: 'bg-slate-600 text-dt-support',
+    // Approved, but never carried out, and now voided (migration 642). Not a
+    // rejection — nobody said no — so it must not wear the rejection colour.
+    expired: 'bg-slate-600 text-dt-support',
   };
-  const labels: Record<TaskStatus, string> = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected', completed: 'Completed' };
+  const labels: Record<TaskStatus, string> = {
+    pending: 'Pending', approved: 'Approved', rejected: 'Rejected',
+    completed: 'Completed', expired: 'Expired — never ran',
+  };
   return <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${styles[status]}`}>{labels[status]}</span>;
 }
 
