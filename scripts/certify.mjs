@@ -30,6 +30,7 @@ import { spawnSync } from 'node:child_process';
 const FAST = process.argv.includes('--fast');
 const PIN = process.argv.includes('--pin-allowlist');
 const PIN_EDGE = process.argv.includes('--pin-edge');
+const OFFLINE = process.argv.includes('--offline');
 const PROD_REF = 'rfsvmhcqeiyrxivbmpel';
 const ALLOWLIST_FILE = 'supabase/baseline/execute-allowlist.json';
 
@@ -41,7 +42,12 @@ function token() {
   if (!line) throw new Error('SUPABASE_ACCESS_TOKEN not found');
   return line.slice('SUPABASE_ACCESS_TOKEN='.length).replace(/^["']|["']$/g, '').trim();
 }
-const TOKEN = token();
+// Resolved at module load, which is right for every credentialed mode — a
+// missing token should stop the run, not surface as a confusing failure inside
+// one probe. But --offline runs NOTHING that talks to production, and CI has no
+// .env.local, so demanding a token there would make the offline gate
+// unrunnable in the one place it exists to run.
+const TOKEN = OFFLINE ? null : token();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function q(sql, attempt = 0) {
@@ -292,6 +298,12 @@ function shell(name, cmd, args) {
   });
 }
 
+// --offline: only the sections that need NO credentials, so CI can run the real
+// gate on every push instead of waiting for someone to remember. It is a SUBSET,
+// never a substitute — the banner says which mode ran, because a bar that does
+// not say what it skipped is the false-green this whole exercise exists to kill.
+const OFFLINE_SECTIONS = new Set(['typecheck', 'edge-typecheck', 'design-drift', 'suite']);
+
 const sections = [
   shell('typecheck', 'npx', ['tsc', '--noEmit']),
   section('ring0-probes', async () => {
@@ -353,13 +365,29 @@ const sections = [
     shell('role-gates', 'npm', ['run', '-s', 'audit:role-gates']),
     shell('silent-refusals', 'npm', ['run', '-s', 'audit:silent-refusals']),
     shell('design-drift', 'node', ['scripts/design-drift.mjs']),
-    shell('suite', 'npx', ['vitest', 'run']),
+    // OFFLINE runs only the credential-free test files. `npx vitest run` sweeps
+    // ALL of tests/**, and two of those hard-throw at module load without
+    // credentials — knowledge-acl-invariants.test.ts:29 (adminTokenAvailable)
+    // and setup.ts (.env.test), neither of which exists in a CI checkout. So a
+    // bare vitest run in --offline mode would have gone red on every push for a
+    // MISSING-SECRET reason, which is the "tick everyone learns to ignore"
+    // failure this whole phase exists to remove. Caught by mutation-testing the
+    // gate rather than by CI failing later.
+    OFFLINE
+      ? shell('suite', 'npm', ['run', '-s', 'test:unit'])
+      : shell('suite', 'npx', ['vitest', 'run']),
   ]),
 ];
 
-console.log(`certify ${FAST ? '(fast)' : '(full)'} — ${new Date().toISOString()}`);
+const active = OFFLINE ? sections.filter((s) => OFFLINE_SECTIONS.has(s.name)) : sections;
+const skipped = sections.length - active.length;
+
+console.log(`certify ${OFFLINE ? '(OFFLINE SUBSET)' : FAST ? '(fast)' : '(full)'} — ${new Date().toISOString()}`);
+if (OFFLINE) {
+  console.log(`  running ${active.length} credential-free section(s); ${skipped} section(s) NOT RUN and NOT PROVEN here.`);
+}
 let failed = 0;
-for (const s of sections) {
+for (const s of active) {
   const t0 = Date.now();
   let r;
   try { r = await s.fn(); } catch (e) { r = { ok: false, detail: String(e).slice(0, 300) }; }
@@ -371,8 +399,15 @@ for (const s of sections) {
 
 mkdirSync('review', { recursive: true });
 writeFileSync('review/certify-last.json', JSON.stringify({
-  at: new Date().toISOString(), mode: FAST ? 'fast' : 'full', failed, results,
+  at: new Date().toISOString(), mode: OFFLINE ? 'offline' : FAST ? 'fast' : 'full', failed, results,
 }, null, 2) + '\n');
 
-console.log(failed === 0 ? '\nCERTIFIED — all sections green.' : `\nNOT CERTIFIED — ${failed} section(s) failed.`);
+console.log(
+  failed !== 0
+    ? `\nNOT CERTIFIED — ${failed} section(s) failed.`
+    : OFFLINE
+      // Never let a subset claim the word. This banner is the difference
+      // between "CI is green" and "CI proved the things CI can prove".
+      ? `\nOFFLINE SUBSET GREEN — ${active.length}/${sections.length} sections. NOT a full certification: ${skipped} section(s) need credentials and did not run.`
+      : '\nCERTIFIED — all sections green.');
 process.exit(failed === 0 ? 0 : 1);

@@ -334,4 +334,9 @@ console.log(failed === 0 && cannotProve === 0
   : failed === 0
     ? `\nGOLDEN PATH INCOMPLETE — ${steps.length - cannotProve}/${steps.length} proven; ${cannotProve} unprovable in this environment.`
     : `\nGOLDEN PATH BROKEN — ${failed}/${steps.length} steps failed.`);
-process.exit(failed === 0 ? 0 : 1);
+// A step the environment CANNOT EXERCISE is not a step that passed. This exited
+// on `failed === 0` alone, so the loop could degrade to proving nothing — the
+// console said "GOLDEN PATH INCOMPLETE — 8/10 proven" while certify, which reads
+// only the exit code, printed PASS. That is the exact shape ci.yml condemns in
+// its own header: green when it did not run.
+process.exit(failed === 0 && cannotProve === 0 ? 0 : 1);
