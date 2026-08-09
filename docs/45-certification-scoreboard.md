@@ -60,6 +60,7 @@ money/reputation) → **Ring 2** (costs correctness) → **Ring 3** (polish).
 | R2.3 | No silent `{ok:false}`/HTTP-200 refusal dropped at a call site | **PROVEN** | `npm run audit:silent-refusals` |
 | R2.4 | Design system: no token/drift regression | **PROVEN** | `scripts/design-drift.mjs` |
 | R2.7 | Every edge function type-checks, and can only improve | **PROVEN (ratchet)** | `certify` › edge-typecheck |
+| R2.8 | A new onboarding project opens exactly one grounded case | **PROVEN (live)** | run below — 3 ticks gave 1, 0, 0 |
 | R2.5 | The core loop closes end-to-end (hire→…→trust) | **PROVEN** | `npm run golden-path`, 10/10 — inside `certify` |
 | R2.6 | Dev can actually run the product (no silent drift) | **PROVEN** | `npm run dev:sync:check` + golden-path in `certify` |
 
@@ -143,6 +144,47 @@ Dev now carries a migration ledger (657 rows) and `migrate:status --dev` reports
 zero drift. The golden path runs inside `certify`, so if dev falls behind again
 the loop stops closing and the bar goes red — which is how this should have been
 caught the first time.
+
+## Onboarding, run for real — and the thing it revealed
+
+**2026-08-09.** A project was created in `outsourcetel-hq` through the real
+`create_onboarding_project` RPC (never a raw INSERT — provisioning tested by raw
+insert proves nothing about the path a customer travels). Then the watcher tick
+was run three times.
+
+| | |
+|---|---|
+| Ticks | **1 case, then 0, then 0** |
+| Case | assigned to Onboarding DE, due in 3 days, `entity_kind=onboarding_project` |
+| Cases for that project | **1** |
+| `action_executions` | **186, unchanged** — nothing executed |
+| Approved-action driver | still inert, 0 due |
+
+The case arrived **grounded**, which is the part that used to be impossible —
+rendered by the shipped helpers against the real row:
+
+> Onboarding project record on file — Palmer Productions Ltd. — SaaS onboarding:
+> … **target golive 2026-09-15 (in 37 days)**, progress pct 0, items state
+> [key kickoff_call, status pending | key data_export_received, status pending |
+> … | key go_live, status pending].
+
+All ten checklist steps, by name and state, plus the go-live date carrying its
+distance from today (computed in code, never left to the model).
+
+Then `de-work-run-5min` picked it up unaided and compiled the published
+procedure into five work items: *assess where onboarding stands · find who to
+chase · record the status · prepare the status update · hand it to a person.*
+
+### ⚠ The machinery is right and the job is wrong
+
+Those five steps are **assess, chase, report**. Not one of them configures
+anything in a customer's system. The `onboarding` archetype describes a
+**customer-success coordinator**, not the implementation agent the product
+thesis needs — the employee that logs into the customer's product and sets it
+up. The plumbing is now proven; it is compiling the wrong procedure.
+
+Rewriting that archetype is the next real piece of work, and no amount of
+further wiring substitutes for it.
 
 ## The spine — is there a product?
 
