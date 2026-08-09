@@ -34,6 +34,8 @@ money/reputation) → **Ring 2** (costs correctness) → **Ring 3** (polish).
 | R0.6 | The audit hash-chain is intact for outsourcetel-hq | **PROVEN** | `certify` › audit-chain-verifies-hq |
 | R0.7 | The `anon`/`authenticated` EXECUTE surface equals the pinned allowlist | **PROVEN** | `certify` › execute-perimeter |
 | R0.8 | Tenant isolation on READ, probed with real ids across all RPCs | **UNPROVEN** | owed — `tenant-isolation` covers policies, not every RPC path |
+| R0.9 | No employee is offered an action its role may not use | **PROVEN** | `certify` › role-restricted-actions-stay-restricted |
+| R0.10 | …and the role that *may* use them can actually reach them | **PROVEN** | `certify` › workspace-admin-has-an-owner |
 
 ## Ring 1 — costs money or reputation
 
@@ -193,6 +195,21 @@ retroactively is a curve you can talk yourself into. `npm run benchmark:history`
   (service-role) unaffected. **This is the review paying for itself on day one.**
 - **A drifted + an orphaned migration** — the 580↔581 collision left the ledger
   inconsistent and a restored-then-re-deleted file orphaned. Reconciled.
+- **22 employees across 12 workspaces could hire staff** (mig 643). Marketing,
+  Accounting, Business Development and Technical Support were all handed
+  `create_digital_employee` and `hire_from_archetype`, because tools are scoped
+  by **connector**, never by **role**. This is a permission bug, not a cluttered
+  menu: `decide_action_execution` gates destructive/trust/budget but never asks
+  *whether this employee may do this*, so **the offer list IS the authorisation
+  boundary**. Restricting alone would have been worse than the hole — 11 of 12
+  workspaces would have been left administrable by *nobody*, since only one
+  Workspace Assistant had the grant. Both halves shipped, both probed.
+- **6 approvals nobody carried out** (mig 642), expired append-only before a
+  scheduled executor could fire month-old decisions. I first reported **16** —
+  the linkage column `resolves_task_id` was unpopulated before August, so
+  completed work read as pending. Settled by evidence *outside* the ledger: the
+  employees those approvals would have created already existed, created on the
+  exact approval dates.
 
 Every probe above is **mutation-tested** (`certify:mutation`): each was shown to
 return rows when its violation is injected and none when it is not. A gate that
