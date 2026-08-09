@@ -828,6 +828,17 @@ const ENTITY_DESKS: Record<string, EntityDesk> = {
     fields: ['name', 'company_name', 'stage', 'amount_cents', 'close_date', 'owner', 'source'],
     nameFields: ['name', 'company_name'],
   },
+  // mig 646 registered onboarding_projects as a watchable source. Without a
+  // desk here, a case opened against one resolves no record and falls through
+  // to the worklist books — the employee would be told to set a customer up and
+  // handed nothing about them. The catalog's subject_columns and this list are
+  // deliberately the same facts, reached two different ways: subject is the
+  // snapshot AT THE MOMENT THE CASE OPENED, this is the record as it stands NOW.
+  onboarding_project: {
+    table: 'onboarding_projects', label: 'Onboarding project',
+    fields: ['name', 'status', 'target_golive', 'progress_pct', 'account_id', 'items_state'],
+    nameFields: ['name'],
+  },
   commercial_agreement: {
     table: 'commercial_agreements', label: 'Agreement',
     fields: ['counterparty_name', 'title', 'agreement_type', 'party_side', 'status', 'auto_renew', 'account_id',
@@ -878,6 +889,13 @@ function renderRecord(desk: EntityDesk, row: Record<string, unknown>): string {
         // lost it invisibly, which is the worst way to find out.
         parts.push(`${deskLabel(ak)} ${fmtValue(ak, av)}`);
       }
+    } else if (typeof v === 'object') {
+      // A structured desk field — onboarding_projects.items_state is a
+      // checklist ARRAY. fmtValue would have rendered it "[object Object]",
+      // which is the difference between an employee that can see its steps and
+      // one that cannot.
+      const s = renderFacts({ [f]: v });
+      if (s) parts.push(s);
     } else {
       parts.push(`${deskLabel(f)} ${fmtValue(f, v)}`);
     }
@@ -890,13 +908,31 @@ function renderRecord(desk: EntityDesk, row: Record<string, unknown>): string {
  *  Used for the watcher's `subject` block. Deliberately NOT recursive past one
  *  level: this text is handed to a model, and an arbitrarily deep dump stops
  *  being grounding and starts being noise. */
+const LIST_MAX = 25;     // elements rendered from one array
+const ELEM_MAX = 120;    // characters per element
+
 function renderFacts(o: Record<string, unknown>, depth = 0): string {
   const parts: string[] = [];
   for (const [k, v] of Object.entries(o)) {
     if (v === null || v === undefined || v === '') continue;
     if (Array.isArray(v)) {
-      const flat = v.filter((x) => x !== null && typeof x !== 'object');
-      if (flat.length) parts.push(`${deskLabel(k)} ${flat.map(String).join(' / ')}`);
+      if (v.length === 0) continue;
+      const shown = v.slice(0, LIST_MAX).map((x) => {
+        if (x === null || x === undefined) return '';
+        // An ARRAY OF OBJECTS is the common shape for the thing that matters
+        // most: a checklist. onboarding_projects.items_state is exactly this,
+        // and dropping it would hand an employee a setup job with no steps.
+        if (typeof x === 'object') {
+          const s = renderFacts(x as Record<string, unknown>, 1);
+          return s.length > ELEM_MAX ? `${s.slice(0, ELEM_MAX)}…` : s;
+        }
+        return String(x);
+      }).filter(Boolean);
+      if (!shown.length) continue;
+      // NEVER a silent cap. A truncated list that reads as complete is how an
+      // employee concludes "all steps done" from half a checklist.
+      const more = v.length > LIST_MAX ? ` (+${v.length - LIST_MAX} more not shown)` : '';
+      parts.push(`${deskLabel(k)} [${shown.join(' | ')}]${more}`);
     } else if (typeof v === 'object' && depth === 0) {
       const inner = renderFacts(v as Record<string, unknown>, 1);
       if (inner) parts.push(`${deskLabel(k)} (${inner})`);
