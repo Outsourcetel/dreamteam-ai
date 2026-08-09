@@ -870,12 +870,38 @@ function renderRecord(desk: EntityDesk, row: Record<string, unknown>): string {
     if (v === null || v === undefined || v === '') continue;
     if (f === 'attributes' && typeof v === 'object') {
       for (const [ak, av] of Object.entries(v as Record<string, unknown>)) {
-        if (av !== null && av !== undefined && av !== '' && typeof av !== 'object') {
-          parts.push(`${deskLabel(ak)} ${fmtValue(ak, av)}`);
-        }
+        if (av === null || av === undefined || av === '') continue;
+        // A nested value used to be dropped in silence, and an array reached the
+        // model as "[object Object]". No production row carries one TODAY — this
+        // is a latent hole, not a live loss — but a desk field is tenant-shaped
+        // data, so the first customer with a structured attribute would have
+        // lost it invisibly, which is the worst way to find out.
+        parts.push(`${deskLabel(ak)} ${fmtValue(ak, av)}`);
       }
     } else {
       parts.push(`${deskLabel(f)} ${fmtValue(f, v)}`);
+    }
+  }
+  return parts.join(', ');
+}
+
+/** Flattens a facts object into "label value" pairs, one level of nesting deep.
+ *
+ *  Used for the watcher's `subject` block. Deliberately NOT recursive past one
+ *  level: this text is handed to a model, and an arbitrarily deep dump stops
+ *  being grounding and starts being noise. */
+function renderFacts(o: Record<string, unknown>, depth = 0): string {
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(o)) {
+    if (v === null || v === undefined || v === '') continue;
+    if (Array.isArray(v)) {
+      const flat = v.filter((x) => x !== null && typeof x !== 'object');
+      if (flat.length) parts.push(`${deskLabel(k)} ${flat.map(String).join(' / ')}`);
+    } else if (typeof v === 'object' && depth === 0) {
+      const inner = renderFacts(v as Record<string, unknown>, 1);
+      if (inner) parts.push(`${deskLabel(k)} (${inner})`);
+    } else if (typeof v !== 'object') {
+      parts.push(`${deskLabel(k)} ${fmtValue(k, v)}`);
     }
   }
   return parts.join(', ');
@@ -932,11 +958,39 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
   let contactAccountRef: string | null = null;   // the customer whose contacts this case may read
   let entityName: string | null = null;   // human-readable NAME — the Experience ledger keys on names, not UUIDs
   let accountContext = '';
+  let subjectContext = '';
   let objectiveBriefText: string | undefined;   // T1.4: objective text → situational SOP match
   let objectiveKind: string | undefined;        // T1.2: single-hop delegation pre-filter
   if (objectiveId) {
     const { data: obj } = await admin.from('de_objectives').select('entity_kind, entity_ref, title, description, plan').eq('id', objectiveId).maybeSingle();
     objectiveBriefText = `${obj?.title ?? ''}\n${obj?.description ?? ''}`.trim() || undefined;
+
+    // THE SUBJECT THE WATCHER STAMPED — the facts about the thing this case is
+    // about. run_work_watchers writes them into plan.subject and, until now,
+    // NOTHING read them.
+    //
+    // It matters most exactly where it was least reachable. The plan was only
+    // ever read inside the desk branch below, so a kind with no desk entry —
+    // `renewal_invoice`, for one — fell through to the worklist books and got
+    // NO record facts at all, even though its subject block carries due_date,
+    // amount_cents and status. The one place the subject was the ONLY grounding
+    // available was the one place the code could not reach it.
+    //
+    // Kept in its own variable rather than appended to accountContext, because
+    // BOTH branches below ASSIGN that string (lines ~968 and ~1050) and would
+    // silently clobber this. Composed in at the prompt instead.
+    //
+    // Only `subject` is rendered. The rest of plan is plumbing — watcher_id,
+    // fired_at, source — and handing a model a watcher's uuid is noise wearing
+    // the costume of context.
+    const planSubject = (obj?.plan as { subject?: unknown } | null)?.subject;
+    if (planSubject && typeof planSubject === 'object' && !Array.isArray(planSubject)) {
+      const facts = renderFacts(planSubject as Record<string, unknown>);
+      if (facts) {
+        subjectContext = `\n\nWhat this case is about — the facts recorded when it opened: ${facts}.`
+          + ` These are real; use them rather than asking for them. Anything not here is unknown — escalate rather than invent it.`;
+      }
+    }
     objectiveKind = (obj?.entity_kind as string | undefined) ?? undefined;
     const kind = String(obj?.entity_kind ?? '');
     const desk = ENTITY_DESKS[kind];
@@ -1261,7 +1315,7 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
   }
   const tools = [...TOOLS, ...delegateTools, ...motionTools, ...actionTools.filter(t => actionMap.has(t.name)).map(t => ({ name: t.name, description: `${t.description} NOTE: risky actions are routed to a human for approval — if the result says it is gated/pending approval, report that and move on; do NOT retry.`, input_schema: t.input_schema }))];
 
-  const messages: Array<{ role: string; content: unknown }> = [{ role: 'user', content: wrapUntrusted(goal + accountContext, 'task') }];
+  const messages: Array<{ role: string; content: unknown }> = [{ role: 'user', content: wrapUntrusted(goal + accountContext + subjectContext, 'task') }];
 
   let done = false, summary = '', finalStatus = 'done', turn = 0;
   // N3 (docs/39): a text-only reply is a QUESTION, not a completion. The status
