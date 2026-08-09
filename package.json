@@ -15,7 +15,6 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "gen:types": "supabase gen types typescript --project-id rfsvmhcqeiyrxivbmpel --schema public > src/types/database.types.ts",
-    "migrate:apply": "node scripts/apply-migration.mjs",
     "provision:all": "node scripts/provision.mjs",
     "test:unit": "vitest run tests/continuity-format.test.ts tests/contract-parity.test.ts tests/response-window.test.ts",
     "test:isolation": "vitest run tests/tenant-isolation.test.ts",

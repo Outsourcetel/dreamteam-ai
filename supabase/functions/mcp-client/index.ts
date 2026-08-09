@@ -220,6 +220,18 @@ serve(async (req) => {
     const connectorId: string = String(body.connector_id ?? '');
     if (!action) return json({ error: 'action_required' }, 400);
     if (!sourceId && !connectorId) return json({ error: 'source_id_or_connector_id_required' }, 400);
+    // mig 652/611: the specialist-source path is gone. Migration 611 retired the
+    // specialist role and DROPPED specialist_sources; the two queries further
+    // down still name it, so a caller passing source_id got an opaque PGRST205
+    // about a missing relation. Refuse at the door with a reason instead. This
+    // is the second half of the code→schema gap the debt map found — the first
+    // was media_assets, which had live callers and was restored.
+    if (sourceId && !connectorId) {
+      return json({
+        error: 'specialist_sources_retired',
+        detail: 'MCP servers are connectors now. Pass connector_id — source_id referred to the specialist source table, which was removed when the specialist role was retired.',
+      }, 410);
+    }
 
     const admin: SupabaseClient = createClient(
       Deno.env.get('SUPABASE_URL')!,

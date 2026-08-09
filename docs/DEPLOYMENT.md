@@ -1,5 +1,22 @@
 # Deployment
 
+> **Corrected 2026-08-09.** Three statements below were true when written on
+> 2026-07-08 and are not true now. They are fixed in place rather than deleted,
+> because this document's whole purpose is that the next person can trust it.
+>
+> · **There IS CI.** `.github/workflows/ci.yml` has existed since 2026-07-17 and
+>   now runs typecheck+build, `test:unit`, `certify:offline` and a production
+>   dependency audit on every push and PR. It does not deploy — the rest of this
+>   page, about deployment being deliberate and manual, still holds.
+> · **There IS an automated test suite** — `tests/` holds 10 vitest files, three
+>   of which run in CI without credentials. See the note further down.
+> · **The deploy script EXISTS** — `scripts/deploy.mjs`, added 2026-07-22. Do not
+>   "recreate it from the API shape below". ⚠ But its MIGRATION half is dead
+>   code: it calls an `exec_sql` RPC that exists in no schema. Migrations are
+>   applied with `node scripts/db-query.mjs <file.sql>`. Read
+>   `scripts/DEPLOY_SETUP.md` — that runbook has been verified against
+>   production and is the one to follow.
+
 This project has **no CI/CD pipeline connected to GitHub or Vercel's own auto-deploy**. Pushing to `main` does **not** automatically trigger a production deployment. Every deploy is a deliberate, manual step. This document exists because that fact was previously undocumented anywhere — found during a pre-launch readiness review (2026-07-08) and flagged as a real operational risk: if the person who knows this process is unavailable, nobody else could ship a fix.
 
 ## Why there's no auto-deploy

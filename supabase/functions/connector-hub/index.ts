@@ -134,6 +134,21 @@ interface Ctx {
   templateId?: string;
 }
 
+// ── The contract every provider adapter in the registry honours ──
+// Four required methods, implemented 74 times (70 object literals plus the
+// four built by makeFreshAdapter / makeFhirAdapter). The three optional ones
+// are the knowledge-capable extension: syncDocs on 12 adapters, and
+// discoverDocs + fetchTexts on the 5 that feed the review queue.
+interface Adapter {
+  test(c: Ctx): Promise<TestResult>;
+  search(c: Ctx, query: string): Promise<AdapterResult>;
+  fetchRecord(c: Ctx, type: string, ref: string): Promise<AdapterResult>;
+  listRecent(c: Ctx): Promise<AdapterResult>;
+  syncDocs?(c: Ctx, f?: IngestFilters): Promise<SyncResult>;
+  discoverDocs?(c: Ctx, f: IngestFilters): Promise<{ ok: boolean; candidates?: Candidate[]; error?: string }>;
+  fetchTexts?(c: Ctx, items: Candidate[]): Promise<Record<string, string>>;
+}
+
 const clip = (s: unknown, n: number) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
 
 async function httpJson(url: string, init: RequestInit = {}): Promise<{ ok: boolean; status: number; body: unknown; error?: string }> {
@@ -6291,8 +6306,7 @@ serve(async (req) => {
       templateName = resolved.template.name;
     }
 
-    // deno-lint-ignore no-explicit-any
-    const adapters: Record<string, any> = {
+    const adapters: Record<string, Adapter> = {
       zendesk, salesforce, confluence, jira, intercom, generic_rest: genericRest, sharepoint, gdrive, hubspot, slack, notion, teams, box, freshdesk, freshservice,
       servicenow, dynamics, github, gitlab, guru, document360: d360, asana, clickup, monday, linear,
       stripe, shopify, woocommerce, bigcommerce, square, bamboohr, greenhouse, lever, buildium, canvas,
