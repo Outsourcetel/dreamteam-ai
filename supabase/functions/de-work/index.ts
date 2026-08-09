@@ -341,11 +341,43 @@ async function reviewObjective(
     return { assessment: 'continue', enqueued: 0 };
   }
 
-  const progress = (items ?? []).map((i: WorkRow) => {
+  const stepProgress = (items ?? []).map((i: WorkRow) => {
     const h = Math.round(ageMs(i.updated_at) / 3.6e6);
     const stale = ['queued', 'running', 'waiting_human'].includes(i.status) && i.updated_at ? ` unchanged ${h}h` : '';
     return `- [${i.status}${stale}] ${i.title}${i.result?.summary ? `: ${String(i.result.summary).slice(0, 200)}` : ''}`;
   }).join('\n') || '(no steps have run yet)';
+
+  // RE-MEASURE, DO NOT ECHO (docs/48).
+  //
+  // Everything above is a STORED status. A step frozen at `waiting_human` is
+  // never re-attempted, so this reviewer was reporting a snapshot and calling it
+  // the present. It cost 24 tasks: the Accounting and Onboarding employees both
+  // escalated "no source is connected", the sources were connected hours later,
+  // and the reviewer kept re-reporting blocked from the stale step row. One
+  // escalation raised at 12:50 claimed "waiting for human action for 13 hours"
+  // — ELEVEN HOURS AFTER the data landed.
+  //
+  // So before judging, read the books as they are RIGHT NOW and hand both to the
+  // reviewer. Cheap, generic (any worklist-backed employee), and it lets a goal
+  // un-block itself when the world changed — which is the whole point of waking.
+  let bookState = '';
+  const { data: freshBooks, error: bookErr } = await admin.rpc('get_de_worklists', {
+    p_tenant_id: obj.tenant_id, p_de_id: obj.de_id,
+  });
+  if (bookErr) {
+    // .rpc() RESOLVES on a Postgres error. Say so rather than letting a failed
+    // read look like "no books" — that would be the same lie in the other
+    // direction.
+    bookState = `\n\nYour books RIGHT NOW: could not be read (${bookErr.message}). Do not treat this as empty.`;
+  } else {
+    const rows = (freshBooks ?? []) as Array<{ label: string; row_count: number; book_is_empty: boolean | null }>;
+    if (rows.length > 0) {
+      bookState = `\n\nYour books RIGHT NOW (measured this moment, not when the step above last ran):\n`
+        + rows.map((b) => `- ${b.label}: ${b.book_is_empty === null ? 'CANNOT BE READ' : `${b.row_count} item(s)`}`).join('\n')
+        + `\n⚠ If a step above is stuck on a source that this list shows as READABLE, the blocker is GONE. Say "continue" and re-do that step — do not report blocked from a stale status.`;
+    }
+  }
+  const progress = stepProgress + bookState;
 
   const system = 'You review progress on a long-running business objective owned by an AI employee. Decide: "achieved" (the goal is met — be strict, only when the completed work actually accomplishes it), "blocked" (cannot progress without human help), or "continue" (more work needed). If continue, propose 1-3 concrete NEXT steps that build on what happened — not a restart.'
     + ' A step marked "unchanged Nh" has not moved in N hours. If the plan is stalled behind such a step, do NOT propose more steps — anything you add would queue behind the stuck one and never run. Say "blocked" and use the note to state plainly what is needed and from whom; a person is alerted and the goal is re-reviewed. Only say "continue" when work can actually proceed.'
@@ -412,7 +444,10 @@ async function reviewObjective(
       // model's own prose, so each copy was worded differently while describing
       // the identical unchanged condition — the appearance of nine findings
       // over one fact.
-      const { data: openTask } = await admin.from('human_tasks')
+      const escalationTitle = `Goal blocked — ${obj.title.slice(0, 120)}`;
+
+      // FIRST: an open escalation for THIS objective.
+      let { data: openTask } = await admin.from('human_tasks')
         .select('id')
         .eq('tenant_id', obj.tenant_id)
         .eq('related_table', 'de_objectives')
@@ -421,6 +456,38 @@ async function reviewObjective(
         .eq('status', 'pending')
         .limit(1)
         .maybeSingle();
+
+      // THEN: the same RECURRING JOB under a different objective id.
+      //
+      // Keying only on objective id was a dedupe that could not dedupe the thing
+      // that actually repeats. "Daily AR sweep" mints a BRAND-NEW objective row
+      // every day, so yesterday's open task was invisible to today's lookup and
+      // the queue still grew ~3/day forever — 15 instances of 3 recurring jobs,
+      // every one still blocked, none ever completed. The per-wake duplicate was
+      // fixed; the per-DAY one was not.
+      //
+      // Matching on (employee, title) catches it, because the title is derived
+      // from the recurring objective's own title and is stable across instances.
+      if (!openTask?.id) {
+        const { data: sameJob } = await admin.from('human_tasks')
+          .select('id')
+          .eq('tenant_id', obj.tenant_id)
+          .eq('de_id', obj.de_id)
+          .eq('type', 'escalation')
+          .eq('status', 'pending')
+          .eq('title', escalationTitle)
+          .limit(1)
+          .maybeSingle();
+        openTask = sameJob;
+        // Re-point it at the live instance. The task means "this recurring job
+        // is stuck"; leaving it aimed at a superseded objective would send
+        // whoever opens it to yesterday's dead row.
+        if (sameJob?.id) {
+          await admin.from('human_tasks')
+            .update({ related_id: obj.id })
+            .eq('id', sameJob.id).eq('status', 'pending');
+        }
+      }
 
       const detail = `The employee cannot progress this objective without help.\n\n${note}\n\nProgress so far:\n${progress.slice(0, 1500)}`;
 
@@ -436,7 +503,7 @@ async function reviewObjective(
       } else {
         const { error: insErr } = await admin.from('human_tasks').insert({
           tenant_id: obj.tenant_id, de_id: obj.de_id, type: 'escalation', source: 'de',
-          title: `Goal blocked — ${obj.title.slice(0, 120)}`,
+          title: escalationTitle,
           detail,
           related_table: 'de_objectives', related_id: obj.id,
         });
@@ -1479,6 +1546,35 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
       // questions addressed to nobody (docs/38). N3: it is NOT done. It is a
       // question, and it goes to a person with the full text intact.
       const modelText = resp.content.filter((b) => b.type === 'text').map((b) => b.text).join(' ').trim();
+
+      // BUT FIRST: is this actually a tool call the model wrote as PROSE?
+      //
+      // This branch decided "the employee asked a question" purely from
+      // tool_use.length === 0 and never looked at the text. Once in five days
+      // the model emitted a complete, correctly-closed mark_done as literal
+      // syntax instead of a tool_use block — and a FINISHED JOB was filed as a
+      // question to a human. Worse, the work item stuck at waiting_human then
+      // pinned its objective 'blocked' forever, because reconcile_blocked_goals
+      // abstains whenever anything is waiting. One formatting slip manufactured
+      // a permanent blocker out of completed work (docs/48).
+      //
+      // The step prompt orders "call mark_done ... do not simply reply with
+      // text". The model tried to comply and was punished for the channel.
+      // So: recognise the intent before treating it as a question. Only
+      // mark_done is recovered — it is the terminal, non-destructive verb.
+      // Anything that ACTS stays a question, because guessing an action's
+      // arguments out of prose is exactly the class of inference that must
+      // never happen on a write path.
+      const proseDone = /<(?:invoke\s+name=|)"?mark_done"?\s*>|<mark_done>/i.test(modelText)
+        ? (modelText.match(/<parameter\s+name="summary"\s*>([\s\S]*?)<\/parameter>/i)?.[1] ?? '').trim()
+        : '';
+      if (proseDone) {
+        console.warn(`[de-work] recovered a prose-formatted mark_done on item ${item.id} — counted as finished, not as a question`);
+        finalStatus = 'done';
+        summary = proseDone.slice(0, 2000);
+        done = true; break;
+      }
+
       needsInput = true;
       finalStatus = 'waiting_human';
       summary = 'Stopped without finishing — asked a question instead. Routed to a person.';
