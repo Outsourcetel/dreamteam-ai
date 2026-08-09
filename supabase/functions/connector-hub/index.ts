@@ -445,6 +445,66 @@ const erpnext = {
     };
   },
 
+  /**
+   * The GENERAL LEDGER, which until now had no way in at all.
+   *
+   * The Accounting DE reads public.journal_entries and that table had been
+   * empty since the day it was bound: the ingest could write AR records,
+   * contacts, opportunities and tickets, and nothing else. The employee opened
+   * an empty book, escalated, and re-raised the block daily.
+   *
+   * ERPNext's GL Entry is the posted ledger — one row per debit/credit leg,
+   * which is what a reconciliation actually needs. Journal Entry is only the
+   * manual-adjustment doctype and would miss everything posted by an invoice
+   * or a payment, so a ledger built from it would look plausible and be wrong.
+   *
+   * docstatus=1 keeps drafts out, and is_cancelled=0 keeps reversed entries
+   * out: a cancelled entry still exists in ERPNext and would double-count.
+   * Read-only here; the upsert lives in the DB
+   * (upsert_external_journal_entry, migration 639).
+   */
+  glUrl(c: Ctx, limit = '200'): string {
+    const qs = new URLSearchParams({
+      fields: JSON.stringify(['name', 'posting_date', 'account', 'debit', 'credit',
+        'remarks', 'voucher_type', 'voucher_no']),
+      filters: JSON.stringify([['docstatus', '=', 1], ['is_cancelled', '=', 0]]),
+      order_by: 'posting_date desc',
+      limit_page_length: limit,
+    });
+    return `${c.baseUrl}/api/resource/GL%20Entry?${qs.toString()}`;
+  },
+
+  async syncLedger(c: Ctx): Promise<{ ok: boolean; error?: string; detail?: string; records?: Array<Record<string, unknown>> }> {
+    const r = await httpJson(this.glUrl(c), { headers: this.hdrs(c) });
+    if (!r.ok) {
+      // A 403 here is its own diagnosis: the API key works (invoices sync) but
+      // the ERPNext role has no Accounts permission. Saying so beats a bare
+      // "sync failed" that sends someone looking at credentials.
+      return {
+        ok: false,
+        error: r.error ?? `http_${r.status}`,
+        detail: r.status === 403
+          ? 'ERPNext refused GL Entry (403). The API key is valid — invoices sync — but its role lacks read permission on Accounts. Grant the key an Accounts User role in ERPNext.'
+          : `GL Entry read failed (HTTP ${r.status}).`,
+      };
+    }
+    const rows = (r.body as { data?: Array<Record<string, unknown>> })?.data ?? [];
+    const records = rows.map((d) => ({
+      // name is unique per LEG in ERPNext, so it is the correct idempotency
+      // key — voucher_no would collapse both sides of a transaction into one
+      // row and silently halve the ledger.
+      external_ref: String(d.name ?? ''),
+      entry_date: d.posting_date ? String(d.posting_date) : null,
+      // The account and the voucher that produced it, so a person reading the
+      // book can trace an entry back to its invoice or payment.
+      memo: [d.account, d.voucher_type && d.voucher_no ? `${d.voucher_type} ${d.voucher_no}` : null, d.remarks]
+        .filter(Boolean).join(' · ').slice(0, 500) || null,
+      debit: Number(d.debit ?? 0),
+      credit: Number(d.credit ?? 0),
+    })).filter((x) => x.external_ref);
+    return { ok: true, records };
+  },
+
   // ingest (upsert into renewal_invoices / customer_accounts). Read-only here;
   // the upsert lives in the DB (upsert_external_ar_record).
   async syncFinancials(c: Ctx): Promise<{ ok: boolean; error?: string; records?: Array<Record<string, unknown>>; contacts?: Record<string, unknown> }> {
@@ -6532,6 +6592,51 @@ serve(async (req) => {
         `Business-record sync from ${connector.provider} — ${JSON.stringify(out)} in ${ms}ms${errors.length ? `, ${errors.length} error(s)` : ''}`,
         { hub_action: 'sync_business_records', result: out, errors: errors.slice(0, 5), latency_ms: ms, health });
       return json({ ok: errors.length === 0, ...out, errors: errors.slice(0, 5), latency_ms: ms, health });
+    }
+
+    // ════════ sync_ledger — the general ledger, previously unreachable ══════
+    // The Accounting DE's book was empty because nothing could write to it.
+    // Kept a SEPARATE action from sync_financials rather than folded into it:
+    // GL Entry needs an Accounts permission the AR sync does not, so a ledger
+    // failure must not mark the working invoice sync as broken, and a workspace
+    // whose key lacks that permission should still get its AR.
+    if (action === 'sync_ledger') {
+      if (typeof adapter.syncLedger !== 'function') {
+        return json({ ok: false, error: 'sync_not_supported',
+          detail: `${connector.provider} has no ledger sync adapter.` }, 200);
+      }
+      const started = Date.now();
+      const sr = await adapter.syncLedger(ctx);
+      if (!sr.ok) {
+        const health = await recordHealth(false, sr.error ?? 'ledger_sync_failed');
+        return json({ ok: false, error: sr.error ?? 'sync_failed', detail: sr.detail, health }, 200);
+      }
+      const records = (sr.records ?? []) as Array<Record<string, unknown>>;
+      let upserted = 0;
+      const errors: string[] = [];
+      for (const rec of records) {
+        const { error: upErr } = await admin.rpc('upsert_external_journal_entry', {
+          p_tenant_id: tenantId,
+          p_provider: connector.provider,
+          p_external_ref: rec.external_ref ?? null,
+          p_entry_date: rec.entry_date ?? null,
+          p_memo: rec.memo ?? null,
+          p_debit: rec.debit ?? 0,
+          p_credit: rec.credit ?? 0,
+        });
+        // .rpc() RESOLVES on a Postgres error — it does not throw. An unchecked
+        // error here would report "synced" over a ledger that took nothing.
+        if (upErr) errors.push(upErr.message);
+        else upserted++;
+      }
+      const ms = Date.now() - started;
+      const health = await recordHealth(errors.length === 0, errors[0] ?? null);
+      await audit('connector_sync',
+        `Ledger sync from ${connector.provider} — ${upserted} of ${records.length} entries in ${ms}ms`
+          + `${errors.length ? `, ${errors.length} error(s)` : ''}`,
+        { hub_action: 'sync_ledger', upserted, seen: records.length, errors: errors.slice(0, 5), latency_ms: ms, health });
+      return json({ ok: errors.length === 0, upserted, seen: records.length,
+        errors: errors.slice(0, 5), latency_ms: ms, health });
     }
 
     if (action === 'sync_financials') {
