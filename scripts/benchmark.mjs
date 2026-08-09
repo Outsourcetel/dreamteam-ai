@@ -40,6 +40,15 @@ const MIN_N = 20;
 // inflation is the easiest way to make this number lie.
 const DRAFT_SHAPED = ['inquiry_review', 'knowledge_revision', 'improvement_review', 'draft_review'];
 
+// REAL WORKSPACES ONLY. The install carries 10 industry demo tenants, a trial,
+// and two suspended ones. Counting their decisions would be the same failure the
+// exam-vs-production audit already caught once: measuring the demo instead of
+// the job, and producing a confident number about work nobody was paid for.
+// plan='enterprise' + active is the two Outsourcetel workspaces; everything else
+// was provisioned as a showcase. The FIRST version of this script omitted this
+// clause and reported a queue of 62 that was 60 rows of a SUSPENDED demo tenant.
+const REAL_TENANTS = `(select id from tenants where plan = 'enterprise' and status = 'active')`;
+
 function token() {
   const fromEnv = process.env.SUPABASE_ACCESS_TOKEN?.trim();
   if (fromEnv) return fromEnv;
@@ -93,6 +102,7 @@ const [overall] = await q(`
          count(*) filter (where status = 'rejected')::int as rejected
     from human_tasks
    where decided_at > now() - interval '${WINDOW_DAYS} days'
+     and tenant_id in ${REAL_TENANTS}
      and type in (${list(DRAFT_SHAPED)})`);
 
 const rate = overall.n >= MIN_N ? Math.round((overall.clean / overall.n) * 1000) / 10 : null;
@@ -106,7 +116,7 @@ console.log(`    approve-clean rate: ${rate === null
 // ── Why the sample is empty: the queue ─────────────────────────────────────
 const queue = await q(`
   select type, count(*)::int as pending
-    from human_tasks where status = 'pending'
+    from human_tasks where status = 'pending' and tenant_id in ${REAL_TENANTS}
    group by 1 order by 2 desc`);
 const draftPending = queue.filter((r) => DRAFT_SHAPED.includes(r.type)).reduce((a, r) => a + r.pending, 0);
 const allPending = queue.reduce((a, r) => a + r.pending, 0);
@@ -118,9 +128,12 @@ for (const r of queue.slice(0, 6)) {
 
 // ── The unmeasurable path, named rather than skipped ───────────────────────
 const [support] = await q(`
-  select (select count(*)::int from de_messages where delivery = 'draft_pending') as still_draft,
-         (select count(*)::int from de_messages where delivery = 'sent')          as sent,
-         (select count(*)::int from de_learning_edits)                           as edits`);
+  select (select count(*)::int from de_messages
+           where delivery = 'draft_pending' and tenant_id in ${REAL_TENANTS}) as still_draft,
+         (select count(*)::int from de_messages
+           where delivery = 'sent' and tenant_id in ${REAL_TENANTS})          as sent,
+         (select count(*)::int from de_learning_edits
+           where tenant_id in ${REAL_TENANTS})                                as edits`);
 console.log(`\n  SUPPORT DRAFT PATH — DENOMINATOR DESTROYED, not merely empty.`);
 console.log(`    approve_draft_reply overwrites de_messages.delivery 'draft_pending' -> 'sent',`);
 console.log(`    so a message that WAS a draft is indistinguishable from one that never was.`);
@@ -135,6 +148,7 @@ const perDe = await q(`
          count(*) filter (where h.status = 'approved' and h.decision_edit is null)::int as clean
     from human_tasks h left join digital_employees de on de.id = h.de_id
    where h.decided_at > now() - interval '${WINDOW_DAYS} days'
+     and h.tenant_id in ${REAL_TENANTS}
      and h.type in (${list(DRAFT_SHAPED)})
    group by 1, 2 order by 3 desc limit 10`);
 if (perDe.length) {
