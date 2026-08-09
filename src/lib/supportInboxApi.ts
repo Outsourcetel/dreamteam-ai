@@ -8,6 +8,9 @@ export interface SupportConversation {
   channel: string;
   status: 'ai_handling' | 'needs_human' | 'human_owned' | 'resolved';
   priority: 'low' | 'normal' | 'high' | 'urgent';
+  /** The TOPIC a triage rule assigned (mig 233). Null until a rule matches —
+   *  measured 2026-08-09: 164 of 455 conversations carry one. */
+  category: string | null;
   subject: string | null;
   detected_language: string | null;
   handoff_summary: string | null;
@@ -43,7 +46,10 @@ export interface SupportMessage {
 // relationship, ordered newest-first and limited to one PER PARENT ROW (that
 // is what a foreignTable limit means in PostgREST) — one round trip for the
 // whole list, not one per conversation.
-const CONV_COLS = 'id, channel, status, priority, subject, detected_language, handoff_summary, end_user_name, account_external_ref, owner_user_id, csat_score, de_id, last_message_at, created_at, identity_verified, last_message:de_messages(content, role, created_at)';
+// `category` is the TOPIC the triage rules assign (mig 233's set_category) —
+// billing, access, how_to, outage… It is NOT a product list, which is why the
+// inbox facet built on it is labelled "Topic". See SupportInboxPage.
+const CONV_COLS = 'id, channel, status, priority, category, subject, detected_language, handoff_summary, end_user_name, account_external_ref, owner_user_id, csat_score, de_id, last_message_at, created_at, identity_verified, last_message:de_messages(content, role, created_at)';
 
 export async function listSupportConversations(status?: SupportConversation['status'] | 'all'): Promise<SupportConversation[]> {
   const tid = await requireTenantId();

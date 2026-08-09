@@ -1,6 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { PageHeader } from '../../../components/ui';
-import { Button, Chip, Banner, INPUT_CLS } from '../../../design/primitives';
+import { Button, Chip, Banner, FilterBar, INPUT_CLS, SELECT_CLS } from '../../../design/primitives';
+
+// The seeded triage taxonomy (mig 233), in plain words. Anything a workspace
+// adds of its own falls through to the raw value with underscores stripped —
+// the list must never become a gate on what a tenant may call a topic.
+const TOPIC_LABEL: Record<string, string> = {
+  billing: 'Billing', access: 'Access', security: 'Security', how_to: 'How do I…',
+  complaint: 'Complaint', general: 'General', data: 'Data', legal: 'Legal',
+  outage: 'Outage', safety: 'Safety', feature_request: 'Feature request',
+};
 import { useAuth } from '../../../context/AuthContext';
 import {
   listSupportConversations, getConversationThread, claimConversation, sendHumanReply,
@@ -79,6 +88,8 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
   const myId = authedUser?.id ?? null;
   const [convs, setConvs] = useState<SupportConversation[]>([]);
   const [tab, setTab] = useState<Tab>('needs_human');
+  const [topic, setTopic] = useState('');
+  const [search, setSearch] = useState('');
   const [selId, setSelId] = useState<string | null>(null);
   const [thread, setThread] = useState<SupportMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -124,7 +135,13 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
 
   useEffect(() => { if (selId) void loadThread(selId); }, [selId, loadThread]);
 
+  // Only the topics that actually occur — see the note by the FilterBar.
+  const topics = Array.from(new Set(convs.map(c => c.category).filter((c): c is string => !!c))).sort();
+
+  const q = search.trim().toLowerCase();
   const filtered = convs.filter(c => {
+    if (topic && c.category !== topic) return false;
+    if (q && !`${c.subject ?? ''} ${c.end_user_name ?? ''} ${c.account_external_ref ?? ''}`.toLowerCase().includes(q)) return false;
     // Escalations are channel-agnostic: if a DE says it needs a human, a
     // human must see it whether it came from a customer or the app dock.
     if (tab === 'needs_human') return c.status === 'needs_human';
@@ -209,6 +226,39 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
         <Chip tone="ok" dot pulse title="New messages and escalations appear here without a refresh">Live</Chip>
       </div>
       {error && <div className="mx-6 mb-2 text-xs text-dt-danger">{error}</div>}
+      {/* ⚠ THE FACET IS "TOPIC", NOT "PRODUCT". Handoff 06 drew this axis as
+          Product and its own SRC note says "Product = category". The data says
+          otherwise: the 165 triage rules across 15 workspaces set `billing`,
+          `access`, `security`, `how_to`, `complaint`, `general`, `data`,
+          `legal`, `outage`, `safety`, `feature_request` — every one of them a
+          subject, none a product line. Labelling it Product would have told an
+          owner they were filtering to a product called Billing when they were
+          filtering to conversations ABOUT billing.
+          Options are built from the categories PRESENT, never the 11
+          configured: measured 2026-08-09, only `general` (115) and `how_to`
+          (49) are ever assigned, so a hardcoded list would have offered nine
+          filters that always return nothing. */}
+      {(convs.length > 0 || search.trim() !== '') && (
+        <div className="px-6 pb-3">
+          <FilterBar
+            facets={topics.length > 0 ? (
+              <select value={topic} aria-label="Filter by topic" className={SELECT_CLS}
+                onChange={e => setTopic(e.target.value)}>
+                <option value="">Any topic</option>
+                {topics.map(t => <option key={t} value={t}>{TOPIC_LABEL[t] ?? t.replace(/_/g, ' ')}</option>)}
+              </select>
+            ) : undefined}
+            search={
+              <input value={search} onChange={e => setSearch(e.target.value)}
+                aria-label="Search conversations"
+                placeholder="Search a customer or subject…" className={INPUT_CLS} />
+            }
+            views={(topic || search.trim()) ? (
+              <Button kind="ghost" size="sm" onClick={() => { setTopic(''); setSearch(''); }}>Clear</Button>
+            ) : undefined}
+          />
+        </div>
+      )}
       <div className="relative flex-1 flex overflow-hidden px-6 pb-6 gap-4">
         {/* Left: conversation list */}
         <div className="w-[340px] flex-shrink-0 flex flex-col rounded-xl border border-dt-border bg-dt-card overflow-hidden">
@@ -226,7 +276,14 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
           <div className="flex-1 overflow-y-auto">
             {loading ? <p className="text-xs text-dt-muted p-4 text-center">Loading…</p>
               : filtered.length === 0 ? <p className="text-xs text-dt-muted p-6 text-center">
-                  {tab === 'needs_human' ? "That's everything waiting on you."
+                  {/* ⚠ A FILTER MUST NOT BE ABLE TO SAY "all clear". Without
+                      this branch, narrowing to a topic with no matches told
+                      the reader "that's everything waiting on you" — an
+                      all-clear produced by their own filter, on a queue that
+                      might be full. */}
+                  {(topic || search.trim())
+                    ? 'Nothing matches that filter. Clear it to see the rest.'
+                    : tab === 'needs_human' ? "That's everything waiting on you."
                     : tab === 'mine' ? "Nothing is yours right now."
                     : tab === 'resolved' ? 'No closed conversations yet.'
                     : 'No open conversations.'}
