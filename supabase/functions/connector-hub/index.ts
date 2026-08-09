@@ -3495,6 +3495,11 @@ const freshdeskActions: Record<string, NativeAction> = {
 // and so are floor-gated to a human before trust is even consulted). A note,
 // not an email: a verifiable, non-destructive-to-the-customer record that "a
 // reminder was issued", which is exactly what the existing dunning playbooks do.
+// The ONLY Customer fields an employee may set. Frappe will accept a PUT for
+// any field on the doctype — tax ids, credit limits, `disabled` — so the set of
+// writable fields is pinned here rather than left to whatever the model names.
+const ERPNEXT_CUSTOMER_SETTABLE = ['customer_group', 'territory', 'default_price_list', 'payment_terms'] as const;
+
 const erpnextActions: Record<string, NativeAction> = {
   erpnext_invoice_comment: {
     render(c, p) {
@@ -3513,6 +3518,71 @@ const erpnextActions: Record<string, NativeAction> = {
       if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
       const cid = (res.body as { data?: { name?: string } } | null)?.data?.name;
       return { ok: true, status: res.status, raw: res.body, receipt: `Logged a dunning note on invoice ${p.external_ref} in ERPNext${cid ? ` (comment ${cid})` : ''}.` };
+    },
+  },
+
+  // ── THE FIRST ERPNext ACTION THAT SETS A CUSTOMER UP ──────────────────────
+  // Everything else in this family chases money. This one configures: it is the
+  // verb an onboarding employee needs to take a signed-up customer to a working
+  // setup, and the first write in the system whose origin will be an employee
+  // doing its job rather than a sweep.
+  //
+  // WHITELISTED FIELDS, NOT AN ARBITRARY PATCH. Frappe will happily PUT any
+  // field on a Customer, including tax ids, credit limits and disabled. The
+  // model chooses the VALUES; it does not choose which fields exist. Same law
+  // as the watcher catalog: identifiers from a closed list, values bound.
+  //
+  // READ BEFORE WRITE, in the executor itself and not merely in the procedure.
+  // A receipt that records only the new value cannot be used to undo anything,
+  // and "reversible" is a claim you have to be able to honour. So the prior
+  // values are read first and the receipt names each change as from → to.
+  erpnext_set_customer_defaults: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) {
+        return { ok: false, error: 'param_required', detail: 'external_ref (the ERPNext Customer name) is required.' };
+      }
+      const body: Record<string, unknown> = {};
+      for (const f of ERPNEXT_CUSTOMER_SETTABLE) {
+        const v = p[f];
+        if (typeof v === 'string' && v.trim()) body[f] = v.trim();
+      }
+      if (Object.keys(body).length === 0) {
+        return { ok: false, error: 'param_required',
+          detail: `Give at least one setting to configure: ${ERPNEXT_CUSTOMER_SETTABLE.join(', ')}.` };
+      }
+      return {
+        ok: true, method: 'PUT',
+        url: `${c.baseUrl}/api/resource/Customer/${encodeURIComponent(p.external_ref.trim())}`,
+        body,
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+
+      // What it was. If this read fails we still proceed — the change is the
+      // point — but the receipt says the prior value is unknown rather than
+      // implying nothing was there.
+      const beforeRes = await httpJson(r.url!, { headers: erpnext.hdrs(c) });
+      const before = ((beforeRes.body as { data?: Record<string, unknown> } | null)?.data) ?? {};
+
+      const res = await httpJson(r.url!, {
+        method: 'PUT',
+        headers: { Authorization: erpnext.auth(c), 'Content-Type': 'application/json' },
+        body: JSON.stringify(r.body),
+      });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+
+      const changes = Object.entries(r.body as Record<string, unknown>)
+        .map(([k, v]) => {
+          const had = beforeRes.ok ? (before[k] ?? '(unset)') : '(unknown)';
+          return `${k.replace(/_/g, ' ')}: ${had} → ${v}`;
+        })
+        .join('; ');
+      return {
+        ok: true, status: res.status, raw: res.body,
+        receipt: `Configured customer ${p.external_ref} in ERPNext — ${changes}.`,
+      };
     },
   },
 
