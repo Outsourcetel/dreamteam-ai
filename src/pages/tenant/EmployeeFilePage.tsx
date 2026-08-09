@@ -34,7 +34,7 @@ import {
   DeProfileSections, DeIncidentsPanel,
   DeKpisPanel, DeEconomicsPanel, DeDevelopmentPanel, DeReviewsPanel, DeSkillsPanel,
   type DeProfileSectionKey,
-} from './LiveWorkforceDEs';
+} from './EmployeeFileSections';
 import {
   Button, Chip, PanelCard, StatTile, EmptyState, TabBar, Banner, TimelineStep, type Tone,
 } from '../../design/primitives';

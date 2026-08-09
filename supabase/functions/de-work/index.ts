@@ -545,7 +545,56 @@ const TOOLS: Tool[] = [
 // now either delegates (delegate_to_colleague, below) or is consulted inside
 // the evidence pipeline's own DE-to-DE step, which targets any ACTIVE DE.
 
-async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string; action_definition_id?: string | null }>, workItemId?: string, objectiveId?: string | null, accountRef?: string | null, oppRef?: string | null, escRuleset?: EscRuleset, delegationTargets?: Map<string, string>, entityName?: string | null, ctxAccountForContacts?: string | null, caseEntityRef?: string | null): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
+/** Everything dispatchTool needs that is fixed for the WHOLE work item, as
+ *  opposed to `name`/`input` which change on every call.
+ *
+ *  This was sixteen positional parameters on one 617-character line. Three of
+ *  them in a row were nullable strings — entityName, ctxAccountForContacts,
+ *  caseEntityRef — so transposing two compiled clean and would have pointed a
+ *  write at the wrong record, silently.
+ *
+ *  Every field is REQUIRED on purpose. The single call site supplies all of
+ *  them, so a field forgotten in a future edit is a compile error here rather
+ *  than an `undefined` that reads, at runtime, as "this case has no record". */
+interface ToolContext {
+  tenantId: string;
+  deId: string;
+  /** The work item's own payload.subject_ref — the memory scope, not a record id. */
+  subjectRef: string | null;
+  /** Registry actions this DE may run: tool name → connector + action key. */
+  actionMap: Map<string, { connector_id: string; action_key: string; action_definition_id?: string | null }>;
+  workItemId: string;
+  objectiveId: string | null;
+  /** The case's customer_account id — set only when its entity_kind IS customer_account. */
+  accountRef: string | null;
+  /** The case's opportunity id — set only when its entity_kind IS opportunity. */
+  oppRef: string | null;
+  escRuleset: EscRuleset;
+  /** Colleague name (lowercased) → de_id. The Map IS the delegation gate, so
+   *  "no grants" must stay distinguishable from "an empty Map of grants". */
+  delegationTargets: Map<string, string> | undefined;
+  /** Human-readable record NAME — the Experience ledger keys on names, not ids. */
+  entityName: string | null;
+  /** The customer whose contact book this case may read: accountRef when the
+   *  case IS an account, otherwise the account BEHIND the case. */
+  ctxAccountForContacts: string | null;
+  /** The CASE's own record id, whatever its kind — never the work item's payload. */
+  caseEntityRef: string | null;
+}
+
+async function dispatchTool(
+  admin: SupabaseClient,
+  name: string,
+  input: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
+  // Unpacked once, so the ~280 lines of tool bodies below read exactly as they
+  // did when these were parameters. Naming every field here is also the check
+  // that none was dropped: omit one and its uses stop compiling.
+  const {
+    tenantId, deId, subjectRef, actionMap, workItemId, objectiveId, accountRef, oppRef,
+    escRuleset, delegationTargets, entityName, ctxAccountForContacts, caseEntityRef,
+  } = ctx;
   // Registry ACTIONS (P1): tools resolved from get_agentic_tools_for_de
   // (action registry ∩ connected connectors ∩ data-access grants) execute
   // through connector-hub's execute_action — decide_action_execution
@@ -1447,7 +1496,11 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
     }
     const toolResults: unknown[] = [];
     for (const tu of toolUses) {
-      const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {}, actionMap, item.id, objectiveId, accountRef, oppRef, escRuleset, delegationTargets, entityName, contactsFor, entityRef);
+      const out = await dispatchTool(admin, tu.name!, tu.input ?? {}, {
+        tenantId, deId, subjectRef, actionMap, workItemId: item.id, objectiveId,
+        accountRef, oppRef, escRuleset, delegationTargets, entityName,
+        ctxAccountForContacts: contactsFor, caseEntityRef: entityRef,
+      });
       await admin.from('de_decision_trace').insert({ tenant_id: tenantId, de_id: deId, run_kind: 'work_item', run_ref: item.id, seq: turn, tool: tu.name, inputs: tu.input ?? {}, outputs: out.result as object, rationale: null });
       // Injection firewall (#9): tool RESULTS carry external content
       // (knowledge chunks, memory, connector responses) — mark them as
