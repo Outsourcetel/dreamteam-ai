@@ -392,12 +392,52 @@ async function reviewObjective(
     }
     await admin.rpc('conclude_objective_wake', { p_objective_id: obj.id, p_assessment: concludeAssessment, p_note: note });
     if (assessment === 'blocked') {
-      await admin.from('human_tasks').insert({
-        tenant_id: obj.tenant_id, de_id: obj.de_id, type: 'escalation', source: 'de',
-        title: `Goal blocked — ${obj.title.slice(0, 120)}`,
-        detail: `The employee cannot progress this objective without help.\n\n${note}\n\nProgress so far:\n${progress.slice(0, 1500)}`,
-        related_table: 'de_objectives', related_id: obj.id,
-      });
+      // ONE OPEN ESCALATION PER OBJECTIVE, NOT ONE PER WAKE.
+      //
+      // This insert had no dedup, and the objective wakes on a schedule. An
+      // unchanged blocker was therefore re-filed every single wake: "Goal
+      // blocked — Daily AR sweep" appeared 9 times in 3 days, and 5 genuinely
+      // distinct blockers became 14 queue items. A person cannot tell a new
+      // problem from the ninth copy of an old one, which is precisely how a
+      // queue reaches 374 and stops being read.
+      //
+      // Re-raising also cost nothing and taught nothing: the note is the
+      // model's own prose, so each copy was worded differently while describing
+      // the identical unchanged condition — the appearance of nine findings
+      // over one fact.
+      const { data: openTask } = await admin.from('human_tasks')
+        .select('id')
+        .eq('tenant_id', obj.tenant_id)
+        .eq('related_table', 'de_objectives')
+        .eq('related_id', obj.id)
+        .eq('type', 'escalation')
+        .eq('status', 'pending')
+        .limit(1)
+        .maybeSingle();
+
+      const detail = `The employee cannot progress this objective without help.\n\n${note}\n\nProgress so far:\n${progress.slice(0, 1500)}`;
+
+      if (openTask?.id) {
+        // Refresh the existing one so the reader sees the CURRENT state of a
+        // still-open blocker, rather than a stale first description — but do
+        // not create a second item, and do not touch its decision fields.
+        const { error: upErr } = await admin.from('human_tasks')
+          .update({ detail, updated_at: new Date().toISOString() })
+          .eq('id', openTask.id)
+          .eq('status', 'pending');
+        if (upErr) console.error('escalation refresh failed', upErr.message);
+      } else {
+        const { error: insErr } = await admin.from('human_tasks').insert({
+          tenant_id: obj.tenant_id, de_id: obj.de_id, type: 'escalation', source: 'de',
+          title: `Goal blocked — ${obj.title.slice(0, 120)}`,
+          detail,
+          related_table: 'de_objectives', related_id: obj.id,
+        });
+        // .insert() RESOLVES on an RLS or constraint failure — an unchecked
+        // error here would drop the escalation silently and the blocker would
+        // be invisible rather than merely duplicated.
+        if (insErr) console.error('escalation insert failed', insErr.message);
+      }
     }
   }
   await admin.from('de_decision_trace').insert({ tenant_id: obj.tenant_id, de_id: obj.de_id, run_kind: 'work_item', run_ref: obj.id, seq: wakeN * 100, tool: 'review_objective', outputs: { assessment, note: note.slice(0, 300), enqueued } });
@@ -943,20 +983,42 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
       // to report "all accounts current, 0 invoices reviewed" over $431k of
       // live receivables — the desk read `invoices` while the ERP ingest wrote
       // `renewal_invoices`. An unknown book must never finish a shift.
-      const rows = (books ?? []) as Array<{ label: string; row_count: number; sample: unknown; book_is_empty: boolean | null; source_table: string | null }>;
+      const rows = (books ?? []) as Array<{ label: string; row_count: number; sample: unknown; book_is_empty: boolean | null; source_table: string | null; source_has_any_rows: boolean | null }>;
       if (rows.length > 0) {
         const lines = rows.map((b) => {
-          if (b.book_is_empty === null) return `- ${b.label}: CANNOT BE READ — no source is connected for it. This is not the same as "nothing to do".`;
-          if (b.book_is_empty) return `- ${b.label}: nothing to work today (0 items).`;
+          // SAY ONLY WHAT WAS MEASURED. This line used to read "CANNOT BE READ —
+          // no source is connected for it" for every NULL, which asserted a
+          // connection failure nothing in this path ever checked:
+          // get_de_worklists never touches connectors or de_connected_systems.
+          // The Onboarding DE escalated 13 times in 3 days over a book that was
+          // simply empty, and quoted this sentence back verbatim as its reason.
+          // NULL now means only what it says — the book resolves to no source.
+          if (b.book_is_empty === null) {
+            return `- ${b.label}: I could not resolve a source for this book, so I cannot tell you whether it is empty. This is a setup gap, not a result.`;
+          }
+          if (b.book_is_empty) {
+            // Empty is a real answer. Whether the source has ever held anything
+            // is reported as the separate fact it is, so the employee can say
+            // "your onboarding book has never had anything in it" without
+            // claiming something is broken.
+            return b.source_has_any_rows === false
+              ? `- ${b.label}: nothing to work today (0 items). This source holds no records at all for this workspace yet — that is a normal state for a book nobody has started using, not a fault.`
+              : `- ${b.label}: nothing to work today (0 items).`;
+          }
           return `- ${b.label}: ${b.row_count} item(s). ${JSON.stringify(b.sample).slice(0, 1500)}`;
         }).join('\n');
-        const unreadable = rows.filter((b) => b.book_is_empty === null);
+        const unresolved = rows.filter((b) => b.book_is_empty === null);
         const allEmpty = rows.every((b) => b.book_is_empty === true);
         accountContext = `\n\nYour books right now:\n${lines}\n\n`
           + (allEmpty
             ? 'Every book is empty. That is a COMPLETE and correct answer for this shift — record that there was nothing to work and finish. Do NOT escalate for access: you have been shown the books and they are empty.'
-            : unreadable.length > 0
-              ? `You could not read ${unreadable.length} of your books. Work whatever IS listed above, then escalate naming exactly which book could not be read. Do NOT report those as clear, empty, or "no activity required" — you did not see them, and saying otherwise would be a false all-clear on work that may be overdue.`
+            : unresolved.length > 0
+              // Still firm, because an unresolved book really is a gap — but it
+              // no longer ORDERS an escalation on every sweep for a condition
+              // that may already have been raised. Reporting it once is the job;
+              // raising it nightly for the same unchanged fact is the queue
+              // amplification that put 374 items in front of a person.
+              ? `${unresolved.length} of your books could not be resolved to a source. Work whatever IS listed above. Report those books as UNKNOWN — never as clear, empty, or "no activity required", because you did not see them. Escalate ONLY if this is new or nobody has already raised it; if it is the same setup gap as previous shifts, note it and move on.`
               : 'These are the real rows to work. Use them; do not ask for a list you have already been given. Anything not listed here is unknown — escalate rather than invent it.');
       }
     }

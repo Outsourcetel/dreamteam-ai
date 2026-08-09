@@ -1,22 +1,22 @@
 {
-  "at": "2026-08-09T01:29:35.714Z",
+  "at": "2026-08-09T02:22:11.404Z",
   "mode": "fast",
   "failed": 0,
   "results": [
     {
       "section": "typecheck",
       "ok": true,
-      "seconds": 17.1
+      "seconds": 28.8
     },
     {
       "section": "ring0-probes",
       "ok": true,
-      "seconds": 25.4
+      "seconds": 26.3
     },
     {
       "section": "migration-ledger",
       "ok": true,
-      "seconds": 6.2
+      "seconds": 5.3
     }
   ]
 }
