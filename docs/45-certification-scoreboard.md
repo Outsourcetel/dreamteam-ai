@@ -33,7 +33,7 @@ money/reputation) → **Ring 2** (costs correctness) → **Ring 3** (polish).
 | R0.5 | The approvals guard (`app.allow_task_decision`) has no new setter | **PROVEN** | `certify` › guard-bypass-setters-pinned |
 | R0.6 | The audit hash-chain is intact for outsourcetel-hq | **PROVEN** | `certify` › audit-chain-verifies-hq |
 | R0.7 | The `anon`/`authenticated` EXECUTE surface equals the pinned allowlist | **PROVEN** | `certify` › execute-perimeter |
-| R0.8 | Tenant isolation on READ, probed with real ids across all RPCs | **UNPROVEN** | owed — `tenant-isolation` covers policies, not every RPC path |
+| R0.8 | Tenant isolation on READ, probed with real ids across all RPCs | **FALSIFIED → CLOSED** | 27 leaking routines found and revoked (mig 662); `certify` › secdef-caller-tenant-ratchet |
 | R0.9 | No employee is offered an action its role may not use | **PROVEN** | `certify` › role-restricted-actions-stay-restricted |
 | R0.10 | …and the role that *may* use them can actually reach them | **PROVEN** | `certify` › workspace-admin-has-an-owner |
 
@@ -252,6 +252,33 @@ retroactively is a curve you can talk yourself into. `npm run benchmark:history`
   completed work read as pending. Settled by evidence *outside* the ledger: the
   employees those approvals would have created already existed, created on the
   exact approval dates.
+- **27 cross-tenant READ holes** (mig 662) — R0.8, the last Ring-0 invariant
+  still `UNPROVEN`, is **falsified**. The narrowing: 629 routines reachable by
+  `authenticated` → 464 `SECURITY DEFINER` (RLS does not apply to them) → 364
+  taking a uuid from the caller → **69 that never derive the caller's own
+  tenant**. All 69 bodies were read: 41 safe, 1 unresolved, 27 leaking. Twelve
+  went to independent reviewers briefed to *refute*; **all twelve refutations
+  failed**, several reporting the finding understated. Any signed-in user of any
+  workspace could read another's published SOP text (`get_de_briefing`), its
+  open invoices with customer names and amounts (`dunning_position`), its whole
+  org chart (`list_org_tree_core`), who may approve what
+  (`has_approval_authority`) — and `link_agreements_to_accounts` was a
+  cross-tenant **write**. Always the same mechanism: the tenant id arrives as a
+  parameter and is never compared to the caller's, so **the parameter IS the
+  authorisation**.
+  The fix cost nothing because every call site of all 28 is `admin.rpc`
+  (service_role) or another `SECURITY DEFINER` routine — *not one* is called
+  from the browser. The grant was the Supabase default nobody revoked. The one
+  exception, `list_consultable_for_de`, is genuinely called by the Employee File
+  page and got the `can_access_de` guard instead, raising rather than returning
+  an empty list. Safe to revoke only because **nothing evaluates these as the
+  caller** — checked via `pg_depend`, not grep, with `auth_tenant_id` as a
+  negative control (it correctly reported 292 dependent policies).
+  Perimeter 629 → **602**, exactly the 27, nothing else moved.
+  ⚠ **The sieve was crude.** A body that mentions `auth.uid()` only for logging,
+  or one keyed on a tenant *slug* rather than a uuid, would have been missed.
+  This closes what was found; it does not prove the class empty. The ratchet is
+  what stops it growing back.
 
 Every probe above is **mutation-tested** (`certify:mutation`): each was shown to
 return rows when its violation is injected and none when it is not. A gate that

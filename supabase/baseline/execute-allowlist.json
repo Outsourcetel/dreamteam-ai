@@ -1,5 +1,5 @@
 {
-  "pinned_at": "2026-08-09T20:28:55.746Z",
+  "pinned_at": "2026-08-09T22:02:17.076Z",
   "note": "The EXECUTE surface for anon/authenticated. certify fails on ANY diff. Re-pin only after a DELIBERATE perimeter change.",
   "routines": [
     {
@@ -65,11 +65,6 @@
     {
       "sig": "alert_cert_regression()",
       "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "analytics_action_volume(p_tenant_id uuid, p_days integer)",
-      "anon": false,
       "authed": true
     },
     {
@@ -338,11 +333,6 @@
       "authed": true
     },
     {
-      "sig": "can_consult_multihop(p_tenant_id uuid, p_requester_de uuid, p_target_de uuid, p_path uuid[], p_max_depth integer)",
-      "anon": false,
-      "authed": true
-    },
-    {
       "sig": "cancel_case_continuation(p_event_id uuid)",
       "anon": false,
       "authed": true
@@ -368,16 +358,6 @@
       "authed": true
     },
     {
-      "sig": "check_action_idempotency(p_tenant_id uuid, p_action_definition_id uuid, p_dedupe_key text)",
-      "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "check_de_budget(p_de_id uuid)",
-      "anon": false,
-      "authed": true
-    },
-    {
       "sig": "check_de_retirement_readiness(p_de_id uuid)",
       "anon": false,
       "authed": true
@@ -394,11 +374,6 @@
     },
     {
       "sig": "classify_sentiment_text(p_text text)",
-      "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "classify_support_text(p_tenant_id uuid, p_text text)",
       "anon": false,
       "authed": true
     },
@@ -558,17 +533,7 @@
       "authed": true
     },
     {
-      "sig": "de_config_fingerprint(p_de_id uuid)",
-      "anon": false,
-      "authed": true
-    },
-    {
       "sig": "de_config_fingerprint_row(d digital_employees)",
-      "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "de_eval_quality(p_tenant_id uuid, p_de_id uuid, p_days integer)",
       "anon": false,
       "authed": true
     },
@@ -590,11 +555,6 @@
     {
       "sig": "de_status_allowed(p_lifecycle text, p_status text)",
       "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "decide_action_execution(p_tenant_id uuid, p_action_label text, p_category text, p_destructive boolean, p_de_id uuid, p_amount_cents bigint, p_action_type text, p_content text)",
-      "anon": false,
       "authed": true
     },
     {
@@ -678,16 +638,6 @@
       "authed": true
     },
     {
-      "sig": "dunning_action_for(p_tenant_id uuid, p_action_key text, p_execution_key text)",
-      "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "dunning_de_for(p_tenant_id uuid)",
-      "anon": false,
-      "authed": true
-    },
-    {
       "sig": "dunning_email(p_stage integer, p_customer text, p_invoice_ref text, p_days_overdue integer, p_outstanding_cents bigint, p_currency text, p_due_date date, p_from_org text)",
       "anon": true,
       "authed": true
@@ -700,11 +650,6 @@
     {
       "sig": "dunning_note_text(p_stage integer, p_customer text, p_invoice_ref text, p_days_overdue integer, p_outstanding_cents bigint, p_currency text)",
       "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "dunning_position(p_tenant_id uuid)",
-      "anon": false,
       "authed": true
     },
     {
@@ -819,16 +764,6 @@
     },
     {
       "sig": "get_de_agentic_runs(p_de_id uuid, p_limit integer)",
-      "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "get_de_briefing(p_de_id uuid)",
-      "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "get_de_briefing_for_objective(p_de_id uuid, p_objective text)",
       "anon": false,
       "authed": true
     },
@@ -1308,11 +1243,6 @@
       "authed": true
     },
     {
-      "sig": "has_approval_authority(p_user_id uuid, p_tenant_id uuid, p_category text, p_amount_cents bigint)",
-      "anon": false,
-      "authed": true
-    },
-    {
       "sig": "hnsw_bit_support(internal)",
       "anon": true,
       "authed": true
@@ -1453,11 +1383,6 @@
       "authed": true
     },
     {
-      "sig": "knowledge_collection_ancestry(p_collection_id uuid)",
-      "anon": false,
-      "authed": true
-    },
-    {
       "sig": "knowledge_collection_is_hidden_from_caller(p_collection_id uuid)",
       "anon": false,
       "authed": true
@@ -1473,22 +1398,7 @@
       "authed": true
     },
     {
-      "sig": "knowledge_effective_level_for(p_user uuid, p_doc_id uuid)",
-      "anon": false,
-      "authed": true
-    },
-    {
       "sig": "knowledge_grant_matches_caller(g knowledge_access_grants)",
-      "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "knowledge_grant_matches_user(g knowledge_access_grants, p_user uuid)",
-      "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "knowledge_group_max_level(p_group_id uuid)",
       "anon": false,
       "authed": true
     },
@@ -1504,11 +1414,6 @@
     },
     {
       "sig": "knowledge_permission_rank(p_level text)",
-      "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "knowledge_space_level_for(p_user uuid, p_space_id uuid)",
       "anon": false,
       "authed": true
     },
@@ -1575,11 +1480,6 @@
     {
       "sig": "l2_normalize(vector)",
       "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "link_agreements_to_accounts(p_tenant_id uuid)",
-      "anon": false,
       "authed": true
     },
     {
@@ -1694,11 +1594,6 @@
     },
     {
       "sig": "list_org_tree(p_tenant_id uuid)",
-      "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "list_org_tree_core(p_tenant_id uuid)",
       "anon": false,
       "authed": true
     },
@@ -1903,11 +1798,6 @@
       "authed": true
     },
     {
-      "sig": "preview_watcher_spec(p_kind text, p_config jsonb, p_tenant_id uuid)",
-      "anon": false,
-      "authed": true
-    },
-    {
       "sig": "propose_account_writeback(p_de_id uuid, p_objective_id uuid, p_account_id uuid, p_op text, p_params jsonb)",
       "anon": false,
       "authed": true
@@ -2098,22 +1988,7 @@
       "authed": true
     },
     {
-      "sig": "resolve_de_archetype(p_de_id uuid)",
-      "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "resolve_de_escalation(p_tenant_id uuid, p_de_id uuid)",
-      "anon": false,
-      "authed": true
-    },
-    {
       "sig": "resolve_de_exception(p_id uuid, p_status text, p_outcome text, p_learned boolean)",
-      "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "resolve_de_model_for_task(p_de_id uuid, p_task_class text)",
       "anon": false,
       "authed": true
     },
@@ -2244,11 +2119,6 @@
     },
     {
       "sig": "run_de_performance_review()",
-      "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "run_dunning_sweep(p_tenant_id uuid, p_limit integer)",
       "anon": false,
       "authed": true
     },
@@ -2755,11 +2625,6 @@
     {
       "sig": "sync_profile_department()",
       "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "task_approval_facts(p_task_id uuid)",
-      "anon": false,
       "authed": true
     },
     {

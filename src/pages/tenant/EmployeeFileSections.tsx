@@ -1018,12 +1018,16 @@ function ColleaguesHelpPanel({ de }: { de: DigitalEmployee }) {
 
   const load = useCallback(async () => {
     try {
-      const [{ data: cons }, grants, des, cats] = await Promise.all([
+      const [{ data: cons, error: consErr }, grants, des, cats] = await Promise.all([
         supabase.rpc('list_consultable_for_de', { p_de_id: de.id }),
         listDeConsultationGrants(de.id),
         listDigitalEmployees(),
         supabase.from('system_categories').select('key').order('key'),
       ]);
+      // mig 662 gave this function a can_access_de guard, and a denial RAISES.
+      // .rpc() resolves on a Postgres error — swallowing it here would render
+      // "no colleagues" for what is actually a refusal.
+      if (consErr) throw new Error(consErr.message);
       // supabase.rpc on a json-returning function may hand back the array
       // directly or a JSON string depending on the client — normalise both.
       const consList = typeof cons === 'string' ? JSON.parse(cons) : cons;

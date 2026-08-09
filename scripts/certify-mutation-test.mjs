@@ -70,6 +70,37 @@ const CASES = [
     silent: `select 1 where coalesce(('{"intact":true}'::jsonb->>'intact')::boolean,false) is not true`,
   },
   {
+    // Half 1 of the R0.8 ratchet: does the sieve notice a MISSING caller check?
+    // The real proof of this probe is stronger than any synthesised row — the
+    // violation existed in production. It returned exactly 28 rows before
+    // mig 662 and 0 after, on the live database. Recorded here so the predicate
+    // itself stays honest if someone edits it.
+    name: 'secdef-caller-tenant-ratchet (unguarded body fires)',
+    fires: `select 1 where exists (select 1 from (values
+              ('leak_me', true, true, 'p_tenant_id uuid', 'select * from renewal_invoices where tenant_id = p_tenant_id')
+            ) v(nm, secdef, authed, args, src)
+             where secdef and authed and args like '%uuid%'
+               and src not ilike '%auth_tenant_id%' and src not ilike '%auth.uid%'
+               and src not ilike '%can_access_de%' and src not ilike '%is_platform_admin%'
+               and nm not in ('list_org_tree','match_doc_chunks','submit_csat'))`,
+    silent: `select 1 where exists (select 1 from (values
+              ('leak_me', true, true, 'p_tenant_id uuid', 'select * from renewal_invoices where tenant_id = public.auth_tenant_id()')
+            ) v(nm, secdef, authed, args, src)
+             where secdef and authed and args like '%uuid%'
+               and src not ilike '%auth_tenant_id%' and src not ilike '%auth.uid%'
+               and src not ilike '%can_access_de%' and src not ilike '%is_platform_admin%'
+               and nm not in ('list_org_tree','match_doc_chunks','submit_csat'))`,
+  },
+  {
+    // Half 2: the allowlist must actually exempt, and ONLY the names in it.
+    // A ratchet whose allowlist matched everything would be silent forever.
+    name: 'secdef-caller-tenant-ratchet (allowlist exempts, and only its names)',
+    fires: `select 1 where exists (select 1 from (values ('brand_new_leak')) v(nm)
+             where nm not in ('list_org_tree','match_doc_chunks','submit_csat'))`,
+    silent: `select 1 where exists (select 1 from (values ('list_org_tree')) v(nm)
+             where nm not in ('list_org_tree','match_doc_chunks','submit_csat'))`,
+  },
+  {
     name: 'execute-perimeter (revoked fn removed from allowlist detects re-grant)',
     // Real perimeter check compares live grants to the pinned allowlist. Fire =
     // a live grant not in the pinned set. Proven by construction: we just

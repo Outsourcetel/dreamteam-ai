@@ -191,6 +191,34 @@ const PROBES = [
            order by 1 offset 9`,
   },
   {
+    name: 'secdef-caller-tenant-ratchet',
+    why: 'R0.8. SECURITY DEFINER bypasses RLS, so a function that is reachable by `authenticated`, takes an id from its caller, and never derives the CALLER\'s tenant has made that parameter the authorisation. 27 such routines were reachable in production until mig 662 — they returned another tenant\'s playbook text, open invoices with customer names, and its whole org tree. The 41 named below were each read line by line and cleared; the ratchet is NO NEW ONES. To add a name here you must first read the body and be able to say why the caller cannot steer it.',
+    sql: `select proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' as violation
+            from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.prokind in ('f','p') and p.prosecdef
+             and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+             and pg_get_function_identity_arguments(p.oid) like '%uuid%'
+             and p.prosrc not ilike '%auth_tenant_id%'
+             and p.prosrc not ilike '%auth.uid%'
+             and p.prosrc not ilike '%can_access_de%'
+             and p.prosrc not ilike '%is_platform_admin%'
+             and p.proname not in (
+               'apply_config_template','apply_playbook_amendment','clear_de_operate_login',
+               'count_pending_knowledge_gaps','create_config_schema','delete_custom_metric',
+               'delete_de_operate_binding','export_tenant_config','get_config_audit_log',
+               'get_config_schema','get_de_config','get_de_metrics_batch','get_metric_trend',
+               'get_metric_value','get_metrics_anomalies','get_platform_shelf_doc',
+               'get_quality_score_breakdown','get_sla_achievement','get_tenant_config_status',
+               'get_tenant_metrics_comparison','install_role_systems','is_ancestor_of',
+               'list_config_schemas','list_de_operate_config','list_org_tree','match_cached_answer',
+               'match_doc_chunks','platform_capability_remaining_holders','reject_playbook_amendment',
+               'resolve_account_writeback','resolve_continuity_writeback','resolve_opportunity_writeback',
+               'scim_tokens_list','set_de_operate_login','submit_csat','tenant_ancestors',
+               'tenant_descendants','update_custom_metric','upsert_de_operate_binding',
+               'validate_watcher_config','visible_knowledge_docs')
+           order by 1`,
+  },
+  {
     name: 'audit-chain-verifies-hq',
     why: 'the audit trail is only evidence if its hash chain verifies',
     // verify_audit_chain(uuid) enforces caller MEMBERSHIP (raises for a
