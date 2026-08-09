@@ -10,11 +10,11 @@ import { useVocabulary } from '../../../lib/vocabulary';
 import {
   getHealthConfig, saveHealthConfig, recomputeHealth, getAccountSignals, describeComponents,
   DEFAULT_WEIGHTS, DEFAULT_THRESHOLDS,
-  listAccountContacts, saveAccountContact, deleteAccountContact,
+  listAccountContacts, saveAccountContact, deleteAccountContact, CONTACT_ROLES,
 } from '../../../lib/successApi';
 import type {
   HealthWeights, HealthThresholds, AccountSignals, HealthComponents,
-  AccountContact, AccountContactInput,
+  AccountContact, AccountContactInput, ContactRole,
 } from '../../../lib/successApi';
 import { listDefinitions, startDefinitionRun } from '../../../lib/playbookBuilderApi';
 import { listAccountActivities, type AccountActivity } from '../../../lib/writeBackApi';
@@ -125,7 +125,7 @@ function ContactsPanel({ accountId, accountName }: { accountId: string; accountN
   const edit = (c: AccountContact) => setForm({
     contactId: c.id, firstName: c.first_name ?? '', lastName: c.last_name ?? '',
     email: c.email, title: c.title ?? '', phone: c.phone ?? '', mobile: c.mobile ?? '',
-    isPrimary: c.is_primary,
+    isPrimary: c.is_primary, role: (c.role ?? null) as ContactRole | null,
   });
 
   const set = (k: keyof AccountContactInput) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -199,6 +199,18 @@ function ContactsPanel({ accountId, accountName }: { accountId: string; accountN
             <input className={fieldCls} placeholder="Title (optional)" value={form.title ?? ''} onChange={set('title')} />
             <input className={fieldCls} placeholder="Phone (optional)" value={form.phone ?? ''} onChange={set('phone')} />
           </div>
+          {/* An employee asks for a contact BY ROLE — "who is the day-to-day
+              contact?" — and until mig 656 nothing could record one, so the
+              answer was always empty and it escalated. This field is the
+              difference between entering a contact and unblocking the work. */}
+          <select
+            className={fieldCls}
+            value={form.role ?? ''}
+            onChange={e => setForm(f => (f ? { ...f, role: (e.target.value || null) as ContactRole | null } : f))}
+          >
+            <option value="">Role — optional, but an employee asks for one by name</option>
+            {CONTACT_ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </select>
           <label className="flex items-center gap-2 text-[11px] text-dt-support">
             <input type="checkbox" checked={form.isPrimary ?? false}
               onChange={e => setForm(f => (f ? { ...f, isPrimary: e.target.checked } : f))}

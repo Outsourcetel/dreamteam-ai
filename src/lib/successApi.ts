@@ -134,6 +134,10 @@ export interface AccountContact {
   mobile: string | null;
   title: string | null;
   is_primary: boolean;
+  /** What this person IS to the account — the thing an employee asks for by
+   *  name ("who is the day-to-day contact?"). Writeable since mig 656,
+   *  readable since 657; null on every row recorded before those. */
+  role: string | null;
   /** 'erpnext' etc. for a mirrored row, or 'entered by hand'. Editing a
    *  mirrored contact here is overwritten on the next sync — the UI says so. */
   source: string;
@@ -145,6 +149,24 @@ export async function listAccountContacts(accountId: string): Promise<AccountCon
   return (data ?? []) as AccountContact[];
 }
 
+/** The roles an employee can ask for by name. Mirrors the CHECK on
+ *  customer_account_contacts.role and the read_contacts tool's filter — an
+ *  employee asking "who is the day-to-day contact?" gets nothing back unless
+ *  someone recorded one, which is what blocked eight tasks (mig 656). */
+export const CONTACT_ROLES = [
+  { value: 'day_to_day', label: 'Day-to-day contact' },
+  { value: 'decision_maker', label: 'Decision maker' },
+  { value: 'economic_buyer', label: 'Economic buyer' },
+  { value: 'exec_sponsor', label: 'Executive sponsor' },
+  { value: 'billing', label: 'Billing' },
+  { value: 'technical', label: 'Technical' },
+  { value: 'procurement', label: 'Procurement' },
+  { value: 'legal', label: 'Legal' },
+  { value: 'other', label: 'Other' },
+] as const;
+
+export type ContactRole = typeof CONTACT_ROLES[number]['value'];
+
 export interface AccountContactInput {
   contactId?: string | null;
   firstName: string;
@@ -154,6 +176,7 @@ export interface AccountContactInput {
   phone?: string | null;
   mobile?: string | null;
   isPrimary?: boolean;
+  role?: ContactRole | null;
 }
 
 export async function saveAccountContact(accountId: string, c: AccountContactInput): Promise<string> {
@@ -167,6 +190,8 @@ export async function saveAccountContact(accountId: string, c: AccountContactInp
     p_mobile: c.mobile ?? null,
     p_is_primary: c.isPrimary ?? false,
     p_contact_id: c.contactId ?? null,
+    // null means "leave any existing role alone" on an edit — the RPC coalesces.
+    p_role: c.role ?? null,
   });
   if (error) raise('saveAccountContact', error);
   return (data as { contact_id: string }).contact_id;
