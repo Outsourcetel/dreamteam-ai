@@ -7,7 +7,18 @@ const sh = (cmd) => { try { return execSync(cmd, { encoding: 'utf8', shell: 'bas
 // src/design/ IS the system — its canonical definitions are exempt from drift.
 const G = `src/ --include='*.tsx' --exclude-dir=design`;
 const uniq = (pat) => Number(sh(`grep -rhoE "${pat}" ${G} | sort -u | wc -l`));
-const count = (pat) => Number(sh(`grep -rh "${pat}" ${G} | wc -l`));
+// ⚠ COMMENTS ARE NOT CODE. `hand-rolled dialogs` counts the string
+// `fixed inset-0`, so the moment someone DOCUMENTS why they removed one — as
+// happened writing the phone shell — the metric reports the documentation as
+// the defect. A checker that fails on its own explanation teaches people to
+// stop explaining. Drop lines that are pure comment (`// …` or a JSDoc ` * …`
+// continuation); real markup always has the token inside a className string,
+// never after a leading comment marker.
+// ⚠ This covers count() ONLY. uniq() uses `grep -o`, which discards the line,
+// so `radius variants` and `raw hex colors` still see commented-out examples.
+// Named here rather than quietly left — that is a real remaining hole.
+const NO_COMMENTS = `| grep -v '^[[:space:]]*\\(//\\|\\*\\)'`;
+const count = (pat) => Number(sh(`grep -rh "${pat}" ${G} ${NO_COMMENTS} | wc -l`));
 const files = (pat) => Number(sh(`grep -rlE "${pat}" ${G} | wc -l`));
 
 // Baseline RATCHETED 2026-07-30. Counts only go DOWN — when a sweep lowers

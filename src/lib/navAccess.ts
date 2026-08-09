@@ -121,6 +121,13 @@ const PAGE_ACCESS: Partial<Record<Page, UserRole[]>> = {
 
   // ── Approvals ─────────────────────────────────────────────────────────────
   ops_human_tasks: APPROVALS,
+  // The phone shell (handoff 13) shows the SAME human_tasks and decides them
+  // through the SAME decide_human_task RPC, so it carries the SAME gate.
+  // ⚠ Anything looser is a permission hole reached by typing /m; anything
+  // tighter denies someone the phone view of a queue they already approve
+  // from at their desk. Keep these two lines in step — and the RELATION_ACCESS
+  // pair below with them.
+  mobile: APPROVALS,
 
   // ── Tenant-wide activity (see the header note) ────────────────────────────
   ops_activity: MANAGE,
@@ -253,6 +260,8 @@ export type DeRelation = 'primary' | 'manager' | 'executive';
  */
 const RELATION_ACCESS: Partial<Record<Page, DeRelation[]>> = {
   ops_human_tasks: ['manager', 'executive'],
+  // Same queue, same relation bound — see the PAGE_ACCESS note on `mobile`.
+  mobile: ['manager', 'executive'],
 };
 
 export const canAccessPage = (

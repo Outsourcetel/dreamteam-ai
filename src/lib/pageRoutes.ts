@@ -21,6 +21,8 @@ export const PAGE_TO_URL: Record<Page, string> = {
   users:                  '/users',
   organisation:                 '/organisation',
   my_profile:                   '/my-profile',
+  // Short on purpose — this is a URL people type on a phone keyboard.
+  mobile:                       '/m',
   settings:               '/settings',
   eu_chat:                '/chat',
   // Entities

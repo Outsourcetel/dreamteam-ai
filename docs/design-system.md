@@ -137,6 +137,7 @@ lists the words that stay in code and never reach a screen.
 | `Banner` | notices | ad-hoc colored divs |
 | `Field` + `INPUT_CLS` | every form control | unstyled inputs |
 | `SELECT_CLS` | a facet dropdown inside a `FilterBar` | a per-page select recipe |
+| `Button size="touch"` | every control on the phone shell (`13`) — 52px, 16px text | `md` on a phone (~36px, under the 44px floor) |
 | `TabBar` | hub tabs, profile sub-tabs | local tab strips |
 | `TH`/`TD` + `TableScroll` | data tables (compact density) | tables that widen the page |
 | `Modal` / `Drawer` | overlays (8 local Modals existed) | new overlay variants |

@@ -43,6 +43,7 @@ import { InsightsPage } from './pages/tenant/intelligence/IntelligencePages';
 import WorkforceHubPage from './pages/tenant/WorkforceHubPage';
 import EmployeeFilePage from './pages/tenant/EmployeeFilePage';
 import HireEmployeeWizard from './components/HireEmployeeWizard';
+import MobileShell, { useNeedsBiggerScreen, BiggerScreenTakeover } from './pages/tenant/mobile/MobileShell';
 import CompanySetupPage from './pages/tenant/CompanySetupPage';
 import OnboardingArchitectPage from './pages/tenant/OnboardingArchitectPage';
 import { WorkforceChatHubPage } from './pages/tenant/WorkforceChatHubPage';
@@ -231,6 +232,10 @@ function AppShell() {
     completePasswordRecovery,
   } = useAuth();
   const location = useLocation();
+  // ⚠ Called HERE, above every early return below (not-logged-in, org setup,
+  // password recovery). A hook after a conditional return runs on some renders
+  // and not others, which React treats as a changed hook order and throws.
+  const biggerScreen = useNeedsBiggerScreen(currentPage);
 
   // Platform-invite redemption: a small, self-contained entry point that
   // must work whether or not the visitor is logged in yet (the redeem
@@ -415,6 +420,10 @@ function AppShell() {
         return <HireEmployeeWizard
           onClose={() => handleSetPage('workforce_des')}
           onFinished={() => handleSetPage('workforce_des')} />;
+      // The phone shell (handoff 13). One surface — decisions, alerts, today —
+      // under its own route so no desktop layout is ever asked to reflow.
+      case 'mobile':
+        return <MobileShell setPage={handleSetPage} />;
       case 'workforce_de_file':
         return <EmployeeFilePage setPage={handleSetPage} />;
       case 'workforce_chat':
@@ -507,7 +516,12 @@ function AppShell() {
             </div>
           )}
           <PageErrorBoundary key={currentPage}>
-            {renderPage()}
+            {/* A desk-sized page never mounts on a phone — see handoff 13. */}
+            {biggerScreen.blocked
+              ? <BiggerScreenTakeover
+                  onPhoneView={() => handleSetPage('mobile')}
+                  onCarryOn={biggerScreen.dismiss} />
+              : renderPage()}
           </PageErrorBoundary>
         </main>
         {authedUser && <BrandingLoader />}

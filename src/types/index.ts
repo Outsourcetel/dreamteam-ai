@@ -93,7 +93,14 @@ export type TenantPage =
   | 'settings'
   | 'users'
   | 'organisation'
-  | 'my_profile';
+  | 'my_profile'
+
+  // ── Phone ─────────────────────────────────────────
+  // ONE surface, not a shrunken copy of the other fifty-five (handoff 13).
+  // Deliberately a ROUTE rather than a breakpoint, so no desktop layout is
+  // ever asked to reflow to 375px: decisions, alerts, and a read-only summary
+  // of the day. Everything else says "this needs a bigger screen".
+  | 'mobile';
 
 export type EndUserPage = 'eu_chat';
 

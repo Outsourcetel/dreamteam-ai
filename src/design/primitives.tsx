@@ -14,7 +14,16 @@ export type Tone = 'ok' | 'warn' | 'danger' | 'info' | 'neutral' | 'accent';
 
 /* ── Buttons (5 kinds, 2 sizes) ─────────────────────────────────────────── */
 const BTN_BASE = 'inline-flex items-center justify-center gap-1.5 font-medium rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-dt-accent';
-const BTN_SIZE = { sm: 'text-xs px-3 py-1.5', md: 'text-sm px-4 py-2' } as const;
+// `touch` exists for the phone shell (handoff 13) and nothing else. A finger
+// is not a cursor: 44px is the accessibility floor and `md` lands at ~36px, so
+// every control on that surface would have been under it. Overriding height at
+// the call sites would have put a bespoke button recipe on every card — the
+// drift this catalogue exists to prevent — so the size lives here instead.
+const BTN_SIZE = {
+  sm: 'text-xs px-3 py-1.5',
+  md: 'text-sm px-4 py-2',
+  touch: 'text-[16px] px-5 py-3.5 min-h-[52px]',
+} as const;
 const BTN_KIND = {
   primary: 'bg-dt-accent-strong hover:bg-dt-accent-hover text-white',
   secondary: 'border border-dt-border-strong text-dt-body hover:border-dt-muted hover:bg-dt-panel',
