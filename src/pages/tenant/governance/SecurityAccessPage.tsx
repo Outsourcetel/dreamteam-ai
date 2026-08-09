@@ -682,9 +682,14 @@ export default function SecurityAccessPage() {
   return (
     <div className="p-6">
       <div className="flex items-start justify-between gap-4">
+        {/* ⚠ "SSO" was in this subtitle and is NOT on this page — the domain
+            claim, sign-in policy and SCIM panels all live under Settings →
+            Your identity provider. A subtitle advertising a control the page
+            does not contain sends people hunting through the wrong screen,
+            then makes them doubt the rest of the list. */}
         <PageHeader
           title="Security & Access"
-          subtitle="Platform RBAC, human users, SSO, API keys, session policy, and network controls"
+          subtitle="Platform RBAC, human users, API keys, session policy, and network controls"
         />
         {/* ⚠ gov_trust is PAGE_ACCESS [] — platform staff only, an internal
             transparency doc, not a tenant feature. This link was offered to
@@ -813,6 +818,16 @@ export default function SecurityAccessPage() {
             </p>
             <p className="text-xs text-dt-faint mt-3">
               Upgrade the Supabase project to enable this — no rebuild needed once that's done.
+            </p>
+            {/* ⚠ SAY WHAT *DOES* WORK. "SSO is not available" read as "none of
+                this exists", while claiming your domains, the sign-in policy
+                and SCIM provisioning are all live (migrations 373/374/375 and
+                two edge functions). An honest deferral that hides three
+                working features is its own kind of inaccuracy. */}
+            <p className="text-xs text-dt-support mt-3">
+              Claiming your domains, the sign-in policy and automatic account
+              provisioning (SCIM) do not need SAML and are available now — under
+              Settings → Your identity provider.
             </p>
           </div>
 

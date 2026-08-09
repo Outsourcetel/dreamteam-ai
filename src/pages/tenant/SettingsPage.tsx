@@ -47,12 +47,22 @@ const SETTINGS_TAB_LABEL: Record<string, string> = {
   trust: 'What they can do alone',
   ai_engine: 'The AI behind them',
   security: 'Sign-in & security',
-  // Verified rather than guessed: this tab renders DomainClaimPanel,
-  // SsoPolicyPanel and ScimTokensPanel — claiming your domain, the SSO
-  // policy, and SCIM provisioning tokens. All three are how a company's own
-  // identity provider connects, so "Single sign-on" is right; SCIM sits
-  // under that umbrella for an owner even though it is provisioning.
-  identity: 'Single sign-on',
+  // ⚠ WAS 'Single sign-on', AND THAT NAME CAUSED A CONTRADICTION. This tab
+  // renders THREE panels — "Company domains", "Single sign-on" and "Automatic
+  // user provisioning (SCIM)" — so it was named after one of its three, and
+  // the other two were invisible from the rail: nobody hunting "how do
+  // accounts close when someone leaves" clicks "Single sign-on".
+  //
+  // Worse, the tab immediately above it is 'Sign-in & security', whose SSO /
+  // SAML card correctly reads "Not available yet" (saml_enabled = false — SAML
+  // is a Supabase Pro+ feature and this project is on Free). So an owner met
+  // one tab saying SSO does not exist and, one click away, a tab named after
+  // it. Both statements were true; the LABELS made them look like a lie.
+  //
+  // "Your identity provider" is what the three panels actually have in common
+  // — claiming your domains, the sign-in policy, and the tokens that create
+  // and close accounts — and it promises no SAML.
+  identity: 'Your identity provider',
   data: 'Your data',
 };
 
