@@ -7,8 +7,12 @@ live system every time `npm run certify` runs.
 
 - **Baseline:** tag `review-baseline-20260809` @ `bc86388`, census in
   `supabase/baseline/review-baseline.json`. Diff against it to see what moved.
-- **Run:** `npm run certify` (full, ~2 min) · `npm run certify:fast` (~40 s) ·
+- **Run:** `npm run certify` (full, ~3 min) · `npm run certify:fast` (~60 s) ·
   `npm run certify:mutation` (proves the probes can fail).
+- **Re-pin, deliberately only:** `--pin-allowlist` after an intended perimeter
+  change · `--pin-edge` after fixing edge-function type errors, to lock the gain
+  in. Both ratchets move one way; re-pinning after an *accidental* change
+  blesses it.
 - **Status vocabulary:** **PROVEN** — a probe asserts it and the probe is
   mutation-tested to fail when violated. **UNPROVEN** — believed, no standing
   probe yet. **FALSIFIED** — a probe found it broken (fix in flight).
@@ -53,6 +57,7 @@ money/reputation) → **Ring 2** (costs correctness) → **Ring 3** (polish).
 | R2.2 | Role-gated UI: every control's gate matches its RPC+RLS | **PROVEN** | `npm run audit:role-gates` |
 | R2.3 | No silent `{ok:false}`/HTTP-200 refusal dropped at a call site | **PROVEN** | `npm run audit:silent-refusals` |
 | R2.4 | Design system: no token/drift regression | **PROVEN** | `scripts/design-drift.mjs` |
+| R2.7 | Every edge function type-checks, and can only improve | **PROVEN (ratchet)** | `certify` › edge-typecheck |
 | R2.5 | The core loop closes end-to-end (hire→…→trust) | **PROVEN** | `npm run golden-path`, 10/10 — inside `certify` |
 | R2.6 | Dev can actually run the product (no silent drift) | **PROVEN** | `npm run dev:sync:check` + golden-path in `certify` |
 
