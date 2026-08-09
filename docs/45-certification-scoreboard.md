@@ -33,7 +33,7 @@ money/reputation) → **Ring 2** (costs correctness) → **Ring 3** (polish).
 | R0.5 | The approvals guard (`app.allow_task_decision`) has no new setter | **PROVEN** | `certify` › guard-bypass-setters-pinned |
 | R0.6 | The audit hash-chain is intact for outsourcetel-hq | **PROVEN** | `certify` › audit-chain-verifies-hq |
 | R0.7 | The `anon`/`authenticated` EXECUTE surface equals the pinned allowlist | **PROVEN** | `certify` › execute-perimeter |
-| R0.8 | Tenant isolation on READ, probed with real ids across all RPCs | **FALSIFIED → CLOSED** | 27 leaking routines found and revoked (mig 662); `certify` › secdef-caller-tenant-ratchet |
+| R0.8 | Tenant isolation on READ, probed with real ids across all RPCs | **FALSIFIED — 27 of the class closed, class STILL OPEN** | mig 662 + `certify` › secdef-caller-tenant-ratchet; adversarial pass then found `can_access_de` is not tenant-sufficient (16 functions rely on it alone) and 3 allowlisted names are not in fact clear |
 | R0.9 | No employee is offered an action its role may not use | **PROVEN** | `certify` › role-restricted-actions-stay-restricted |
 | R0.10 | …and the role that *may* use them can actually reach them | **PROVEN** | `certify` › workspace-admin-has-an-owner |
 
@@ -279,6 +279,58 @@ retroactively is a curve you can talk yourself into. `npm run benchmark:history`
   or one keyed on a tenant *slug* rather than a uuid, would have been missed.
   This closes what was found; it does not prove the class empty. The ratchet is
   what stops it growing back.
+
+  ### ⚠⚠⚠ …and the adversarial pass on 662 proved that warning right
+
+  An independent pass was run against the migration itself: four agents attacking
+  the sentence that justified the revoke, four hunting the classes the sieve
+  could not see. **No breakage was found** — 61 edge clients enumerated, all 18
+  calls to the 27 traced to a service_role binding through their parameters; 0
+  RLS/view/index/trigger/default dependents; 0 SECURITY INVOKER callers out of
+  37 caller pairs; 0 browser paths. It was proven *live* rather than inferred:
+  under `set role authenticated` a revoked routine now returns
+  `ERROR 42501 permission denied`, while a `SECURITY DEFINER` wrapper still calls
+  that same revoked routine successfully. Both clauses of the justification hold.
+
+  But three findings land **against work done in this same pass**, and they
+  matter more than the 27:
+
+  - **`can_access_de` is not tenant-sufficient — and 662 leaned on it.** Its
+    third disjunct, `auth_has_tenant_role(ARRAY['tenant_owner','tenant_admin',
+    'tenant_manager'])`, **never references `p_de_id` and compares no
+    `tenant_id`**. So any owner/admin/manager passes the check for a digital
+    employee in *any other workspace*. Verified directly: 17 privileged
+    non-platform profiles, **1,758 (user, foreign-tenant DE) pairs** admitted,
+    one profile per user so the branch is genuinely crossing a boundary.
+    It stands in front of **72** authenticated-reachable functions; 45 also pin
+    `auth_tenant_id` and 11 are platform-admin gated, but **16 rely on it
+    alone** — and those include *write* verbs: `approve_learned_behavior`,
+    `reject_learned_behavior`, `apply_improvement`, `send_human_reply`,
+    `claim_support_conversation`, `set_support_conversation_state`,
+    `enqueue_de_work_item`, `handoff_back_to_de`, `request_trust_promotion`.
+    Inherited, not introduced — before 662 `list_consultable_for_de` had no
+    guard at all — but **it is the exact branch this migration's safety rests
+    on**, so the guard half of 662 is incomplete.
+  - **3 of the 41 "read and cleared" are not clear.** `submit_csat`,
+    `validate_watcher_config` and `platform_capability_remaining_holders` carry
+    no caller derivation and are reachable by `authenticated`. They are in the
+    ratchet's exemption list, which means **the gate is currently exempting three
+    real violations**. An allowlist is a claim, and this one was partly wrong.
+  - **The "mentions a guard but is not guarded by it" class is real.**
+    `get_workforce_trust_metrics` (HIGH — another tenant's whole governance
+    posture), `get_identity_inventory`, `get_de_cost_metrics`,
+    `assign_human_task` all *contain* a guard helper, which is precisely why the
+    sieve excluded them. Two claims from the sweep died under refutation
+    (`list_platform_shelf`, `get_de_guardrail_activity`) — a review's errors are
+    evidence about the review.
+
+  Also surfaced, outside R0.8's read scope: the `eval_gate` **view** is
+  `anon`-readable and spans 3 tenants, and `net.http_post/get/delete` are
+  `anon`-executable (an outbound-request primitive from inside the database).
+
+  **R0.8 therefore reverts to open.** 27 instances are closed and gated; the
+  *class* is not. Saying otherwise would be the "gate that cannot fail" failure
+  in prose form.
 
 Every probe above is **mutation-tested** (`certify:mutation`): each was shown to
 return rows when its violation is injected and none when it is not. A gate that
