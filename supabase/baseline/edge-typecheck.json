@@ -1,11 +1,12 @@
 {
-  "pinned_at": "2026-08-09T02:37:40.903Z",
+  "pinned_at": "2026-08-09T05:44:03.402Z",
   "note": "Per-edge-function deno type-error CEILING. certify fails if any function exceeds its number. Ratchet DOWN only — fix, then re-pin. A function at 0 must stay at 0.",
   "total_at_pin": 58,
   "counts": {
     "a2a": 0,
     "agentic-step-execute": 1,
     "ai-session": 13,
+    "approved-action-driver": 0,
     "check-ip-allowlist": 0,
     "compile-trust-plan": 2,
     "compute": 0,
