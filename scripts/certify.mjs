@@ -131,6 +131,39 @@ const PROBES = [
              and (p->>'name') <> 'amount_cents'`,
   },
   {
+    name: 'role-restricted-actions-stay-restricted',
+    why: 'the offer list IS the authorisation boundary — decide_action_execution gates destructive/trust/budget but never asks whether THIS employee may use this action, so a mis-scoped offer is a mis-granted permission (mig 643: 22 employees, incl. Marketing and Accounting, could hire staff)',
+    sql: `select t.slug || ' / ' || de.name || ' → ' || ad.action_key as violation
+            from digital_employees de
+            join tenants t on t.id = de.tenant_id
+            cross join lateral jsonb_array_elements(
+              public.get_agentic_tools_for_de(de.tenant_id, de.id)) x
+            join action_definitions ad on ad.id = (x->>'action_definition_id')::uuid
+           where t.status = 'active'
+             and ad.requires_role is not null
+             and not coalesce(de.is_workforce_assistant, false)`,
+  },
+  {
+    name: 'workspace-admin-has-an-owner',
+    why: 'the other half — restricting the admin verbs to one role is only safe if that role can actually reach them; without this, closing the hole silently leaves a workspace administrable by nobody',
+    sql: `select t.slug as violation
+            from tenants t
+           where t.status = 'active'
+             and exists (select 1 from connectors c
+                          where c.tenant_id = t.id and c.status = 'connected'
+                            and c.category = 'platform_admin')
+             and exists (select 1 from digital_employees d
+                          where d.tenant_id = t.id and coalesce(d.is_workforce_assistant, false))
+             and not exists (
+               select 1 from digital_employees de
+               cross join lateral jsonb_array_elements(
+                 public.get_agentic_tools_for_de(de.tenant_id, de.id)) x
+               join action_definitions ad on ad.id = (x->>'action_definition_id')::uuid
+              where de.tenant_id = t.id
+                and coalesce(de.is_workforce_assistant, false)
+                and ad.requires_role = 'workforce_assistant')`,
+  },
+  {
     name: 'guard-bypass-setters-pinned',
     why: 'app.allow_task_decision is the approvals guard; a new setter is a new path around human authority',
     sql: `select proname as violation

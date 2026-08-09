@@ -1,52 +1,52 @@
 {
-  "at": "2026-08-09T03:32:56.459Z",
+  "at": "2026-08-09T03:54:24.005Z",
   "mode": "full",
   "failed": 0,
   "results": [
     {
       "section": "typecheck",
       "ok": true,
-      "seconds": 22.6
+      "seconds": 25.6
     },
     {
       "section": "ring0-probes",
       "ok": true,
-      "seconds": 24.8
+      "seconds": 24.4
     },
     {
       "section": "migration-ledger",
       "ok": true,
-      "seconds": 6
+      "seconds": 5.5
     },
     {
       "section": "edge-typecheck",
       "ok": true,
-      "seconds": 5.2
+      "seconds": 3.6
     },
     {
       "section": "golden-path",
       "ok": true,
-      "seconds": 37.1
+      "seconds": 36.1
     },
     {
       "section": "role-gates",
       "ok": true,
-      "seconds": 7.3
+      "seconds": 8.2
     },
     {
       "section": "silent-refusals",
       "ok": true,
-      "seconds": 2.8
+      "seconds": 3.2
     },
     {
       "section": "design-drift",
       "ok": true,
-      "seconds": 1.7
+      "seconds": 1.5
     },
     {
       "section": "suite",
       "ok": true,
-      "seconds": 47
+      "seconds": 47.2
     }
   ]
 }
