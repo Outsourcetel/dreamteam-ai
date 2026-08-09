@@ -545,7 +545,7 @@ const TOOLS: Tool[] = [
 // now either delegates (delegate_to_colleague, below) or is consulted inside
 // the evidence pipeline's own DE-to-DE step, which targets any ACTIVE DE.
 
-async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string; action_definition_id?: string | null }>, workItemId?: string, objectiveId?: string | null, accountRef?: string | null, oppRef?: string | null, escRuleset?: EscRuleset, delegationTargets?: Map<string, string>, entityName?: string | null, ctxAccountForContacts?: string | null): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
+async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: string, subjectRef: string | null, name: string, input: Record<string, unknown>, actionMap?: Map<string, { connector_id: string; action_key: string; action_definition_id?: string | null }>, workItemId?: string, objectiveId?: string | null, accountRef?: string | null, oppRef?: string | null, escRuleset?: EscRuleset, delegationTargets?: Map<string, string>, entityName?: string | null, ctxAccountForContacts?: string | null, caseEntityRef?: string | null): Promise<{ result: unknown; done?: boolean; escalated?: boolean; summary?: string }> {
   // Registry ACTIONS (P1): tools resolved from get_agentic_tools_for_de
   // (action registry ∩ connected connectors ∩ data-access grants) execute
   // through connector-hub's execute_action — decide_action_execution
@@ -731,16 +731,43 @@ async function dispatchTool(admin: SupabaseClient, tenantId: string, deId: strin
       // correct UUID the case machinery already carries — six identical
       // escalations from one predicate. A non-UUID ref now falls back to the
       // case's own reference instead of clobbering it.
-      const ref = resolveEntityRef(input.entity_ref, accountRef, oppRef);
+      // mig 648: fall back to the account BEHIND the case, matching the
+      // condition the tool is offered under. Without this the tool appears on
+      // an onboarding case and then answers "no record" — offered and useless,
+      // which is worse than absent.
+      const ref = resolveEntityRef(input.entity_ref, accountRef ?? ctxAccountForContacts, oppRef);
       if (!ref) return { result: { error: 'no record to read for this case' } };
       const { data, error } = await admin.rpc('read_de_system', { p_de_id: deId, p_system_key: String(input.system_key ?? ''), p_entity_ref: ref });
       return { result: error ? { error: error.message } : data };
     }
     case 'verify_in_system': {
-      const ref = resolveEntityRef(input.entity_ref, accountRef, oppRef);
+      const ref = resolveEntityRef(input.entity_ref, accountRef ?? ctxAccountForContacts, oppRef);
       if (!ref) return { result: { error: 'no record to verify for this case' } };
       const { data, error } = await admin.rpc('verify_de_system', { p_de_id: deId, p_system_key: String(input.system_key ?? ''), p_entity_ref: ref, p_expectation: (input.expectation ?? {}) as Record<string, unknown>, p_objective_id: objectiveId ?? null });
       return { result: error ? { error: error.message } : data };
+    }
+    case 'record_onboarding_step': {
+      // mig 648. The employee could do the setup and then not record it — the
+      // human RPC needs auth.uid(). This is the runtime path: same guards, and
+      // 'signed_off' is refused server-side, so no wording here can make an
+      // employee sign off its own work.
+      // The CASE's entity_ref, not the work item's payload.subject_ref — the
+      // latter is set per work item and is not guaranteed to be this project.
+      // Ticking the wrong customer's checklist would be silent and wrong.
+      if (!caseEntityRef) return { result: { error: 'no onboarding project on this case' } };
+      const { data, error } = await admin.rpc('update_onboarding_item_as_de', {
+        p_project_id: caseEntityRef,
+        p_de_id: deId,
+        p_key: String(input.item_key ?? ''),
+        p_status: input.status ? String(input.status) : null,
+        p_note: input.note ? String(input.note) : null,
+      });
+      // .rpc() RESOLVES on a Postgres error, and this RPC also reports refusal
+      // INSIDE a success as {error}. Check both or a refusal reads as done.
+      if (error) return { result: { error: error.message } };
+      const d = data as { error?: string } | null;
+      if (d?.error) return { result: { error: d.error } };
+      return { result: data };
     }
     case 'operate_in_system': {
       // Bridge (mig 243): plain-English → a GOVERNED Browser Operator task on the
@@ -1329,9 +1356,31 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
   }
 
   // Connected Systems desk (mig 221): a config-driven read + verify across the
+  // mig 648: recording the work is part of doing it. Offered only on an
+  // onboarding case, because that is the only kind with a checklist to record
+  // against — and the RPC re-checks the project anyway, so the offer is a
+  // convenience, never the control.
+  if (objectiveKind === 'onboarding_project' && entityRef) {
+    motionTools.push({
+      name: 'record_onboarding_step',
+      description: "Record where one checklist item on this onboarding project now stands, after you have actually done the work and verified it. item_key is the item's key exactly as shown in the record. status: in_progress, done, or blocked. Put the EVIDENCE in note — what you changed and what you saw when you re-read it. You cannot sign an item off: an item that needs sign-off goes to a person automatically when you mark it done.",
+      input_schema: { type: 'object', properties: {
+        item_key: { type: 'string', description: "the checklist item's key, e.g. employees_imported" },
+        status: { type: 'string', enum: ['in_progress', 'done', 'blocked'] },
+        note: { type: 'string', description: 'what you did and how you verified it' },
+      }, required: ['item_key', 'status'] },
+    });
+  }
+
   // DE's registered systems. read_system grounds the DE in the real record;
   // verify_in_system is the "come back and confirm the write landed" primitive.
-  const entityForSystems = accountRef ?? oppRef;
+  // mig 648: ...and the account BEHIND the case. An onboarding project sets
+  // accountRef/oppRef to null (its entity_kind is neither), so the two tools an
+  // implementation agent most needs — read the customer's system before
+  // changing it, verify the change landed after — were unreachable on exactly
+  // the case type whose whole job is changing a customer's system. The record
+  // to look up there is the customer, which is what contactAccountRef holds.
+  const entityForSystems = accountRef ?? oppRef ?? contactAccountRef;
   if (entityForSystems) {
     const { data: sysData } = await admin.rpc('get_de_systems', { p_de_id: deId });
     const systems = (sysData ?? []) as Array<{ system_key: string; can_read?: boolean; can_verify?: boolean }>;
@@ -1398,7 +1447,7 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
     }
     const toolResults: unknown[] = [];
     for (const tu of toolUses) {
-      const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {}, actionMap, item.id, objectiveId, accountRef, oppRef, escRuleset, delegationTargets, entityName, contactsFor);
+      const out = await dispatchTool(admin, tenantId, deId, subjectRef, tu.name!, tu.input ?? {}, actionMap, item.id, objectiveId, accountRef, oppRef, escRuleset, delegationTargets, entityName, contactsFor, entityRef);
       await admin.from('de_decision_trace').insert({ tenant_id: tenantId, de_id: deId, run_kind: 'work_item', run_ref: item.id, seq: turn, tool: tu.name, inputs: tu.input ?? {}, outputs: out.result as object, rationale: null });
       // Injection firewall (#9): tool RESULTS carry external content
       // (knowledge chunks, memory, connector responses) — mark them as
