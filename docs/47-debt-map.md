@@ -128,6 +128,50 @@ Listed because a review's errors are evidence about the review:
 
 ---
 
+## ✅ ALL THREE PHASES DONE — 2026-08-09
+
+Commits `840b95a` (Phase 1), `f89a210` (Phase 2), `da9ef78` (Phase 3). The
+findings below are the record of what was *found*; this is what was *done*.
+
+**Phase 1 — the green means something.** Six gates armed, all six
+mutation-proven (inject the smallest real violation → red → restore → green).
+The clearest statement of the old defect: the *previous* golden-path expression
+with `(failed=0, cannotProve=2)` exits **0** with **byte-identical stdout** to
+the armed form that exits **1**.
+
+Two things the mutation pass caught that were wrong in the fix itself:
+`certify:offline` would have gone red on every push (its suite swept all tests,
+two of which throw without credentials); and the "proof" that certain test files
+were offline **passed only because the machine had `.env.test`** — re-run in a
+real credential-free clone, one of them fails. Final offline certify proven at
+`TRUE EXIT=0` in that clone.
+
+**Phase 2 — the bleeding stopped.** `media_assets` restored (a live upload path
+was broken). The wasted database work fixed at the *cause*: the embedding drain
+was not too frequent, it was doing a sequential scan its sibling predicate
+already had an index for. Only the sweep that genuinely finds nothing was slowed
+(`*/5 → */30`). Ten tenants could not afford one piece of work — the largest
+single call on record is **19,441 tokens** against a 10,000 budget.
+`apply-migration.mjs` deleted rather than documented as broken.
+
+**Phase 3 — structural.** `LiveWorkforceDEs.tsx` **4,414 → 481** lines, proven a
+move by a declaration-level identity check (71 declarations, 0 text-changed) and
+an identical non-blank-line multiset. The action gate has 18 tests. `dispatchTool`
+went from 16 positional parameters to 3 + a declared context, with `git diff -U1`
+showing **exactly two hunks**.
+
+**One item dropped, with reasons:** "bring `supabase/` into tsc" is impossible as
+written — edge functions import over `https://`, which tsc cannot resolve — and
+the underlying gap was already closed in Phase 1 by the edge-typecheck ratchet,
+now running in CI.
+
+**Still open, deliberately:** react-router's two MODERATE browser-runtime
+advisories (fix is a v7 major); the vite/esbuild toolchain advisories (major
+upgrade, reports rather than blocks); `golden-path` is armed but runs only in
+full local certify, not CI.
+
+---
+
 ## The plan — three phases, alongside feature work
 
 **Phase 1 — one afternoon. Make the green mean something.**
