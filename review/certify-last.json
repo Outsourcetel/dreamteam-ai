@@ -1,22 +1,52 @@
 {
-  "at": "2026-08-09T02:22:11.404Z",
-  "mode": "fast",
+  "at": "2026-08-09T02:43:34.889Z",
+  "mode": "full",
   "failed": 0,
   "results": [
     {
       "section": "typecheck",
       "ok": true,
-      "seconds": 28.8
+      "seconds": 23.6
     },
     {
       "section": "ring0-probes",
       "ok": true,
-      "seconds": 26.3
+      "seconds": 23.5
     },
     {
       "section": "migration-ledger",
       "ok": true,
-      "seconds": 5.3
+      "seconds": 6.2
+    },
+    {
+      "section": "edge-typecheck",
+      "ok": true,
+      "seconds": 4.5
+    },
+    {
+      "section": "golden-path",
+      "ok": true,
+      "seconds": 38.9
+    },
+    {
+      "section": "role-gates",
+      "ok": true,
+      "seconds": 7.7
+    },
+    {
+      "section": "silent-refusals",
+      "ok": true,
+      "seconds": 3.2
+    },
+    {
+      "section": "design-drift",
+      "ok": true,
+      "seconds": 1.5
+    },
+    {
+      "section": "suite",
+      "ok": true,
+      "seconds": 65.4
     }
   ]
 }

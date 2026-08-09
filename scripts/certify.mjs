@@ -24,11 +24,12 @@
 // pass vacuously (e.g. by querying a table that does not exist) fails loudly
 // instead — SQL errors are failures, never skips.
 // ============================================================
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
 const FAST = process.argv.includes('--fast');
 const PIN = process.argv.includes('--pin-allowlist');
+const PIN_EDGE = process.argv.includes('--pin-edge');
 const PROD_REF = 'rfsvmhcqeiyrxivbmpel';
 const ALLOWLIST_FILE = 'supabase/baseline/execute-allowlist.json';
 
@@ -207,6 +208,46 @@ const PROBES = [
   },
 ];
 
+// ── Edge functions: a per-function type-error ratchet ──────────────────────
+// `tsc --noEmit` EXCLUDES supabase/functions, so 59 Deno entrypoints were
+// type-checked by nothing. de-work carried 13 errors for weeks and no gate saw
+// them. Checking all 59 in ONE deno invocation shares the module graph, which
+// is the difference between ~30s and several minutes.
+//
+// A hard "zero errors everywhere" bar would be red on day one (16 functions,
+// 58 errors) and would simply be switched off. So: every function has a pinned
+// ceiling. Exceeding it FAILS. Coming in under it is reported as a ratchet
+// opportunity — fix, then `--pin-edge` to lock the gain in. A function pinned
+// at 0 can never regress.
+const EDGE_BASELINE_FILE = 'supabase/baseline/edge-typecheck.json';
+
+function edgeErrorCounts() {
+  const fns = readdirSync('supabase/functions', { withFileTypes: true })
+    .filter((d) => d.isDirectory() && d.name !== '_shared')
+    .map((d) => d.name)
+    .filter((n) => existsSync(`supabase/functions/${n}/index.ts`))
+    .sort();
+
+  const r = spawnSync('npx',
+    ['deno', 'check', ...fns.map((n) => `supabase/functions/${n}/index.ts`)],
+    { shell: true, encoding: 'utf8', timeout: 570_000, maxBuffer: 64 * 1024 * 1024 });
+  const out = ((r.stdout ?? '') + (r.stderr ?? '')).replace(/\x1b\[[0-9;]*m/g, '');
+
+  // ONE location per error. A TS error block can carry several `at file` lines
+  // (the fault plus a related site); counting them all made the same code total
+  // 66 attributions for 58 errors, and a ratchet that cannot count the same
+  // thing twice the same way is not a ratchet.
+  const counts = Object.fromEntries(fns.map((n) => [n, 0]));
+  const blocks = out.split(/^(?=TS\d+ )/m).filter((b) => /^TS\d+ /.test(b));
+  let unattributed = 0;
+  for (const b of blocks) {
+    const m = b.match(/at file:\/\/\/.*?supabase\/functions\/([^/]+)\/index\.ts:/);
+    if (m && counts[m[1]] !== undefined) counts[m[1]]++;
+    else unattributed++;
+  }
+  return { counts, total: blocks.length, unattributed, fns };
+}
+
 // ── Section runner ─────────────────────────────────────────────────────────
 const results = [];
 function section(name, fn) { return { name, fn }; }
@@ -237,6 +278,38 @@ const sections = [
     return { ok: failures.length === 0, detail: failures.join('\n') };
   }),
   shell('migration-ledger', 'npm', ['run', '-s', 'migrate:status']),
+  section('edge-typecheck', () => {
+    const { counts, total, unattributed, fns } = edgeErrorCounts();
+    if (PIN_EDGE) {
+      writeFileSync(EDGE_BASELINE_FILE, JSON.stringify({
+        pinned_at: new Date().toISOString(),
+        note: 'Per-edge-function deno type-error CEILING. certify fails if any function exceeds its number. Ratchet DOWN only — fix, then re-pin. A function at 0 must stay at 0.',
+        total_at_pin: total,
+        counts,
+      }, null, 2) + '\n');
+      return { ok: true, detail: `pinned ${fns.length} functions, ${total} error(s)` };
+    }
+    let pinned;
+    try { pinned = JSON.parse(readFileSync(EDGE_BASELINE_FILE, 'utf8')).counts; }
+    catch { return { ok: false, detail: `baseline missing — run --pin-edge once, deliberately` }; }
+
+    const regressions = [], improvements = [], added = [];
+    for (const [fn, n] of Object.entries(counts)) {
+      const ceiling = pinned[fn];
+      if (ceiling === undefined) { if (n > 0) added.push(`${fn}: NEW function with ${n} error(s)`); continue; }
+      if (n > ceiling) regressions.push(`${fn}: ${n} error(s), ceiling ${ceiling}`);
+      else if (n < ceiling) improvements.push(`${fn}: ${ceiling} -> ${n}`);
+    }
+    if (unattributed > 0) improvements.push(`(${unattributed} error(s) not attributable to a function entrypoint)`);
+    const bad = [...regressions, ...added];
+    if (improvements.length) {
+      console.log(`        ratchet available — re-pin with --pin-edge: ${improvements.slice(0, 4).join('; ')}`);
+    }
+    return {
+      ok: bad.length === 0,
+      detail: bad.join('\n'),
+    };
+  }),
   ...(FAST ? [] : [
     // The core loop, run for real against dev. This is the only section that
     // exercises WRITE paths end to end; everything else reads. It is also the

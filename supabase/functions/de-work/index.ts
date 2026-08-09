@@ -87,7 +87,14 @@ interface ContentBlock { type: string; text?: string; id?: string; name?: string
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** A model-supplied entity_ref only wins when it is an actual id — a company
  *  name falls back to the case's own reference (see read_system note). */
-function resolveEntityRef(provided: unknown, accountRef: string | null, oppRef: string | null): string {
+// accountRef/oppRef are `| undefined` at every call site — they come from
+// optional fields on a case row. The body already treats undefined and null
+// identically via `??`, so the signature was simply narrower than the truth.
+function resolveEntityRef(
+  provided: unknown,
+  accountRef: string | null | undefined,
+  oppRef: string | null | undefined,
+): string {
   const p = typeof provided === 'string' ? provided.trim() : '';
   if (UUID_RE.test(p)) return p;
   return String(accountRef ?? oppRef ?? p ?? '');
@@ -279,7 +286,7 @@ async function planObjective(admin: SupabaseClient, obj: { id: string; tenant_id
   let prev: string | null = null;
   for (let i = 0; i < steps.length; i++) {
     const s = steps[i];
-    const { data: id, error: enqErr } = await admin.rpc('enqueue_de_work_item', {
+    const { data: stepId, error: enqErr }: { data: string | null; error: { message: string } | null } = await admin.rpc('enqueue_de_work_item', {
       p_tenant_id: obj.tenant_id, p_de_id: obj.de_id,
       p_title: String(s.title ?? `Step ${i + 1}`).slice(0, 200),
       p_kind: ['act', 'check', 'follow_up'].includes(String(s.kind)) ? s.kind : 'act',
@@ -290,7 +297,7 @@ async function planObjective(admin: SupabaseClient, obj: { id: string; tenant_id
     // A failed enqueue must STOP the chain — continuing would silently break
     // depends_on ordering. Already-enqueued steps stand (idempotent keys).
     if (enqErr) { console.error('enqueue_de_work_item:', enqErr.message); break; }
-    prev = (id as string) ?? prev;
+    prev = stepId ?? prev;
   }
   await admin.rpc('set_de_objective_status', { p_id: obj.id, p_status: 'in_progress' });
   // Long-horizon (#7): arm the first check-in so the goal engine reviews
@@ -365,7 +372,7 @@ async function reviewObjective(
     let prev: string | null = null;
     for (let i = 0; i < steps.length; i++) {
       const s = steps[i];
-      const { data: id } = await admin.rpc('enqueue_de_work_item', {
+      const { data: stepId }: { data: string | null } = await admin.rpc('enqueue_de_work_item', {
         p_tenant_id: obj.tenant_id, p_de_id: obj.de_id,
         p_title: String(s.title ?? `Follow-up ${i + 1}`).slice(0, 200),
         p_kind: ['act', 'check', 'follow_up'].includes(String(s.kind)) ? s.kind : 'follow_up',
@@ -373,7 +380,7 @@ async function reviewObjective(
         p_depends_on: prev, p_payload: { detail: String(s.detail ?? '').slice(0, 1000) },
         p_idempotency_key: `obj-${obj.id}-w${wakeN}-step-${i + 1}`, p_max_attempts: 3,
       });
-      prev = (id as string) ?? prev;
+      prev = stepId ?? prev;
       enqueued++;
     }
     // The note used to exist only in a 300-char trace slice. conclude on
@@ -480,7 +487,38 @@ async function callAnthropic(admin: SupabaseClient, model: string, system: strin
   throw new Error(`anthropic_error_${lastStatus}: ${lastBody.slice(0, 200)}`);
 }
 
-const TOOLS = [
+/**
+ * The shape of a tool offered to the model.
+ *
+ * Declared rather than inferred. Without it TypeScript infers TOOLS as a UNION
+ * of the exact literal shapes of its first few entries, and `typeof TOOLS`
+ * then rejects every later tool carrying a property the union never saw —
+ * `colleague`, `kind`, `enum`, or a `description` on a property that happened
+ * to lack one. That produced nine of the thirteen type errors this file was
+ * carrying, all of them noise about legitimate tools.
+ *
+ * It also stops mattering silently: `deno check` on this file is now part of
+ * `npm run certify`, so a tool that does not match this contract fails the bar
+ * instead of accumulating.
+ */
+interface ToolProperty {
+  type: string;
+  description?: string;
+  enum?: string[];
+  items?: Record<string, unknown>;
+  properties?: Record<string, unknown>;
+}
+interface Tool {
+  name: string;
+  description: string;
+  input_schema: {
+    type: string;
+    properties: Record<string, ToolProperty>;
+    required?: string[];
+  };
+}
+
+const TOOLS: Tool[] = [
   { name: 'recall_memory', description: 'Recall what you already know about this task/account from your durable memory.',
     input_schema: { type: 'object', properties: { query: { type: 'string' }, subject_ref: { type: 'string', description: 'optional entity/case id to scope the recall' } }, required: ['query'] } },
   { name: 'search_knowledge', description: 'Search the tenant knowledge base. Answer only from what this returns; cite it.',
@@ -1070,7 +1108,7 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
   // execution gate for the delegate_to_colleague handler, so exclusion at
   // build time covers both offer and execution. Mirrored in SQL inside
   // request_de_task (same decision, same wording).
-  const delegateTools: typeof TOOLS = [];
+  const delegateTools: Tool[] = [];
   let delegationTargets: Map<string, string> | undefined;   // colleague name (lower) → de_id
   if (objectiveId && objectiveKind !== 'de_task') {
     const { data: outGrants } = await admin.from('de_consultation_grants')
@@ -1104,7 +1142,7 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
   // part of a real case (and, for write-backs, an account case) — so the DE
   // itself decides "now I'll wait / write back / prepare a document", instead
   // of a human or playbook driving it. All still route the safety gates.
-  const motionTools: typeof TOOLS = [];
+  const motionTools: Tool[] = [];
   if (objectiveId) {
     motionTools.push({
       name: 'pause_and_follow_up',
