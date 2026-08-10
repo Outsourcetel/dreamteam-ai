@@ -122,3 +122,50 @@ export function formatDuration(ms: number | null): string {
   if (h < 24) return `${h}h ${m % 60}m`;
   return `${Math.floor(h / 24)}d ${h % 24}h`;
 }
+
+const csvCell = (s: string): string => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+
+/** The table, as a file. Columns mirror the on-screen table exactly —
+ *  a CSV that disagrees with the screen it came from is a support ticket. */
+export function reportToCsv(
+  rows: SupportConversation[],
+  names: { deName: (id: string | null) => string; userName: (id: string | null) => string },
+): string {
+  const header = 'Customer,What it was about,Handled by,Topic,Closed,Rating';
+  const lines = rows.map(c => {
+    const de = names.deName(c.de_id);
+    const user = names.userName(c.owner_user_id);
+    const handled = de && user ? `${de} → ${user}` : de || user || '—';
+    return [
+      csvCell(c.end_user_name ?? c.account_external_ref ?? '—'),
+      csvCell(c.subject ?? c.handoff_summary ?? '—'),
+      csvCell(handled),
+      csvCell(c.category ?? '—'),
+      csvCell(new Date(closeTimeOf(c)).toISOString()),
+      c.csat_score != null ? `${c.csat_score} ★` : 'not rated',
+    ].join(',');
+  });
+  return [header, ...lines].join('\r\n');
+}
+
+export interface SavedReportView { name: string; filters: ReportFilters }
+const VIEWS_V = 1;
+
+/** ⚠ Saved on THIS DEVICE. The spec's per-user table is flagged "new data
+ *  required" and the migration surface belongs to another active session
+ *  today — localStorage is the honest interim, and the UI says so. Same
+ *  guards as the hire wizard's SavedHire: versioned, corrupt-safe. */
+export function readSavedViews(storeKey: string): SavedReportView[] {
+  try {
+    const raw = localStorage.getItem(storeKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as { v: number; views: SavedReportView[] };
+    if (parsed?.v !== VIEWS_V || !Array.isArray(parsed.views)) return [];
+    return parsed.views;
+  } catch { return []; }
+}
+
+export function writeSavedViews(storeKey: string, views: SavedReportView[]): void {
+  try { localStorage.setItem(storeKey, JSON.stringify({ v: VIEWS_V, views })); }
+  catch { /* quota/private browsing — the report works without saved views */ }
+}

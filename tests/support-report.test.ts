@@ -14,6 +14,7 @@ import { describe, it, expect } from 'vitest';
 import {
   DATE_PRESETS, inDateRange, applyReportFilters, closeTimeOf,
   summariseReport, formatDuration,
+  reportToCsv, readSavedViews, writeSavedViews,
 } from '../src/lib/supportReport';
 import type { SupportConversation } from '../src/lib/supportInboxApi';
 
@@ -113,5 +114,39 @@ describe('formatDuration', () => {
     expect(formatDuration(18 * 60_000)).toBe('18m');
     expect(formatDuration(3 * 86_400_000 + 4 * 3_600_000)).toBe('3d 4h');
     expect(formatDuration(null)).toBe('—');
+  });
+});
+
+describe('reportToCsv', () => {
+  const names = { deName: (id: string | null) => (id === 'de1' ? 'Sophie' : ''), userName: (id: string | null) => (id === 'u1' ? 'Bilal' : '') };
+  it('escapes quotes, commas and newlines; handoff renders as "Sophie → Bilal"', () => {
+    const csv = reportToCsv([
+      conv({ end_user_name: 'Dana "D" W', subject: 'a,b\nc', de_id: 'de1', owner_user_id: 'u1', csat_score: 5 }),
+    ], names);
+    const lines = csv.split('\r\n');
+    expect(lines[0]).toBe('Customer,What it was about,Handled by,Topic,Closed,Rating');
+    expect(lines[1]).toContain('"Dana ""D"" W"');
+    expect(lines[1]).toContain('"a,b\nc"');
+    expect(lines[1]).toContain('Sophie → Bilal');
+  });
+  it('unrated renders as "not rated", never an empty cell', () => {
+    expect(reportToCsv([conv({})], names)).toContain('not rated');
+  });
+});
+
+describe('saved views (localStorage)', () => {
+  // node has no localStorage; a 10-line in-memory stand-in keeps this file env-free
+  const mem = new Map<string, string>();
+  (globalThis as { localStorage?: unknown }).localStorage ??= {
+    getItem: (k: string) => mem.get(k) ?? null,
+    setItem: (k: string, v: string) => void mem.set(k, v),
+    removeItem: (k: string) => void mem.delete(k),
+  };
+  it('round-trips, and reads [] on corrupt json rather than throwing', () => {
+    const KEY = 'dt.test.reportviews';
+    writeSavedViews(KEY, [{ name: 'Billing, 30 days', filters: { preset: '30d', topic: 'billing' } }]);
+    expect(readSavedViews(KEY)[0].name).toBe('Billing, 30 days');
+    localStorage.setItem(KEY, '{not json');
+    expect(readSavedViews(KEY)).toEqual([]);
   });
 });
