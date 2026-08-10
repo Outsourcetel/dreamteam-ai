@@ -50,6 +50,39 @@
 -- and still enforced (pinned below in both directions). No existing template
 -- in any workspace can fail validation because of this change.
 --
+-- ── A PRE-EXISTING BUG, FOUND BY THE PIN THAT HAD TO PROVE THAT ───────────
+-- Writing the pin for "the go-live rule survived" is what found that the rule
+-- could never report at all. FOUR of the validator's rules append a BARE
+-- STRING LITERAL to a text[]:
+--
+--     v_errors := v_errors || 'template needs at least one go-live phase item';
+--
+-- With an untyped literal, `text[] || unknown` resolves to anyarray||anyarray
+-- rather than anyarray||anyelement, so Postgres tries to parse the message AS
+-- an array and raises 22P02 "malformed array literal". Every OTHER rule in
+-- this function appends format(...), which returns typed text and is fine —
+-- which is exactly why nobody noticed.
+--
+-- Confirmed against the LIVE production function before changing anything
+-- (read-only pg_temp probe, not inferred from reading the source):
+--
+--   no go-live item   -> THREW 22P02: malformed array literal: "template
+--                        needs at least one go-live phase item"
+--   empty items array -> THREW 22P02: ... "template needs at least 1 item"
+--   empty item key    -> THREW 22P02: ... "every item needs a non-empty key"
+--   CONTROL bad owner_type (format path) -> returned its message normally
+--   CONTROL valid template               -> returned {} normally
+--
+-- Effect on users: publish was still REFUSED, so this never let a bad
+-- template through — the failure was in the safe direction. But the caller
+-- got a raised Postgres error instead of the structured errors[] list the
+-- publish UI renders, so four of the validator's rules have never once shown
+-- their message. The fix is `::text` on those four literals and nothing else.
+-- It is in scope because this migration replaces this function anyway, and
+-- because the pin the brief asked for — prove adding a phase does not break
+-- the go-live rule — cannot be written while the rule throws instead of
+-- answering. All four repaired branches are pinned below.
+--
 -- ── THE TWO SEED PATHS, MADE ONE ──────────────────────────────────────────
 -- The starter item list was written out IN FULL in two different functions:
 -- install_starter_onboarding_template (the "Install starter template" button)
@@ -211,13 +244,16 @@ begin
     return array['items must be a JSON array'];
   end if;
   v_n := jsonb_array_length(p_items);
-  if v_n < 1 then v_errors := v_errors || 'template needs at least 1 item'; end if;
-  if v_n > 50 then v_errors := v_errors || 'template cannot exceed 50 items'; end if;
+  -- ::text on these four literals is a BUG FIX, not a style change — see the
+  -- header. Without it `text[] || <unknown literal>` resolves to
+  -- anyarray||anyarray and throws 22P02 instead of appending the message.
+  if v_n < 1 then v_errors := v_errors || 'template needs at least 1 item'::text; end if;
+  if v_n > 50 then v_errors := v_errors || 'template cannot exceed 50 items'::text; end if;
 
   for v_item in select * from jsonb_array_elements(p_items) loop
     v_key := coalesce(v_item->>'key', '');
     if v_key = '' then
-      v_errors := v_errors || 'every item needs a non-empty key';
+      v_errors := v_errors || 'every item needs a non-empty key'::text;
     elsif v_key = any(v_keys) then
       v_errors := v_errors || format('duplicate item key "%s"', v_key);
     end if;
@@ -361,7 +397,7 @@ begin
   if not exists (
     select 1 from jsonb_array_elements(p_items) i where i->>'phase' = 'golive'
   ) then
-    v_errors := v_errors || 'template needs at least one go-live phase item';
+    v_errors := v_errors || 'template needs at least one go-live phase item'::text;
   end if;
 
   return v_errors;
@@ -618,6 +654,7 @@ declare
   v_ok_handoff  jsonb;
   v_bad_phase   jsonb;
   v_only_handoff jsonb;
+  v_many        jsonb;
   v_touched     int;
   v_anon        boolean;
   v_authed      boolean;
@@ -659,9 +696,52 @@ begin
   v_only_handoff := '[
     {"key":"h","label":"H","phase":"handoff","owner_type":"human","requires_signoff":false}
   ]'::jsonb;
-  v_r := public.validate_onboarding_items(v_only_handoff, v_tenant);
+  begin
+    v_r := public.validate_onboarding_items(v_only_handoff, v_tenant);
+  exception when others then
+    raise exception '685: the go-live rule still THROWS % (%) instead of returning its message — this is the branch that could never report', sqlstate, sqlerrm;
+  end;
   if not exists (select 1 from unnest(v_r) e where e ilike '%go-live%') then
     raise exception '685: a template with NO go-live item was accepted — adding the handoff phase broke the go-live rule: %', v_r;
+  end if;
+
+  -- ── PIN 3b: all FOUR bare-literal branches now RETURN their message
+  -- instead of throwing 22P02. Each is checked by message content, so a
+  -- branch that throws (the old behaviour) or reports the wrong thing fails.
+  -- The go-live branch above is the fourth; the other three are here.
+  begin
+    v_r := public.validate_onboarding_items('[]'::jsonb, v_tenant);
+  exception when others then
+    raise exception '685: the empty-template rule still THROWS % (%) instead of returning its message', sqlstate, sqlerrm;
+  end;
+  if not exists (select 1 from unnest(v_r) e where e ilike '%at least 1 item%') then
+    raise exception '685: an empty template did not report "needs at least 1 item": %', v_r;
+  end if;
+
+  begin
+    v_r := public.validate_onboarding_items(
+      '[{"key":"","label":"L","phase":"golive","owner_type":"human","requires_signoff":false}]'::jsonb,
+      v_tenant);
+  exception when others then
+    raise exception '685: the empty-key rule still THROWS % (%) instead of returning its message', sqlstate, sqlerrm;
+  end;
+  if not exists (select 1 from unnest(v_r) e where e ilike '%non-empty key%') then
+    raise exception '685: an item with an empty key did not report it: %', v_r;
+  end if;
+
+  -- 51 items — one over the cap. Built rather than typed out.
+  begin
+    select jsonb_agg(jsonb_build_object(
+             'key', 'k' || g, 'label', 'L' || g, 'phase', 'golive',
+             'owner_type', 'human', 'requires_signoff', false))
+      into v_many
+      from generate_series(1, 51) g;
+    v_r := public.validate_onboarding_items(v_many, v_tenant);
+  exception when others then
+    raise exception '685: the 50-item cap still THROWS % (%) instead of returning its message', sqlstate, sqlerrm;
+  end;
+  if not exists (select 1 from unnest(v_r) e where e ilike '%exceed 50 items%') then
+    raise exception '685: 51 items did not trip the 50-item cap: %', v_r;
   end if;
 
   -- ── PIN 4: the list we actually ship VALIDATES. Everything above can be
