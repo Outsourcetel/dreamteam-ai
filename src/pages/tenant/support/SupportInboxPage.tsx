@@ -2,14 +2,10 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { PageHeader } from '../../../components/ui';
 import { Button, Chip, Banner, FilterBar, INPUT_CLS, SELECT_CLS } from '../../../design/primitives';
 
-// The seeded triage taxonomy (mig 233), in plain words. Anything a workspace
-// adds of its own falls through to the raw value with underscores stripped —
-// the list must never become a gate on what a tenant may call a topic.
-const TOPIC_LABEL: Record<string, string> = {
-  billing: 'Billing', access: 'Access', security: 'Security', how_to: 'How do I…',
-  complaint: 'Complaint', general: 'General', data: 'Data', legal: 'Legal',
-  outage: 'Outage', safety: 'Safety', feature_request: 'Feature request',
-};
+import { TOPIC_LABEL } from './supportTopics';
+import SupportHistoryReport from './SupportHistoryReport';
+import { listDigitalEmployees } from '../../../lib/digitalEmployeesApi';
+import { supabase } from '../../../supabase';
 import { useAuth } from '../../../context/AuthContext';
 import {
   listSupportConversations, getConversationThread, claimConversation, sendHumanReply,
@@ -90,6 +86,13 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
   const [tab, setTab] = useState<Tab>('needs_human');
   const [topic, setTopic] = useState('');
   const [search, setSearch] = useState('');
+  // Names/teams for the History report's "Handled by" and Team facets —
+  // loaded once, only when History first opens, so the working tabs pay
+  // nothing for them.
+  const [deNames, setDeNames] = useState<Map<string, string>>(new Map());
+  const [userNames, setUserNames] = useState<Map<string, string>>(new Map());
+  const [teams, setTeams] = useState<Array<{ id: string; name: string }>>([]);
+  const [deTeams, setDeTeams] = useState<Map<string, string>>(new Map());
   const [selId, setSelId] = useState<string | null>(null);
   const [thread, setThread] = useState<SupportMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -134,6 +137,31 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
   }, [loadConvs, loadThread]);
 
   useEffect(() => { if (selId) void loadThread(selId); }, [selId, loadThread]);
+
+  // Names for "Handled by" and the report table. Employees come from the same
+  // roster call the workforce pages use. Human names come from a direct
+  // profiles read that a tenant_user may not be allowed (RLS) — that failure
+  // is EXPECTED and non-fatal: the report renders "a teammate" instead of a
+  // name rather than erroring or, worse, hiding the row.
+  useEffect(() => {
+    if (tab !== 'resolved' || deNames.size > 0) return;
+    void (async () => {
+      try {
+        const des = await listDigitalEmployees(true);
+        setDeNames(new Map(des.map(d => [d.id, d.persona_name || d.name])));
+      } catch { /* roster read failed — ids render as 'An employee' */ }
+      try {
+        const { data } = await supabase.from('workforce_teams').select('id, name');
+        setTeams((data ?? []) as Array<{ id: string; name: string }>);
+        const { data: members } = await supabase.from('workforce_team_members').select('team_id, de_id');
+        setDeTeams(new Map(((members ?? []) as Array<{ team_id: string; de_id: string }>).map(m => [m.de_id, m.team_id])));
+      } catch { /* teams facet simply does not appear */ }
+      try {
+        const { data } = await supabase.from('profiles').select('user_id, full_name');
+        setUserNames(new Map(((data ?? []) as Array<{ user_id: string; full_name: string | null }>).map(p => [p.user_id, p.full_name ?? ''])));
+      } catch { /* names fall back to 'a teammate' */ }
+    })();
+  }, [tab, deNames.size]);
 
   // Only the topics that actually occur — see the note by the FilterBar.
   const topics = Array.from(new Set(convs.map(c => c.category).filter((c): c is string => !!c))).sort();
@@ -238,7 +266,23 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
           configured: measured 2026-08-09, only `general` (115) and `how_to`
           (49) are ever assigned, so a hardcoded list would have offered nine
           filters that always return nothing. */}
-      {(convs.length > 0 || search.trim() !== '') && (
+      {/* The tab strip lives ABOVE the layout split now: History replaces the
+          whole split view with a report, and a strip buried inside the list
+          column would vanish with it — leaving no way back. */}
+      <div className="px-6 pb-3">
+        <div className="flex items-center gap-1 flex-wrap">
+          {TABS.map(t => {
+            const n = t.key === 'needs_human' ? counts.needs_human : t.key === 'mine' ? counts.mine : 0;
+            return (
+              <button key={t.key} onClick={() => setTab(t.key)}
+                className={`text-xs px-2.5 py-1.5 rounded-lg transition-colors ${tab === t.key ? 'bg-dt-accent-strong text-white' : 'text-dt-support hover:text-dt-body hover:bg-dt-inset'}`}>
+                {t.label}{n > 0 ? ` ${n}` : ''}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      {tab !== 'resolved' && (convs.length > 0 || search.trim() !== '') && (
         <div className="px-6 pb-3">
           <FilterBar
             facets={topics.length > 0 ? (
@@ -259,20 +303,20 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
           />
         </div>
       )}
+      {/* History is a REPORT over closed work (handoff 06 §D) — full width,
+          no thread pane; a closed conversation is a record, not a workspace. */}
+      {tab === 'resolved' ? (
+        <div className="relative flex-1 overflow-hidden px-6 pb-6 flex">
+          <SupportHistoryReport
+            rows={convs.filter(c => c.status === 'resolved')}
+            deNames={deNames} userNames={userNames} teams={teams} deTeams={deTeams}
+            storeKey={`dt.supportviews.${authedUser?.tenantId ?? 'none'}.${authedUser?.id ?? 'anon'}`}
+          />
+        </div>
+      ) : (
       <div className="relative flex-1 flex overflow-hidden px-6 pb-6 gap-4">
         {/* Left: conversation list */}
         <div className="w-[340px] flex-shrink-0 flex flex-col rounded-xl border border-dt-border bg-dt-card overflow-hidden">
-          <div className="flex items-center gap-1 p-2 border-b border-dt-border flex-wrap">
-            {TABS.map(t => {
-              const n = t.key === 'needs_human' ? counts.needs_human : t.key === 'mine' ? counts.mine : 0;
-              return (
-                <button key={t.key} onClick={() => setTab(t.key)}
-                  className={`text-xs px-2.5 py-1.5 rounded-lg transition-colors ${tab === t.key ? 'bg-dt-accent-strong text-white' : 'text-dt-support hover:text-dt-body hover:bg-dt-inset'}`}>
-                  {t.label}{n > 0 ? ` ${n}` : ''}
-                </button>
-              );
-            })}
-          </div>
           <div className="flex-1 overflow-y-auto">
             {loading ? <p className="text-xs text-dt-muted p-4 text-center">Loading…</p>
               : filtered.length === 0 ? <p className="text-xs text-dt-muted p-6 text-center">
@@ -285,7 +329,6 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
                     ? 'Nothing matches that filter. Clear it to see the rest.'
                     : tab === 'needs_human' ? "That's everything waiting on you."
                     : tab === 'mine' ? "Nothing is yours right now."
-                    : tab === 'resolved' ? 'No closed conversations yet.'
                     : 'No open conversations.'}
                 </p>
               : filtered.map(c => {
@@ -438,6 +481,7 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }
