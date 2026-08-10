@@ -21,12 +21,17 @@ import type { TemplateItem } from '../../../../lib/onboardingApi';
 // that is the identifier the rest of the system (resolveParams, de-work's
 // perform_onboarding_item) binds by.
 //
-// REACHABILITY (fix after review): validate_onboarding_items only checks
-// that action_key names an active definition visible to the tenant, and
-// platform actions (tenant_id is null) are visible to EVERY tenant — so
-// nothing stopped a template author binding an action this workspace has no
-// connector to actually run. Offering only reachable verbs at the picker is
-// the cheapest correct fix. "Reachable" reuses the exact predicate
+// REACHABILITY (fix after review; server side closed by mig 681): until
+// mig 681, validate_onboarding_items checked only that action_key named an
+// active definition VISIBLE to the tenant, and platform actions
+// (tenant_id is null) are visible to EVERY tenant — so nothing stopped a
+// template author binding an action this workspace has no connector to
+// actually run. This picker offering only reachable verbs is the first line;
+// mig 681 made it the enforced one, rejecting an unreachable binding at
+// publish time and tightening certify's onboarding-bindings-are-runnable
+// probe to match. All three now share ONE definition of reachable — if you
+// change the predicate below, change those two as well. "Reachable" is the
+// exact predicate
 // get_agentic_tools_for_de already uses to decide what a DE may run: a
 // CONNECTED connector whose category matches the action's, and whose
 // provider matches too (category alone once offered an ERPNext-connected

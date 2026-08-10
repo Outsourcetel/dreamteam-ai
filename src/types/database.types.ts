@@ -9928,7 +9928,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
-      validate_onboarding_items: { Args: { p_items: Json }; Returns: string[] }
+      validate_onboarding_items: { Args: { p_items: Json; p_tenant_id: string }; Returns: string[] }
       verify_audit_chain: { Args: { p_tenant_id: string }; Returns: Json }
       verify_tenant_api_key: { Args: { p_raw_key: string }; Returns: Json }
       visible_knowledge_docs: {

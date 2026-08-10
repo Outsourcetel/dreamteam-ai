@@ -181,88 +181,133 @@ const CASES = [
     silent: `select 1 where exists (select 1 from (values ('list_org_tree')) v(nm)
              where nm not in ('list_org_tree','match_doc_chunks','tenant_ancestors'))`,
   },
+  // ── onboarding-bindings-are-runnable (rewritten for mig 681) ────────────
+  // The probe used to check three conditions — action_key match, status
+  // active, and tenant VISIBILITY — and the four cases here modelled exactly
+  // those three. All four passed, and the probe was still wrong: platform
+  // actions carry tenant_id IS NULL, so "visible" was true for every tenant
+  // in the system. The cases could not have caught that, because they
+  // faithfully modelled a predicate that was itself too weak. A mutation case
+  // proves a probe fires on the violation it models; it cannot tell you the
+  // model is missing a condition.
+  //
+  // mig 681 tightened the probe to what get_agentic_tools_for_de means by
+  // runnable: a CONNECTED connector of that tenant, matching category AND
+  // provider, with provider='internal' excluded. The cases below exercise
+  // every clause of that predicate one at a time.
   {
-    // Condition 1 only (action_key match) — against the LIVE table, deliberately:
-    // 'no_such_verb' genuinely does not exist in production and
-    // 'configure_customer_setup' genuinely does (mig 651), so this is the one
-    // case that also proves the probe's predicate agrees with real data, not
-    // just a synthetic model of it.
-    name: 'onboarding-bindings-are-runnable (named verb does not exist at all)',
-    fires: `select 1 where exists (select 1 from (values ('no_such_verb')) v(k)
-              where not exists (select 1 from action_definitions ad
-                                 where ad.action_key = v.k and ad.status='active'))`,
-    silent: `select 1 where exists (select 1 from (values ('configure_customer_setup')) v(k)
-              where not exists (select 1 from action_definitions ad
-                                 where ad.action_key = v.k and ad.status='active'))`,
-  },
-  // The remaining cases lift the probe's real three-condition predicate
-  //   ad.action_key = i->>'action_key' and ad.status = 'active'
-  //   and (ad.tenant_id is null or ad.tenant_id = v.tenant_id)
-  // verbatim, over a synthesised item(tenant_id, action_key) row and a
-  // synthesised ad(action_key, status, tenant_id) row — no live table read or
-  // depended on, so these hold even if action_definitions' contents change.
-  {
-    // Condition 2 (status = 'active') exercised on its own: same tenant,
-    // same action_key, only the status differs.
-    name: 'onboarding-bindings-are-runnable (named verb exists but is not active)',
+    // FIRST, and most valuable: the LIVE tables, and the exact row that
+    // separates the old probe from the new one. Workspace 5bb802e1 has one
+    // connected connector, erpnext/erp_financials.
+    //   · log_invoice_note is active and platform-scope, so it was VISIBLE and
+    //     the old predicate stayed silent on it — but in erp_financials it
+    //     exists only under provider 'xero'. Nothing that workspace owns can
+    //     run it. The new predicate fires.
+    //   · configure_customer_setup is the erpnext one. It must stay silent, or
+    //     the tightening has simply broken binding for everyone.
+    // Synthetic cases can only prove the predicate does what it says; this one
+    // proves it says the right thing about real production data.
+    name: 'onboarding-bindings-are-runnable (LIVE: a visible-but-unrunnable verb fires, the runnable one stays silent)',
     fires: `select 1 where exists (
-              select 1 from (values ('tenant-a','k')) item(tenant_id, action_key)
+              select 1 from (values ('5bb802e1-8e92-4eef-9a7a-ac348785d43f'::uuid,'log_invoice_note')) item(tenant_id, action_key)
                where not exists (
-                 select 1 from (values ('k','draft',null::text)) ad(action_key, status, tenant_id)
-                  where ad.action_key = item.action_key
-                    and ad.status = 'active'
-                    and (ad.tenant_id is null or ad.tenant_id = item.tenant_id)))`,
+                 select 1 from action_definitions ad
+                 join connectors c
+                   on c.tenant_id = item.tenant_id and c.status = 'connected'
+                  and c.category = ad.category
+                  and (ad.provider is null or ad.provider = c.provider or ad.provider = 'template')
+                where ad.action_key = item.action_key and ad.status = 'active'
+                  and ad.provider <> 'internal'
+                  and (ad.scope = 'platform' or (ad.scope = 'tenant' and ad.tenant_id = item.tenant_id))))`,
     silent: `select 1 where exists (
-              select 1 from (values ('tenant-a','k')) item(tenant_id, action_key)
+              select 1 from (values ('5bb802e1-8e92-4eef-9a7a-ac348785d43f'::uuid,'configure_customer_setup')) item(tenant_id, action_key)
                where not exists (
-                 select 1 from (values ('k','active',null::text)) ad(action_key, status, tenant_id)
-                  where ad.action_key = item.action_key
-                    and ad.status = 'active'
-                    and (ad.tenant_id is null or ad.tenant_id = item.tenant_id)))`,
+                 select 1 from action_definitions ad
+                 join connectors c
+                   on c.tenant_id = item.tenant_id and c.status = 'connected'
+                  and c.category = ad.category
+                  and (ad.provider is null or ad.provider = c.provider or ad.provider = 'template')
+                where ad.action_key = item.action_key and ad.status = 'active'
+                  and ad.provider <> 'internal'
+                  and (ad.scope = 'platform' or (ad.scope = 'tenant' and ad.tenant_id = item.tenant_id))))`,
   },
-  {
-    // Condition 3, first half: an active verb scoped to a DIFFERENT tenant
-    // must still be flagged — it is unreachable for this template. This is
-    // the branch the coordinator's review found unexercised: if the tenant
-    // clause were dropped, flipped to AND, or compared the wrong column,
-    // this fires query would go from 1 row to 0 and this case would FAIL.
-    name: 'onboarding-bindings-are-runnable (verb active but scoped to a different tenant)',
-    fires: `select 1 where exists (
-              select 1 from (values ('tenant-a','k')) item(tenant_id, action_key)
-               where not exists (
-                 select 1 from (values ('k','active','tenant-b')) ad(action_key, status, tenant_id)
-                  where ad.action_key = item.action_key
-                    and ad.status = 'active'
-                    and (ad.tenant_id is null or ad.tenant_id = item.tenant_id)))`,
-    silent: `select 1 where exists (
-              select 1 from (values ('tenant-a','k')) item(tenant_id, action_key)
-               where not exists (
-                 select 1 from (values ('k','active',null::text)) ad(action_key, status, tenant_id)
-                  where ad.action_key = item.action_key
-                    and ad.status = 'active'
-                    and (ad.tenant_id is null or ad.tenant_id = item.tenant_id)))`,
-  },
-  {
-    // Condition 3, second half: the SAME wrong-tenant violation, checked
-    // against the other clean branch — a verb scoped to the template's OWN
-    // tenant must be reachable. Both silent branches (global and same-tenant)
-    // must independently return zero rows against the identical fires query.
-    name: 'onboarding-bindings-are-runnable (verb scoped to the SAME tenant is reachable)',
-    fires: `select 1 where exists (
-              select 1 from (values ('tenant-a','k')) item(tenant_id, action_key)
-               where not exists (
-                 select 1 from (values ('k','active','tenant-b')) ad(action_key, status, tenant_id)
-                  where ad.action_key = item.action_key
-                    and ad.status = 'active'
-                    and (ad.tenant_id is null or ad.tenant_id = item.tenant_id)))`,
-    silent: `select 1 where exists (
-              select 1 from (values ('tenant-a','k')) item(tenant_id, action_key)
-               where not exists (
-                 select 1 from (values ('k','active','tenant-a')) ad(action_key, status, tenant_id)
-                  where ad.action_key = item.action_key
-                    and ad.status = 'active'
-                    and (ad.tenant_id is null or ad.tenant_id = item.tenant_id)))`,
-  },
+  // The remaining cases lift the probe's real predicate over synthesised
+  // item / action_definition / connector rows — no live table read, so they
+  // hold whatever those tables come to contain. The predicate is written ONCE,
+  // as a builder, rather than pasted per case: eight hand-copied predicates
+  // are eight chances for a case to drift from the thing it claims to test,
+  // which is exactly how mig 661 shipped a pin that could not fail.
+  ...(() => {
+    const lit = (v) => (v === null ? 'null::text' : `'${v}'`);
+    const runnable = (o = {}) => {
+      const d = {
+        itemTenant: 'tenant-a', itemKey: 'k',
+        adKey: 'k', adStatus: 'active', adScope: 'platform', adTenant: null,
+        adCategory: 'crm', adProvider: 'hubspot',
+        connTenant: 'tenant-a', connStatus: 'connected',
+        connCategory: 'crm', connProvider: 'hubspot', ...o,
+      };
+      return `select 1 where exists (
+        select 1 from (values ('${d.itemTenant}','${d.itemKey}')) item(tenant_id, action_key)
+         where not exists (
+           select 1
+             from (values (${lit(d.adKey)},${lit(d.adStatus)},${lit(d.adScope)},${lit(d.adTenant)},${lit(d.adCategory)},${lit(d.adProvider)}))
+                    ad(action_key, status, scope, tenant_id, category, provider)
+             join (values (${lit(d.connTenant)},${lit(d.connStatus)},${lit(d.connCategory)},${lit(d.connProvider)}))
+                    c(tenant_id, status, category, provider)
+               on c.tenant_id = item.tenant_id
+              and c.status = 'connected'
+              and c.category = ad.category
+              and (ad.provider is null or ad.provider = c.provider or ad.provider = 'template')
+            where ad.action_key = item.action_key
+              and ad.status = 'active'
+              and ad.provider <> 'internal'
+              and (ad.scope = 'platform' or (ad.scope = 'tenant' and ad.tenant_id = item.tenant_id))))`;
+    };
+    // Every case's `silent` is the all-clean row, so each `fires` differs from
+    // it in exactly ONE field. That is what makes each case a test of one
+    // clause rather than of the predicate in general.
+    const clean = runnable();
+    const case_ = (name, mutation) => ({ name: `onboarding-bindings-are-runnable (${name})`, fires: runnable(mutation), silent: clean });
+    return [
+      // ── the action_definitions side ──
+      case_('named verb does not exist at all', { adKey: 'something-else' }),
+      case_('named verb exists but is not active', { adStatus: 'draft' }),
+      case_('verb is tenant-scoped to a DIFFERENT tenant', { adScope: 'tenant', adTenant: 'tenant-b' }),
+      // ...and its clean twin: tenant-scoped to the template's OWN tenant is
+      // fine. Without this, flipping the scope clause to a constant true would
+      // pass every case above.
+      { name: 'onboarding-bindings-are-runnable (verb tenant-scoped to the SAME tenant is runnable)',
+        fires: runnable({ adScope: 'tenant', adTenant: 'tenant-b' }),
+        silent: runnable({ adScope: 'tenant', adTenant: 'tenant-a' }) },
+      // provider='internal' isolated: the connector's provider is 'internal'
+      // too, so the provider-MATCH clause passes and the ONLY thing excluding
+      // this row is `ad.provider <> 'internal'`. Engine primitives
+      // (generate_invoice, start_onboarding) have their own step types and are
+      // never reachable through a connector.
+      case_('verb is an internal engine primitive, not a connector action',
+            { adProvider: 'internal', connProvider: 'internal' }),
+      // A NULL action provider is excluded too, because `null <> 'internal'`
+      // is NULL, not true. That is a quirk of get_agentic_tools_for_de's own
+      // SQL, copied deliberately so the validator, the probe and VerbBinding
+      // agree; 0 of 75 definitions have a null provider, so it changes nothing
+      // today. If someone ever fixes the quirk, they must fix all three, and
+      // this case going red is how they find out.
+      case_('verb with a NULL provider is excluded, as get_agentic_tools_for_de excludes it',
+            { adProvider: null }),
+      // ── the connectors side: the four clauses mig 681 added ──
+      case_('the matching connector belongs to a DIFFERENT tenant', { connTenant: 'tenant-b' }),
+      case_('the matching connector is DISCONNECTED', { connStatus: 'disconnected' }),
+      case_('the workspace has a connector, but in another CATEGORY', { connCategory: 'helpdesk' }),
+      case_('the workspace has a connector in the right category but a DIFFERENT provider',
+            { connProvider: 'salesforce' }),
+      // ...and the two ways a provider legitimately matches without being
+      // equal, which a "provider must be equal" over-tightening would break.
+      { name: 'onboarding-bindings-are-runnable (a template-provider verb runs against any connector in its category)',
+        fires: runnable({ adProvider: 'stripe', connProvider: 'salesforce' }),
+        silent: runnable({ adProvider: 'template', connProvider: 'salesforce' }) },
+    ];
+  })(),
   {
     // Verbatim from the brief's spec: a two-field synthetic model
     // (status, has a qualifying execution). Kept as-is — it's still a

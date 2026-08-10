@@ -190,7 +190,14 @@ const PROBES = [
   },
   {
     name: 'onboarding-bindings-are-runnable',
-    why: 'a checklist item that names a verb nobody can run is a promise that breaks at 2am, in front of a customer — and the template author never finds out',
+    // mig 681: the `why` used to claim this, while the SQL below only checked
+    // that an ACTIVE definition was VISIBLE to the tenant. Platform actions
+    // carry tenant_id IS NULL and are visible to EVERY tenant, so a workspace
+    // with no Stripe connector passed this probe while binding a Stripe verb.
+    // "Runnable" now means what get_agentic_tools_for_de means by it — the
+    // same predicate mig 681's validate_onboarding_items and
+    // VerbBinding.tsx use, so there is ONE definition of reachable, not three.
+    why: 'a checklist item that names a verb this workspace has no CONNECTED connector to run is a promise that breaks at 2am, in front of a customer — an ACTIVE definition is not enough, because platform actions are visible to every tenant whether or not it owns the system',
     sql: `select t.slug || ' / ' || v.name || ' / ' || (i->>'key')
                  || ' → ' || (i->>'action_key') as violation
             from onboarding_template_versions v
@@ -198,10 +205,18 @@ const PROBES = [
             cross join lateral jsonb_array_elements(v.items) i
            where i ? 'action_key'
              and not exists (
-               select 1 from action_definitions ad
+               select 1
+                 from action_definitions ad
+                 join connectors c
+                   on c.tenant_id = v.tenant_id
+                  and c.status = 'connected'
+                  and c.category = ad.category
+                  and (ad.provider is null or ad.provider = c.provider or ad.provider = 'template')
                 where ad.action_key = i->>'action_key'
                   and ad.status = 'active'
-                  and (ad.tenant_id is null or ad.tenant_id = v.tenant_id))`,
+                  and ad.provider <> 'internal'
+                  and (ad.scope = 'platform'
+                    or (ad.scope = 'tenant' and ad.tenant_id = v.tenant_id)))`,
   },
   {
     name: 'bound-onboarding-items-complete-from-evidence',
