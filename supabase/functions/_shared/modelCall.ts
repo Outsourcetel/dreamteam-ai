@@ -19,7 +19,14 @@
 // already had. Seventeen call sites across six live functions therefore did not
 // change at all — the smallest possible blast radius for a consolidation.
 // ============================================================
-import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
+// ⚠ Must track the SAME pin as ./llm.ts, which this file hands `admin` to.
+// This was the lone `@2.45.4` in a tree where the other 69 imports are `@2`;
+// supabase-js widened SupabaseClient's generics between those versions (3 type
+// params → 5), so the stale pin made the two files disagree about a type they
+// pass between them. That produced 2 permanently-unattributed errors here, and
+// a third the moment any function on `@2` (brand-extract) passed a client in.
+// Type-only import: no runtime change.
+import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { llmMessages } from './llm.ts';
 
 const DEFAULT_MODEL = 'claude-sonnet-5';
