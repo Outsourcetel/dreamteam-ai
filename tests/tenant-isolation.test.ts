@@ -32,9 +32,45 @@ describe('tenant isolation (RLS)', () => {
     // Clean up as each tenant's own owner — RLS-scoped deletes, not a
     // service-role bypass, so this only ever touches this test's own
     // rows even if something above failed partway through.
-    await tenantA.client.from('customer_accounts').delete().eq('tenant_id', tenantA.tenantId);
-    await tenantB.client.from('customer_accounts').delete().eq('tenant_id', tenantB.tenantId);
-  });
+    //
+    // Hardened after the 2026-08-10 flake (failed twice inside certify, green
+    // standalone and in a 7× golden-path-adjacency reproduction loop — the
+    // trigger was environmental, most plausibly a parallel session loading the
+    // same dev project). Three rules, none of which weaken anything:
+    //   1. Each tenant's cleanup is attempted INDEPENDENTLY — one tenant's
+    //      transport hiccup must not abandon the other's rows.
+    //   2. Transient failures retry with backoff before they count.
+    //   3. A genuine final failure still FAILS the suite — but with the full
+    //      underlying error, so the next investigation starts with evidence
+    //      instead of a truncated frame.
+    const deleteWithRetry = async (t: TestTenant, label: string) => {
+      let lastErr: unknown = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const { error } = await t.client
+            .from('customer_accounts')
+            .delete()
+            .eq('tenant_id', t.tenantId);
+          if (!error) return null;
+          lastErr = error;             // PostgREST-level error object
+        } catch (e) {
+          lastErr = e;                 // transport-level rejection (fetch failed)
+        }
+        if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 1500));
+      }
+      return `${label} (tenant ${t.tenantId}): ${JSON.stringify(lastErr, Object.getOwnPropertyNames(lastErr ?? {}))}`;
+    };
+
+    const failures = (
+      await Promise.all([
+        deleteWithRetry(tenantA, 'tenant A cleanup'),
+        deleteWithRetry(tenantB, 'tenant B cleanup'),
+      ])
+    ).filter((f): f is string => f !== null);
+    if (failures.length > 0) {
+      throw new Error(`teardown failed after 3 attempts each:\n${failures.join('\n')}`);
+    }
+  }, 60000);
 
   it('lets a tenant owner see their own account', async () => {
     const { data, error } = await tenantA.client
