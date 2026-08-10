@@ -1,27 +1,27 @@
 {
-  "at": "2026-08-10T09:43:03.761Z",
+  "at": "2026-08-10T10:34:06.655Z",
   "mode": "offline",
   "failed": 0,
   "results": [
     {
       "section": "typecheck",
       "ok": true,
-      "seconds": 29.1
+      "seconds": 25.7
     },
     {
       "section": "edge-typecheck",
       "ok": true,
-      "seconds": 4.5
+      "seconds": 5.2
     },
     {
       "section": "design-drift",
       "ok": true,
-      "seconds": 2
+      "seconds": 5.2
     },
     {
       "section": "suite",
       "ok": true,
-      "seconds": 2.8
+      "seconds": 3.2
     }
   ]
 }
