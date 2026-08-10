@@ -10,6 +10,7 @@ import { updateTenant } from '../../lib/api';
 import { setPipelineStages } from '../../lib/pipelineApi';
 import { listEntityFields, addEntityField } from '../../lib/customerApi';
 import BrandingCard from '../../design/BrandingCard';
+import BrandIdentityCard from '../../design/BrandIdentityCard';
 
 // ============================================================
 // Company Setup — the REAL wizard (Wave 1.1).
@@ -346,6 +347,9 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
 
       {/* Workspace appearance — per-tenant branding (mig 247). */}
       <BrandingCard />
+
+      {/* Company brand identity — what DE work products wear (mig 666). */}
+      <BrandIdentityCard />
     </div>
   );
 }
