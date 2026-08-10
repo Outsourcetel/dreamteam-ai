@@ -1,5 +1,5 @@
 {
-  "pinned_at": "2026-08-10T08:12:37.891Z",
+  "pinned_at": "2026-08-10T09:27:21.112Z",
   "note": "The EXECUTE surface for anon/authenticated. certify fails on ANY diff. Re-pin only after a DELIBERATE perimeter change.",
   "routines": [
     {
@@ -1748,6 +1748,11 @@
       "authed": true
     },
     {
+      "sig": "park_support_conversation(p_conversation_id uuid, p_until timestamp with time zone)",
+      "anon": false,
+      "authed": true
+    },
+    {
       "sig": "pause_digital_employee(p_de_id uuid, p_reason text)",
       "anon": false,
       "authed": true
@@ -2709,6 +2714,11 @@
     },
     {
       "sig": "unassign_doc_collection(p_doc_id uuid, p_collection_id uuid)",
+      "anon": false,
+      "authed": true
+    },
+    {
+      "sig": "unpark_support_conversation(p_conversation_id uuid)",
       "anon": false,
       "authed": true
     },

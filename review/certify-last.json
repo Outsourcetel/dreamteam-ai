@@ -1,24 +1,22 @@
 {
-  "at": "2026-08-10T09:15:38.729Z",
+  "at": "2026-08-10T09:30:34.898Z",
   "mode": "full",
-  "failed": 2,
+  "failed": 0,
   "results": [
     {
       "section": "typecheck",
       "ok": true,
-      "seconds": 16.6
+      "seconds": 25.4
     },
     {
       "section": "ring0-probes",
-      "ok": false,
-      "seconds": 29,
-      "detail": "execute-perimeter: NEW/CHANGED grant not in allowlist: park_support_conversation(p_conversation_id uuid, p_until timestamp with time zone)|anon=false|authed=true\nexecute-perimeter: NEW/CHANGED grant not in allowlist: unpark_support_conversation(p_conversation_id uuid)|anon=false|authed=true"
+      "ok": true,
+      "seconds": 33.2
     },
     {
       "section": "migration-ledger",
-      "ok": false,
-      "seconds": 5.3,
-      "detail": "690 files in supabase/migrations, 691 in the ledger\n  APPLIED    322   recorded by the runner, file unchanged\n  ASSUMED    368   predates the ledger — believed applied, never verified\n  DRIFTED      0   applied, then the FILE CHANGED\n  PENDING      0   in the repo, never applied here\n  ORPHANED     1   in the ledger, no longer in the repo\nORPHANED:\n  669_park_and_snooze.sql"
+      "ok": true,
+      "seconds": 5.6
     },
     {
       "section": "migration-numbering",
@@ -28,22 +26,22 @@
     {
       "section": "edge-typecheck",
       "ok": true,
-      "seconds": 3.1
+      "seconds": 5
     },
     {
       "section": "golden-path",
       "ok": true,
-      "seconds": 35.6
+      "seconds": 38.5
     },
     {
       "section": "role-gates",
       "ok": true,
-      "seconds": 7.4
+      "seconds": 7.5
     },
     {
       "section": "silent-refusals",
       "ok": true,
-      "seconds": 2.6
+      "seconds": 2.8
     },
     {
       "section": "design-drift",
@@ -53,7 +51,7 @@
     {
       "section": "suite",
       "ok": true,
-      "seconds": 45.7
+      "seconds": 48.7
     }
   ]
 }

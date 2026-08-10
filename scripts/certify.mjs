@@ -461,7 +461,29 @@ const sections = [
   // ledger row plus a PENDING file. So the rule is only: no new ones.
   // `npm run migrate:next` is what prevents them; this is what catches them.
   section('migration-numbering', () => {
-    const DUP_CEILING = 19;
+    // NAMED, not counted. A bare ceiling can be nudged up by anyone in a hurry
+    // and says nothing about what collided; a list forces whoever adds to it to
+    // write down which pair and why it could not be undone.
+    //
+    // ⚠ EVERY ENTRY HERE IS PERMANENT DEBT, NOT A BUDGET. A duplicate can only
+    // be added when BOTH files are already applied to production — because
+    // public.schema_migrations keys on FILENAME, renaming an applied migration
+    // turns it into an ORPHANED ledger row plus a PENDING file. If a collision
+    // is caught BEFORE either half is applied, rename it and do NOT list it.
+    const KNOWN_DUPLICATES = new Set([
+      // Inherited: months of `ls | tail -1`, all long since applied.
+      '20260720', '514', '520', '526', '540', '541', '542', '543', '544',
+      '574', '575', '576', '577', '578', '582', '583', '584', '585', '586',
+      // 2026-08-10 — and this one is a DEFEAT worth reading, because it is the
+      // collision the new convention was built to stop, one hour after it
+      // shipped. Two agents on one repo: 669_park_and_snooze applied 09:04:41,
+      // 669_an_onboarding_agent_must_not_send_a_final_demand applied 09:06:03.
+      // `npm run migrate:next` DID return 669 correctly — it only binds the
+      // agent who runs it, and the other session had not pulled it yet. Both
+      // were in production before either tree saw the other, so neither can be
+      // renamed. A convention only holds once everyone has it.
+      '669',
+    ]);
     const names = readdirSync('supabase/migrations').filter((f) => f.endsWith('.sql'));
     const byNum = new Map();
     for (const n of names) {
@@ -471,18 +493,20 @@ const sections = [
       byNum.get(m[1]).push(n);
     }
     const dups = [...byNum.entries()].filter(([, fs]) => fs.length > 1);
-    if (dups.length > DUP_CEILING) {
-      const worst = dups.slice(-(dups.length - DUP_CEILING))
-        .map(([k, fs]) => `${k}: ${fs.join(' , ')}`).join('\n');
+    const fresh = dups.filter(([k]) => !KNOWN_DUPLICATES.has(k));
+    if (fresh.length) {
       return {
         ok: false,
-        detail: `${dups.length} duplicate migration numbers, ceiling is ${DUP_CEILING}. `
-          + `Claim numbers with: npm run migrate:next -- my_change\n${worst}`,
+        detail: `${fresh.length} NEW duplicate migration number(s). Claim numbers with:\n`
+          + `    npm run migrate:next -- my_change\n`
+          + `If neither half is applied to production yet, RENAME one — do not add it below.\n`
+          + fresh.map(([k, fs]) => `  ${k}: ${fs.join(' , ')}`).join('\n'),
       };
     }
-    // Ratchet DOWN only: if someone genuinely resolves one, lower the ceiling.
-    if (dups.length < DUP_CEILING) {
-      return { ok: true, detail: `duplicates down to ${dups.length} — lower DUP_CEILING in certify.mjs to ${dups.length}` };
+    // Ratchet down: a listed number that no longer collides should be removed.
+    const stale = [...KNOWN_DUPLICATES].filter((k) => !dups.some(([d]) => d === k));
+    if (stale.length) {
+      return { ok: true, detail: `no longer duplicated — drop from KNOWN_DUPLICATES: ${stale.join(', ')}` };
     }
     return { ok: true, detail: '' };
   }),
