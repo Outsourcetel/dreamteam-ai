@@ -342,6 +342,26 @@ async function auditEvent(admin: any, tenantId: string, actor: string, actorType
 // answer to a human, never the reverse. Reuses eval-judge server-to-server via
 // the dispatch secret, so there is no second, divergent judge to keep in sync.
 // deno-lint-ignore no-explicit-any
+// ── "What Sophie already checked" (mig 667, handoff 06 §A) ──────────────────
+// Same contract as widget-ask's copy: a row asserts a check that RAN; inserts
+// are best-effort and never block the answer, but never fail silently. No
+// identity rows on this path — the internal/dock channel has no widget
+// identity system, so an identity check never runs here.
+type ConvCheck = { kind: 'knowledge' | 'identity' | 'guardrail' | 'escalation_rule' | 'confidence' | 'connector'; ok: boolean; label: string; detail?: string };
+// deno-lint-ignore no-explicit-any
+async function recordChecks(admin: any, tenantId: string, convId: string | null, deId: string | null, checks: ConvCheck[]): Promise<void> {
+  if (!convId || checks.length === 0) return;
+  try {
+    const { error } = await admin.from('conversation_checks').insert(checks.map((c) => ({
+      tenant_id: tenantId, conversation_id: convId, de_id: deId,
+      kind: c.kind, ok: c.ok, label: c.label.slice(0, 200), detail: c.detail?.slice(0, 500) ?? null,
+    })));
+    if (error) console.error('conversation_checks insert:', error.message);
+  } catch (e) { console.error('conversation_checks insert:', String(e)); }
+}
+const knowledgeChecks = (srcs: string[]): ConvCheck[] =>
+  srcs.slice(0, 8).map((t) => ({ kind: 'knowledge', ok: true, label: `Read: ${t}` }));
+
 async function preSendAudit(admin: any, tenantId: string, deId: string | null, question: string, answer: string): Promise<{ clean: boolean; reason: string }> {
   const dispatch = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
   const { data, error } = await admin.functions.invoke('eval-judge', {
@@ -1028,6 +1048,10 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
           related_table: convId ? 'de_conversations' : null,
           related_id: convId,
         });
+        await recordChecks(admin, tenantId, convId, subjectDeId, [
+          ...knowledgeChecks(parsed.sources),
+          { kind: 'guardrail', ok: false, label: `Blocked by the guardrail: ${blockedBy.rule}` },
+        ]);
         await admin.from('activity_events').insert({
           tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'escalated',
           text: `Answer BLOCKED by guardrail "${blockedBy.rule}" — escalated to human review`,
@@ -1140,6 +1164,9 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
       } catch (e) { console.error('answer safeguards: config read threw →', e); }
     }
 
+    // Why the auditor stopped it, kept for the checks panel below — the
+    // verdict itself is otherwise gone by the time the escalation is filed.
+    let auditorReason: string | null = null;
     if (!replayMode && !escalate && subjectDeId) {
       const auditEnabled = deCfg?.pre_send_audit_enabled === true;
       if (auditEnabled) {
@@ -1147,12 +1174,14 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
           const verdict = await preSendAudit(admin, tenantId, subjectDeId, question, parsed.answer);
           if (!verdict.clean) {
             escalate = true;
+            auditorReason = verdict.reason;
             await auditEvent(admin, tenantId, persona.name, 'de',
               `Pre-send quality audit routed an answer to a human — ${verdict.reason}`,
               'evidence_step', { kind: 'pre_send_audit', conversation_id: convId, confidence: parsed.confidence });
           }
         } catch (e) {
           escalate = true; // enabled but the audit itself failed → fail closed
+          auditorReason = 'the independent quality check could not run, so the answer goes to a person';
           console.error('pre-send audit failed closed → escalate:', e);
           await auditEvent(admin, tenantId, persona.name, 'de',
             'Pre-send quality audit unavailable — routed the answer to a human',
@@ -1313,6 +1342,31 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
         related_id: convId,
       }).select('id').single();
       escTaskId = escTask?.id ?? null;
+      // The checks panel (mig 667). ⚠ NOT for exams: an exam files no claim
+      // on a human (the 570/571/572 lineage), and evidence rows exist for the
+      // person reading the panel — a run nobody reviews must not write them.
+      // One stop-reason row, in the order the escalation actually composes:
+      // a founder rule outranks the model's own self-stop outranks the
+      // auditor outranks the grounded/confidence gate outranks draft mode.
+      if (!isExam) {
+        const stopReason: ConvCheck = escalationRuleHit
+          ? { kind: 'escalation_rule', ok: false, label: `Stopped by the rule: ${escalationRuleHit}` }
+          : parsed.needs_escalation
+            ? { kind: 'escalation_rule', ok: false, label: `${persona.name} asked for a human on this one` }
+            : auditorReason
+              ? { kind: 'guardrail', ok: false, label: 'Independent pre-send check routed it to a person', detail: auditorReason }
+              : (groundedPolicyActive && fabricationRisk)
+                ? { kind: 'confidence', ok: false, label: "The knowledge base can't back this answer — not sending it unverified" }
+                : heldForApproval
+                  ? { kind: 'escalation_rule', ok: false, label: 'Held for approval: every reply from this employee is reviewed before it sends' }
+                  : (confidenceFloor > 100
+                    ? { kind: 'confidence', ok: false, label: `Confidence ${parsed.confidence}% — this employee isn't allowed to send replies on its own yet` }
+                    : { kind: 'confidence', ok: false, label: `Confidence ${parsed.confidence}% — below the ${confidenceFloor}% send threshold` });
+        await recordChecks(admin, tenantId, convId, subjectDeId, [
+          ...knowledgeChecks(parsed.sources),
+          stopReason,
+        ]);
+      }
       // Same split for the activity feed: it answers "what did my workforce do
       // for the business today", and a fire drill does not belong in the
       // incident log — 74 of today's 78 events were exam escalations. The
