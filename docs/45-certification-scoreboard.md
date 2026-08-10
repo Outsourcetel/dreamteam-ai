@@ -378,9 +378,36 @@ retroactively is a curve you can talk yourself into. `npm run benchmark:history`
     durable one. `resolve_action_execution_for_task` is the same seam spelled
     differently: `x NOT IN (subquery)` yields NULL, not TRUE, when the subquery
     returns a NULL.
-  - **`eval_gate`** is a view readable by `anon`, spanning 3 tenants, and
-    `net.http_post/get/delete` are `anon`-executable (an outbound-request
-    primitive from inside the database). Outside R0.8's read scope; unassessed.
+  - ~~**`eval_gate`** is a view readable by `anon`~~ — **CLOSED, mig 665.** It
+    was not theoretical: fetched from the open internet with nothing but the
+    public anon key, it returned three tenants' UUIDs and their exam records
+    (`passed 16/16`, `failed 0/2`, `failed 19/20`). **A view is a SECURITY
+    DEFINER function in table clothing** — it runs as its OWNER unless
+    `security_invoker = true`, and this one is owned by a BYPASSRLS role, so the
+    policy `eval_runs_tenant_read USING (tenant_id = auth_tenant_id())` was
+    never *consulted*. Proof that only the view leaked: anon fetching the base
+    table gets `42501 permission denied for function auth_tenant_id`, because
+    there the policy does fire. Two sibling views already set the flag; this was
+    the only one that did not, and across every view in `public` owned by a
+    BYPASSRLS role reading an RLS table, it was **the only offender**. After the
+    fix, the same anon request returns `permission denied for view eval_gate`.
+  - **`net.http_post` — latent, and NOT fixable by us.** Every `net` function
+    and both its tables are granted to PUBLIC (the queue *is* the pipe: the
+    worker sends whatever is written to it). But schema `net` is not exposed
+    through PostgREST — probed, not assumed: `Accept-Profile: net` → **406**.
+    ⚠ **A `REVOKE` cannot fix this**: `net` is owned by `supabase_admin` and a
+    revoke running as `postgres` is a **silent no-op** — I proved that in a
+    rolled-back transaction where the privilege was still present *after* the
+    revoke, with no error raised. (My first reading of that test was wrong: I
+    took "no error" for "it worked". A no-op revoke does not error.)
+    So the only thing between PUBLIC's grant and a live SSRF primitive is a
+    **project-config setting with no representation in the database** — which
+    means no SQL probe can ever see it. `certify` › **`net-not-exposed`** now
+    asks the REST API directly, as the anonymous internet, and goes red the day
+    that config changes. It has no separate control request *on purpose*: the
+    first version used a public view as its control, mig 665 revoked anon's
+    access to that view, and the probe silently disarmed itself. The status code
+    is the evidence — 406 closed, 200 exposed, anything else skips **loudly**.
   - **`get_de_cost_metrics`** shows per-employee spend for every employee in the
     caller's own workspace rather than only those they are responsible for.
     Intra-tenant over-sharing, not a tenancy breach — and narrowing it changes

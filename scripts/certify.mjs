@@ -326,6 +326,60 @@ function edgeErrorCounts() {
   return { counts, total: blocks.length, unattributed, fns };
 }
 
+// ── The outbound pipe must stay unreachable from the internet ──────────────
+// pg_net (schema `net`) can make OUTBOUND HTTP requests, and every net function
+// plus the request queue is granted to PUBLIC — which includes anon. We CANNOT
+// revoke that: `net` is owned by supabase_admin, and a REVOKE running as
+// postgres is a silent no-op (proven, not assumed). The ONLY thing standing
+// between PUBLIC's grant and a live server-side-request-forgery primitive is
+// that `net` is not in PostgREST's exposed-schema list — a project-config
+// setting, not a database grant. That setting has no representation in the DB,
+// so no SQL probe can see it. This one does the only check that matters: it
+// asks the REST API, as the anonymous internet, whether `net` answers. The day
+// someone flips the config, this goes red.
+function envVar(name) {
+  for (const f of ['.env.local', '.env']) {
+    try {
+      const line = readFileSync(f, 'utf8').replace(/^﻿/, '')
+        .split(/\r?\n/).find((l) => l.startsWith(name + '='));
+      if (line) return line.slice(name.length + 1).replace(/^["']|["']$/g, '').trim();
+    } catch { /* file may not exist (CI) */ }
+  }
+  return null;
+}
+
+async function netExposureFailures() {
+  const anon = envVar('VITE_SUPABASE_ANON_KEY') ?? envVar('SUPABASE_ANON_KEY');
+  const base = `https://${PROD_REF}.supabase.co`;
+  if (!anon) {
+    // No key (e.g. CI without .env). Skip LOUDLY — never a silent pass.
+    return [{ note: 'net-not-exposed: SKIPPED — no anon key available to probe the REST surface (not a pass)' }];
+  }
+  const h = { apikey: anon, Authorization: `Bearer ${anon}` };
+  let netStatus;
+  try {
+    netStatus = (await fetch(`${base}/rest/v1/http_request_queue?select=id&limit=1`,
+      { headers: { ...h, 'Accept-Profile': 'net' } })).status;
+  } catch (e) {
+    return [{ note: `net-not-exposed: SKIPPED — REST probe could not reach the API (${String(e).slice(0, 80)})` }];
+  }
+  // ⚠ NO SEPARATE CONTROL REQUEST, deliberately. The first version used a
+  // public view as its control; migration 665 then revoked anon's access to
+  // that view, the control went 401, and the probe silently disarmed itself.
+  // A control must never depend on a grant that hardening may remove.
+  // Instead the status code IS the evidence, because PostgREST distinguishes:
+  //   406 → the API answered and refused the schema  = not exposed  = PASS
+  //   200 → the schema is exposed to the anonymous internet         = FAIL
+  //   else (401/403/5xx) → we cannot tell            = SKIP, LOUDLY
+  if (netStatus === 200) {
+    return [{ violation: `schema \`net\` is REACHABLE over REST (HTTP 200) while PUBLIC holds EXECUTE — an anonymous outbound-request primitive. Remove \`net\` from the project's exposed schemas (it cannot be fixed with a REVOKE; supabase_admin owns it).` }];
+  }
+  if (netStatus !== 406) {
+    return [{ note: `net-not-exposed: SKIPPED — got HTTP ${netStatus}, which distinguishes nothing (406 = closed, 200 = exposed). NOT a pass.` }];
+  }
+  return [];
+}
+
 // ── Section runner ─────────────────────────────────────────────────────────
 const results = [];
 function section(name, fn) { return { name, fn }; }
@@ -349,6 +403,12 @@ const sections = [
     const failures = [];
     const perim = await perimeterCheck();
     for (const v of perim) failures.push(`execute-perimeter: ${v.violation}`);
+    // The outbound-pipe exposure check — REST, not SQL, because the gate it
+    // guards is config, not a grant. A `note` is surfaced but does not fail.
+    for (const r of await netExposureFailures()) {
+      if (r.violation) failures.push(`net-not-exposed: ${r.violation}`);
+      else if (r.note) console.log(`        ${r.note}`);
+    }
     if (!PIN) {
       for (const p of PROBES) {
         try {
