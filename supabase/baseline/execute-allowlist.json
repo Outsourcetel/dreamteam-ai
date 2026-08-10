@@ -1,5 +1,5 @@
 {
-  "pinned_at": "2026-08-10T12:37:46.009Z",
+  "pinned_at": "2026-08-10T21:07:40.891Z",
   "note": "The EXECUTE surface for anon/authenticated. certify fails on ANY diff. Re-pin only after a DELIBERATE perimeter change.",
   "routines": [
     {
@@ -1258,6 +1258,11 @@
       "authed": true
     },
     {
+      "sig": "import_books_rows(p_kind text, p_rows jsonb)",
+      "anon": false,
+      "authed": true
+    },
+    {
       "sig": "increment_metric(p_metric text, p_delta bigint)",
       "anon": false,
       "authed": true
@@ -2064,6 +2069,11 @@
     },
     {
       "sig": "review_de_incident(p_incident_id uuid, p_status text, p_resolution_note text)",
+      "anon": false,
+      "authed": true
+    },
+    {
+      "sig": "revive_unit(p_de_id uuid)",
       "anon": false,
       "authed": true
     },
