@@ -89,6 +89,33 @@ async function auditEvent(admin: any, tenantId: string, actor: string, actorType
 
 interface DEAnswer { answer: string; confidence: number; sources: string[]; needs_escalation: boolean; language: string | null; customer_state?: unknown }
 
+// ── "What Sophie already checked" (mig 667, handoff 06 §A) ──────────────────
+// At every escalation exit, retain what the DE verified BEFORE handing off,
+// so the human stops re-doing the work to trust the draft. Rules of the rows:
+//   · a row asserts a check that RAN — identity is only written when a
+//     verification was actually attempted (userHash present), never a fake ✗
+//     for tenants with no identity system configured;
+//   · best-effort and never load-bearing: a failed insert logs and the reply
+//     still goes out — but never silently (the .rpc-sweep rule).
+type ConvCheck = { kind: 'knowledge' | 'identity' | 'guardrail' | 'escalation_rule' | 'confidence' | 'connector'; ok: boolean; label: string; detail?: string };
+// deno-lint-ignore no-explicit-any
+async function recordChecks(admin: any, tenantId: string, convId: string | null, deId: string | null, checks: ConvCheck[]): Promise<void> {
+  if (!convId || checks.length === 0) return;
+  try {
+    const { error } = await admin.from('conversation_checks').insert(checks.map((c) => ({
+      tenant_id: tenantId, conversation_id: convId, de_id: deId,
+      kind: c.kind, ok: c.ok, label: c.label.slice(0, 200), detail: c.detail?.slice(0, 500) ?? null,
+    })));
+    if (error) console.error('conversation_checks insert:', error.message);
+  } catch (e) { console.error('conversation_checks insert:', String(e)); }
+}
+const knowledgeChecks = (srcs: string[]): ConvCheck[] =>
+  srcs.slice(0, 8).map((t) => ({ kind: 'knowledge', ok: true, label: `Read: ${t}` }));
+const identityCheck = (v: { verified?: boolean } | null): ConvCheck[] =>
+  v === null ? [] : [v.verified
+    ? { kind: 'identity', ok: true, label: 'Caller identity verified' }
+    : { kind: 'identity', ok: false, label: 'Caller identity could not be verified' }];
+
 // Cheap heuristic: does the query look non-English? (char script + a few
 // common function words). Used only to decide whether to spend a tiny
 // translation call — English queries never pay for it.
@@ -342,6 +369,10 @@ serve(async (req) => {
         await admin.from('de_messages').insert({ tenant_id: tenantId, conversation_id: convId, role: 'user', content: `[${channel}] ${question}` });
         await admin.from('de_messages').insert({ tenant_id: tenantId, conversation_id: convId, role: 'assistant', content: handoff, confidence: 0, escalated: true, delivery: 'sent' });
         await admin.from('de_conversations').update({ status: 'needs_human', last_message_at: nowIso() }).eq('id', convId);
+        await recordChecks(admin, tenantId, convId, subjectDeId, [
+          ...identityCheck(identityVerdict),
+          { kind: 'escalation_rule', ok: false, label: 'Stopped: the conversation reached its length limit' },
+        ]);
         return json({ conversation_id: convId, answer: handoff, confidence: 0, sources: [], needs_escalation: true, status: 'needs_human' });
       }
     }
@@ -450,6 +481,11 @@ serve(async (req) => {
         // Outcome metering (#15): a guardrail block hands off to a human — FREE.
         if (convId) await admin.rpc('record_billable_outcome', { p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId, p_kind: 'escalation', p_source: 'widget' });
         await recordDecision({ decision: 'blocked_guardrail', conf, srcs: [], blocked: true, guardrailRuleId: blockedBy.id, note: `Answer blocked by guardrail "${blockedBy.rule}" and withheld; escalated to human.` });
+        await recordChecks(admin, tenantId, convId, subjectDeId, [
+          ...knowledgeChecks(srcs),
+          ...identityCheck(identityVerdict),
+          { kind: 'guardrail', ok: false, label: `Blocked by the guardrail: ${blockedBy.rule}` },
+        ]);
         return { conversation_id: convId, blocked: true, rule: blockedBy.rule, answer: GUARDRAIL_BLOCK_MESSAGE, confidence: 0, sources: [], needs_escalation: true, status: 'needs_human', delivery: 'blocked', language: lang };
       }
 
@@ -484,6 +520,18 @@ serve(async (req) => {
           conf, srcs, taskId: escTask?.id ?? null,
           note: `${channel} answer ${(lowConf || escalationRuleHit) ? `escalated${escalationRuleHit ? ` (${escalationRuleHit})` : ' (low confidence)'}` : 'held as a draft for human approval'} at ${conf}% confidence with ${srcs.length} knowledge source(s).`,
         });
+        // The single reason THIS conversation stopped, in priority order — a
+        // founder rule outranks low confidence outranks standing draft mode.
+        const stopReason: ConvCheck = escalationRuleHit
+          ? { kind: 'escalation_rule', ok: false, label: `Stopped by the rule: ${escalationRuleHit}` }
+          : lowConf
+            ? { kind: 'confidence', ok: false, label: `Confidence ${conf}% — below the ${confidenceFloor}% send threshold` }
+            : { kind: 'escalation_rule', ok: false, label: 'Held for approval: every reply from this employee is reviewed before it sends' };
+        await recordChecks(admin, tenantId, convId, subjectDeId, [
+          ...knowledgeChecks(srcs),
+          ...identityCheck(identityVerdict),
+          stopReason,
+        ]);
         // The customer sees a holding message — never the un-approved draft.
         const holding = lowConf
           ? "Thanks for your patience — I'm bringing a teammate in to make sure you get this right."
