@@ -1,17 +1,17 @@
 {
-  "at": "2026-08-10T22:55:02.097Z",
+  "at": "2026-08-10T22:56:13.204Z",
   "mode": "fast",
   "failed": 1,
   "results": [
     {
       "section": "typecheck",
       "ok": true,
-      "seconds": 29.7
+      "seconds": 17.6
     },
     {
       "section": "ring0-probes",
       "ok": false,
-      "seconds": 36.1,
+      "seconds": 36.8,
       "detail": "onboarding-bindings-are-runnable: outsourcetel-hq / SaaS onboarding — starter / locations_configured → propose_connector — needs the \"workforce_assistant\" role, which the employee(s) this workspace gives onboarding work to (Onni) do not have"
     },
     {
