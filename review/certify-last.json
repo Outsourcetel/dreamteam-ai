@@ -1,22 +1,23 @@
 {
-  "at": "2026-08-10T21:09:22.746Z",
-  "mode": "full",
-  "failed": 0,
+  "at": "2026-08-10T21:32:15.719Z",
+  "mode": "fast",
+  "failed": 1,
   "results": [
     {
       "section": "typecheck",
       "ok": true,
-      "seconds": 16.2
+      "seconds": 18
     },
     {
       "section": "ring0-probes",
-      "ok": true,
-      "seconds": 2.6
+      "ok": false,
+      "seconds": 38.3,
+      "detail": "execute-perimeter: NEW/CHANGED grant not in allowlist: revert_entity_amendment(p_id uuid)|anon=false|authed=true"
     },
     {
       "section": "migration-ledger",
       "ok": true,
-      "seconds": 5.8
+      "seconds": 4.7
     },
     {
       "section": "migration-numbering",
@@ -26,32 +27,7 @@
     {
       "section": "edge-typecheck",
       "ok": true,
-      "seconds": 1.8
-    },
-    {
-      "section": "golden-path",
-      "ok": true,
-      "seconds": 36.9
-    },
-    {
-      "section": "role-gates",
-      "ok": true,
-      "seconds": 6.4
-    },
-    {
-      "section": "silent-refusals",
-      "ok": true,
-      "seconds": 2.8
-    },
-    {
-      "section": "design-drift",
-      "ok": true,
-      "seconds": 0.8
-    },
-    {
-      "section": "suite",
-      "ok": true,
-      "seconds": 47.2
+      "seconds": 1.7
     }
   ]
 }
