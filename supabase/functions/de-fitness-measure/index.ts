@@ -110,9 +110,18 @@ serve(async (req) => {
     if (budgetBlocked(budgetErr, budget)) return json({ ok: true, skipped: 'ai_budget_exceeded', tenant_id });
 
     // Claim FIRST — the NULL/NULL row is the claim AND the fail-closed record.
-    const { data: claim } = await admin.rpc('claim_amendment_for_fitness', {
+    // 690: READ the error. .rpc() resolves on a Postgres error, and for 3 weeks
+    // a 42703 in the claim was reported here as benign "already_claimed" — the
+    // driver misdiagnosed its own crash as contention. A claim error is a loud
+    // failure, never a skip.
+    const { data: claim, error: claimErr } = await admin.rpc('claim_amendment_for_fitness', {
       p_tenant_id: tenant_id, p_amendment_id: amendment.id, p_entity_kind: 'de', p_entity_id: de_id,
     });
+    if (claimErr) {
+      console.error('claim_amendment_for_fitness FAILED:', claimErr);
+      await reportEdgeError('de-fitness-measure', new Error(`claim failed: ${JSON.stringify(claimErr)}`), { amendment_id: amendment.id });
+      return json({ error: 'claim_failed', amendment_id: amendment.id, detail: (claimErr as { message?: string }).message ?? String(claimErr) }, 500);
+    }
     if (!claim || (claim as { claimed?: boolean }).claimed !== true) return json({ ok: true, skipped: 'already_claimed', amendment_id: amendment.id });
 
     // No resolveDePersona-visible change -> nothing to measure. Leave NULL/NULL.
@@ -151,6 +160,28 @@ serve(async (req) => {
       p_after_metrics: { passed: after.passed ?? null, total: after.total ?? null, status: after.status ?? after.error ?? null, persona: afterPersona },
       p_score_before: scoreBefore, p_score_after: scoreAfter,
     });
+
+    // 690 (G-E): a measured REGRESSION is loud. de_id stays NULL on the notice —
+    // a decided governance task must never become trust evidence about the
+    // employee (the 687 rule) — and the detail names the undo that now exists.
+    if (outcome === 'measured' && scoreBefore !== null && scoreAfter !== null && scoreAfter < scoreBefore) {
+      const { data: deRow } = await admin.from('digital_employees').select('persona_name, name').eq('id', de_id).maybeSingle();
+      const who = deRow?.persona_name || deRow?.name || 'employee';
+      const { data: pending } = await admin.from('human_tasks').select('id')
+        .eq('related_table', 'workforce_entity_amendments').eq('related_id', amendment.id)
+        .eq('status', 'pending').limit(1);
+      if (!pending || pending.length === 0) {
+        await admin.from('human_tasks').insert({
+          tenant_id, type: 'escalation', source: 'de', origin: 'production',
+          title: `Amendment regressed — ${who} scored ${scoreAfter}/${GOLDEN_COUNT} vs ${scoreBefore}/${GOLDEN_COUNT} before`,
+          detail: `The applied persona amendment for ${who} was measured with a back-to-back golden replay `
+            + `(same ${GOLDEN_COUNT} questions, temperature 0): the prior persona passed ${scoreBefore}, the amended one ${scoreAfter}. `
+            + `The change made the employee worse on its own golden set. Reverting restores the prior configuration in one step `
+            + `(revert_entity_amendment) — the amendment record is kept either way.`,
+          related_table: 'workforce_entity_amendments', related_id: amendment.id,
+        });
+      }
+    }
 
     return json({ ok: true, amendment_id: amendment.id, tenant_id, outcome, score_before: scoreBefore, score_after: scoreAfter });
   } catch (err) {
