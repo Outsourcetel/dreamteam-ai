@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { SELECT_CLS, INPUT_CLS, Field, EmptyState } from '../../../../design/primitives';
-import { listActionDefinitions } from '../../../../lib/connectorApi';
-import type { ActionDefinition } from '../../../../lib/connectorApi';
+import { listActionDefinitions, listConnectors } from '../../../../lib/connectorApi';
+import type { ActionDefinition, Connector } from '../../../../lib/connectorApi';
 import type { TemplateItem } from '../../../../lib/onboardingApi';
 
 // ============================================================
@@ -20,6 +20,22 @@ import type { TemplateItem } from '../../../../lib/onboardingApi';
 // value. Only the plain action_key string is ever written onto the item —
 // that is the identifier the rest of the system (resolveParams, de-work's
 // perform_onboarding_item) binds by.
+//
+// REACHABILITY (fix after review): validate_onboarding_items only checks
+// that action_key names an active definition visible to the tenant, and
+// platform actions (tenant_id is null) are visible to EVERY tenant — so
+// nothing stopped a template author binding an action this workspace has no
+// connector to actually run. Offering only reachable verbs at the picker is
+// the cheapest correct fix. "Reachable" reuses the exact predicate
+// get_agentic_tools_for_de already uses to decide what a DE may run: a
+// CONNECTED connector whose category matches the action's, and whose
+// provider matches too (category alone once offered an ERPNext-connected
+// workspace the Stripe/QuickBooks/Xero tools in the same erp_financials
+// category — those could only ever fail, there being no such connector to
+// run them against). provider='internal' actions (generate_invoice,
+// start_onboarding) are engine primitives with their own step types, never
+// reachable through a connector — get_agentic_tools_for_de excludes them
+// outright and this does too.
 // ============================================================
 
 const ACCOUNT = '@account';
@@ -31,19 +47,34 @@ export default function VerbBinding({ item, onChange }: {
   item: TemplateItem;
   onChange: (next: TemplateItem) => void;
 }) {
-  const [actions, setActions] = useState<ActionDefinition[]>([]);
+  const [rawActions, setRawActions] = useState<ActionDefinition[]>([]);
+  const [connectors, setConnectors] = useState<Connector[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (item.owner_type !== 'de') { setLoading(false); return; }
     let cancelled = false;
-    listActionDefinitions()
-      .then(rows => { if (!cancelled) setActions(rows); })
-      .catch(() => { if (!cancelled) setActions([]); })
+    Promise.all([listActionDefinitions(), listConnectors()])
+      .then(([actionRows, connectorRows]) => {
+        if (cancelled) return;
+        setRawActions(actionRows);
+        setConnectors(connectorRows);
+      })
+      .catch(() => { if (!cancelled) { setRawActions([]); setConnectors([]); } })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.owner_type]);
+
+  // Same predicate get_agentic_tools_for_de applies server-side: a CONNECTED
+  // connector whose category matches, and whose provider matches (or the
+  // action names no specific provider, or is the generic 'template' demo
+  // provider) — not category alone.
+  const connected = useMemo(() => connectors.filter(c => c.status === 'connected'), [connectors]);
+  const actions = useMemo(() => rawActions.filter(a =>
+    a.provider !== 'internal' &&
+    connected.some(c => c.category === a.category && (!a.provider || a.provider === c.provider || a.provider === 'template')),
+  ), [rawActions, connected]);
 
   // Hooks above run unconditionally; the early-out has to come after them.
   if (item.owner_type !== 'de') return null;
