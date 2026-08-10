@@ -86,3 +86,39 @@ export function applyReportFilters(
     return true;
   });
 }
+
+export interface ReportSummary {
+  closed: number;
+  /** % closed with no human owner ever attached — null when closed = 0. */
+  deAlonePct: number | null;
+  avgRating: number | null;
+  ratedCount: number;
+  avgCloseMs: number | null;
+}
+
+// ⚠ NULL, NEVER NaN. This renders on day one over FOUR resolved
+// conversations, zero of them rated (measured 2026-08-10). An empty set must
+// read "no data yet", not "NaN% · NaN ★".
+export function summariseReport(rows: SupportConversation[]): ReportSummary {
+  if (rows.length === 0) return { closed: 0, deAlonePct: null, avgRating: null, ratedCount: 0, avgCloseMs: null };
+  const rated = rows.filter(r => r.csat_score != null);
+  const durations = rows
+    .map(r => new Date(closeTimeOf(r)).getTime() - new Date(r.created_at).getTime())
+    .filter(ms => Number.isFinite(ms) && ms >= 0);
+  return {
+    closed: rows.length,
+    deAlonePct: Math.round((rows.filter(r => r.owner_user_id == null).length / rows.length) * 100),
+    avgRating: rated.length ? Math.round((rated.reduce((s, r) => s + (r.csat_score as number), 0) / rated.length) * 10) / 10 : null,
+    ratedCount: rated.length,
+    avgCloseMs: durations.length ? Math.round(durations.reduce((s, d) => s + d, 0) / durations.length) : null,
+  };
+}
+
+export function formatDuration(ms: number | null): string {
+  if (ms == null) return '—';
+  const m = Math.round(ms / 60_000);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}m`;
+  return `${Math.floor(h / 24)}d ${h % 24}h`;
+}

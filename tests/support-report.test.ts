@@ -13,6 +13,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   DATE_PRESETS, inDateRange, applyReportFilters, closeTimeOf,
+  summariseReport, formatDuration,
 } from '../src/lib/supportReport';
 import type { SupportConversation } from '../src/lib/supportInboxApi';
 
@@ -77,5 +78,40 @@ describe('applyReportFilters', () => {
   });
   it('search hits subject text', () => {
     expect(applyReportFilters(rows, { preset: '30d', search: 'vat' }, teams, NOW).map(r => r.id)).toEqual(['c']);
+  });
+});
+
+describe('summariseReport — honest at N=0 and N=4', () => {
+  it('returns nulls, never NaN, on an empty set', () => {
+    const s = summariseReport([]);
+    expect(s.closed).toBe(0);
+    expect(s.deAlonePct).toBeNull();
+    expect(s.avgRating).toBeNull();
+    expect(s.avgCloseMs).toBeNull();
+  });
+  it('deAlonePct counts owner_user_id null as the employee closing alone', () => {
+    const s = summariseReport([
+      conv({ owner_user_id: null }), conv({ owner_user_id: null }),
+      conv({ owner_user_id: 'u1' }), conv({ owner_user_id: 'u2' }),
+    ]);
+    expect(s.deAlonePct).toBe(50);
+  });
+  it('avgRating averages only the rated, and reports how many that was', () => {
+    const s = summariseReport([conv({ csat_score: 5 }), conv({ csat_score: 4 }), conv({})]);
+    expect(s.avgRating).toBe(4.5);
+    expect(s.ratedCount).toBe(2);
+  });
+  it('avgCloseMs is last_message_at − created_at', () => {
+    const s = summariseReport([conv({ created_at: '2026-08-05T08:00:00Z', last_message_at: '2026-08-05T10:10:00Z' })]);
+    expect(s.avgCloseMs).toBe(2 * 3_600_000 + 10 * 60_000);
+  });
+});
+
+describe('formatDuration', () => {
+  it('renders hours+minutes, bare minutes, days+hours, and — for null', () => {
+    expect(formatDuration(2 * 3_600_000 + 10 * 60_000)).toBe('2h 10m');
+    expect(formatDuration(18 * 60_000)).toBe('18m');
+    expect(formatDuration(3 * 86_400_000 + 4 * 3_600_000)).toBe('3d 4h');
+    expect(formatDuration(null)).toBe('—');
   });
 });
