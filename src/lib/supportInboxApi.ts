@@ -69,6 +69,27 @@ export async function listSupportConversations(status?: SupportConversation['sta
   return (data ?? []) as SupportConversation[];
 }
 
+// ── "What the DE already checked" (mig 667, handoff 06 §A) ────────────────
+// Written by the runtime at escalation time; read-only here (RLS: tenant
+// SELECT, no client write policy — fake evidence cannot be backfilled).
+export interface ConversationCheck {
+  id: string;
+  kind: 'knowledge' | 'identity' | 'guardrail' | 'escalation_rule' | 'confidence' | 'connector';
+  ok: boolean;
+  label: string;
+  detail: string | null;
+  created_at: string;
+}
+
+export async function listConversationChecks(conversationId: string): Promise<ConversationCheck[]> {
+  const { data, error } = await supabase.from('conversation_checks')
+    .select('id, kind, ok, label, detail, created_at')
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as ConversationCheck[];
+}
+
 export async function getConversationThread(conversationId: string): Promise<SupportMessage[]> {
   const { data, error } = await supabase.from('de_messages')
     .select('id, conversation_id, role, content, confidence, escalated, delivery, lang, created_at')

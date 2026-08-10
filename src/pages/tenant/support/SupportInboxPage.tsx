@@ -11,6 +11,7 @@ import {
   listSupportConversations, getConversationThread, claimConversation, sendHumanReply,
   approveDraft, setConversationState, subscribeSupport,
   sendEmailReply, approveEmailDraft, handoffBackToDe, getDeDisplayName,
+  listConversationChecks, type ConversationCheck,
   type SupportConversation, type SupportMessage,
 } from '../../../lib/supportInboxApi';
 import type { Page } from '../../../types';
@@ -95,6 +96,7 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
   const [deTeams, setDeTeams] = useState<Map<string, string>>(new Map());
   const [selId, setSelId] = useState<string | null>(null);
   const [thread, setThread] = useState<SupportMessage[]>([]);
+  const [checks, setChecks] = useState<ConversationCheck[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reply, setReply] = useState('');
@@ -123,6 +125,8 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
 
   const loadThread = useCallback(async (id: string) => {
     try { setThread(await getConversationThread(id)); } catch { /* keep old */ }
+    // Checks ride along with the thread. Failure → empty panel, never fake.
+    try { setChecks(await listConversationChecks(id)); } catch { setChecks([]); }
   }, []);
 
   useEffect(() => { void loadConvs(); }, [loadConvs]);
@@ -398,6 +402,24 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
                   <Banner tone="warn" className="mt-2">
                     <span className="font-medium">{deName} stopped and asked for you.</span> {sel.handoff_summary}
                   </Banner>
+                )}
+                {/* What the DE verified BEFORE handing off (mig 667) — the
+                    reason the human can trust the draft without re-doing the
+                    work. Rows exist only for checks that RAN; conversations
+                    escalated before the feature simply show nothing, never a
+                    fabricated ✓. */}
+                {checks.length > 0 && (
+                  <div className="mt-2 rounded-xl border border-dt-border bg-dt-inset p-3">
+                    <p className="text-xs font-medium text-dt-muted mb-1.5">What {deName} already checked</p>
+                    <ul className="space-y-1">
+                      {checks.map(c => (
+                        <li key={c.id} className="flex items-start gap-2 text-xs">
+                          <span aria-hidden className={c.ok ? 'text-dt-ok' : 'text-dt-danger'}>{c.ok ? '✓' : '✕'}</span>
+                          <span className="text-dt-body">{c.label}{c.detail ? <span className="text-dt-muted"> — {c.detail}</span> : null}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
                 {notice && <Banner tone="warn" className="mt-2">{notice}</Banner>}
                 {handback && (
