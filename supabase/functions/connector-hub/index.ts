@@ -437,6 +437,61 @@ const erpnext = {
     return { ok: true, records: linked, unlinked: records.length - linked.length };
   },
 
+  // ── Payments — the EVIDENCE lane (o2c fix 2026-08-10, portfolio gap #3) ──
+  // outstanding_cents already carries ERPNext's own arithmetic; this feeds
+  // reconcile_invoice_payments (mig 529) so every applied payment carries its
+  // evidence: which Payment Entry, allocated to which invoice, matched how.
+  // Payment Entry references its Sales Invoices in a CHILD TABLE — same
+  // two-call join discipline as syncContacts' Dynamic Link read above: a
+  // failed child read is reported, never treated as "no allocations".
+  async syncPayments(c: Ctx): Promise<{ ok: boolean; error?: string; items?: Array<Record<string, unknown>> }> {
+    const pq = new URLSearchParams({
+      fields: '["name","posting_date","paid_amount","party"]',
+      filters: JSON.stringify([['docstatus', '=', 1], ['payment_type', '=', 'Receive']]),
+      order_by: 'posting_date desc',
+      limit_page_length: '100',
+    });
+    const pr = await httpJson(`${c.baseUrl}/api/resource/Payment%20Entry?${pq}`, { headers: this.hdrs(c) });
+    if (!pr.ok) return { ok: false, error: pr.error };
+    const entries = (pr.body as { data?: Array<Record<string, unknown>> })?.data ?? [];
+    if (entries.length === 0) return { ok: true, items: [] };
+
+    const rq = new URLSearchParams({
+      fields: '["parent","reference_name","allocated_amount"]',
+      filters: JSON.stringify([['reference_doctype', '=', 'Sales Invoice']]),
+      limit_page_length: '500',
+      parent: 'Payment Entry',
+    });
+    const rr = await httpJson(`${c.baseUrl}/api/resource/Payment%20Entry%20Reference?${rq}`, { headers: this.hdrs(c) });
+    if (!rr.ok) return { ok: false, error: `payments read but their invoice references did not: ${rr.error ?? ''}`.trim() };
+    const refs = (rr.body as { data?: Array<Record<string, unknown>> })?.data ?? [];
+    const refsOf = new Map<string, Array<{ invoice: string; cents: number }>>();
+    for (const r of refs) {
+      const parent = String(r.parent ?? '');
+      if (!parent) continue;
+      (refsOf.get(parent) ?? refsOf.set(parent, []).get(parent)!)
+        .push({ invoice: String(r.reference_name ?? ''), cents: Math.round(Number(r.allocated_amount ?? 0) * 100) });
+    }
+
+    // One reconcile item PER ALLOCATION (external_ref '<PE>:<SINV>' keeps the
+    // mig-529 idempotency per allocation — a split payment is N certain rows,
+    // never one ambiguous blob). A PE with no invoice reference goes in whole,
+    // for the exactly-one amount/date match or an honest 'unmatched'.
+    const items: Array<Record<string, unknown>> = [];
+    for (const e of entries) {
+      const name = String(e.name ?? '');
+      const paidOn = e.posting_date ? String(e.posting_date) : null;
+      const allocs = (refsOf.get(name) ?? []).filter((a) => a.invoice && a.cents > 0);
+      if (allocs.length > 0) {
+        for (const a of allocs) items.push({ source: 'erpnext', external_ref: `${name}:${a.invoice}`, amount_cents: a.cents, paid_on: paidOn, invoice_ref: a.invoice });
+      } else {
+        const cents = Math.round(Number(e.paid_amount ?? 0) * 100);
+        if (cents > 0) items.push({ source: 'erpnext', external_ref: name, amount_cents: cents, paid_on: paidOn });
+      }
+    }
+    return { ok: true, items };
+  },
+
   async syncTickets(c: Ctx): Promise<{ ok: boolean; error?: string; records?: Array<Record<string, unknown>> }> {
     const qs = new URLSearchParams({
       fields: '["name","subject","description","status","priority","customer","raised_by"]',
@@ -6758,18 +6813,41 @@ serve(async (req) => {
         if (upErr) errors.push(`${rec.invoice_external_ref}: ${upErr.message}`.slice(0, 160));
         else upserted += 1;
       }
+      // ── Payments leg (o2c fix 2026-08-10): same sync, same cadence — the
+      // invoice book and its payment evidence must never ride separate pipes
+      // (two unconnected pipes is how this tenant once got a confident FALSE
+      // all-clear over $431k). Best-effort: a payments failure is reported in
+      // the result and the audit line, and never fails the invoice sync that
+      // already succeeded.
+      let payments: Record<string, unknown> | undefined;
+      if (typeof (adapter as { syncPayments?: unknown }).syncPayments === 'function') {
+        const payRes = await (adapter as unknown as { syncPayments: (c: typeof ctx) => Promise<{ ok: boolean; error?: string; items?: Array<Record<string, unknown>> }> }).syncPayments(ctx);
+        if (!payRes.ok) {
+          payments = { ok: false, error: payRes.error ?? 'payments_sync_failed' };
+        } else if ((payRes.items ?? []).length === 0) {
+          payments = { ok: true, fetched: 0 };
+        } else {
+          const { data: recon, error: reconErr } = await admin.rpc('reconcile_invoice_payments', {
+            p_tenant_id: tenantId, p_payments: payRes.items, p_window_days: 7,
+          });
+          payments = reconErr
+            ? { ok: false, error: reconErr.message }
+            : { fetched: (payRes.items ?? []).length, ...((recon ?? {}) as Record<string, unknown>) };
+        }
+      }
       const ms = Date.now() - started;
       const health = await recordHealth(errors.length === 0, errors[0] ?? null);
       await admin.from('connectors').update({ last_sync_at: new Date().toISOString() }).eq('id', connectorId);
       await audit('connector_sync',
         `Financial sync from ${connector.provider} — ${upserted}/${records.length} invoice(s) upserted into the AR tables in ${ms}ms${errors.length ? `, ${errors.length} error(s)` : ''}`,
-        { hub_action: 'sync_financials', fetched: records.length, upserted, errors: errors.slice(0, 5), latency_ms: ms, health });
+        { hub_action: 'sync_financials', fetched: records.length, upserted, errors: errors.slice(0, 5), latency_ms: ms, health, ...(payments ? { payments } : {}) });
       // "contacts" says WHY a chase would fall back to an internal note, so a
       // blank email column is never left ambiguous between "no data" and "no
       // permission" — one is the customer's record to fix, the other is an API
       // scope to grant, and the visible symptom of both is identical.
       return json({ ok: errors.length === 0, fetched: records.length, upserted, errors: errors.slice(0, 5), latency_ms: ms, health,
-        ...(sr.contacts ? { contacts: sr.contacts } : {}) });
+        ...(sr.contacts ? { contacts: sr.contacts } : {}),
+        ...(payments ? { payments } : {}) });
     }
 
     // ════════ reconcile_financials — DRIFT SENTINEL (B3) ════════
