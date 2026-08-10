@@ -8,7 +8,8 @@ export type PlatformPage =
   | 'platform_team'
   | 'platform_health'
   | 'platform_revenue'
-  | 'platform_security';
+  | 'platform_security'
+  | 'platform_ai_engine';
 
 export type TenantPage =
   // ── Home ──────────────────────────────────────────

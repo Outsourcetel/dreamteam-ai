@@ -62,6 +62,7 @@ const PAGE_ACCESS: Partial<Record<Page, UserRole[]>> = {
   platform_health: [],
   platform_revenue: [],
   platform_security: [],
+  platform_ai_engine: [],
   // Trust & Architecture is an internal transparency doc ("how DreamTeam is
   // built · what we haven't done yet"), not a tenant feature.
   gov_trust: [],

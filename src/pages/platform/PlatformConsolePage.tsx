@@ -12,6 +12,7 @@ import {
 } from '../../lib/api';
 import MfaEnrollmentPanel from '../../components/MfaEnrollmentPanel';
 import PlatformEmailKeyPanel from '../../components/PlatformEmailKeyPanel';
+import PlatformAIEnginePanel from '../../components/PlatformAIEnginePanel';
 import PlatformTeamPage from './PlatformTeamPage';
 
 const dbTenantToTenant = (t: DBTenant): Tenant => ({
@@ -665,6 +666,18 @@ const PlatformConsolePage = ({
 
   if (page === 'platform_team') {
     return <PlatformTeamPage />;
+  }
+
+  if (page === 'platform_ai_engine') {
+    // The July promise: the AI engine reachable WITHOUT Remote-Accessing into
+    // a tenant. Status is served by the edge runtime (ai-engine-status) so
+    // env-secret keys count; per-tenant BYO keys stay on each tenant's own
+    // Settings — this page is the PLATFORM's credential set and chain.
+    return (
+      <div className="flex-1 p-6">
+        <PlatformAIEnginePanel />
+      </div>
+    );
   }
 
   if (page === 'platform_security') {
