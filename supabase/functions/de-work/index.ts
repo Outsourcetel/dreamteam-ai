@@ -1088,14 +1088,21 @@ async function dispatchTool(
       // `executed_after_approval` row (claim_gated_action_execution), so a gate
       // that has actually run is never the newest.
       //
-      // NO OUTCOME FALLS THROUGH. Pending means wait; approved-but-not-yet-run
-      // means it is in flight; and REJECTED means a person has already said no
-      // to exactly this — re-proposing it would loop the employee against a
-      // human decision forever, and a rejection leaves NO 'rejected' row on
+      // NO OUTCOME FALLS THROUGH — the ladder fails CLOSED on anything it does
+      // not recognise. Pending means wait; approved-but-not-yet-run means it is
+      // in flight; and every other task status ('rejected', 'expired' — mig 642
+      // added that one and the checked-in baseline schema does not show it —
+      // and whatever is added next) is a person's terminal decision NOT to have
+      // this run. Re-proposing over one of those loops the employee against a
+      // human forever, and a rejection leaves NO 'rejected' row on
       // action_executions for the failure counter above to catch (the decision
-      // lands on the human_task). That gap is why this is a status read and not
-      // just a decision read.
+      // lands on the human_task). That gap is why this reads the task's status
+      // and not only the execution's decision.
       const newest = prior[0];
+      const gateDecided = async (why: string, note: string) => {
+        if (curStatus !== 'blocked') await recordStatus('blocked', note);
+        return { result: { error: why } };
+      };
       if (newest && (newest.decision === 'human_gated_destructive' || newest.decision === 'human_gated_trust')) {
         let taskStatus = 'pending';   // no task row readable ⇒ assume it is still out there
         if (newest.task_id) {
@@ -1103,13 +1110,22 @@ async function dispatchTool(
             .select('status').eq('id', newest.task_id).eq('tenant_id', tenantId).maybeSingle();
           taskStatus = String((t as { status?: string } | null)?.status ?? 'pending');
         }
-        if (taskStatus === 'rejected') {
-          if (curStatus !== 'blocked') {
-            await recordStatus('blocked', `A person rejected the proposed "${boundActionKey}" for this item.`);
-          }
-          return { result: { error: `A person REJECTED the proposal to run "${boundActionKey}" for "${itemLabel}". That decision stands — the item is blocked and it is not yours to retry. Move on to another item.` } };
+        if (taskStatus === 'pending' || taskStatus === 'approved') {
+          return { result: { error: `"${itemLabel}" has already been proposed and is ${taskStatus === 'approved' ? 'approved and being carried out' : 'waiting for a person to approve it'}. Do NOT propose it again — move on to another item.` } };
         }
-        return { result: { error: `"${itemLabel}" has already been proposed and is ${taskStatus === 'approved' ? 'approved and being carried out' : 'waiting for a person to approve it'}. Do NOT propose it again — move on to another item.` } };
+        return await gateDecided(
+          `A person already decided against running "${boundActionKey}" for "${itemLabel}" (the approval is ${taskStatus}). That decision stands — the item is blocked and it is not yours to retry. Move on to another item.`,
+          `The approval to run "${boundActionKey}" is ${taskStatus}; not retrying.`,
+        );
+      }
+      // A lapsed approval (mig 642: approved, never carried out, then made
+      // terminal) is the same shape of answer — the organisation did not act.
+      // A third proposal is not what fixes that.
+      if (newest && newest.decision === 'expired') {
+        return await gateDecided(
+          `An earlier approval to run "${boundActionKey}" for "${itemLabel}" lapsed without being carried out. The item is blocked for a person to look at — do not propose it again.`,
+          `An earlier approval to run "${boundActionKey}" lapsed without being carried out.`,
+        );
       }
 
       // ── Resolve the parameters. '@account' from the project's customer,
