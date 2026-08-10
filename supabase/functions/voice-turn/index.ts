@@ -173,6 +173,11 @@ interface LiveStreamOpts {
   /** When true, the final chunk carries an x_dreamteam diagnostic object.
    *  Gated by the gateway secret; the platform ignores unknown fields. */
   debug: boolean;
+  /** True when the assistant's configured URL carries exercise=1 — a TEST
+   *  assistant. Guardrail blocks it provokes are stamped origin='exercise'
+   *  so they never count as trust evidence (mig 682; the 2026-08-04 voice
+   *  spike's four unmarked blocks held a real DE's ladder for a month). */
+  isExercise: boolean;
 }
 
 /**
@@ -263,7 +268,8 @@ function liveStream(o: LiveStreamOpts): Response {
             p_tenant_id: o.tenantId, p_actor: o.personaName, p_actor_type: 'de',
             p_action: `Guardrail blocked a voice utterance before synthesis — rule "${blocked.rule.rule}"`,
             p_category: 'guardrail_block',
-            p_detail: { kind: 'voice_utterance_blocked', de_id: o.deId, rule_id: blocked.rule.id, channel: 'voice', streamed: true, spoken_before_block: spoken.length },
+            p_detail: { kind: 'voice_utterance_blocked', de_id: o.deId, rule_id: blocked.rule.id, channel: 'voice', streamed: true, spoken_before_block: spoken.length,
+              origin: o.isExercise ? 'exercise' : 'production' },   // 682: a test-provoked block is the control being tested
           });
           if (error) console.error(`[voice-turn] GUARDRAIL BLOCK NOT AUDITED: ${error.message}`);
         } catch (e) {
@@ -328,6 +334,9 @@ serve(async (req) => {
   const uuidOf = (v: string | null) => (v ?? '').match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0] ?? '';
   const tenantId = uuidOf(url.searchParams.get('tenant'));
   const deId = uuidOf(url.searchParams.get('de'));
+  // Configured per assistant, like tenant/de: a TEST assistant's URL carries
+  // exercise=1; production assistants never do. See LiveStreamOpts.isExercise.
+  const isExercise = url.searchParams.get('exercise') === '1';
   if (!tenantId || !deId) {
     return json({ error: 'tenant_and_de_required' }, 400);
   }
@@ -400,6 +409,7 @@ serve(async (req) => {
       personaName: persona.name, rulesP, t0,
       debug: req.headers.get('x-voice-debug') === secret,
       extra: timings(),
+      isExercise,
     });
   }
 
@@ -432,7 +442,8 @@ serve(async (req) => {
         p_tenant_id: tenantId, p_actor: persona.name, p_actor_type: 'de',
         p_action: `Guardrail blocked a voice utterance before synthesis — rule "${hit.rule.rule}"`,
         p_category: 'guardrail_block',
-        p_detail: { kind: 'voice_utterance_blocked', de_id: deId, rule_id: hit.rule.id, channel: 'voice' },
+        p_detail: { kind: 'voice_utterance_blocked', de_id: deId, rule_id: hit.rule.id, channel: 'voice',
+          origin: isExercise ? 'exercise' : 'production' },   // 682
       });
       text = SAFE_REDIRECT;
       // A blocked turn never carries tool calls either — nothing acts on it.
