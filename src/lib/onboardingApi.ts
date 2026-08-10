@@ -12,17 +12,27 @@ import { getSessionTenantId, CustomerApiError, isMissingTableError } from './cus
 
 // ── Types ─────────────────────────────────────────────────────────
 
-export type OnboardingPhase = 'kickoff' | 'data' | 'config' | 'validation' | 'golive';
+export type OnboardingPhase = 'kickoff' | 'data' | 'config' | 'validation' | 'golive' | 'handoff';
 export type OnboardingOwnerType = 'human' | 'de' | 'either';
 export type OnboardingItemStatus = 'pending' | 'in_progress' | 'done' | 'blocked' | 'signed_off';
 export type OnboardingProjectStatus = 'active' | 'on_hold' | 'completed' | 'cancelled';
 
+/**
+ * The phase vocabulary, in order. This array IS the ordering: the phase rail,
+ * the "past phase" styling, the editor's dropdown and currentPhase below all
+ * read it, so a phase is added here and nowhere else on the client.
+ * `handoff` (mig 685) comes after go-live on purpose — onboarding is not over
+ * when the system is live, it is over when support and success own the
+ * customer. The server's matching allow-list lives in
+ * public.validate_onboarding_items.
+ */
 export const PHASES: Array<{ key: OnboardingPhase; label: string }> = [
   { key: 'kickoff', label: 'Kickoff' },
   { key: 'data', label: 'Data' },
   { key: 'config', label: 'Configuration' },
   { key: 'validation', label: 'Validation' },
   { key: 'golive', label: 'Go-live' },
+  { key: 'handoff', label: 'Handoff' },
 ];
 
 export type VerifyMatch = 'exists' | 'contains';
@@ -391,7 +401,13 @@ export function phaseOfItem(items: TemplateItem[], key: string): OnboardingPhase
   return items.find(i => i.key === key)?.phase ?? 'kickoff';
 }
 
-/** Current phase = first phase with an unfinished item (or 'golive' when done). */
+/**
+ * Current phase = first phase with an unfinished item, or the LAST phase when
+ * everything is done. That fallback used to be the literal 'golive'; with the
+ * handoff phase (mig 685) a finished project would have reported itself one
+ * phase short of the end, so it now reads the ordering from PHASES rather than
+ * naming a phase that only happened to be last.
+ */
 export function currentPhase(items: TemplateItem[], state: ProjectItemState[]): OnboardingPhase {
   for (const p of PHASES) {
     const keys = items.filter(i => i.phase === p.key).map(i => i.key);
@@ -400,7 +416,7 @@ export function currentPhase(items: TemplateItem[], state: ProjectItemState[]): 
       return !s || (s.status !== 'done' && s.status !== 'signed_off');
     })) return p.key;
   }
-  return 'golive';
+  return PHASES[PHASES.length - 1].key;
 }
 
 export function daysUntil(dateStr: string | null): number | null {

@@ -697,7 +697,7 @@ export default function CustomerOnboardingLive({ setPage }: { setPage?: (p: Page
                 title="No onboarding projects yet"
                 body={hasPublished
                   ? 'Create your first implementation project — pick a customer account and a published checklist template.'
-                  : 'Start by installing the 10-step starter template (kickoff → data → config → validation → go-live with human sign-off gates), then create your first project.'}
+                  : 'Start by installing the 16-step starter template (kickoff → data → config → validation → go-live → handoff, with human sign-off gates), then create your first project.'}
                 primaryLabel={hasPublished ? (accounts.length > 0 ? 'New project' : undefined) : 'Install starter template'}
                 onPrimary={hasPublished ? (accounts.length > 0 ? () => setShowNew(true) : undefined) : () => void installStarter()}
                 secondaryLabel={!hasPublished ? 'Build a template from scratch' : undefined}
