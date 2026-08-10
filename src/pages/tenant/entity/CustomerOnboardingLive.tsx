@@ -20,6 +20,8 @@ import type {
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
 import { CATEGORIES, CATEGORY_LABELS, CATEGORY_OPS } from '../../../lib/categoryContracts';
 import type { SystemCategory } from '../../../lib/categoryContracts';
+import VerbBinding from './onboarding/VerbBinding';
+import ProjectRequirements from './onboarding/ProjectRequirements';
 
 // ============================================================
 // Customer Onboarding — LIVE (migration 022).
@@ -194,6 +196,15 @@ function ProjectDetail({ project, onBack, onChanged, setPage }: {
 
       {toast && <div className="mb-3 rounded-xl border border-emerald-800/50 bg-emerald-500/10 px-4 py-2.5 text-xs text-emerald-300">✓ {toast}</div>}
       {err && <div className="mb-3 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-2.5 text-xs text-rose-300">{err}</div>}
+
+      {version && (
+        <ProjectRequirements
+          project={proj}
+          version={version}
+          accountName={proj.customer_accounts?.name || project.customer_accounts?.name || 'Account'}
+          onSaved={next => { setProj(p => ({ ...p, requirements: next })); onChanged(); }}
+        />
+      )}
 
       {!version ? <LiveLoadingSkeleton rows={5} /> : (
         PHASES.map(p => {
@@ -540,6 +551,7 @@ function TemplateEditor({ template, onClose, onSaved }: {
                   <VerifyEditor item={it} onChange={patch => setItem(idx, patch)} />
                 </div>
               )}
+              <VerbBinding item={it} onChange={next => setItem(idx, next)} />
             </div>
           ))}
           <button onClick={addItem} className={btnGhost}>+ Add item</button>

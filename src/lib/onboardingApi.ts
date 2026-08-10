@@ -119,6 +119,9 @@ export interface OnboardingProject {
   updated_at: string;
   /** joined account (select alias) */
   customer_accounts?: { name: string } | null;
+  /** mig 674 — answers to bound items' '@ask' params, keyed
+   *  '<action_key>.<param>'. See resolveParams in onboardingTypes.ts. */
+  requirements: Record<string, string>;
 }
 
 export interface ItemUpdateResult {
@@ -225,6 +228,7 @@ export async function listProjects(): Promise<OnboardingProject[]> {
   const tid = await requireTenantId();
   const { data, error } = await supabase
     .from('onboarding_projects')
+    // '*' already carries the new `requirements` column — nothing to add here.
     .select('*, customer_accounts(name)')
     .eq('tenant_id', tid)
     .order('created_at', { ascending: false });
@@ -236,6 +240,7 @@ export async function getProject(projectId: string): Promise<OnboardingProject |
   const tid = await requireTenantId();
   const { data, error } = await supabase
     .from('onboarding_projects')
+    // '*' already carries the new `requirements` column — nothing to add here.
     .select('*, customer_accounts(name)')
     .eq('tenant_id', tid).eq('id', projectId).maybeSingle();
   if (error) raise('getProject', error);
@@ -246,7 +251,7 @@ export async function getProjectForAccount(accountId: string): Promise<Onboardin
   const tid = await requireTenantId();
   const { data, error } = await supabase
     .from('onboarding_projects')
-    .select('id, name, status, progress_pct, tenant_id, account_id, template_version_id, target_golive, items_state, completed_at, created_at, updated_at')
+    .select('id, name, status, progress_pct, tenant_id, account_id, template_version_id, target_golive, items_state, requirements, completed_at, created_at, updated_at')
     .eq('tenant_id', tid).eq('account_id', accountId)
     .order('created_at', { ascending: false }).limit(1).maybeSingle();
   if (error) raise('getProjectForAccount', error);
@@ -293,6 +298,26 @@ export async function updateItem(
   const res = expectOk('updateItem', data as ItemUpdateResult & { error?: string });
   notify();
   return res;
+}
+
+/**
+ * Records a human's answers to bound items' '@ask' params (mig 674), keyed
+ * '<action_key>.<param>' — see resolveParams in onboardingTypes.ts, the same
+ * convention perform_onboarding_item reads server-side. A plain table write
+ * rather than an RPC: there is no state machine here, just an answer sheet,
+ * and RLS plus the tenant_id filter below are the only gates it needs.
+ */
+export async function saveRequirements(
+  projectId: string,
+  requirements: Record<string, string>,
+): Promise<void> {
+  const tid = await requireTenantId();
+  const { error } = await supabase
+    .from('onboarding_projects')
+    .update({ requirements })
+    .eq('id', projectId).eq('tenant_id', tid);
+  if (error) raise('saveRequirements', error);
+  notify();
 }
 
 export async function setProjectStatus(
