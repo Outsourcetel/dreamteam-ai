@@ -7105,7 +7105,42 @@ serve(async (req) => {
       // destructive action must be gated WITHOUT ever attempting to
       // render or call the external system first).
       const summary = plainLanguagePreview(def, validated.values);
-      const dedupeKey = def.risk.idempotent ? null : `${def.id}:${JSON.stringify(validated.values)}`;
+      // ── CALLER-SUPPLIED DEDUPE KEY (mig 675's missing writer) ──────────────
+      // `dedupe_key` is not only an idempotency token in this codebase; it is
+      // the LINKAGE a downstream matcher reads. `advance_dunning_cadence`
+      // (mig 589) keys on `dunning:<invoice>:<stage>` and
+      // `complete_onboarding_item_from_execution` (mig 675) keys on
+      // `onboarding:<project>:<item>`. Until now this line computed the key
+      // UNCONDITIONALLY with no caller override, so the only path that can run
+      // a registered action was structurally unable to produce either shape —
+      // mig 675's trigger had no writer at all (the mig-661 failure class, one
+      // notch worse). A caller that knows what the work IS may now say so.
+      //
+      // TRUSTED CALLERS ONLY. execute_action is reachable by an ordinary
+      // authenticated browser session too (src/lib/connectorApi.ts), and a
+      // caller-chosen key is a caller-chosen TRIGGER — accepting one from the
+      // browser would let any signed-in user drive mig 675's completion path
+      // by naming a project and item. Service-role / dispatch-cron callers are
+      // already trusted to assert `tenant_id` verbatim a few lines above; this
+      // rides the same boundary and no wider.
+      //
+      // FALLBACK IS BYTE FOR BYTE what it was. No existing caller passes
+      // dedupe_key (enumerated across supabase/functions + src at the time of
+      // writing), so every caller alive today takes the identical branch.
+      // Note the override deliberately wins over the `idempotent -> null`
+      // branch: an idempotent verb still needs its linkage recorded, and
+      // nothing suppresses on this column (check_action_idempotency has zero
+      // callers and action_executions_dedupe_idx is NOT unique).
+      const rawDedupeKey = typeof payload.dedupe_key === 'string' ? payload.dedupe_key.trim() : '';
+      if (rawDedupeKey && rawDedupeKey.length > 300) {
+        // Never truncate: a clipped key still PARSES for the trigger and then
+        // matches no item — a silent no-op is the worst available outcome.
+        return json({ ok: false, error: 'dedupe_key_too_long',
+          detail: 'The supplied dedupe_key exceeds 300 characters. Nothing was sent.' }, 400);
+      }
+      const suppliedDedupeKey = rawDedupeKey && (isServiceRole || isDispatchCron) ? rawDedupeKey : null;
+      const dedupeKey = suppliedDedupeKey
+        ?? (def.risk.idempotent ? null : `${def.id}:${JSON.stringify(validated.values)}`);
 
       // Already-approved re-entry: a human_task tied to a prior
       // human_gated_* execution row was just approved; the caller
