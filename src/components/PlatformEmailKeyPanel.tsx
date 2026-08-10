@@ -107,6 +107,94 @@ export default function PlatformEmailKeyPanel() {
         </p>
       )}
       {status === 'error' && error && <p className="text-xs text-rose-300 mt-2">{error}</p>}
+
+      <InboundSecretField />
+    </div>
+  );
+}
+
+// ── Inbound email — the receiving half (email-inbound fn, docs/19 G1). ─────
+// The pipeline is deployed and FAIL-CLOSED: without this signing secret it
+// answers 503 "inbound email is dormant" (probed live 2026-08-11). The secret
+// is minted BY RESEND when the webhook endpoint is created, so the setup is
+// inherently: configure there, paste here. Same set-only discipline as the
+// key above — never read back, never shown again.
+function InboundSecretField() {
+  const [value, setValue] = useState('');
+  const [isSet, setIsSet] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    hasPlatformConfigKey('RESEND_INBOUND_SECRET').then(setIsSet).catch(() => setIsSet(false));
+  }, []);
+
+  const save = async () => {
+    const key = value.trim();
+    if (!key) return;
+    if (!key.startsWith('whsec_') || key.length < 20) {
+      setStatus('error');
+      setError('That does not look like a webhook signing secret — Resend’s begin “whsec_”. Nothing was saved.');
+      return;
+    }
+    setSaving(true); setError(null);
+    const ok = await savePlatformConfig({ RESEND_INBOUND_SECRET: key });
+    setSaving(false);
+    if (ok) { setStatus('saved'); setIsSet(true); setValue(''); }
+    else { setStatus('error'); setError('Save failed — this needs a platform administrator with billing access.'); }
+  };
+
+  return (
+    <div className="mt-5 pt-5 border-t border-dt-border">
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-sm font-semibold text-white">Inbound email — webhook signing secret</h2>
+        {isSet === null
+          ? <span className="text-xs text-dt-muted">checking…</span>
+          : isSet
+            ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured</span>
+            : <span className="text-xs text-dt-muted bg-slate-600/50 px-2 py-0.5 rounded">Not set — inbound email is dormant</span>}
+      </div>
+
+      <p className="text-xs text-dt-support mb-2">
+        Lets customers reach the workforce by <strong>writing an email</strong>. In Resend: add a receiving
+        domain (and its MX records at your DNS host), then create a webhook for the
+        <strong> email.received</strong> event pointing at the address below, and paste the signing secret
+        it gives you here.
+      </p>
+      <p className="text-xs font-mono text-dt-support bg-dt-inset border border-dt-border rounded-lg px-3 py-2 mb-2 break-all select-all">
+        https://rfsvmhcqeiyrxivbmpel.supabase.co/functions/v1/email-inbound
+      </p>
+      <p className="text-xs text-dt-support mb-3">
+        Mail routes to a workspace by address: <span className="font-mono">&lt;workspace-slug&gt;@your-receiving-domain</span> —
+        e.g. <span className="font-mono">outsourcetel-hq@in.yourdomain.com</span>. Replies are always
+        drafted for approval first; nothing sends on its own.
+      </p>
+
+      <div className="flex gap-2">
+        <input
+          type="password"
+          value={value}
+          onChange={(e) => { setValue(e.target.value); setStatus('idle'); setError(null); }}
+          placeholder={isSet ? 'Enter new secret to replace existing…' : 'whsec_…'}
+          className="flex-1 bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+        />
+        <button
+          onClick={() => void save()}
+          disabled={saving || !value.trim()}
+          className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl disabled:opacity-40 transition-all"
+        >
+          {saving ? 'Saving…' : isSet ? 'Replace secret' : 'Save secret'}
+        </button>
+      </div>
+
+      {status === 'saved' && (
+        <p className="text-xs text-emerald-400 mt-2">
+          Saved — inbound email is live the moment Resend&rsquo;s webhook starts delivering. Send a test
+          email to your receiving address and watch it arrive in the Support inbox.
+        </p>
+      )}
+      {status === 'error' && error && <p className="text-xs text-rose-300 mt-2">{error}</p>}
     </div>
   );
 }
