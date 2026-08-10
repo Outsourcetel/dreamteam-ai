@@ -422,6 +422,40 @@ const sections = [
     return { ok: failures.length === 0, detail: failures.join('\n') };
   }),
   shell('migration-ledger', 'npm', ['run', '-s', 'migrate:status']),
+  // ── No NEW duplicate migration numbers ─────────────────────────────────
+  // Two agents computing `ls | tail -1` both pick the same number. It has
+  // happened 19 times in this repo's history (514, 520, 526, 540-544, 574-577,
+  // …) and twice on 2026-08-10 alone. It is a RATCHET, not a clean-sweep: the
+  // existing 19 cannot be renamed, because public.schema_migrations keys on
+  // FILENAME and renaming an applied migration turns it into an ORPHANED
+  // ledger row plus a PENDING file. So the rule is only: no new ones.
+  // `npm run migrate:next` is what prevents them; this is what catches them.
+  section('migration-numbering', () => {
+    const DUP_CEILING = 19;
+    const names = readdirSync('supabase/migrations').filter((f) => f.endsWith('.sql'));
+    const byNum = new Map();
+    for (const n of names) {
+      const m = /^(\d+)_/.exec(n);
+      if (!m) continue;
+      if (!byNum.has(m[1])) byNum.set(m[1], []);
+      byNum.get(m[1]).push(n);
+    }
+    const dups = [...byNum.entries()].filter(([, fs]) => fs.length > 1);
+    if (dups.length > DUP_CEILING) {
+      const worst = dups.slice(-(dups.length - DUP_CEILING))
+        .map(([k, fs]) => `${k}: ${fs.join(' , ')}`).join('\n');
+      return {
+        ok: false,
+        detail: `${dups.length} duplicate migration numbers, ceiling is ${DUP_CEILING}. `
+          + `Claim numbers with: npm run migrate:next -- my_change\n${worst}`,
+      };
+    }
+    // Ratchet DOWN only: if someone genuinely resolves one, lower the ceiling.
+    if (dups.length < DUP_CEILING) {
+      return { ok: true, detail: `duplicates down to ${dups.length} — lower DUP_CEILING in certify.mjs to ${dups.length}` };
+    }
+    return { ok: true, detail: '' };
+  }),
   section('edge-typecheck', () => {
     const { counts, total, unattributed, fns } = edgeErrorCounts();
     if (PIN_EDGE) {

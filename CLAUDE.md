@@ -53,6 +53,41 @@ These are not stylistic. Each one is here because its absence has already cost
 this project real defects: a governed refusal reported to the user as success,
 five confident findings that were all wrong, a gate that had never fired.
 
+## Migrations: claim the number, commit before you apply
+
+More than one agent works this repo at once, sometimes in the same working
+tree. Two rules, because both were broken on 2026-08-10 and one of them put
+schema into production that the repository could not rebuild.
+
+**1. Never pick the number yourself.**
+
+```bash
+npm run migrate:next -- what_it_does     # creates + prints supabase/migrations/NNN_what_it_does.sql
+```
+
+`ls | tail -1` is wrong, and quietly. "Taken" is the union of three sources that
+routinely disagree — local files, `origin/main`, and the **production ledger**.
+On the day this was written those read 666 / 668 / 668: anyone counting locally
+would have re-used a number already applied to production. The command claims
+the file with `O_EXCL`, so two agents racing cannot both win — and because the
+file lands on disk immediately, it is a claim the other agent can see.
+
+Run it with no slug to look without claiming.
+
+**2. Commit the migration before applying it.** `db-query.mjs` now refuses an
+untracked migration file. An applied-but-uncommitted migration is the worst
+state available: the effect is permanent, the source is one `rm` from gone, and
+a rebuilt environment differs silently. If you genuinely mean to, say so out
+loud with `--allow-uncommitted`.
+
+**Why the format cannot change.** The obvious fix is timestamps. It does not
+work here: migrations replay in filename order and `20260810…` sorts *before*
+`666…`, so every new migration would land in the middle of history. Renumbering
+is worse — `public.schema_migrations` keys on **filename**, so renaming an
+applied migration turns it into an orphaned ledger row plus a pending file.
+The 19 pre-existing duplicate numbers are therefore permanent; `certify` ›
+`migration-numbering` ratchets against a 20th.
+
 ## Scope discipline
 
 Do what was asked, in full. Do not quietly widen it — if you notice something

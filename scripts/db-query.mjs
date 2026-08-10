@@ -35,6 +35,38 @@ function readSql(argv) {
 const token = readToken();
 const query = readSql(process.argv.slice(2));
 
+// ── Refuse to apply a migration git has never seen ────────────────────────
+// On 2026-08-10 two migrations (667, 668) were applied to PRODUCTION while
+// their files existed in no git tree — not local, not origin. Production was
+// running schema the repository could not reproduce, and nothing said so until
+// certify's ORPHANED check caught it hours later. An applied-but-uncommitted
+// migration is the worst state available: the effect is permanent, the source
+// is one `rm` away from gone, and a rebuilt environment silently differs.
+//
+// The escape hatch is deliberate and narrow. It exists so nobody is BLOCKED —
+// only so that shipping an untracked migration has to be a decision somebody
+// typed, rather than a thing that happens by default.
+{
+  const f = process.argv.slice(2).find((a) => !a.startsWith('--'));
+  if (f && /supabase[\\/]migrations[\\/]/.test(f) && !process.argv.includes('--allow-uncommitted')) {
+    const { execSync } = await import('node:child_process');
+    let tracked = false;
+    try {
+      execSync(`git ls-files --error-unmatch "${f}"`, { stdio: 'ignore' });
+      tracked = true;
+    } catch { /* not tracked */ }
+    if (!tracked) {
+      console.error(`REFUSED: ${f} is not committed to git.`);
+      console.error('  Applying it would put schema in production that the repo cannot rebuild');
+      console.error('  — exactly how 667 and 668 became orphans. Commit it first:');
+      console.error(`      git add ${f} && git commit`);
+      console.error('  Or, if you really mean to apply it untracked, say so:');
+      console.error(`      node scripts/db-query.mjs ${f} --allow-uncommitted`);
+      process.exit(1);
+    }
+  }
+}
+
 const res = await fetch(ENDPOINT, {
   method: 'POST',
   headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
