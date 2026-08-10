@@ -38,11 +38,6 @@
       "authed": true
     },
     {
-      "sig": "advance_dunning_cadence()",
-      "anon": true,
-      "authed": true
-    },
-    {
       "sig": "ai_apply_change(p_session_id uuid, p_kind text, p_target_id uuid, p_patch jsonb, p_summary text)",
       "anon": false,
       "authed": true
