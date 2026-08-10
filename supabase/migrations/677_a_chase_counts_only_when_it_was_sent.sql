@@ -282,14 +282,29 @@ begin
 
   -- ── 589/661's own guards, re-pinned. Losing any is a regression. ──
   -- Pinned on CODE, not on the comment that labels it: `PATH A` alone would
-  -- stay true after somebody deleted the branch and left the heading.
-  if v_def not ilike '%dunning:%' or v_def not ilike '%split_part(new.dedupe_key%' then
+  -- stay true after somebody deleted the branch and left the heading. Both
+  -- extractions are named, because pinning the invoice alone still passed a
+  -- mutant that had gutted it (the stage line carries the same substring).
+  if v_def not ilike '%dunning:%'
+     or v_def not ilike '%split_part(new.dedupe_key, '':'', 2)%'
+     or v_def not ilike '%split_part(new.dedupe_key, '':'', 3)%' then
     raise exception '677: the sweep path was lost — run_dunning_sweep would stop advancing';
   end if;
-  if v_def not ilike '%action_definitions%' or v_def not ilike '%external_ref%' then
+  -- ⚠ Pinned on `new.params->>'external_ref'`, NOT on `%external_ref%`.
+  -- mig 661 used the loose form and it was a check that could not fail:
+  -- `renewal_invoices.source_external_ref` two lines below CONTAINS that
+  -- substring, so deleting the actual param read still matched. Proven by
+  -- mutation on dev — the loose pin passed a mutant that had killed PATH B.
+  if v_def not ilike '%from action_definitions ad%'
+     or v_def not ilike '%new.params->>''external_ref''%' then
     raise exception '677: PATH B is gone — the employee-sent chase would stop counting, which IS the mig-661 bug';
   end if;
-  if v_def not ilike '%dunning_rungs%' or v_def not ilike '%max(r.stage)%' then
+  -- `%dunning_rungs%` alone passed a mutant that had renamed the table to
+  -- `dunning_rungs_gone` — which would raise at runtime and be SWALLOWED by
+  -- the exception handler below, i.e. fail silently. Pinned on the exact FROM.
+  if v_def not ilike '%from dunning_rungs r%'
+     or v_def not ilike '%join dunning_ladders l on l.id = r.ladder_id%'
+     or v_def not ilike '%max(r.stage)%' then
     raise exception '677: PATH B no longer reads the rung out of the ladder — action_key repeats across rungs, so a guessed stage is wrong';
   end if;
   if v_def not ilike '%greatest(coalesce(cadence_stage, 0), v_stage)%' then
