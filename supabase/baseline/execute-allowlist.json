@@ -1,5 +1,5 @@
 {
-  "pinned_at": "2026-08-10T07:32:07.602Z",
+  "pinned_at": "2026-08-10T08:12:37.891Z",
   "note": "The EXECUTE surface for anon/authenticated. certify fails on ANY diff. Re-pin only after a DELIBERATE perimeter change.",
   "routines": [
     {
@@ -2354,6 +2354,11 @@
     },
     {
       "sig": "set_team_member_status(p_target_user_id uuid, p_is_active boolean)",
+      "anon": false,
+      "authed": true
+    },
+    {
+      "sig": "set_tenant_brand_identity(p_brand jsonb)",
       "anon": false,
       "authed": true
     },
