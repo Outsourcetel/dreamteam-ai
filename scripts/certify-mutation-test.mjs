@@ -183,6 +183,70 @@ const CASES = [
                     and (ad.tenant_id is null or ad.tenant_id = item.tenant_id)))`,
   },
   {
+    // Verbatim from the brief's spec: a two-field synthetic model
+    // (status, has a qualifying execution). Kept as-is — it's still a
+    // legitimate coarse check — but on its own it never exercises the
+    // probe's other two real conditions (`d ? 'action_key'`, and that the
+    // `not exists` checks *decision membership*, not just row existence).
+    // The three cases below lift the real predicate's remaining conditions
+    // one at a time, same pattern Task 2's fix used on the neighbouring
+    // onboarding-bindings-are-runnable probe after a shallow mutation case
+    // passed while blind to a live, populated condition.
+    name: 'bound-onboarding-items-complete-from-evidence (done + no qualifying execution -> violation)',
+    fires: `select 1 where exists (select 1 from (values ('done', false)) v(st, has_exec)
+              where v.st = 'done' and not v.has_exec)`,
+    silent: `select 1 where exists (select 1 from (values ('done', true)) v(st, has_exec)
+              where v.st = 'done' and not v.has_exec)`,
+  },
+  {
+    // Condition: the not-exists checks DECISION MEMBERSHIP, not mere
+    // row existence. A row exists ('rejected') but doesn't qualify -> the
+    // item must still be flagged, exactly as if no execution existed at all.
+    name: 'bound-onboarding-items-complete-from-evidence (an execution row exists but its decision does not qualify -> still a violation)',
+    fires: `select 1 where exists (
+              select 1 from (values ('done', true)) i(status, has_action_key)
+               where i.status = 'done' and i.has_action_key
+                 and not exists (select 1 from (values ('rejected')) ae(decision)
+                                  where ae.decision in ('auto_executed','executed_after_approval')))`,
+    silent: `select 1 where exists (
+              select 1 from (values ('done', true)) i(status, has_action_key)
+               where i.status = 'done' and i.has_action_key
+                 and not exists (select 1 from (values ('executed_after_approval')) ae(decision)
+                                  where ae.decision in ('auto_executed','executed_after_approval')))`,
+  },
+  {
+    // Condition: `d ? 'action_key'`. An item marked done with no verb bound
+    // to it at all (the common case today — 0 bound items in production) is
+    // exempt by design, not merely unmatched by accident.
+    name: 'bound-onboarding-items-complete-from-evidence (item has no action_key binding -> exempt, never a violation)',
+    fires: `select 1 where exists (
+              select 1 from (values ('done', true)) i(status, has_action_key)
+               where i.status = 'done' and i.has_action_key
+                 and not exists (select 1 from (select null::text as decision where false) ae
+                                  where ae.decision in ('auto_executed','executed_after_approval')))`,
+    silent: `select 1 where exists (
+              select 1 from (values ('done', false)) i(status, has_action_key)
+               where i.status = 'done' and i.has_action_key
+                 and not exists (select 1 from (select null::text as decision where false) ae
+                                  where ae.decision in ('auto_executed','executed_after_approval')))`,
+  },
+  {
+    // Condition: `i->>'status' = 'done'`. A bound item still in_progress
+    // (or pending/blocked) with no execution is not a violation — only a
+    // stored 'done' with nothing behind it is the trap this probe guards.
+    name: 'bound-onboarding-items-complete-from-evidence (bound item not yet done -> exempt, never a violation)',
+    fires: `select 1 where exists (
+              select 1 from (values ('done', true)) i(status, has_action_key)
+               where i.status = 'done' and i.has_action_key
+                 and not exists (select 1 from (select null::text as decision where false) ae
+                                  where ae.decision in ('auto_executed','executed_after_approval')))`,
+    silent: `select 1 where exists (
+              select 1 from (values ('in_progress', true)) i(status, has_action_key)
+               where i.status = 'done' and i.has_action_key
+                 and not exists (select 1 from (select null::text as decision where false) ae
+                                  where ae.decision in ('auto_executed','executed_after_approval')))`,
+  },
+  {
     name: 'execute-perimeter (revoked fn removed from allowlist detects re-grant)',
     // Real perimeter check compares live grants to the pinned allowlist. Fire =
     // a live grant not in the pinned set. Proven by construction: we just

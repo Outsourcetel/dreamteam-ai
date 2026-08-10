@@ -195,6 +195,22 @@ const PROBES = [
                   and (ad.tenant_id is null or ad.tenant_id = v.tenant_id))`,
   },
   {
+    name: 'bound-onboarding-items-complete-from-evidence',
+    why: 'a bound item marked done with no execution behind it is work recorded that nobody approved and no system accepted — the stored-marker-read-as-truth trap this repo has paid for repeatedly',
+    sql: `select p.name || ' / ' || (i->>'key') as violation
+            from onboarding_projects p
+            cross join lateral jsonb_array_elements(p.items_state) i
+            join onboarding_template_versions v on v.id = p.template_version_id
+            cross join lateral jsonb_array_elements(v.items) d
+           where d->>'key' = i->>'key'
+             and d ? 'action_key'
+             and i->>'status' = 'done'
+             and not exists (
+               select 1 from action_executions ae
+                where ae.dedupe_key = 'onboarding:' || p.id || ':' || (i->>'key')
+                  and ae.decision in ('auto_executed','executed_after_approval'))`,
+  },
+  {
     name: 'workspace-admin-has-an-owner',
     why: 'the other half — restricting the admin verbs to one role is only safe if that role can actually reach them; without this, closing the hole silently leaves a workspace administrable by nobody',
     sql: `select t.slug as violation
