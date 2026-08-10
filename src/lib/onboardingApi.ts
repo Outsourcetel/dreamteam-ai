@@ -53,6 +53,14 @@ export interface TemplateItem {
   requires_signoff: boolean;
   description?: string;
   verify?: VerifyConfig;
+  /** mig 674 — the verb this item performs, resolved per tenant at run time.
+   *  Only valid when owner_type === 'de'; validate_onboarding_items enforces
+   *  that server-side at publish time. */
+  action_key?: string;
+  /** param name → '@account' | '@ask' | literal. Every REQUIRED param of the
+   *  bound verb must appear as a key (named, not necessarily answered yet —
+   *  '@ask' satisfies this); optional params may be omitted entirely. */
+  params?: Record<string, string>;
 }
 
 export interface OnboardingTemplate {
