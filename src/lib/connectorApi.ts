@@ -1488,12 +1488,21 @@ export interface ActionExecuteResult {
  *  actually calls the external system and returns a plain-language receipt. */
 export async function executeAction(
   connectorId: string, actionKey: string, params: Record<string, unknown>,
-  opts?: { subjectKind?: 'de' | 'specialist'; subjectId?: string; approvedExecutionId?: string },
+  opts?: {
+    subjectKind?: 'de' | 'specialist'; subjectId?: string; approvedExecutionId?: string;
+    /** WHICH executor. One action_key can have several — ERPNext's
+     *  send_payment_reminder is an internal invoice comment under one
+     *  definition and an EMAIL TO THE CUSTOMER under another. connector-hub
+     *  refuses with `action_ambiguous` rather than guess (index.ts:2186), so a
+     *  caller that already knows must say so. Migration 614. */
+    actionDefinitionId?: string;
+  },
 ): Promise<ActionExecuteResult> {
   return invokeHub({
     action: 'execute_action', connector_id: connectorId, action_key: actionKey, params,
     subject_kind: opts?.subjectKind, subject_id: opts?.subjectId,
     approved_execution_id: opts?.approvedExecutionId,
+    action_definition_id: opts?.actionDefinitionId,
   }) as unknown as Promise<ActionExecuteResult>;
 }
 
@@ -1546,9 +1555,24 @@ export async function resolveActionExecution(
   if (decision === 'rejected') return; // nothing further to execute
   const { data: exec, error } = await supabase.rpc('resolve_action_execution_for_task', { p_task_id: taskId });
   if (error || !exec) { console.warn('resolveActionExecution: no pending execution for task', taskId); return; }
-  const row = exec as { id: string; action_definition_id: string; connector_id: string; params: Record<string, unknown> };
+  const row = exec as { id: string; action_definition_id: string; connector_id: string | null; params: Record<string, unknown> };
   const { data: def } = await supabase.from('action_definitions').select('action_key').eq('id', row.action_definition_id).maybeSingle();
   if (!def) { console.warn('resolveActionExecution: action_definition missing', row.action_definition_id); return; }
+  // ⚠ AN APPROVAL WITH NO CONNECTOR CANNOT BE CARRIED OUT. connector-hub
+  // refuses at the door — `connector_id_required`, HTTP 400 — before it looks
+  // at anything else. `run_dunning_sweep` wrote `p_connector_id => null` on
+  // every collections chase it raised until migration 701, so approving one
+  // reached that refusal, and NOTHING BELOW NOTICED: invokeHub returns rather
+  // than throws when the payload carries an `error`, and the result was
+  // discarded. The task went to `approved`, the screen said the work was done,
+  // and no customer was chased. Fail loudly instead — an approval that cannot
+  // execute must not look like one that did.
+  if (!row.connector_id) {
+    throw new Error(
+      'This approval is not linked to a connected system, so nothing could be sent. '
+      + 'It was raised before that link was recorded — re-run the sweep, or ask an admin to check the workspace has a connected system for this action.',
+    );
+  }
   // Approve-with-edits (migration 455): the approver's corrected draft is what
   // reaches the external system. Only the draft param the approval panel
   // displays is overridable — body, else note, the panel's own precedence —
@@ -1558,7 +1582,29 @@ export async function resolveActionExecution(
     if (typeof params.body === 'string' && params.body) params = { ...params, body: editedDraft };
     else if (typeof params.note === 'string' && params.note) params = { ...params, note: editedDraft };
   }
-  await executeAction(row.connector_id, def.action_key as string, params, { approvedExecutionId: row.id });
+  // ⚠ action_definition_id, not just action_key. The gated row already records
+  // WHICH executor was gated, and this function had it in hand and threw it
+  // away. connector-hub's resolveActionDefinition refuses with
+  // `action_ambiguous` when a key has more than one live executor rather than
+  // guessing (index.ts:2186) — and `send_payment_reminder` on ERPNext has two,
+  // an internal invoice comment and an email to the customer. Without this,
+  // approving any ERPNext payment reminder refused. Worse, had it resolved to
+  // the OTHER definition it would have hit `approval_mismatch`, because the
+  // hub binds the approval to the exact action + connector it was granted for.
+  const res = await executeAction(row.connector_id, def.action_key as string, params, {
+    approvedExecutionId: row.id, actionDefinitionId: row.action_definition_id,
+  });
+  // ⚠ THE RESULT WAS DISCARDED — the same defect hook #5 (knowledge revisions)
+  // was hardened against in decideHumanTask, four lines above this hook's call
+  // site, and this one never was. connector-hub reports every refusal INSIDE
+  // an HTTP 200 (`{ ok: false, error }`), and invokeHub does not throw when
+  // the payload carries an `error`. So awaiting this proved only that the call
+  // was made. `already_executed` comes back ok:true and is a real success —
+  // the exactly-once claim returning a receipt already recorded — so only a
+  // false `ok` is a failure here.
+  if (!res?.ok) {
+    throw new Error(`approved action not executed: ${res?.detail ?? res?.error ?? 'unknown reason'}`);
+  }
 }
 
 async function invokeHub<T = Record<string, unknown>>(
