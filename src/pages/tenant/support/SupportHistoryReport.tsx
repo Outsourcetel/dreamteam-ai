@@ -6,9 +6,12 @@
 //
 // Facet options come from values PRESENT in the rows, never a configured
 // list (the FilterBar lesson, decided 2026-08-09): the Rating facet appears
-// only once anything IS rated (0 today) and self-enables when the first
-// csat lands. The spec's Manager facet is deliberately absent — zero
-// supervisors are set, so it could never render or be verified.
+// only once anything IS rated (0 today), and the Manager facet once a
+// manager-assigned DE has closed work — both self-enable as data arrives.
+// ⚠ Manager = de_assignments relation='manager' (the docs/29 reporting
+// line), NOT is_supervisor: that column marks a DE as the tenant's
+// question-router, holds zero rows, and the handoff's SRC note pointing at
+// it is why this facet once looked unbuildable.
 import { useMemo, useState } from 'react';
 import {
   FilterBar, SELECT_CLS, INPUT_CLS, Chip, Button, StatTile, TableScroll, TH, TD,
@@ -23,12 +26,14 @@ import { TOPIC_LABEL } from './supportTopics';
 
 const PAGE_SIZE = 25;
 
-export default function SupportHistoryReport({ rows, deNames, userNames, teams, deTeams, storeKey }: {
+export default function SupportHistoryReport({ rows, deNames, userNames, teams, deTeams, deManagers, storeKey }: {
   rows: SupportConversation[];
   deNames: Map<string, string>;
   userNames: Map<string, string>;
   teams: Array<{ id: string; name: string }>;
   deTeams: Map<string, string>;
+  /** de_id → manager user_ids (de_assignments relation='manager'). */
+  deManagers: Map<string, string[]>;
   storeKey: string;
 }) {
   const [filters, setFilters] = useState<ReportFilters>({ preset: '30d' });
@@ -55,10 +60,16 @@ export default function SupportHistoryReport({ rows, deNames, userNames, teams, 
     [teams, rows, deTeams],
   );
 
-  const filtered = useMemo(() => applyReportFilters(rows, filters, deTeams, new Date()), [rows, filters, deTeams]);
+  const managersPresent = useMemo(() => {
+    const ids = new Set<string>();
+    for (const r of rows) for (const m of (r.de_id && deManagers.get(r.de_id)) || []) ids.add(m);
+    return [...ids].map(id => ({ id, label: userNames.get(id) || 'A manager' })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [rows, deManagers, userNames]);
+
+  const filtered = useMemo(() => applyReportFilters(rows, filters, { deTeams, deManagers }, new Date()), [rows, filters, deTeams, deManagers]);
   const summary = useMemo(() => summariseReport(filtered), [filtered]);
   const pageRows = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-  const filtersActive = !!(filters.topic || filters.teamId || filters.handledBy || filters.channel
+  const filtersActive = !!(filters.topic || filters.teamId || filters.managerId || filters.handledBy || filters.channel
     || filters.rated || filters.search?.trim() || filters.preset === 'custom');
 
   const exportCsv = () => {
@@ -140,6 +151,17 @@ export default function SupportHistoryReport({ rows, deNames, userNames, teams, 
               onChange={e => set({ teamId: e.target.value || undefined })}>
               <option value="">Any team</option>
               {teamsPresent.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          )}
+          {/* Manager = the docs/29 reporting line (de_assignments), NOT
+              is_supervisor — that marks a DE as the tenant's question-router
+              and holds zero rows besides. Present-values rule as everywhere:
+              the facet appears once a manager-assigned DE has closed work. */}
+          {managersPresent.length > 0 && (
+            <select value={filters.managerId ?? ''} aria-label="Filter by manager" className={SELECT_CLS}
+              onChange={e => set({ managerId: e.target.value || undefined })}>
+              <option value="">Any manager</option>
+              {managersPresent.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select>
           )}
           {handlers.length > 0 && (

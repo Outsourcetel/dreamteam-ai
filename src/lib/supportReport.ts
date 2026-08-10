@@ -25,6 +25,12 @@ export interface ReportFilters {
   to?: string;
   topic?: string;
   teamId?: string;
+  /** The HUMAN manager (de_assignments relation='manager') of the DE that
+   *  handled it — the docs/29 reporting line, NOT is_supervisor, which marks
+   *  a DE as the tenant's question-router and has zero rows besides. The
+   *  handoff's SRC note pointed at the wrong source; the mock's "Manager:
+   *  Priya Sharma" is a person, and this is where people manage DEs. */
+  managerId?: string;
   /** 'de:<id>' | 'user:<id>' */
   handledBy?: string;
   channel?: string;
@@ -62,18 +68,25 @@ export function inDateRange(
   }
 }
 
+export interface ReportMaps {
+  /** de_id → team_id, from workforce_team_members */
+  deTeams: Map<string, string>;
+  /** de_id → manager user_ids, from de_assignments relation='manager' */
+  deManagers?: Map<string, string[]>;
+}
+
 export function applyReportFilters(
   rows: SupportConversation[],
   f: ReportFilters,
-  /** de_id → team_id, from workforce_team_members */
-  deTeams: Map<string, string>,
+  maps: ReportMaps,
   now: Date,
 ): SupportConversation[] {
   const q = (f.search ?? '').trim().toLowerCase();
   return rows.filter(c => {
     if (!inDateRange(c, f, now)) return false;
     if (f.topic && c.category !== f.topic) return false;
-    if (f.teamId && (!c.de_id || deTeams.get(c.de_id) !== f.teamId)) return false;
+    if (f.teamId && (!c.de_id || maps.deTeams.get(c.de_id) !== f.teamId)) return false;
+    if (f.managerId && (!c.de_id || !(maps.deManagers?.get(c.de_id) ?? []).includes(f.managerId))) return false;
     if (f.handledBy) {
       const [kind, id] = f.handledBy.split(':');
       if (kind === 'de' && c.de_id !== id) return false;

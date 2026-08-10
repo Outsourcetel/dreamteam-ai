@@ -64,21 +64,21 @@ describe('applyReportFilters', () => {
   const teams = new Map([['de1', 'team-billing'], ['de2', 'team-general']]);
 
   it('topic narrows to matching category', () => {
-    expect(applyReportFilters(rows, { preset: '30d', topic: 'billing' }, teams, NOW).map(r => r.id)).toEqual(['a', 'c']);
+    expect(applyReportFilters(rows, { preset: '30d', topic: 'billing' }, { deTeams: teams }, NOW).map(r => r.id)).toEqual(['a', 'c']);
   });
   it('team follows the de → team map', () => {
-    expect(applyReportFilters(rows, { preset: '30d', teamId: 'team-general' }, teams, NOW).map(r => r.id)).toEqual(['b', 'c']);
+    expect(applyReportFilters(rows, { preset: '30d', teamId: 'team-general' }, { deTeams: teams }, NOW).map(r => r.id)).toEqual(['b', 'c']);
   });
   it('handledBy de:<id> matches the employee, user:<id> the human owner', () => {
-    expect(applyReportFilters(rows, { preset: '30d', handledBy: 'de:de2' }, teams, NOW).map(r => r.id)).toEqual(['b', 'c']);
-    expect(applyReportFilters(rows, { preset: '30d', handledBy: 'user:u1' }, teams, NOW).map(r => r.id)).toEqual(['b']);
+    expect(applyReportFilters(rows, { preset: '30d', handledBy: 'de:de2' }, { deTeams: teams }, NOW).map(r => r.id)).toEqual(['b', 'c']);
+    expect(applyReportFilters(rows, { preset: '30d', handledBy: 'user:u1' }, { deTeams: teams }, NOW).map(r => r.id)).toEqual(['b']);
   });
   it('rated/unrated buckets split on csat presence', () => {
-    expect(applyReportFilters(rows, { preset: '30d', rated: 'rated' }, teams, NOW).map(r => r.id)).toEqual(['a']);
-    expect(applyReportFilters(rows, { preset: '30d', rated: 'unrated' }, teams, NOW).map(r => r.id)).toEqual(['b', 'c']);
+    expect(applyReportFilters(rows, { preset: '30d', rated: 'rated' }, { deTeams: teams }, NOW).map(r => r.id)).toEqual(['a']);
+    expect(applyReportFilters(rows, { preset: '30d', rated: 'unrated' }, { deTeams: teams }, NOW).map(r => r.id)).toEqual(['b', 'c']);
   });
   it('search hits subject text', () => {
-    expect(applyReportFilters(rows, { preset: '30d', search: 'vat' }, teams, NOW).map(r => r.id)).toEqual(['c']);
+    expect(applyReportFilters(rows, { preset: '30d', search: 'vat' }, { deTeams: teams }, NOW).map(r => r.id)).toEqual(['c']);
   });
 });
 
@@ -195,5 +195,23 @@ describe('parkPresets — computed from now, never hardcoded dates', () => {
   it('later-today after 17:00 falls forward to tomorrow 09:00 rather than the past', () => {
     const p = Object.fromEntries(parkPresets(new Date('2026-08-10T18:30:00Z')).map(x => [x.key, x]));
     expect(p.later_today.until?.toISOString()).toBe('2026-08-11T09:00:00.000Z');
+  });
+});
+
+describe('the Manager facet — de_assignments, never is_supervisor', () => {
+  const rows = [
+    conv({ id: 'a', de_id: 'de1' }),
+    conv({ id: 'b', de_id: 'de2' }),
+    conv({ id: 'c', de_id: null }),
+  ];
+  const maps = { deTeams: new Map<string, string>(), deManagers: new Map([['de1', ['priya']]]) };
+  it('narrows to conversations whose DE reports to that manager', () => {
+    expect(applyReportFilters(rows, { preset: '30d', managerId: 'priya' }, maps, NOW).map(r => r.id)).toEqual(['a']);
+  });
+  it('a conversation with no DE can never match a manager', () => {
+    expect(applyReportFilters(rows, { preset: '30d', managerId: 'priya' }, maps, NOW).some(r => r.id === 'c')).toBe(false);
+  });
+  it('an absent map filters to nothing rather than everything — a missing input must not read as universal match', () => {
+    expect(applyReportFilters(rows, { preset: '30d', managerId: 'priya' }, { deTeams: new Map() }, NOW)).toEqual([]);
   });
 });

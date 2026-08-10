@@ -96,6 +96,7 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
   const [userNames, setUserNames] = useState<Map<string, string>>(new Map());
   const [teams, setTeams] = useState<Array<{ id: string; name: string }>>([]);
   const [deTeams, setDeTeams] = useState<Map<string, string>>(new Map());
+  const [deManagers, setDeManagers] = useState<Map<string, string[]>>(new Map());
   const [selId, setSelId] = useState<string | null>(null);
   const [thread, setThread] = useState<SupportMessage[]>([]);
   const [checks, setChecks] = useState<ConversationCheck[]>([]);
@@ -160,6 +161,10 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
         const { data } = await supabase.from('workforce_teams').select('id, name');
         setTeams((data ?? []) as Array<{ id: string; name: string }>);
         const { data: members } = await supabase.from('workforce_team_members').select('team_id, de_id');
+        const { data: mgrs } = await supabase.from('de_assignments').select('de_id, user_id').eq('relation', 'manager');
+        const mm = new Map<string, string[]>();
+        for (const r of (mgrs ?? []) as Array<{ de_id: string; user_id: string }>) mm.set(r.de_id, [...(mm.get(r.de_id) ?? []), r.user_id]);
+        setDeManagers(mm);
         setDeTeams(new Map(((members ?? []) as Array<{ team_id: string; de_id: string }>).map(m => [m.de_id, m.team_id])));
       } catch { /* teams facet simply does not appear */ }
       try {
@@ -321,7 +326,7 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
         <div className="relative flex-1 overflow-hidden px-6 pb-6 flex">
           <SupportHistoryReport
             rows={convs.filter(c => c.status === 'resolved')}
-            deNames={deNames} userNames={userNames} teams={teams} deTeams={deTeams}
+            deNames={deNames} userNames={userNames} teams={teams} deTeams={deTeams} deManagers={deManagers}
             storeKey={`dt.supportviews.${authedUser?.tenantId ?? 'none'}.${authedUser?.id ?? 'anon'}`}
           />
         </div>
