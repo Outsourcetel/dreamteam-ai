@@ -1,5 +1,5 @@
 {
-  "pinned_at": "2026-08-09T22:02:17.076Z",
+  "pinned_at": "2026-08-10T07:32:07.602Z",
   "note": "The EXECUTE surface for anon/authenticated. certify fails on ANY diff. Re-pin only after a DELIBERATE perimeter change.",
   "routines": [
     {
@@ -1758,11 +1758,6 @@
       "authed": true
     },
     {
-      "sig": "platform_capability_remaining_holders(p_exclude_user_id uuid, p_capability text)",
-      "anon": false,
-      "authed": true
-    },
-    {
       "sig": "platform_config_has_key(p_key text)",
       "anon": false,
       "authed": true
@@ -2549,11 +2544,6 @@
     },
     {
       "sig": "start_platform_remote_access(p_tenant_id uuid)",
-      "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "submit_csat(p_conversation_id uuid, p_tenant_id uuid, p_score integer)",
       "anon": false,
       "authed": true
     },

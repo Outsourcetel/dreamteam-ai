@@ -33,7 +33,7 @@ money/reputation) → **Ring 2** (costs correctness) → **Ring 3** (polish).
 | R0.5 | The approvals guard (`app.allow_task_decision`) has no new setter | **PROVEN** | `certify` › guard-bypass-setters-pinned |
 | R0.6 | The audit hash-chain is intact for outsourcetel-hq | **PROVEN** | `certify` › audit-chain-verifies-hq |
 | R0.7 | The `anon`/`authenticated` EXECUTE surface equals the pinned allowlist | **PROVEN** | `certify` › execute-perimeter |
-| R0.8 | Tenant isolation on READ, probed with real ids across all RPCs | **FALSIFIED — 27 of the class closed, class STILL OPEN** | mig 662 + `certify` › secdef-caller-tenant-ratchet; adversarial pass then found `can_access_de` is not tenant-sufficient (16 functions rely on it alone) and 3 allowlisted names are not in fact clear |
+| R0.8 | Tenant isolation on READ, probed with real ids across all RPCs | **FALSIFIED — every found instance closed; class NARROWED, residue named** | migs 662 (27 revoked) + 663 (`can_access_de`, read *and* write) + 664 (4 more); `certify` › secdef-caller-tenant-ratchet. Residue: 28 fail-open-on-NULL guards, reachable today only by a tenantless account |
 | R0.9 | No employee is offered an action its role may not use | **PROVEN** | `certify` › role-restricted-actions-stay-restricted |
 | R0.10 | …and the role that *may* use them can actually reach them | **PROVEN** | `certify` › workspace-admin-has-an-owner |
 
@@ -331,6 +331,64 @@ retroactively is a curve you can talk yourself into. `npm run benchmark:history`
   **R0.8 therefore reverts to open.** 27 instances are closed and gated; the
   *class* is not. Saying otherwise would be the "gate that cannot fail" failure
   in prose form.
+
+  ### Then migs 663 and 664 closed the root cause — and the residue is named
+
+  **663 — the ticket you could write yourself.** `can_access_de`'s privileged
+  branch never named the employee, so any owner/admin/manager passed for an
+  employee in any workspace. Pinning that branch *alone would have changed
+  nothing*: branch 4 trusts `de_assignments`, `authenticated` holds INSERT on
+  that table, and its write policy checked the row's own tenant and the caller's
+  role but never the **employee's** tenant — no correlating constraint, no
+  trigger. Any of the 16 privileged users could issue themselves a ticket naming
+  a foreign employee. The RPC `set_de_assignment` already carried the exact
+  missing check, commented *"closed at the point of write, not left to the
+  reader"* — the RPC closed it, the table did not, and branch 4 reads the table.
+  663 fixes the read **and** the write. Replayed on live rows before applying:
+  **2,229 → 354** admitted pairs, **1,875 cross-tenant closed, 0 own-tenant
+  lost, 0 gained**, platform staff and ordinary members unchanged.
+  Remote access cannot break: `resolve_remote_access_tenant` requires
+  `layer='platform'`, which is exactly `is_platform_admin()` one disjunct
+  *earlier* — remote access never used the branch that changed.
+  ⚠ Exactly one account loses access: a `tenant_owner` whose workspace was
+  **deleted**. `profiles.tenant_id` is `ON DELETE SET NULL`, so **every future
+  workspace deletion manufactures another active owner belonging to nowhere**,
+  and until 663 each one reached the entire estate.
+
+  **664 — a guard that skips is not a guard.** Revoked `submit_csat` (a
+  cross-tenant *write* onto a performance metric; safe because 0 of 455
+  conversations have ever carried a score and `anon` never held it) and
+  `platform_capability_remaining_holders`. Added a membership guard to
+  `get_workforce_trust_metrics` — membership only, no role gate, because
+  ordinary members read that panel today. Made `assign_human_task` refuse
+  instead of skip.
+  ⚠ `validate_watcher_config` looks identical to the two revoked and **must not
+  be revoked**: `trg_validate_work_watcher` → `validate_work_watcher` is
+  SECURITY INVOKER, so the admin doing the INSERT needs EXECUTE. `pg_depend`
+  does not show this — the dependency is one hop deeper than a direct
+  reference. It stays exempt, now with that reason written beside it.
+
+  #### ⚠ What is still open, stated plainly
+
+  - **28 functions guard with `if auth_tenant_id() is not null and …`**, which
+    *skips* the check rather than failing it. Three siblings use the correct
+    idiom (naming `service_role` explicitly). None is `anon`-reachable, so today
+    the only caller who benefits is the tenantless account above — which makes
+    **deactivating that profile the cheapest mitigation**, and fixing the 28 the
+    durable one. `resolve_action_execution_for_task` is the same seam spelled
+    differently: `x NOT IN (subquery)` yields NULL, not TRUE, when the subquery
+    returns a NULL.
+  - **`eval_gate`** is a view readable by `anon`, spanning 3 tenants, and
+    `net.http_post/get/delete` are `anon`-executable (an outbound-request
+    primitive from inside the database). Outside R0.8's read scope; unassessed.
+  - **`get_de_cost_metrics`** shows per-employee spend for every employee in the
+    caller's own workspace rather than only those they are responsible for.
+    Intra-tenant over-sharing, not a tenancy breach — and narrowing it changes
+    what people see, so it is a product call.
+  - **Dev is not a mirror.** It flags 15 routines in the leaky shape that
+    production closed long ago, while its `schema_migrations` *claims* the
+    migration that closed them is applied. Dev cannot currently be trusted to
+    rehearse a security change.
 
 Every probe above is **mutation-tested** (`certify:mutation`): each was shown to
 return rows when its violation is injected and none when it is not. A gate that

@@ -211,11 +211,22 @@ const PROBES = [
                'get_quality_score_breakdown','get_sla_achievement','get_tenant_config_status',
                'get_tenant_metrics_comparison','install_role_systems','is_ancestor_of',
                'list_config_schemas','list_de_operate_config','list_org_tree','match_cached_answer',
-               'match_doc_chunks','platform_capability_remaining_holders','reject_playbook_amendment',
+               'match_doc_chunks','reject_playbook_amendment',
                'resolve_account_writeback','resolve_continuity_writeback','resolve_opportunity_writeback',
-               'scim_tokens_list','set_de_operate_login','submit_csat','tenant_ancestors',
+               'scim_tokens_list','set_de_operate_login','tenant_ancestors',
                'tenant_descendants','update_custom_metric','upsert_de_operate_binding',
+               -- ⚠ validate_watcher_config STAYS, and not because it was cleared by
+               -- the same reading that wrongly cleared submit_csat. It is read-only
+               -- (STABLE, writes nothing) and is reached by trg_validate_work_watcher
+               -- → validate_work_watcher, which is SECURITY INVOKER — so the admin
+               -- doing the INSERT must retain EXECUTE or every watcher create and
+               -- edit fails across 15 workspaces. A pg_depend sweep does not show
+               -- this: the dependency is one hop deeper than a direct reference.
                'validate_watcher_config','visible_knowledge_docs')
+               -- REMOVED by mig 664, because the exemption was wrong, not because
+               -- the routines changed shape: submit_csat (cross-tenant WRITE) and
+               -- platform_capability_remaining_holders (platform-staff oracle).
+               -- Both are now revoked, so they drop out of the sieve on their own.
            order by 1`,
   },
   {

@@ -82,23 +82,23 @@ const CASES = [
              where secdef and authed and args like '%uuid%'
                and src not ilike '%auth_tenant_id%' and src not ilike '%auth.uid%'
                and src not ilike '%can_access_de%' and src not ilike '%is_platform_admin%'
-               and nm not in ('list_org_tree','match_doc_chunks','submit_csat'))`,
+               and nm not in ('list_org_tree','match_doc_chunks','tenant_ancestors'))`,
     silent: `select 1 where exists (select 1 from (values
               ('leak_me', true, true, 'p_tenant_id uuid', 'select * from renewal_invoices where tenant_id = public.auth_tenant_id()')
             ) v(nm, secdef, authed, args, src)
              where secdef and authed and args like '%uuid%'
                and src not ilike '%auth_tenant_id%' and src not ilike '%auth.uid%'
                and src not ilike '%can_access_de%' and src not ilike '%is_platform_admin%'
-               and nm not in ('list_org_tree','match_doc_chunks','submit_csat'))`,
+               and nm not in ('list_org_tree','match_doc_chunks','tenant_ancestors'))`,
   },
   {
     // Half 2: the allowlist must actually exempt, and ONLY the names in it.
     // A ratchet whose allowlist matched everything would be silent forever.
     name: 'secdef-caller-tenant-ratchet (allowlist exempts, and only its names)',
     fires: `select 1 where exists (select 1 from (values ('brand_new_leak')) v(nm)
-             where nm not in ('list_org_tree','match_doc_chunks','submit_csat'))`,
+             where nm not in ('list_org_tree','match_doc_chunks','tenant_ancestors'))`,
     silent: `select 1 where exists (select 1 from (values ('list_org_tree')) v(nm)
-             where nm not in ('list_org_tree','match_doc_chunks','submit_csat'))`,
+             where nm not in ('list_org_tree','match_doc_chunks','tenant_ancestors'))`,
   },
   {
     name: 'execute-perimeter (revoked fn removed from allowlist detects re-grant)',
