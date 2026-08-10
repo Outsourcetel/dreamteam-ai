@@ -22,6 +22,7 @@
  * actually talks to the customer.
  */
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { loadTenantBrand, brandVoiceDirective } from './brandIdentity.ts';
 
 export interface DePersona {
   /** Display name to use as the answering actor everywhere (audit,
@@ -78,7 +79,12 @@ const DEFAULT_CONTEXT_TURNS = 8;
  *  and no tone directive when unset — exactly today's behavior. */
 async function styleDirective(admin: SupabaseClient, tenantId: string): Promise<string> {
   try {
-    const { data } = await admin.from('tenants').select('vocabulary').eq('id', tenantId).maybeSingle();
+    // Vocabulary and brand identity are independent reads — parallel, same
+    // reason the persona row is (dead air on a phone call is audible).
+    const [{ data }, brand] = await Promise.all([
+      admin.from('tenants').select('vocabulary').eq('id', tenantId).maybeSingle(),
+      loadTenantBrand(admin, tenantId),
+    ]);
     const v = (data?.vocabulary ?? {}) as { ai_language?: string; ai_tone?: string };
     const parts: string[] = [];
     if (typeof v.ai_language === 'string' && v.ai_language.trim()) {
@@ -87,6 +93,10 @@ async function styleDirective(admin: SupabaseClient, tenantId: string): Promise<
     if (typeof v.ai_tone === 'string' && v.ai_tone.trim()) {
       parts.push(` Tone of voice: ${v.ai_tone.trim()}.`);
     }
+    // Brand identity (mig 666): the company's own voice, sanitized in the
+    // helper. Complements HOUSE_VOICE — manner only, grounding untouched.
+    const bv = brandVoiceDirective(brand);
+    if (bv) parts.push(bv);
     return parts.join('');
   } catch {
     return '';

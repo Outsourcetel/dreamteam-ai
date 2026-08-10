@@ -20,6 +20,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendEmail } from '../_shared/sendEmail.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { loadTenantBrand, appendBrandFooter } from '../_shared/brandIdentity.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -81,7 +82,10 @@ serve(async (req) => {
       from,
       to: draft.recipient_ref,
       subject: draft.subject || '(no subject)',
-      text: draft.body,
+      // Brand identity (mig 666, phase 2): the tenant's contact footer rides
+      // on every outbound send. The APPROVED body itself is never altered —
+      // the footer is appended below it at delivery time.
+      text: appendBrandFooter(draft.body, await loadTenantBrand(admin, tenantId)),
     });
     if (sent.reason === 'no_provider') {
       await admin.rpc('mark_outbound_delivery', { p_draft_id: draftId, p_status: 'blocked_no_provider', p_error: 'no email provider configured' });

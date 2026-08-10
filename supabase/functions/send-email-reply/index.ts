@@ -24,6 +24,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendEmail } from '../_shared/sendEmail.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { loadTenantBrand, appendBrandFooter } from '../_shared/brandIdentity.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -69,7 +70,9 @@ serve(async (req) => {
     // ── Deliver FIRST; the thread only records what really happened. ──
     const subject = conv.subject && /^re:/i.test(conv.subject) ? conv.subject : `Re: ${conv.subject || 'your email'}`;
     const from = comms.from_name ? `${comms.from_name} <${comms.from_email}>` : comms.from_email;
-    const sent = await sendEmail(admin, { from, to: recipient, subject: subject.slice(0, 200), text: content });
+    // Brand identity (mig 666, phase 2): the tenant's contact footer rides on
+    // every reply; the reply content itself is untouched.
+    const sent = await sendEmail(admin, { from, to: recipient, subject: subject.slice(0, 200), text: appendBrandFooter(content, await loadTenantBrand(admin, tenantId)) });
     if (sent.reason === 'no_provider') {
       return json({
         error: 'delivery_not_configured', blocked: true,
