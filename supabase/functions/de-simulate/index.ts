@@ -40,8 +40,18 @@ const MAX_COUNT = 5;
 const MAX_COUNT_HISTORICAL = 20;
 const PASS_THRESHOLD = 80;
 
-async function scenarioQuestions(admin: SupabaseClient, tenantId: string, deId: string, mode: string, count: number): Promise<Array<{ question: string; reference: string | null }>> {
+async function scenarioQuestions(admin: SupabaseClient, tenantId: string, deId: string, mode: string, count: number, goldenIds: string[] | null = null): Promise<Array<{ question: string; reference: string | null }>> {
   if (mode === 'golden') {
+    // 695: an explicit id list (the fitness harness's FROZEN chunk) overrides
+    // selection entirely — the caller's order is preserved so a before/after
+    // pair replays identical questions even across resumed cron ticks.
+    if (goldenIds && goldenIds.length) {
+      const { data } = await admin.from('golden_qa').select('id, question, expected_fragments')
+        .eq('tenant_id', tenantId).in('id', goldenIds);
+      const byId = new Map((data ?? []).map((g: { id: string }) => [g.id, g]));
+      return goldenIds.map((id) => byId.get(id)).filter(Boolean)
+        .map((g: { question: string; expected_fragments: string[] }) => ({ question: g.question, reference: Array.isArray(g.expected_fragments) && g.expected_fragments.length ? `Key facts the answer should contain: ${g.expected_fragments.join('; ')}` : null }));
+    }
     // GI-6b: deterministic ORDER so a before/after fitness pair replays the SAME
     // questions (heap order can otherwise differ between the two calls). Stable
     // for every golden run; only matters when count < total, harmless otherwise.
@@ -88,7 +98,14 @@ serve(async (req) => {
     const { tenant_id, de_id } = body;
     if (!tenant_id || !de_id) return json({ error: 'tenant_id and de_id required' }, 400);
     const mode = ['golden', 'synthetic', 'historical'].includes(body.mode) ? body.mode : 'synthetic';
-    const count = Math.min(mode === 'historical' ? MAX_COUNT_HISTORICAL : MAX_COUNT, Math.max(1, Number(body.count) || 3));
+    // 695: an explicit golden-id chunk (fitness harness). Hard-capped at 6 per
+    // call — the harness chunks; this call stays inside edge wall-clock.
+    const goldenIds: string[] | null = mode === 'golden' && Array.isArray(body.golden_ids) && body.golden_ids.length
+      ? (body.golden_ids as unknown[]).filter((x): x is string => typeof x === 'string').slice(0, 6)
+      : null;
+    const count = goldenIds
+      ? goldenIds.length
+      : Math.min(mode === 'historical' ? MAX_COUNT_HISTORICAL : MAX_COUNT, Math.max(1, Number(body.count) || 3));
     // Optional candidate patch (Frontier-20 #5): when present, every scenario
     // is answered WITH the proposed knowledge injected (de-answer replay mode),
     // so a regression check can compare golden pass-rate with vs without it.
@@ -127,7 +144,7 @@ serve(async (req) => {
     const { data: budget, error: budgetErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenant_id });
     if (budgetBlocked(budgetErr, budget)) return json({ error: 'ai_budget_exceeded' }, 429);
 
-    const scenarios = await scenarioQuestions(admin, tenant_id, de_id, mode, count);
+    const scenarios = await scenarioQuestions(admin, tenant_id, de_id, mode, count, goldenIds);
     if (scenarios.length === 0) return json({ error: mode === 'historical' ? 'no_historical_questions' : mode === 'golden' ? 'no_golden_qa' : 'scenario_generation_failed' }, 400);
 
     // The run records the config fingerprint it TESTS (mig 181): a cert
