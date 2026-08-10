@@ -1,4 +1,5 @@
 import DataExportPanel from '../../components/DataExportPanel';
+import BooksImportCard from '../../components/BooksImportCard';
 import SecurityAccessPage from './governance/SecurityAccessPage';
 import DeleteWorkspacePanel from '../../components/DeleteWorkspacePanel';
 import DomainClaimPanel from '../../components/sso/DomainClaimPanel';
@@ -1076,6 +1077,10 @@ const userHash = crypto
           backups behind it. */}
       {activeTab === 'data' && (
         <div className="max-w-3xl space-y-6">
+          {/* Books first (founder 2026-08-11): the real business arrives by
+              CSV — invoices, agreements, contacts — while ERPNext keeps
+              syncing separately. Import above export/delete on purpose. */}
+          <BooksImportCard />
           <DataExportPanel />
           <DeleteWorkspacePanel />
         </div>

@@ -1,57 +1,27 @@
 {
-  "at": "2026-08-10T20:41:22.406Z",
-  "mode": "full",
+  "at": "2026-08-10T20:53:00.413Z",
+  "mode": "offline",
   "failed": 0,
   "results": [
     {
       "section": "typecheck",
       "ok": true,
-      "seconds": 17.8
-    },
-    {
-      "section": "ring0-probes",
-      "ok": true,
-      "seconds": 38
-    },
-    {
-      "section": "migration-ledger",
-      "ok": true,
-      "seconds": 6.8
-    },
-    {
-      "section": "migration-numbering",
-      "ok": true,
-      "seconds": 0
+      "seconds": 19.5
     },
     {
       "section": "edge-typecheck",
       "ok": true,
-      "seconds": 1.9
-    },
-    {
-      "section": "golden-path",
-      "ok": true,
-      "seconds": 38.3
-    },
-    {
-      "section": "role-gates",
-      "ok": true,
-      "seconds": 8.1
-    },
-    {
-      "section": "silent-refusals",
-      "ok": true,
-      "seconds": 2.6
+      "seconds": 1.8
     },
     {
       "section": "design-drift",
       "ok": true,
-      "seconds": 0.9
+      "seconds": 4.3
     },
     {
       "section": "suite",
       "ok": true,
-      "seconds": 46.3
+      "seconds": 2.2
     }
   ]
 }
