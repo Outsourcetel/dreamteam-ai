@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabase';
+import { getSessionTenantId } from '../lib/customerApi';
 import { PanelCard, Button, Banner, Chip, Drawer, TabBar, Field, EmptyState, INPUT_CLS } from './primitives';
 
 // Company brand identity — mig 666 (spec: docs/superpowers/specs/
@@ -127,11 +128,24 @@ export default function BrandIdentityCard() {
     const url = draftUrl.trim();
     if (!url) { setMsg({ tone: 'danger', text: 'Paste your website URL first.' }); return; }
     setDrafting(true); setMsg(null);
-    const { data, error } = await supabase.functions.invoke('brand-extract', { body: { url } });
+    // A platform operator has no tenant of their own — the function verifies
+    // the asserted tenant against the audited remote-access session, same as
+    // every other edge caller (resolveTenantWithRemoteAccess, mig 102).
+    const tid = await getSessionTenantId();
+    const { data, error } = await supabase.functions.invoke('brand-extract', {
+      body: { url, ...(tid ? { tenant_id: tid } : {}) },
+    });
     setDrafting(false);
     const r = data as { ok?: boolean; draft?: Brand; detail?: string } | null;
     if (error || !r?.ok || !r.draft) {
-      setMsg({ tone: 'danger', text: `Could not draft from the site: ${r?.detail ?? error?.message ?? 'unknown error'}` });
+      // On a non-2xx, invoke() hides the function's own refusal inside
+      // error.context — surface that, not the generic wrapper message.
+      let detail = r?.detail ?? error?.message ?? 'unknown error';
+      try {
+        const body = await (error as { context?: Response } | null)?.context?.json?.();
+        if (body?.detail || body?.error) detail = body.detail ?? body.error;
+      } catch { /* keep the wrapper message */ }
+      setMsg({ tone: 'danger', text: `Could not draft from the site: ${detail}` });
       return;
     }
     // The draft fills only fields you have left empty — it never overwrites
