@@ -366,6 +366,16 @@ begin
      or position('''unresolved''' in v_def) = 0 then
     raise exception '678: the returned contract lost a key — assessAndLog reads verified, the log stores pending_count';
   end if;
+  -- ⚠ BOTH DIRECTIONS. The smoke test below catches a gate wired to withhold
+  -- everything, but a gate wired to verify everything would sail past it — and
+  -- that is the failure that lets unfinished work be called done, which is the
+  -- whole reason this function exists. Nothing a migration can measure against
+  -- live data would catch it without depending on production having a pending
+  -- approval, so it is pinned on the expression itself: `verified` must still
+  -- be COMPUTED from the pending count and the fail-closed anchor.
+  if position($tok$'verified', (coalesce(v_pending, 0) = 0) and not v_unresolved$tok$ in v_def) = 0 then
+    raise exception '678: verified is no longer computed from the pending count and the unresolved anchor — it could now be a constant in either direction';
+  end if;
   if position('stable' in lower(v_def)) = 0 or position('security definer' in lower(v_def)) = 0
      or position($tok$search_path TO 'public'$tok$ in v_def) = 0 then
     raise exception '678: the function lost STABLE, SECURITY DEFINER or its pinned search_path';
