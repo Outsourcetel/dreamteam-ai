@@ -125,8 +125,11 @@ export default function BrandIdentityCard() {
   };
 
   const draftFromSite = async () => {
-    const url = draftUrl.trim();
+    let url = draftUrl.trim();
     if (!url) { setMsg({ tone: 'danger', text: 'Paste your website URL first.' }); return; }
+    // People type "www.acme.com" — the server's URL guard rightly insists on a
+    // scheme, so supply the https:// here rather than bouncing the user.
+    if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
     setDrafting(true); setMsg(null);
     // A platform operator has no tenant of their own — the function verifies
     // the asserted tenant against the audited remote-access session, same as
