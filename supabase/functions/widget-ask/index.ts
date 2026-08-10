@@ -525,7 +525,14 @@ serve(async (req) => {
         const stopReason: ConvCheck = escalationRuleHit
           ? { kind: 'escalation_rule', ok: false, label: `Stopped by the rule: ${escalationRuleHit}` }
           : lowConf
-            ? { kind: 'confidence', ok: false, label: `Confidence ${conf}% — below the ${confidenceFloor}% send threshold` }
+            // ⚠ confidenceFloor > 100 is the dial-off SENTINEL (261: dial
+            // disabled → floor 101 → nothing auto-sends). The live proof
+            // printed "below the 101% send threshold" — an impossible number
+            // leaking an implementation trick into a human's panel. Say what
+            // is actually true in each case instead.
+            ? (confidenceFloor > 100
+              ? { kind: 'confidence', ok: false, label: `Confidence ${conf}% — this employee isn't allowed to send replies on its own yet` }
+              : { kind: 'confidence', ok: false, label: `Confidence ${conf}% — below the ${confidenceFloor}% send threshold` })
             : { kind: 'escalation_rule', ok: false, label: 'Held for approval: every reply from this employee is reviewed before it sends' };
         await recordChecks(admin, tenantId, convId, subjectDeId, [
           ...knowledgeChecks(srcs),
