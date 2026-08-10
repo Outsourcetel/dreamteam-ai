@@ -12,6 +12,17 @@
 -- onboarding_templates.items. onboarding_projects.items_state holds only
 -- mutable per-project state (key/status/assignee/note/...) and is never a
 -- copy of the definition, so this migration needs no items_state backfill.
+--
+-- EDITED AFTER FIRST APPLY (still same day, review of task-1): the REVOKE
+-- below had no has_function_privilege assertion proving its result — a
+-- revoke statement is not a description of the resulting privileges (house
+-- rule; see mig 658, where `revoke ... from public` silently took
+-- `authenticated` down with it too). Added the three-way assertion
+-- (anon=false, authenticated=false, service_role=true) to the existing do $$
+-- block and re-applied to dev and prod; record_migration_applied's own
+-- ON CONFLICT DO UPDATE refreshes the ledger's checksum on a content-changed
+-- re-apply, which is what clears DRIFTED — this is the same edit-after-apply
+-- path mig 364 documents having used on 349 and 353.
 -- ==========================================================================
 
 begin;
@@ -239,6 +250,9 @@ declare
      "requires_signoff":false}
   ]'::jsonb;
   v_r text[];
+  v_anon_exec    boolean;
+  v_authed_exec  boolean;
+  v_service_exec boolean;
 begin
   if not exists (select 1 from information_schema.columns
                   where table_schema='public' and table_name='onboarding_projects'
@@ -293,7 +307,27 @@ begin
     raise exception '674: a non-scalar param value was accepted, or rejected for the wrong reason: %', v_r;
   end if;
 
-  raise notice '674: bindings validate — both required halves, plus rules (b) through (e) each isolated and checked by message content';
+  -- A REVOKE statement is not a description of the resulting privileges —
+  -- assert the END STATE (house rule; see mig 658, where `revoke ... from
+  -- public` silently took `authenticated` down with it because it held its
+  -- reach THROUGH public rather than a named grant). Both halves: the
+  -- clients that must be closed off, and the one caller that must still work.
+  select has_function_privilege('anon', 'public.validate_onboarding_items(jsonb)', 'EXECUTE'),
+         has_function_privilege('authenticated', 'public.validate_onboarding_items(jsonb)', 'EXECUTE'),
+         has_function_privilege('service_role', 'public.validate_onboarding_items(jsonb)', 'EXECUTE')
+    into v_anon_exec, v_authed_exec, v_service_exec;
+
+  if v_anon_exec then
+    raise exception '674: anon can execute validate_onboarding_items — that is the internet';
+  end if;
+  if v_authed_exec then
+    raise exception '674: authenticated can execute validate_onboarding_items directly — it should only be reachable through publish_onboarding_template';
+  end if;
+  if not v_service_exec then
+    raise exception '674: service_role cannot execute validate_onboarding_items — the revoke also stripped the only legitimate caller (mig 658''s failure mode)';
+  end if;
+
+  raise notice '674: bindings validate — both required halves, plus rules (b) through (e) each isolated and checked by message content; grants closed to anon/authenticated, open to service_role';
 end $$;
 
 commit;
