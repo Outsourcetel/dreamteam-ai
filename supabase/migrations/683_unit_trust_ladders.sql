@@ -31,8 +31,12 @@
 -- marked exercises out of that count).
 
 -- ── D2: seed the missing unit ladders ──────────────────────────────────────
-insert into trust_policies (tenant_id, de_id, action_category, target_level, display_name, criteria)
-select d.tenant_id, d.id, x.category, x.target,
+-- target_level is a GENERATED column (LEAST(current_level+1, 3)) — the ladder
+-- names its own next rung. The founder's per-unit ceiling lives in max_level,
+-- which apply_trust_promotion enforces at the climb (mig 458:
+-- least(current+1, max_level)). Bailey's "level 1 forever" is that cap.
+insert into trust_policies (tenant_id, de_id, action_category, max_level, display_name, criteria)
+select d.tenant_id, d.id, x.category, x.cap,
        'Unit ladder — ' || coalesce(d.persona_name, d.name),
        '{"window_days": 30, "min_eval_samples": 0, "min_human_samples": 3,
          "min_eval_pass_rate": 0.9, "max_guardrail_blocks": 0,
@@ -43,7 +47,7 @@ select d.tenant_id, d.id, x.category, x.target,
         ('renewal_manager', 'action_execute',        2),
         ('billing_ar',      'action:erp_financials', 1),
         ('onboarding',      'action_execute',        1)
-       ) as x(archetype, category, target)
+       ) as x(archetype, category, cap)
     on x.archetype = d.archetype_key
  where coalesce(d.lifecycle_status, 'active') not in ('paused', 'retired', 'archived')
    and not exists (
@@ -75,9 +79,9 @@ begin
     join digital_employees d on d.id = p.de_id
     join tenants t on t.id = p.tenant_id
    where t.slug = 'outsourcetel-hq' and p.status = 'active'
-     and ((d.archetype_key = 'renewal_manager' and p.action_category = 'action_execute'        and p.target_level = 2)
-       or (d.archetype_key = 'billing_ar'      and p.action_category = 'action:erp_financials' and p.target_level = 1)
-       or (d.archetype_key = 'onboarding'      and p.action_category = 'action_execute'        and p.target_level = 1));
+     and ((d.archetype_key = 'renewal_manager' and p.action_category = 'action_execute'        and p.max_level = 2)
+       or (d.archetype_key = 'billing_ar'      and p.action_category = 'action:erp_financials' and p.max_level = 1)
+       or (d.archetype_key = 'onboarding'      and p.action_category = 'action_execute'        and p.max_level = 1));
   if v_n < 3 then raise exception '683: expected 3 unit ladders on outsourcetel-hq, found %', v_n; end if;
 
   -- The HOLD is real: bdr, marketing and the Workspace Assistant gained nothing.
