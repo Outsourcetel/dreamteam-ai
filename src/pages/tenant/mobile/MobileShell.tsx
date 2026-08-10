@@ -25,6 +25,8 @@ import type {
 } from '../../../lib/customerApi';
 import { listConnectors, connectorHealth, connectorErrorLabel } from '../../../lib/connectorApi';
 import type { Connector } from '../../../lib/connectorApi';
+import { getPushState, enablePush, disablePush } from '../../../lib/pushClient';
+import type { PushState } from '../../../lib/pushClient';
 import type { Page } from '../../../types';
 
 // ⚠ APPROVING SOMETHING YOU HAVE NOT READ is the failure this product exists
@@ -62,6 +64,14 @@ export default function MobileShell({ setPage }: { setPage: (p: Page) => void })
   const [reasonCode, setReasonCode] = useState<DecisionReasonCode | ''>('');
   const [note, setNote] = useState('');
   const [toast, setToast] = useState<string | null>(null);
+  // Push pings (spec 2026-08-10). null = still detecting; 'busy' = mid-toggle.
+  const [push, setPush] = useState<PushState | 'busy' | null>(null);
+  useEffect(() => { void getPushState().then(setPush).catch(() => setPush('unsupported')); }, []);
+  const togglePush = async () => {
+    setPush('busy');
+    try { setPush(push === 'on' ? await disablePush() : await enablePush()); }
+    catch (e) { setToast(e instanceof Error ? e.message : 'Could not change notifications.'); setPush(await getPushState().catch(() => 'unsupported' as const)); }
+  };
 
   const load = useCallback(async () => {
     setError(null);
@@ -228,6 +238,40 @@ export default function MobileShell({ setPage }: { setPage: (p: Page) => void })
       )}
 
       {toast && <p className="text-[15px] text-dt-warn">{toast}</p>}
+
+      {/* Push pings — one honest state per platform reality, never a button
+          that cannot work (iOS Safari without install has no Push API). */}
+      {push !== null && push !== 'unsupported' && (
+        <div className="rounded-xl border border-dt-border bg-dt-card p-4">
+          {push === 'on' ? (
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[15px] text-dt-body">Pings are on for this phone.</p>
+              <Button kind="ghost" size="touch" onClick={() => void togglePush()}>Turn off</Button>
+            </div>
+          ) : push === 'ios_needs_install' ? (
+            <p className="text-[15px] text-dt-support leading-relaxed">
+              To get decision pings on iPhone, first add this app to your home
+              screen: <span className="text-dt-body">Share → Add to Home Screen</span>,
+              then open it from there and turn notifications on.
+            </p>
+          ) : push === 'denied' ? (
+            <p className="text-[15px] text-dt-support leading-relaxed">
+              Notifications are blocked for this site in your phone's settings —
+              allow them there, then come back.
+            </p>
+          ) : (
+            <>
+              <p className="text-[15px] text-dt-support mb-2">
+                Get a ping the moment a decision needs you — every one, instantly.
+              </p>
+              <Button kind="primary" size="touch" className="w-full justify-center"
+                disabled={push === 'busy'} onClick={() => void togglePush()}>
+                {push === 'busy' ? 'Setting up…' : 'Turn on notifications'}
+              </Button>
+            </>
+          )}
+        </div>
+      )}
 
       <ul className="space-y-3">
         {pending.map((t, i) => (
