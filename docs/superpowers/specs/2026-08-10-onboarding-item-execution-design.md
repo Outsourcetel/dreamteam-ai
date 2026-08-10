@@ -196,10 +196,27 @@ difference between approving and doing.
 
 ### 6. Linkage and idempotency
 
-`action_executions` already carries `subject_kind` / `subject_id`. The execution
-records `subject_kind = 'onboarding_item'`, the project id, and the item key —
-which is what lets completion follow evidence, and what makes the dedupe key
-natural so a re-run cannot apply the same change twice.
+**Corrected after mapping the schema.** An earlier draft said the execution
+would record `subject_kind = 'onboarding_item'`. That is **illegal**:
+`action_executions` carries `CHECK (subject_kind IN ('de','specialist'))`, and
+`executeAction()` types the field as `'de' | 'specialist'`. Inventing a third
+value would have failed at insert time, in the runtime, after the change had
+already been proposed.
+
+Linkage therefore rides the **dedupe key**, which is free text and already the
+house pattern for exactly this (`dunning:<invoice>:<stage>`):
+
+```
+onboarding:<project_id>:<item_key>
+```
+
+`subject_kind` / `subject_id` keep their existing meaning — the employee. One
+key gives both idempotency and linkage.
+
+⚠ And the lesson of mig 661 applies directly: `advance_dunning_cadence` matched
+only on a key shape that one writer produced, so the employee's identical work
+went uncounted for the life of the feature. Completion here must therefore match
+the **work** — this project, this item — and not assume a single producer.
 
 ---
 
