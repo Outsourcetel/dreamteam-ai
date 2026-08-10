@@ -97,11 +97,83 @@ function topHexColors(html: string, limit = 10): string[] {
   return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([h, n]) => `${h} (×${n})`);
 }
 
-function fontFamilies(html: string, limit = 6): string[] {
+const MAX_STYLESHEETS = 3;
+const MAX_CSS_CHARS = 200_000;
+const STYLESHEET_TIMEOUT_MS = 5000;
+
+/** Same-origin <link rel="stylesheet"> URLs from the page, each re-checked
+ *  through the SSRF guard — a relative href resolves against the final page
+ *  URL, never anywhere the page fetch was not already allowed to go. */
+function stylesheetUrls(html: string, baseUrl: string, limit = MAX_STYLESHEETS): string[] {
+  const urls: string[] = [];
+  let base: URL;
+  try { base = new URL(baseUrl); } catch { return urls; }
+  for (const m of html.matchAll(/<link\b[^>]*>/gi)) {
+    const tag = m[0];
+    if (!/rel=["']?stylesheet["'\s>]/i.test(tag)) continue;
+    const href = tag.match(/href=["']([^"']+)["']/i)?.[1];
+    if (!href) continue;
+    try {
+      const u = new URL(href, base);
+      if (u.origin !== base.origin || !isSafeExternalUrl(u.href)) continue;
+      if (!urls.includes(u.href)) urls.push(u.href);
+      if (urls.length >= limit) break;
+    } catch { /* unparsable href — skip */ }
+  }
+  return urls;
+}
+
+/** Fetch the page's same-origin stylesheets so font/custom-property
+ *  definitions living in linked CSS are visible to the extractor. Failures
+ *  just mean thinner evidence, never a refusal. */
+async function fetchStylesheets(html: string, baseUrl: string): Promise<string> {
+  const sheets = await Promise.all(stylesheetUrls(html, baseUrl).map(async (u) => {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), STYLESHEET_TIMEOUT_MS);
+    try {
+      const res = await fetch(u, { signal: ctl.signal, headers: { 'User-Agent': 'DreamTeamBrandBot/1.0 (+brand identity draft)' } });
+      if (!res.ok || !isSafeExternalUrl(res.url || u)) return '';
+      return (await res.text()).slice(0, MAX_CSS_CHARS);
+    } catch {
+      return '';
+    } finally {
+      clearTimeout(timer);
+    }
+  }));
+  return sheets.filter(Boolean).join('\n');
+}
+
+/** CSS custom-property definitions (--name: value) in the corpus; a later
+ *  definition wins, matching how the cascade usually reads. */
+function customProps(css: string): Map<string, string> {
+  const props = new Map<string, string>();
+  for (const m of css.matchAll(/--([\w-]+)\s*:\s*([^;}]{1,200})/g)) {
+    props.set(m[1], m[2].trim());
+  }
+  return props;
+}
+
+/** Substitute var(--name[, fallback]) references until stable (bounded, so a
+ *  self-referential definition cannot loop). */
+function resolveVars(value: string, props: Map<string, string>): string {
+  let out = value;
+  for (let i = 0; i < 4; i++) {
+    const next = out.replace(/var\(\s*--([\w-]+)\s*(?:,\s*([^()]*?)\s*)?\)/gi, (whole, name, fallback) =>
+      props.get(name) ?? (fallback !== undefined ? fallback : whole));
+    if (next === out) break;
+    out = next;
+  }
+  return out.replace(/\s+/g, ' ').trim();
+}
+
+function fontFamilies(corpus: string, limit = 6): string[] {
+  const props = customProps(corpus);
   const seen = new Set<string>();
-  for (const m of html.matchAll(/font-family:\s*([^;}"]{2,80})/gi)) {
-    const fam = m[1].trim();
-    if (fam) seen.add(fam);
+  for (const m of corpus.matchAll(/font-family:\s*([^;}"]{2,80})/gi)) {
+    const fam = resolveVars(m[1].trim(), props);
+    // A still-unresolved var() is no evidence at all — storing the literal
+    // "var(--font)" is exactly the bug this resolver exists to prevent.
+    if (fam && !/var\(/i.test(fam)) seen.add(fam);
     if (seen.size >= limit) break;
   }
   return [...seen];
@@ -160,6 +232,9 @@ serve(async (req) => {
     }
 
     // ── evidence pack: page text + measured colors/fonts, all UNTRUSTED ──
+    // Linked same-origin CSS joins the corpus so font-family declarations and
+    // the --custom-property definitions behind var() references are visible.
+    const cssCorpus = [html, await fetchStylesheets(html, finalUrl)].filter(Boolean).join('\n');
     const metaBits: string[] = [];
     for (const m of html.matchAll(/<meta[^>]+(?:name|property)=["'](description|og:site_name|og:title|og:description|theme-color)["'][^>]+content=["']([^"']{1,300})["']/gi)) {
       metaBits.push(`${m[1]}: ${m[2]}`);
@@ -170,7 +245,7 @@ serve(async (req) => {
       title ? `TITLE: ${title}` : '',
       metaBits.length ? `META:\n${metaBits.join('\n')}` : '',
       `MEASURED COLORS (by frequency in markup/CSS): ${topHexColors(html).join(', ') || 'none found'}`,
-      `FONT FAMILIES IN CSS: ${fontFamilies(html).join(' | ') || 'none found'}`,
+      `FONT FAMILIES IN CSS: ${fontFamilies(cssCorpus).join(' | ') || 'none found'}`,
       `PAGE TEXT:\n${stripHtml(html).slice(0, MAX_TEXT_CHARS)}`,
     ].filter(Boolean).join('\n\n');
 
