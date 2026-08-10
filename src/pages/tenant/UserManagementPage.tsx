@@ -3,6 +3,7 @@ import EmployeeProfileDrawer from '../../components/EmployeeProfileDrawer';
 import { Modal } from '../../design/primitives';
 import type { AuthUser, Tenant } from '../../types';
 import { useUsers, ROLE_LABELS, ROLE_PERMISSIONS, type TenantRole, type TeamMember } from '../../lib/useUsers';
+import { roleCannot } from '../../lib/navAccess';
 import { sendPasswordReset } from '../../lib/api';
 import { loadOrgTree } from '../../lib/orgApi';
 import type { OrgUnit } from '../../lib/orgApi';
@@ -124,7 +125,12 @@ const InviteModal = ({
             </div>
           </div>
 
-          {/* Permissions preview */}
+          {/* Permissions preview — both halves. The "can" list is curated
+              prose; the "can't" list is DERIVED from canAccessPage (handoff
+              09), so it moves by itself when a tier changes and cannot drift
+              into flattery. An invite is exactly the moment someone needs the
+              boundary: the surprise "why can't Priya open Settings?" question
+              lands a week later otherwise. */}
           <div className="p-3 rounded-xl bg-dt-panel border border-dt-border">
             <div className="text-xs text-dt-muted mb-2 font-medium">This role can:</div>
             <div className="flex flex-wrap gap-1.5">
@@ -132,6 +138,14 @@ const InviteModal = ({
                 <span key={p} className="text-xs px-2 py-0.5 rounded-full bg-slate-600 text-dt-support">{p}</span>
               ))}
             </div>
+            {roleCannot(role).length > 0 && (
+              <>
+                <div className="text-xs text-dt-muted mt-3 mb-1.5 font-medium">Can't open:</div>
+                <p className="text-xs text-dt-support leading-relaxed">
+                  {roleCannot(role).join(' · ')}
+                </p>
+              </>
+            )}
           </div>
 
           {error && <p className="text-xs text-red-400">{error}</p>}
@@ -432,6 +446,15 @@ const UserManagementPage = ({ user, tenant, setPage }: { user?: AuthUser; tenant
                   </div>
                 ))}
               </div>
+              {roleCannot(role).length > 0 && (
+                <div className="mt-2 pt-2 border-t border-dt-border space-y-1">
+                  {roleCannot(role).map(a => (
+                    <div key={a} className="text-xs text-dt-faint flex items-start gap-1.5">
+                      <span aria-hidden>✕</span>{a}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>

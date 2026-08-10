@@ -367,3 +367,45 @@ export const canAccessSettingsTab = (
   if (isDtRole) return true;
   return allowed.includes(role);
 };
+
+// ── What a role CANNOT do — derived, never hand-written (handoff 09) ────────
+// ROLE_PERMISSIONS in useUsers.ts is curated prose with no negatives, and a
+// second hand-written list of negatives would drift from enforcement the day
+// either changed — this codebase has already shipped decorative permissions
+// once (the old API-key scopes, honoured by nothing). So the denials are
+// DERIVED by interrogating canAccessPage — the exact function App.tsx routes
+// through, default-deny and all — with one probe page per product area.
+// Areas, not pages: "can't open Governance" is a sentence a person can act
+// on; 67 page keys are not. When a migration widens or narrows a tier, this
+// list moves by itself.
+//
+// ⚠ Every probe key is asserted against PAGE_ACCESS at module load. The first
+// draft guessed three page names that do not exist, and an unknown page is
+// default-DENY — so each typo would have printed a denial that was really a
+// bug in this file. The throw turns that silent lie into a build failure
+// (tests import this module, so `npm test` trips it even headless).
+//
+// ⚠ Deliberately NO "playbook building" row: systems_playbooks is ALL_TENANT
+// (everyone may LOOK at playbooks) and build/publish gating lives on the
+// database actions — no page probe can state that area truthfully.
+const AREA_PROBES: ReadonlyArray<{ area: string; page: Page }> = [
+  { area: 'Approvals — deciding what the workforce may do', page: 'ops_human_tasks' },
+  { area: 'Workforce activity reporting',                   page: 'ops_de_activity' },
+  { area: 'Hiring digital employees',                       page: 'workforce_hire' },
+  { area: 'Knowledge curation & publishing',                page: 'knowledge_ingestion' },
+  { area: 'Connected systems',                              page: 'systems_connectors' },
+  { area: 'Governance & the audit trail',                   page: 'gov_audit' },
+  { area: 'People & access',                                page: 'users' },
+  { area: 'Workspace settings & billing',                   page: 'settings' },
+  { area: 'Company setup',                                  page: 'company_setup' },
+];
+for (const { page } of AREA_PROBES) {
+  if (!(page in PAGE_ACCESS)) throw new Error(`roleCannot probe '${page}' is not in PAGE_ACCESS — a denial printed for it would be a typo, not a policy.`);
+}
+
+/** The areas this role cannot open, in plain words. Empty for owners. */
+export function roleCannot(role: UserRole): string[] {
+  return AREA_PROBES
+    .filter(({ page }) => !canAccessPage(role, page, 'tenant'))
+    .map(({ area }) => area);
+}

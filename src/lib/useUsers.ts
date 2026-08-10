@@ -48,6 +48,10 @@ export const ROLE_PERMISSIONS: Record<TenantRole, string[]> = {
   read_only: ['Analytics (read)', 'Conversations (read)'],
 };
 
+// The "what a role CANNOT do" list lives in navAccess.ts (roleCannot), next
+// to the enforcement it is derived from — and importable by node tests, which
+// this file is not (it drags in supabase and React context).
+
 function profileToMember(row: Record<string, unknown>): TeamMember {
   const name = (row.full_name as string) || (row.email as string) || 'Unknown';
   return {
