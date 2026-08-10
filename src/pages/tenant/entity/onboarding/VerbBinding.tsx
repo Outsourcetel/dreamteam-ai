@@ -29,9 +29,23 @@ import type { TemplateItem } from '../../../../lib/onboardingApi';
 // actually run. This picker offering only reachable verbs is the first line;
 // mig 681 made it the enforced one, rejecting an unreachable binding at
 // publish time and tightening certify's onboarding-bindings-are-runnable
-// probe to match. All three now share ONE definition of reachable — if you
-// change the predicate below, change those two as well. "Reachable" is the
-// exact predicate
+// probe to match.
+//
+// ⚠ mig 693 — THIS PICKER IS NOW THE WEAKEST OF THE THREE, ON PURPOSE.
+// The server enforces a SECOND gate this list cannot: the runtime filters the
+// same definitions through de_may_use_action (action_definitions.requires_role),
+// so a verb needing 'workforce_assistant' or 'finance' never reaches the offer
+// list of an onboarding employee without that role — and the item could never
+// run. That check needs to know which employee the workspace routes onboarding
+// to, which is server-side state (work_watchers / de_objectives), and it lives
+// in public.onboarding_verb_verdict, which is deliberately NOT granted to
+// `authenticated` (it takes a tenant id as a parameter, and a tenant id as a
+// parameter IS the authorisation). So this picker can still offer a verb that
+// publish will refuse; the refusal names the item, the verb, the role and the
+// employee. Do not "fix" that by widening the function's grant.
+//
+// What this list DOES enforce, and still must, is CONNECTOR reachability —
+// the exact predicate
 // get_agentic_tools_for_de already uses to decide what a DE may run: a
 // CONNECTED connector whose category matches the action's, and whose
 // provider matches too (category alone once offered an ERPNext-connected

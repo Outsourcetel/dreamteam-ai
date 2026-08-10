@@ -206,29 +206,55 @@ const PROBES = [
     // that an ACTIVE definition was VISIBLE to the tenant. Platform actions
     // carry tenant_id IS NULL and are visible to EVERY tenant, so a workspace
     // with no Stripe connector passed this probe while binding a Stripe verb.
-    // "Runnable" now means what get_agentic_tools_for_de means by it — the
-    // same predicate mig 681's validate_onboarding_items and
-    // VerbBinding.tsx use, so there is ONE definition of reachable, not three.
-    why: 'a checklist item that names a verb this workspace has no CONNECTED connector to run is a promise that breaks at 2am, in front of a customer — an ACTIVE definition is not enough, because platform actions are visible to every tenant whether or not it owns the system',
+    //
+    // mig 693: and the connector was still not the whole gate. The runtime
+    // filters the SAME set through de_may_use_action, which enforces
+    // action_definitions.requires_role — production's outsourcetel-hq bound a
+    // verb needing 'workforce_assistant' to an onboarding employee that is not
+    // one, and this probe passed it because the connector matched. Twice now,
+    // this probe and validate_onboarding_items have drifted from
+    // get_agentic_tools_for_de because "can this verb run here" was written out
+    // three separate times. It is now written ONCE, in
+    // public.onboarding_verb_verdict(tenant, action_key), and BOTH this probe
+    // and the validator ask it. Do not re-inline the predicate here.
+    //
+    // SCOPE, chosen deliberately (mig 693). Only versions that can still
+    // produce or run work are checked: the CURRENT published version of a
+    // template (every new project is cut from it) and any version an existing
+    // project points at. A superseded version can mint nothing and nothing
+    // reads it, so flagging it is noise nobody can ever clear — the template
+    // editor cannot edit history. That narrowing drops no live defect: v5 of
+    // outsourcetel-hq's template is BOTH the current version AND carried by an
+    // active project, and it is the row this probe now reports. It is a real
+    // failure, not a historical one, and the fix is to rebind the draft and
+    // publish again — which the validator will now refuse until the verb is
+    // one the onboarding desk can run.
+    //
+    // The role arm SKIPS when a workspace routes onboarding to nobody yet
+    // (desk_known = false) — same skip as the validator, because a probe that
+    // is stricter than the publish path fails workspaces that did nothing
+    // wrong.
+    why: 'a checklist item that names a verb the employee who would run it cannot actually reach is a promise that breaks at 2am, in front of a customer — an ACTIVE definition is not enough (platform actions are visible to every tenant whether or not it owns the system), and a CONNECTED connector is not enough either (the runtime filters the same set through de_may_use_action, so a role-gated verb never reaches the offer list of an employee without that role, and perform_onboarding_item is then never even declared)',
     sql: `select t.slug || ' / ' || v.name || ' / ' || (i->>'key')
-                 || ' → ' || (i->>'action_key') as violation
+                 || ' → ' || (i->>'action_key') || ' — '
+                 || case when not coalesce((r.verdict->>'reachable')::boolean, false)
+                         then 'no connected system in this workspace can run it'
+                         else 'needs the "' || coalesce(r.verdict->>'required_roles', 'required')
+                              || '" role, which the employee(s) this workspace gives onboarding work to ('
+                              || coalesce(r.verdict->>'desk', 'none named') || ') do not have'
+                    end as violation
             from onboarding_template_versions v
             join tenants t on t.id = v.tenant_id
+            join onboarding_templates tpl on tpl.id = v.template_id
             cross join lateral jsonb_array_elements(v.items) i
-           where i ? 'action_key'
-             and not exists (
-               select 1
-                 from action_definitions ad
-                 join connectors c
-                   on c.tenant_id = v.tenant_id
-                  and c.status = 'connected'
-                  and c.category = ad.category
-                  and (ad.provider is null or ad.provider = c.provider or ad.provider = 'template')
-                where ad.action_key = i->>'action_key'
-                  and ad.status = 'active'
-                  and ad.provider <> 'internal'
-                  and (ad.scope = 'platform'
-                    or (ad.scope = 'tenant' and ad.tenant_id = v.tenant_id)))`,
+            cross join lateral (
+              select public.onboarding_verb_verdict(v.tenant_id, i->>'action_key') as verdict) r
+           where coalesce(i->>'action_key', '') <> ''
+             and (tpl.version = v.version
+               or exists (select 1 from onboarding_projects p where p.template_version_id = v.id))
+             and (not coalesce((r.verdict->>'reachable')::boolean, false)
+               or (coalesce((r.verdict->>'desk_known')::boolean, false)
+                   and not coalesce((r.verdict->>'role_ok')::boolean, false)))`,
   },
   {
     name: 'bound-onboarding-items-complete-from-evidence',
