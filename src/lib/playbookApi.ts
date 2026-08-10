@@ -14,6 +14,7 @@
 // edge function's 'advance' action.
 // ============================================================
 import { supabase } from '../supabase';
+import { invokeEdge } from './invokeEdge';
 import { getSessionTenantId, CustomerApiError, isMissingTableError } from './customerApi';
 import type { CustomerAccount } from './customerApi';
 
@@ -91,10 +92,10 @@ interface StartResponse { run_id: string; status: RunStatus; task_id?: string; s
 /** Start a renewal run — executed entirely server-side. */
 export async function startRenewalRun(account: CustomerAccount): Promise<PlaybookRun> {
   const tid = await requireTenantId();
-  const { data, error } = await supabase.functions.invoke('playbook-execute', {
+  const { data, error } = await invokeEdge('playbook-execute', {
     body: { action: 'start', playbook_key: 'renewal_v1', account_id: account.id, tenant_id: tid },
   });
-  if (error) raise('startRenewalRun', { message: error.message ?? String(error) });
+  if (error) raise('startRenewalRun', { message: error.message });
   const res = data as StartResponse;
   if (res?.error) raise('startRenewalRun', { message: res.error });
   notify();
@@ -128,7 +129,7 @@ export async function resumeRunForTask(
     if ((data as { needs_http?: boolean } | null)?.needs_http) {
       try {
         const tid = await getSessionTenantId();
-        await supabase.functions.invoke('playbook-execute', {
+        await invokeEdge('playbook-execute', {
           body: tid ? { action: 'advance', run_id: (data as { run_id: string }).run_id, tenant_id: tid } : { action: 'advance', run_id: (data as { run_id: string }).run_id },
         });
       } catch (err) {
@@ -142,7 +143,7 @@ export async function resumeRunForTask(
   console.warn('resume_playbook_on_task RPC unavailable, falling back to edge advance:', error.message);
   try {
     const tid = await getSessionTenantId();
-    await supabase.functions.invoke('playbook-execute', {
+    await invokeEdge('playbook-execute', {
       body: tid ? { action: 'advance', task_id: taskId, tenant_id: tid } : { action: 'advance', task_id: taskId },
     });
     notify();

@@ -5,6 +5,7 @@
 // it applies is undoable for 120 hours; anything riskier comes back as a
 // proposal for a human to approve.
 import { supabase } from '../supabase';
+import { invokeEdge } from './invokeEdge';
 import { requireTenantId } from './liveShared';
 
 export type SubjectKind = 'de' | 'playbook' | 'workspace';
@@ -66,7 +67,7 @@ export async function sendSessionMessage(args: {
   sessionId?: string | null;
 }): Promise<SessionTurn> {
   const tid = await requireTenantId();
-  const { data, error } = await supabase.functions.invoke('ai-session', {
+  const { data, error } = await invokeEdge('ai-session', {
     body: {
       subject_kind: args.subjectKind,
       subject_id: args.subjectId ?? null,

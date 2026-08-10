@@ -8,6 +8,7 @@
 // Nothing here bypasses governance — the wizard walks the same gates an
 // expert would, and translates whatever still blocks into plain language.
 import { supabase } from '../supabase';
+import { invokeEdge } from './invokeEdge';
 import { getSessionTenantId } from './customerApi';
 import { createKnowledgeDoc, ingestDocChunks } from './knowledgeApi';
 import { draftPlaybookFromSop } from './playbookBuilderApi';
@@ -33,26 +34,18 @@ export interface HireDraft {
   study: HireStudy;
 }
 
-const invokeError = async (fnName: string, error: unknown, data: unknown): Promise<never> => {
+const invokeError = async (fnName: string, error: { message?: string } | null, data: unknown): Promise<never> => {
   const dataErr = (data as { error?: string } | null)?.error;
   if (dataErr) throw new Error(dataErr);
-  const ctx = (error as { context?: Response } | null)?.context;
-  if (ctx && typeof ctx.json === 'function') {
-    try {
-      const j = (await ctx.json()) as { error?: string };
-      if (j?.error) throw new Error(j.error);
-    } catch (e) {
-      if (e instanceof Error && e.message && !e.message.startsWith('Unexpected')) throw e;
-    }
-  }
-  throw new Error((error as Error | null)?.message || `${fnName} failed`);
+  // invokeEdge already folded the function's own detail/error into .message.
+  throw new Error(error?.message || `${fnName} failed`);
 };
 
 /** Step 1 — describe the role in plain words, get back a drafted employee
  *  plus its Deep Study of the tenant's real knowledge. */
 export async function draftNewHire(brief: string): Promise<HireDraft> {
   const tid = await getSessionTenantId();
-  const { data, error } = await supabase.functions.invoke('entity-draft', {
+  const { data, error } = await invokeEdge('entity-draft', {
     body: { entity_kind: 'de', brief, ...(tid ? { tenant_id: tid } : {}) },
   });
   if (error || (data as { error?: string })?.error) await invokeError('draftNewHire', error, data);
@@ -346,7 +339,7 @@ export interface RehearsalResult {
  *  answered by the DE's REAL governed brain, each scored by the judge. */
 export async function runRehearsal(deId: string): Promise<RehearsalResult> {
   const tid = await getSessionTenantId();
-  const { data, error } = await supabase.functions.invoke('de-simulate', {
+  const { data, error } = await invokeEdge('de-simulate', {
     body: { de_id: deId, mode: 'synthetic', count: 4, ...(tid ? { tenant_id: tid } : {}) },
   });
   if (error || (data as { error?: string })?.error) await invokeError('runRehearsal', error, data);

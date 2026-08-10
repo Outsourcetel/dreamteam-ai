@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabase';
+import { invokeEdge } from '../lib/invokeEdge';
 import { getSessionTenantId } from '../lib/customerApi';
 import { PanelCard, Button, Banner, Chip, Drawer, TabBar, Field, EmptyState, INPUT_CLS } from './primitives';
 
@@ -135,31 +136,13 @@ export default function BrandIdentityCard() {
     // the asserted tenant against the audited remote-access session, same as
     // every other edge caller (resolveTenantWithRemoteAccess, mig 102).
     const tid = await getSessionTenantId();
-    // The gateway (verify_jwt) rejects an EXPIRED access token before the
-    // function ever runs — seen live 2026-08-10 as a bare 401 after the tab
-    // sat idle. getSession() refreshes an expired token; passing it explicitly
-    // avoids racing the client's own auth-state propagation.
-    const { data: sess } = await supabase.auth.getSession();
-    const { data, error } = await supabase.functions.invoke('brand-extract', {
+    const { data, error } = await invokeEdge('brand-extract', {
       body: { url, ...(tid ? { tenant_id: tid } : {}) },
-      ...(sess?.session ? { headers: { Authorization: `Bearer ${sess.session.access_token}` } } : {}),
     });
     setDrafting(false);
     const r = data as { ok?: boolean; draft?: Brand; detail?: string } | null;
     if (error || !r?.ok || !r.draft) {
-      // On a non-2xx, invoke() hides the function's own refusal inside
-      // error.context — surface that, not the generic wrapper message.
-      let detail = r?.detail ?? error?.message ?? 'unknown error';
-      try {
-        const ctx = (error as { context?: Response } | null)?.context;
-        const body = await ctx?.json?.();
-        if (body?.detail || body?.error) detail = body.detail ?? body.error;
-        // A gateway-level 401 carries only {code, msg} — no detail/error —
-        // and means the sign-in token expired before the function ever ran.
-        else if (ctx?.status === 401) detail = 'your sign-in expired — try again (the page refreshes it), or reload';
-        else if (body?.msg) detail = body.msg;
-      } catch { /* keep the wrapper message */ }
-      setMsg({ tone: 'danger', text: `Could not draft from the site: ${detail}` });
+      setMsg({ tone: 'danger', text: `Could not draft from the site: ${r?.detail ?? error?.message ?? 'unknown error'}` });
       return;
     }
     // The draft fills only fields you have left empty — it never overwrites

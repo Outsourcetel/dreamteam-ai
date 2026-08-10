@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../supabase';
+import { invokeEdge } from '../lib/invokeEdge';
 import { Button, Chip, Field, INPUT_CLS, Modal } from '../design/primitives';
 import { searchKnowledgeDocs } from '../lib/knowledgeApi';
 
@@ -199,16 +200,12 @@ const endSentence = (s: string) => (s && !/[.!?]$/.test(s) ? `${s}.` : s);
  * as "your website is broken".
  */
 async function describeInvokeError(err: unknown): Promise<string> {
-  const e = err as { message?: string; name?: string; context?: unknown };
-  const ctx = e?.context as Response | undefined;
-  if (ctx && typeof ctx.status === 'number' && typeof ctx.text === 'function') {
-    let body = '';
-    try { body = (await ctx.text()).slice(0, 600); } catch { /* body already consumed or unreadable */ }
-    let serverMessage = '';
-    try {
-      const parsed = JSON.parse(body) as { error?: string; message?: string };
-      serverMessage = (parsed?.error || parsed?.message || '').trim();
-    } catch { serverMessage = ''; }
+  // err is invokeEdge's EdgeFunctionError: status + pre-parsed body, with the
+  // underlying supabase-js class name (FunctionsFetchError etc.) preserved.
+  const e = err as { message?: string; name?: string; status?: number; body?: Record<string, unknown> | null };
+  if (typeof e?.status === 'number') {
+    const parsed = (e.body ?? {}) as { error?: string; message?: string };
+    let serverMessage = (parsed?.error || parsed?.message || '').trim();
     // Some refusals come back as machine codes rather than sentences
     // (site-import/index.ts:161 returns a bare 'no_tenant'). Showing the raw
     // token to a business user is the same dead end this whole modal exists
@@ -222,21 +219,21 @@ async function describeInvokeError(err: unknown): Promise<string> {
     // site-import itself only ever emits 400 / 403 / 422 / 500 (index.ts), so a
     // 404 is the PLATFORM saying the function isn't there — which is exactly
     // the state this workspace is in until the orchestrator deploys it.
-    if (ctx.status === 404) {
+    if (e.status === 404) {
       return 'The website importer isn’t deployed to this workspace yet — the server returned 404 for '
         + '“site-import”. Nothing was imported, and the other ways of adding knowledge still work.';
     }
     // 400 (bad address), 403 (no tenant / not permitted) and 422 (nothing
     // readable on the site) are all raised BEFORE anything is queued, so
     // "nothing was imported" is a fact here rather than an assumption.
-    if (ctx.status === 400 || ctx.status === 403 || ctx.status === 422) {
+    if (e.status === 400 || e.status === 403 || e.status === 422) {
       return serverMessage
         ? `${serverMessage} Nothing was imported.`
-        : `The importer refused the request (status ${ctx.status}). Nothing was imported.`;
+        : `The importer refused the request (status ${e.status}). Nothing was imported.`;
     }
     // 5xx can land AFTER the job was queued (the enqueue is at index.ts:269 and
     // the catch-all 500 is below it), so we must not claim nothing happened.
-    return `${serverMessage || `The importer failed with status ${ctx.status}.`} `
+    return `${serverMessage || `The importer failed with status ${e.status}.`} `
       + 'Some pages may already have been queued — check your Knowledge Library in a few minutes '
       + 'before retrying, so you don’t import the same site twice.';
   }
@@ -390,7 +387,7 @@ const ImportSiteModal = ({ onClose, onImported }: ImportSiteModalProps) => {
       .catch(() => { /* counter stays hidden; the import is unaffected */ });
 
     try {
-      const { data, error } = await supabase.functions.invoke('site-import', {
+      const { data, error } = await invokeEdge('site-import', {
         body: { url: parsed.url, max_pages: MAX_PAGES },
       });
       if (error) throw error;

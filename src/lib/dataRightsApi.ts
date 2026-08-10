@@ -24,6 +24,7 @@
 // human-readable warning rather than quietly normalised away.
 // ============================================================================
 import { supabase } from '../supabase';
+import { invokeEdge, EdgeFunctionError } from './invokeEdge';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './env';
 import { requireTenantId } from './liveShared';
 
@@ -104,44 +105,36 @@ export class DataRightsError extends Error {
  * "you are not allowed" apart from "this function does not exist yet", and
  * those two need very different sentences in front of a customer.
  */
-async function invokeFailure(fnName: string, err: unknown): Promise<DataRightsError> {
-  const e = err as { message?: string; name?: string; context?: unknown };
-  const ctx = e?.context as Response | undefined;
-
-  if (!ctx || typeof ctx.status !== 'number') {
+async function invokeFailure(fnName: string, err: EdgeFunctionError): Promise<DataRightsError> {
+  if (typeof err.status !== 'number') {
     // No Response at all — FunctionsFetchError / FunctionsRelayError. The
     // request did not complete, so nothing was produced server-side.
     return new DataRightsError('unavailable',
       `Could not reach the ${fnName} service, so no export was produced.`,
-      { detail: e?.message ?? '' });
+      { detail: err.message ?? '' });
   }
 
-  let body = '';
-  try { body = (await ctx.text()).slice(0, 800); } catch { /* body already consumed */ }
-  let serverMessage = '';
-  try {
-    const parsed = JSON.parse(body) as { error?: string; message?: string; detail?: string };
-    serverMessage = (parsed?.error || parsed?.detail || parsed?.message || '').trim();
-  } catch { serverMessage = body.trim(); }
+  const parsed = (err.body ?? {}) as { error?: string; message?: string; detail?: string };
+  const serverMessage = (parsed?.error || parsed?.detail || parsed?.message || err.bodyText || '').trim();
 
-  if (ctx.status === 404) {
+  if (err.status === 404) {
     return new DataRightsError('not_deployed',
       `The export service is not deployed to this environment yet — the platform returned 404 for “${fnName}”. No export was created.`,
       { detail: serverMessage, status: 404 });
   }
-  if (ctx.status === 401 || ctx.status === 403) {
+  if (err.status === 401 || err.status === 403) {
     return new DataRightsError('denied',
       serverMessage || 'Your account is not permitted to export this workspace.',
-      { detail: serverMessage, status: ctx.status });
+      { detail: serverMessage, status: err.status });
   }
-  if (ctx.status >= 400 && ctx.status < 500) {
+  if (err.status >= 400 && err.status < 500) {
     return new DataRightsError('rejected',
-      serverMessage || `The export service refused the request (status ${ctx.status}). Nothing was exported.`,
-      { detail: serverMessage, status: ctx.status });
+      serverMessage || `The export service refused the request (status ${err.status}). Nothing was exported.`,
+      { detail: serverMessage, status: err.status });
   }
   return new DataRightsError('server',
-    serverMessage || `The export service failed (status ${ctx.status}).`,
-    { detail: serverMessage, status: ctx.status });
+    serverMessage || `The export service failed (status ${err.status}).`,
+    { detail: serverMessage, status: err.status });
 }
 
 /**
@@ -402,7 +395,7 @@ export async function requestTenantExport(opts: { tables?: string[] } = {}): Pro
   // So: the MANIFEST comes back as application/json, which supabase-js parses
   // correctly and which carries the auth/permission failures worth surfacing.
   // The ARCHIVE is fetched directly so the response body stays a stream.
-  const { data, error } = await supabase.functions.invoke(EXPORT_FUNCTION, {
+  const { data, error } = await invokeEdge(EXPORT_FUNCTION, {
     body: { ...body, manifest_only: true },
   });
   if (error) throw await invokeFailure(EXPORT_FUNCTION, error);

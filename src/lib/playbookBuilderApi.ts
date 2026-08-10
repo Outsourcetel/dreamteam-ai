@@ -10,6 +10,7 @@
 // mutates the draft steps; the next publish snapshots version+1.
 // ============================================================
 import { supabase } from '../supabase';
+import { invokeEdge } from './invokeEdge';
 import { getSessionTenantId, CustomerApiError, isMissingTableError } from './customerApi';
 import type { PlaybookRun } from './playbookApi';
 
@@ -478,16 +479,14 @@ export interface PublishResult { published: boolean; version?: number; errors?: 
 /** Publish: server-side validation → immutable version snapshot → status published. */
 export async function publishDefinition(definitionId: string): Promise<PublishResult> {
   const tid = await getSessionTenantId();
-  const { data, error } = await supabase.functions.invoke('playbook-execute', {
+  const { data, error } = await invokeEdge('playbook-execute', {
     body: tid ? { action: 'publish', definition_id: definitionId, tenant_id: tid } : { action: 'publish', definition_id: definitionId },
   });
   if (error) {
-    // supabase-js surfaces non-2xx as FunctionsHttpError — read the body for structured errors.
-    const ctx = (error as { context?: Response }).context;
-    if (ctx && typeof ctx.json === 'function') {
-      try { return await ctx.json() as PublishResult; } catch { /* fallthrough */ }
-    }
-    raise('publishDefinition', { message: error.message ?? String(error) });
+    // publish answers validation failures as structured non-2xx JSON — that
+    // body IS the result the caller renders.
+    if (error.body) return error.body as unknown as PublishResult;
+    raise('publishDefinition', { message: error.message });
   }
   notify();
   return data as PublishResult;
@@ -498,10 +497,10 @@ export interface StartDefinitionResult { run_id: string; status: string; task_id
 /** Start a run of the latest PUBLISHED snapshot (server-executed). */
 export async function startDefinitionRun(definitionId: string, accountId: string): Promise<StartDefinitionResult> {
   const tid = await getSessionTenantId();
-  const { data, error } = await supabase.functions.invoke('playbook-execute', {
+  const { data, error } = await invokeEdge('playbook-execute', {
     body: tid ? { action: 'start', definition_id: definitionId, account_id: accountId, tenant_id: tid } : { action: 'start', definition_id: definitionId, account_id: accountId },
   });
-  if (error) raise('startDefinitionRun', { message: error.message ?? String(error) });
+  if (error) raise('startDefinitionRun', { message: error.message });
   const res = data as StartDefinitionResult;
   if (res?.error) raise('startDefinitionRun', { message: res.error });
   notify();
@@ -790,7 +789,7 @@ export async function listTriggerFires(definitionId?: string): Promise<PlaybookT
 export async function dispatchTriggersOpportunistic(): Promise<{ processed: number } | null> {
   try {
     const tid = await getSessionTenantId();
-    const { data, error } = await supabase.functions.invoke('playbook-execute', {
+    const { data, error } = await invokeEdge('playbook-execute', {
       body: tid ? { action: 'dispatch', tenant_id: tid } : { action: 'dispatch' },
     });
     if (error) return null;
@@ -825,16 +824,10 @@ export interface DraftResult {
 
 export async function draftPlaybookFromSop(input: { sopText: string; deId?: string | null }): Promise<DraftResult> {
   const tid = await getSessionTenantId();
-  const { data, error } = await supabase.functions.invoke('playbook-draft', {
+  const { data, error } = await invokeEdge('playbook-draft', {
     body: { sop_text: input.sopText, ...(input.deId ? { de_id: input.deId } : {}), ...(tid ? { tenant_id: tid } : {}) },
   });
-  if (error) {
-    const ctx = (error as { context?: Response }).context;
-    if (ctx && typeof ctx.json === 'function') {
-      try { const j = await ctx.json(); raise('draftPlaybookFromSop', { message: (j as { error?: string }).error ?? error.message }); } catch { /* fallthrough */ }
-    }
-    raise('draftPlaybookFromSop', { message: error.message ?? String(error) });
-  }
+  if (error) raise('draftPlaybookFromSop', { message: error.message });
   if ((data as { error?: string })?.error) raise('draftPlaybookFromSop', { message: (data as { error: string }).error });
   return data as DraftResult;
 }
@@ -932,7 +925,7 @@ export interface PreviewResult {
 
 export async function previewRun(input: { definitionId?: string; steps?: DefinitionStep[]; accountId: string }): Promise<PreviewResult> {
   const tid = await getSessionTenantId();
-  const { data, error } = await supabase.functions.invoke('playbook-execute', {
+  const { data, error } = await invokeEdge('playbook-execute', {
     body: {
       action: 'start', preview: true, account_id: input.accountId,
       ...(input.definitionId ? { definition_id: input.definitionId } : { steps: input.steps }),
@@ -940,11 +933,8 @@ export async function previewRun(input: { definitionId?: string; steps?: Definit
     },
   });
   if (error) {
-    const ctx = (error as { context?: Response }).context;
-    if (ctx && typeof ctx.json === 'function') {
-      try { return await ctx.json() as PreviewResult; } catch { /* fallthrough */ }
-    }
-    raise('previewRun', { message: error.message ?? String(error) });
+    if (error.body) return error.body as unknown as PreviewResult;
+    raise('previewRun', { message: error.message });
   }
   return data as PreviewResult;
 }

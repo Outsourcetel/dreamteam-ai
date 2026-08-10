@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { invokeEdge } from './invokeEdge';
 
 // =====================================================
 // TYPES â mirror the Supabase schema
@@ -857,7 +858,7 @@ export const removeTenantIpAllowlistEntry = async (entryId: string): Promise<{ o
 // open on any error -- a network hiccup must never look like a lockout.
 export const checkMyIpAllowed = async (): Promise<boolean> => {
   try {
-    const { data, error } = await supabase.functions.invoke('check-ip-allowlist', { method: 'POST' });
+    const { data, error } = await invokeEdge('check-ip-allowlist', { method: 'POST' });
     if (error) { console.error('checkMyIpAllowed:', error.message); return true; }
     return (data as { allowed: boolean })?.allowed !== false;
   } catch (e) {

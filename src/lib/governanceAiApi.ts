@@ -7,6 +7,7 @@
 // hand (addGuardrailRule / updateGuardrailRule under RLS). So the assistant
 // suggests; a human clicks.
 import { supabase } from '../supabase';
+import { invokeEdge } from './invokeEdge';
 import { requireTenantId } from './liveShared';
 import {
   addGuardrailRule, updateGuardrailRule, listGuardrailRules,
@@ -54,7 +55,7 @@ export async function sendGovernanceMessage(args: {
   sessionId?: string | null;
 }): Promise<GovernanceTurn> {
   const tid = await requireTenantId();
-  const { data, error } = await supabase.functions.invoke('ai-session', {
+  const { data, error } = await invokeEdge('ai-session', {
     body: {
       subject_kind: 'governance',
       gov_scope: args.scope,

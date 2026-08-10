@@ -5,6 +5,7 @@
 // by hand. Email stays draft-for-approval — nothing sends without a person.
 // Also: per-tenant sending identity, and the deliverables (reports) DEs produce.
 import { supabase } from '../supabase';
+import { invokeEdge } from './invokeEdge';
 import { requireTenantId } from './liveShared';
 
 export interface CommsSettings { from_email: string | null; from_name: string | null }
@@ -31,7 +32,7 @@ export async function setCommsSettings(fromEmail: string, fromName: string): Pro
 /** Deliver an approved outbound draft (email → Resend). Returns a plain result. */
 export async function deliverOutbound(draftId: string): Promise<{ sent: boolean; blocked: boolean; detail?: string }> {
   const tid = await requireTenantId();
-  const { data, error } = await supabase.functions.invoke('send-outbound', { body: { draft_id: draftId, tenant_id: tid } });
+  const { data, error } = await invokeEdge('send-outbound', { body: { draft_id: draftId, tenant_id: tid } });
   if (error) throw new Error(error.message);
   const d = data as { ok?: boolean; sent?: boolean; blocked?: boolean; skipped?: boolean; detail?: string; note?: string } | null;
   return { sent: !!d?.sent, blocked: !!d?.blocked, detail: d?.detail ?? d?.note };

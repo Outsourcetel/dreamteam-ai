@@ -54,6 +54,7 @@
 //     below exists to give a human a good error, never to gate.
 // ============================================================================
 import { supabase } from '../supabase';
+import { invokeEdge, EdgeFunctionError } from './invokeEdge';
 import { SUPABASE_URL } from './env';
 import { requireTenantId } from './liveShared';
 
@@ -224,38 +225,31 @@ function rpcFailure(rpcName: string, err: { code?: string; message?: string; det
  * Reading the body is the only way to tell "not deployed yet" apart from "your
  * DNS record is not published", and those need very different sentences.
  */
-async function invokeFailure(fnName: string, err: unknown): Promise<SsoError> {
-  const e = err as { message?: string; context?: unknown };
-  const ctx = e?.context as Response | undefined;
-  if (!ctx || typeof ctx.status !== 'number') {
+async function invokeFailure(fnName: string, err: EdgeFunctionError): Promise<SsoError> {
+  if (typeof err.status !== 'number') {
     return new SsoError('unavailable',
       `Could not reach the ${fnName} service, so the domain was not checked. Nothing changed.`,
-      { detail: e?.message ?? '' });
+      { detail: err.message ?? '' });
   }
-  let body = '';
-  try { body = (await ctx.text()).slice(0, 800); } catch { /* body already consumed */ }
-  let serverMessage = '';
-  try {
-    const parsed = JSON.parse(body) as { error?: string; message?: string; detail?: string; reason?: string };
-    serverMessage = (parsed?.error || parsed?.detail || parsed?.message || parsed?.reason || '').trim();
-  } catch { serverMessage = body.trim(); }
+  const parsed = (err.body ?? {}) as { error?: string; message?: string; detail?: string; reason?: string };
+  const serverMessage = (parsed?.error || parsed?.detail || parsed?.message || parsed?.reason || err.bodyText || '').trim();
 
-  if (ctx.status === 404) {
+  if (err.status === 404) {
     return new SsoError('not_deployed',
       `The domain-verification service is not deployed to this environment yet — the platform returned 404 for “${fnName}”. Your domain was not checked, and nothing about it changed.`,
       { detail: serverMessage, status: 404 });
   }
-  if (ctx.status === 401 || ctx.status === 403) {
-    return new SsoError('denied', serverMessage || 'Your account is not permitted to verify domains for this workspace.', { detail: serverMessage, status: ctx.status });
+  if (err.status === 401 || err.status === 403) {
+    return new SsoError('denied', serverMessage || 'Your account is not permitted to verify domains for this workspace.', { detail: serverMessage, status: err.status });
   }
-  if (ctx.status === 409) return new SsoError('conflict', CONFLICT_SENTENCE, { detail: serverMessage, status: 409 });
-  if (ctx.status === 429) {
+  if (err.status === 409) return new SsoError('conflict', CONFLICT_SENTENCE, { detail: serverMessage, status: 409 });
+  if (err.status === 429) {
     return new SsoError('rejected', DOMAIN_REASON_TEXT.throttled, { detail: serverMessage, status: 429 });
   }
-  if (ctx.status >= 400 && ctx.status < 500) {
-    return new SsoError('rejected', serverMessage || `The verification service refused the request (status ${ctx.status}).`, { detail: serverMessage, status: ctx.status });
+  if (err.status >= 400 && err.status < 500) {
+    return new SsoError('rejected', serverMessage || `The verification service refused the request (status ${err.status}).`, { detail: serverMessage, status: err.status });
   }
-  return new SsoError('server', serverMessage || `The verification service failed (status ${ctx.status}).`, { detail: serverMessage, status: ctx.status });
+  return new SsoError('server', serverMessage || `The verification service failed (status ${err.status}).`, { detail: serverMessage, status: err.status });
 }
 
 /* ── Domains ──────────────────────────────────────────────────────────────── */
@@ -480,7 +474,7 @@ export interface VerifyResult {
 }
 
 export async function verifyTenantDomain(domain: string): Promise<VerifyResult> {
-  const { data, error } = await supabase.functions.invoke(VERIFY_DOMAIN_FUNCTION, { body: { domain } });
+  const { data, error } = await invokeEdge(VERIFY_DOMAIN_FUNCTION, { body: { domain } });
   if (error) throw await invokeFailure(VERIFY_DOMAIN_FUNCTION, error);
   const d = (data ?? {}) as Record<string, unknown>;
   const status = typeof d.status === 'string' ? d.status : null;

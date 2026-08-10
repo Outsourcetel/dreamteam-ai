@@ -12,6 +12,7 @@
 // guardrails (composition rule, migration 016 — untouched).
 // ============================================================
 import { supabase } from '../supabase';
+import { invokeEdge, EdgeFunctionError } from './invokeEdge';
 import { raise, requireTenantId, listTenantRows } from './liveShared';
 import { getSessionTenantId, isMissingTableError } from './customerApi';
 
@@ -175,19 +176,14 @@ export interface TrustPlanDraft {
 
 /** Every non-200 from the edge fn is {ok:false, error, detail} with a
  *  plain-language detail — surface that, never a bare code. */
-async function compileFailure(error: unknown, data: unknown): Promise<never> {
+async function compileFailure(error: EdgeFunctionError | null, data: unknown): Promise<never> {
   const msgOf = (b: unknown) => {
     const body = b as { error?: string; detail?: string } | null;
     return body?.detail || body?.error || null;
   };
-  let msg = msgOf(data);
-  if (!msg) {
-    const ctx = (error as { context?: Response } | null)?.context;
-    if (ctx && typeof ctx.json === 'function') {
-      try { msg = msgOf(await ctx.json()); } catch { /* non-JSON body */ }
-    }
-  }
-  throw new Error(msg || (error as Error | null)?.message || 'The trust plan could not be compiled.');
+  // A 200 refusing in-payload carries the reason in `data`; a non-2xx reason
+  // is already folded into error.message by invokeEdge.
+  throw new Error(msgOf(data) || error?.message || 'The trust plan could not be compiled.');
 }
 
 /** POST /compile-trust-plan — plain-language plan → validated DRAFT.
@@ -199,7 +195,7 @@ export async function compileTrustPlan(deId: string, planText: string): Promise<
   // tenant_id is only honored for platform admins in an audited remote-access
   // session (the entity-draft pattern) — harmless for ordinary tenant users.
   const tid = await getSessionTenantId();
-  const { data, error } = await supabase.functions.invoke('compile-trust-plan', {
+  const { data, error } = await invokeEdge('compile-trust-plan', {
     body: { de_id: deId, plan_text: planText, ...(tid ? { tenant_id: tid } : {}) },
   });
   const res = data as { ok?: boolean; draft?: TrustPlanDraft; error?: string; detail?: string } | null;

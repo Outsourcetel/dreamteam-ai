@@ -7,6 +7,7 @@
 // DEFINER RPCs so audit + activity events are appended server-side.
 // ============================================================
 import { supabase } from '../supabase';
+import { invokeEdge } from './invokeEdge';
 import { getSessionTenantId, CustomerApiError, isMissingTableError } from './customerApi';
 
 // ── Types ─────────────────────────────────────────────────────────
@@ -338,15 +339,14 @@ export interface CheckItemResult {
 }
 export async function checkItemNow(projectId: string, key: string): Promise<CheckItemResult> {
   const tid = await getSessionTenantId();
-  const { data, error } = await supabase.functions.invoke('onboarding-verify', {
+  const { data, error } = await invokeEdge('onboarding-verify', {
     body: tid ? { action: 'check_item', project_id: projectId, key, tenant_id: tid } : { action: 'check_item', project_id: projectId, key },
   });
   if (error) {
-    const ctx = (error as { context?: Response }).context;
-    if (ctx && typeof ctx.json === 'function') {
-      try { const body = await ctx.json(); notify(); return body as CheckItemResult; } catch { /* fallthrough */ }
-    }
-    raise('checkItemNow', { message: error.message ?? String(error) });
+    // check_item answers some refusals as structured non-2xx JSON that IS a
+    // renderable CheckItemResult.
+    if (error.body) { notify(); return error.body as unknown as CheckItemResult; }
+    raise('checkItemNow', { message: error.message });
   }
   notify();
   return data as CheckItemResult;

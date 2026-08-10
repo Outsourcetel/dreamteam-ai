@@ -3,6 +3,7 @@
 // in the UI. Every table has an RLS SELECT policy scoping to the
 // caller's tenant (migs 155-163), so a de_id filter is sufficient and safe.
 import { supabase } from '../supabase';
+import { invokeEdge } from './invokeEdge';
 
 export interface MemoryRow { id: string; content: string; kind: string; subject_kind: string; subject_ref: string | null; salience: number; created_at: string }
 /** attention_* are written by de_stall_sweep_internal (mig 485) every 15 minutes
@@ -145,7 +146,9 @@ export const getReplaySources = async (deId: string): Promise<ReplaySource[]> =>
 // injected ("what if it knew this?"). replay:true → de-answer suppresses every
 // side effect: no cache read/write, no metrics, no memory, no escalation.
 export const runReplay = async (deId: string, question: string, candidateKnowledge?: string): Promise<ReplayResult> => {
-  const { data, error } = await supabase.functions.invoke('de-answer', {
+  const { data, error } = await invokeEdge<{
+    error?: string; answer?: string; confidence?: number; sources?: unknown[]; needs_escalation?: boolean;
+  }>('de-answer', {
     body: {
       question, de_id: deId, replay: true,
       ...(candidateKnowledge?.trim() ? { candidate_knowledge: candidateKnowledge.trim() } : {}),
@@ -223,25 +226,19 @@ function friendlyWorkbenchError(raw: string): string {
 // run the tenant's golden exam WITH this employee answering; a passing suite
 // writes role_certifications via certify_de_from_eval inside eval-run.
 export const runCertificationEval = async (deId: string): Promise<{ status: string; certification: { status?: string; score_pct?: number } | null }> => {
-  const { data, error } = await supabase.functions.invoke('eval-run', { body: { trigger: 'manual', de_id: deId } });
+  const { data, error } = await invokeEdge('eval-run', { body: { trigger: 'manual', de_id: deId } });
   if (error) {
-    const ctx = (error as { context?: Response }).context;
-    if (ctx && typeof ctx.json === 'function') {
-      try {
-        const parsed = await ctx.json() as { error?: string };
-        throw new Error(parsed?.error === 'llm_not_configured'
-          ? 'The workforce brain is offline — certification exams run the real answer pipeline and need the AI key.'
-          : (parsed?.error ?? error.message));
-      } catch (e) { if (e instanceof Error) throw e; }
-    }
-    throw new Error(error.message ?? String(error));
+    const code = (error.body as { error?: string } | null)?.error;
+    throw new Error(code === 'llm_not_configured'
+      ? 'The workforce brain is offline — certification exams run the real answer pipeline and need the AI key.'
+      : error.message);
   }
   let res = data as { run_id: string; status: string; remaining?: number; certification?: { status?: string; score_pct?: number } | null };
   // Batched suites: keep re-invoking with run_id + de_id until finished.
   let guard = 0;
   while (res?.status === 'running' && (res.remaining ?? 0) > 0 && guard++ < 20) {
-    const { data: next, error: nextErr } = await supabase.functions.invoke('eval-run', { body: { run_id: res.run_id, de_id: deId } });
-    if (nextErr) throw new Error(nextErr.message ?? String(nextErr));
+    const { data: next, error: nextErr } = await invokeEdge('eval-run', { body: { run_id: res.run_id, de_id: deId } });
+    if (nextErr) throw new Error(nextErr.message);
     res = next as typeof res;
   }
   return { status: res?.status ?? 'unknown', certification: res?.certification ?? null };

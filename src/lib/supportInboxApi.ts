@@ -1,6 +1,7 @@
 // Support inbox (Phase 2) — the human side of the unified conversation=ticket.
 // Reads use RLS (tenant-isolated); writes go through the migration-151 RPCs.
 import { supabase } from '../supabase';
+import { invokeEdge } from './invokeEdge';
 import { requireTenantId } from './liveShared';
 
 export interface SupportConversation {
@@ -155,19 +156,10 @@ export async function handoffBackToDe(conversationId: string, note?: string): Pr
  *  via the send-email-reply edge fn (send first, record after). */
 export async function sendEmailReply(conversationId: string, content: string): Promise<void> {
   const tid = await requireTenantId();
-  const { data, error } = await supabase.functions.invoke('send-email-reply', {
+  const { data, error } = await invokeEdge('send-email-reply', {
     body: { conversation_id: conversationId, content, tenant_id: tid },
   });
-  if (error) {
-    // supabase-js wraps non-2xx as a generic FunctionsHttpError; surface the
-    // function's honest detail (e.g. "no verified from-address") instead.
-    const ctx = (error as { context?: Response }).context;
-    if (ctx && typeof ctx.json === 'function') {
-      const b = await ctx.json().catch(() => null) as { detail?: string; error?: string } | null;
-      throw new Error(b?.detail || b?.error || error.message);
-    }
-    throw new Error(error.message);
-  }
+  if (error) throw new Error(error.message);
   const d = data as { ok?: boolean; detail?: string; error?: string } | null;
   if (!d?.ok) throw new Error(d?.detail || d?.error || 'Reply was not sent.');
 }

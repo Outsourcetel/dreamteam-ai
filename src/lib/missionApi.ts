@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { invokeEdge } from './invokeEdge';
 
 // Mission Delegation client rail (docs/14). Missing-table TOLERANT: until
 // migration 248 is applied, reads surface `notReady` instead of throwing so
@@ -113,13 +114,12 @@ export async function setMissionState(missionId: string, action: 'pause' | 'resu
 }
 
 async function invoke(body: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const { data, error } = await supabase.functions.invoke('de-mission', { body });
+  const { data, error } = await invokeEdge('de-mission', { body });
   if (error) {
-    const ctx = (error as { context?: Response }).context;
-    if (ctx && typeof ctx.json === 'function') {
-      try { return await ctx.json() as Record<string, unknown>; } catch { /* fallthrough */ }
-    }
-    throw new Error(error.message ?? String(error));
+    // de-mission answers some refusals as structured non-2xx JSON the callers
+    // read (llm_not_configured etc.) — hand that body back, not an exception.
+    if (error.body) return error.body;
+    throw new Error(error.message);
   }
   return data as Record<string, unknown>;
 }

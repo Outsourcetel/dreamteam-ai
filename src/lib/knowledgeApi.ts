@@ -5,6 +5,7 @@
 // real, grounded brain.
 // ============================================================
 import { supabase } from '../supabase';
+import { invokeEdge } from './invokeEdge';
 import { CustomerApiError, isMissingTableError, getSessionTenantId } from './customerApi';
 
 export interface KnowledgeDoc {
@@ -337,19 +338,19 @@ export async function extractPdf(file: File): Promise<{ title: string; text: str
     r.onerror = () => reject(new Error('could not read the file'));
     r.readAsDataURL(file);
   });
-  const { data, error } = await supabase.functions.invoke('extract-document', {
+  const { data, error } = await invokeEdge('extract-document', {
     body: { kind: 'pdf', file_base64, filename: file.name },
   });
-  if (error) throw new Error((data as { error?: string })?.error || error.message);
+  if (error) throw new Error(error.message);
   if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
   return data as { title: string; text: string; chars: number };
 }
 
 export async function extractUrl(url: string): Promise<{ title: string; text: string; chars: number }> {
-  const { data, error } = await supabase.functions.invoke('extract-document', {
+  const { data, error } = await invokeEdge('extract-document', {
     body: { kind: 'url', url },
   });
-  if (error) throw new Error((data as { error?: string })?.error || error.message);
+  if (error) throw new Error(error.message);
   if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
   return data as { title: string; text: string; chars: number };
 }
