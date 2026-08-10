@@ -1,0 +1,2 @@
+customer,title,agreement_type,status,currency,value,start_date,end_date,renewal_date,auto_renew,notice_period_days
+Example Customer Ltd,Managed telecom services 2026,managed_service,active,USD,24000.00,2026-01-01,2026-12-31,2026-12-01,true,30

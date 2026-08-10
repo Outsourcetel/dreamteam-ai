@@ -1,0 +1,2 @@
+customer,first_name,last_name,email,phone,role,is_primary
+Example Customer Ltd,Jane,Smith,jane.smith@example.com,+1 555 0100,billing,true

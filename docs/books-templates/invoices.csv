@@ -1,0 +1,2 @@
+invoice_ref,customer,amount,currency,due_date,status,contact_email
+INV-2026-001,Example Customer Ltd,4500.00,USD,2026-08-25,open,accounts@example.com
