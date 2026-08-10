@@ -13,6 +13,103 @@ import { readFileSync } from 'node:fs';
 // run certify's own query with a pin removed rather than a paraphrase of it.
 import { landedPredicateSql, LANDED_PINS } from './landed-predicate.mjs';
 import { productionEvidenceSql, PRODUCTION_EVIDENCE_PIN_NAMES } from './production-evidence.mjs';
+import { bareContainerLiteralSql } from './bare-container-literal.mjs';
+
+// ── Fixtures for no-untyped-literal-appended-to-a-container ────────────────
+// The production catalog is CLEAN of this shape, so the probe returns zero rows
+// and passes trivially. These fixtures are the only thing proving it can fire.
+// They are fed through bareContainerLiteralSql() — the REAL query the probe
+// runs — so a regex that matches nothing fails these cases instead of hiding
+// behind a clean database. That is not hypothetical: the jsonb branch was first
+// written with `\b` (a BACKSPACE in Postgres regex, not a word boundary), had
+// zero coverage, and returned zero rows exactly like a clean scan.
+const fx = (prosrc, fullargs = '') => [{ proname: 'fixture_fn', prosrc, fullargs }];
+
+const BODY_BARE = fx(`declare v_errors text[] := '{}';
+begin
+  if v_n < 1 then v_errors := v_errors || 'template needs at least 1 item'; end if;
+  return v_errors;
+end;`);
+const BODY_CAST = fx(`declare v_errors text[] := '{}';
+begin
+  if v_n < 1 then v_errors := v_errors || 'template needs at least 1 item'::text; end if;
+  return v_errors;
+end;`);
+const BODY_FORMAT = fx(`declare v_errors text[] := '{}';
+begin
+  v_errors := v_errors || format('item "%s" needs a label', v_key);
+  return v_errors;
+end;`);
+const BODY_ARRAY_APPEND = fx(`declare v_reasons text[] := '{}';
+begin
+  v_reasons := array_append(v_reasons, 'failed_certification');
+  return v_reasons;
+end;`);
+const BODY_LITERAL_LEFT = fx(`declare v_errors text[] := '{}';
+begin
+  v_errors := 'template needs at least 1 item' || v_errors;
+  return v_errors;
+end;`);
+const BODY_LITERAL_LEFT_CAST = fx(`declare v_errors text[] := '{}';
+begin
+  v_errors := 'template needs at least 1 item'::text || v_errors;
+  return v_errors;
+end;`);
+// No '[' anywhere in these two, so the ARRAY branch of the regex cannot match
+// them. Detection therefore depends entirely on the json branch and its \y.
+const BODY_JSONB_BARE = fx(`declare v_doc jsonb := jsonb_build_array();
+begin
+  v_doc := v_doc || 'not valid json';
+  return v_doc;
+end;`);
+const BODY_JSONB_CAST = fx(`declare v_doc jsonb := jsonb_build_array();
+begin
+  v_doc := v_doc || '{"ok": true}'::jsonb;
+  return v_doc;
+end;`);
+const BODY_MULTILINE = fx(`declare v_errors text[] := '{}';
+begin
+  v_errors := v_errors
+              ||
+              'append spanning three lines';
+  return v_errors;
+end;`);
+const BODY_MULTILINE_CAST = fx(`declare v_errors text[] := '{}';
+begin
+  v_errors := v_errors
+              ||
+              'append spanning three lines'::text;
+  return v_errors;
+end;`);
+const BODY_ARRAY_CAT = fx(`declare v_errors text[] := '{}';
+begin
+  v_errors := array_cat(v_errors, 'malformed');
+  return v_errors;
+end;`);
+const BODY_ARRAY_CAT_OK = fx(`declare v_errors text[] := '{}';
+begin
+  v_errors := array_cat(v_errors, array['fine']);
+  return v_errors;
+end;`);
+const BODY_SCALAR = fx(`declare v_summary text := '';
+begin
+  v_summary := v_summary || 'Log activity on ' || v_acct_name;
+  return v_summary;
+end;`);
+const BODY_COMMENTED = fx(`declare v_errors text[] := '{}';
+begin
+  -- v_errors := v_errors || 'this line is PROSE, exactly as mig 685 quotes it';
+  v_errors := v_errors || format('item "%s" needs a label', v_key);
+  return v_errors;
+end;`);
+const BODY_ARG_ARRAY = fx(`begin
+  p_notes := p_notes || 'appended to an array argument';
+  return p_notes;
+end;`, 'p_notes text[]');
+const BODY_ARG_ARRAY_CAST = fx(`begin
+  p_notes := p_notes || 'appended to an array argument'::text;
+  return p_notes;
+end;`, 'p_notes text[]');
 const REF = 'rfsvmhcqeiyrxivbmpel';
 function token() {
   const env = readFileSync('.env.local', 'utf8').replace(/^﻿/, '');
@@ -387,6 +484,82 @@ const CASES = [
                where i.status = 'done' and i.has_action_key
                  and not exists (select 1 from (select null::text as decision where false) ae
                                   where ae.decision in ('auto_executed','executed_after_approval')))`,
+  },
+  // ── mig 685's ratchet: no-untyped-literal-appended-to-a-container ───────
+  // Every case runs bareContainerLiteralSql() — certify's ACTUAL query — over
+  // a synthesised body. `silent` is never an empty fixture; it is always the
+  // CORRECT way to write the same line, so these prove the probe discriminates
+  // rather than merely fires.
+  {
+    name: 'untyped-literal-append (the exact mig 685 shape -> caught; ::text -> clean)',
+    fires: bareContainerLiteralSql(BODY_BARE),
+    silent: bareContainerLiteralSql(BODY_CAST),
+  },
+  {
+    name: 'untyped-literal-append (format(...) returns typed text and is NEVER a violation)',
+    fires: bareContainerLiteralSql(BODY_BARE),
+    silent: bareContainerLiteralSql(BODY_FORMAT),
+  },
+  {
+    // array_append is (anyarray, anyelement) — CORRECT code, and 19 real call
+    // sites in public depend on it (assess_de_skills_internal, de_records_gate,
+    // get_de_economics, set_doc_scope, set_pipeline_stages,
+    // work_de_development_program_internal). A careless pattern flags all 19,
+    // the probe gets switched off, and the class comes back.
+    name: 'untyped-literal-append (array_append(arr, \'lit\') is CORRECT — 19 real call sites must stay clean)',
+    fires: bareContainerLiteralSql(BODY_BARE),
+    silent: bareContainerLiteralSql(BODY_ARRAY_APPEND),
+  },
+  {
+    name: 'untyped-literal-append (literal on the LEFT of || is the same defect)',
+    fires: bareContainerLiteralSql(BODY_LITERAL_LEFT),
+    silent: bareContainerLiteralSql(BODY_LITERAL_LEFT_CAST),
+  },
+  {
+    // ⚠ THIS CASE GUARDS THE \y ESCAPE. Neither fixture contains a '[', so the
+    // ARRAY branch of the regex cannot match them and detection depends
+    // entirely on the json branch's word boundary. Rewrite `jsonb?\y` as
+    // `jsonb?\b` in bare-container-literal.mjs and this case goes RED —
+    // which is exactly what did NOT happen the first time, because there was
+    // no such case and zero coverage looks identical to a clean database.
+    name: 'untyped-literal-append (jsonb carries the same trap — GUARDS THE \\y WORD-BOUNDARY ESCAPE)',
+    fires: bareContainerLiteralSql(BODY_JSONB_BARE),
+    silent: bareContainerLiteralSql(BODY_JSONB_CAST),
+  },
+  {
+    // The probe splits on ';' rather than newline. A line-based sieve returns
+    // zero here, which is why the first draft of the sweep missed this shape.
+    name: 'untyped-literal-append (an append split across THREE LINES is still caught)',
+    fires: bareContainerLiteralSql(BODY_MULTILINE),
+    silent: bareContainerLiteralSql(BODY_MULTILINE_CAST),
+  },
+  {
+    // array_cat IS (anyarray, anyarray) — proven on production: it raised
+    // 22P02 "malformed array literal" on a bare literal. Matching only when
+    // the SECOND argument starts with a quote is what keeps array_cat(v,
+    // array['fine']) out of the results.
+    name: 'untyped-literal-append (array_cat with a literal is caught; array_cat(v, array[..]) is not)',
+    fires: bareContainerLiteralSql(BODY_ARRAY_CAT),
+    silent: bareContainerLiteralSql(BODY_ARRAY_CAT_OK),
+  },
+  {
+    // 37 real statements in public concatenate a literal onto a SCALAR text
+    // variable. That is ordinary string concatenation and always correct.
+    name: 'untyped-literal-append (a SCALAR text variable is ordinary concatenation, never a violation)',
+    fires: bareContainerLiteralSql(BODY_BARE),
+    silent: bareContainerLiteralSql(BODY_SCALAR),
+  },
+  {
+    // mig 685's own header quotes the bugged line as prose. A probe that read
+    // comments would manufacture a finding out of the documentation of the fix.
+    name: 'untyped-literal-append (a COMMENTED-OUT example is prose, not a finding)',
+    fires: bareContainerLiteralSql(BODY_BARE),
+    silent: bareContainerLiteralSql(BODY_COMMENTED),
+  },
+  {
+    name: 'untyped-literal-append (an array ARGUMENT is covered, not just a local)',
+    fires: bareContainerLiteralSql(BODY_ARG_ARRAY),
+    silent: bareContainerLiteralSql(BODY_ARG_ARRAY_CAST),
   },
   {
     name: 'execute-perimeter (revoked fn removed from allowlist detects re-grant)',

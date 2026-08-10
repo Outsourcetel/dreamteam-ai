@@ -31,6 +31,7 @@ import { spawnSync } from 'node:child_process';
 // mutation test exercises the real query, not a paraphrase of it.
 import { landedPredicateSql } from './landed-predicate.mjs';
 import { productionEvidenceSql } from './production-evidence.mjs';
+import { bareContainerLiteralSql } from './bare-container-literal.mjs';
 
 const FAST = process.argv.includes('--fast');
 const PIN = process.argv.includes('--pin-allowlist');
@@ -123,6 +124,11 @@ const PROBES = [
     name: 'exam-evidence-stays-out-of-production-metrics',
     why: 'the same defect shipped three times (158 exam conversations counted as activity; test-provoked guardrail blocks counted as trust evidence; an exam answer able to record a billable resolution). mig 682 made the rule ONE stamp + ONE predicate; this forces every current and future reader onto it, and its data arms catch a regressed writer or backfill',
     sql: productionEvidenceSql(),
+  },
+  {
+    name: 'no-untyped-literal-appended-to-a-container',
+    why: 'appending a BARE string literal to a text[] (v_errors := v_errors || \'message\') does not append — the untyped literal makes Postgres resolve anyarray||anyarray instead of anyarray||anyelement, so it parses the message AS an array and raises 22P02 at runtime, and that branch can NEVER return its message. jsonb has the identical trap. Four rules of validate_onboarding_items were dead this way from mig 076 until mig 685, and the only reason nobody noticed is that every sibling line used format(), which returns typed text. THE FIX IS A CAST: \'message\'::text (or ::jsonb). format(...) and array_append(arr, \'lit\') are already correct and are deliberately not flagged',
+    sql: bareContainerLiteralSql(),
   },
   {
     name: 'rls-on-every-public-table',
