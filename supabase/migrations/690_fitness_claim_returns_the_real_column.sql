@@ -52,7 +52,10 @@ begin
   -- Caller must be a member of the amendment's tenant with admin rights,
   -- unless this is the service runtime acting on a measured regression.
   if coalesce(auth.role(), '') <> 'service_role' then
-    if v_am.tenant_id <> auth_tenant_id() then raise exception 'amendment not found'; end if;
+    -- IS DISTINCT FROM: a null-authed caller must be refused, not waved through
+    -- on a NULL comparison (this exact hole was caught by this migration's own
+    -- proof block on first apply — the runner context passed `<>` against NULL).
+    if v_am.tenant_id is distinct from auth_tenant_id() then raise exception 'amendment not found'; end if;
     if not auth_has_tenant_role(array['tenant_owner', 'tenant_admin']) then
       raise exception 'only a workspace owner or admin may revert an amendment';
     end if;
@@ -114,11 +117,19 @@ begin
     raise exception '690: second claim should lose: %', v_reclaim;
   end if;
 
-  -- Revert is executable and honest about state: a non-applied amendment refuses.
-  update workforce_entity_amendments set status = 'reverted' where id = v_amend;
-  if (revert_entity_amendment(v_amend)->>'ok') <> 'false' then
-    raise exception '690: revert accepted a non-applied amendment';
-  end if;
+  -- Revert REFUSES an unauthenticated caller (this migration runs with no auth
+  -- context — the refusal IS the proof of the gate, including the NULL-proof
+  -- tenant check). The happy path is service_role/owner territory, exercised
+  -- by the driver's regression flow in production.
+  begin
+    perform revert_entity_amendment(v_amend);
+    raise exception '690: revert accepted an unauthenticated caller';
+  exception
+    when others then
+      if sqlerrm not in ('amendment not found', 'only a workspace owner or admin may revert an amendment') then
+        raise exception '690: revert refused for the wrong reason: %', sqlerrm;
+      end if;
+  end;
 
   -- Probe rows out (metrics row first — no FK, but leave nothing behind).
   delete from amendment_metrics where amendment_id = v_amend;
