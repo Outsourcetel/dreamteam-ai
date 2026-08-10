@@ -22,6 +22,10 @@ export interface SupportConversation {
   last_message_at: string | null;
   created_at: string;
   identity_verified: boolean | null;   // T2.3: caller proved their identity (widget HMAC)
+  /** Park & snooze (mig 669). Parked is COMPUTED at read time — see
+   *  src/lib/supportPark.ts isParked(); these are its two inputs. */
+  snoozed_at: string | null;
+  snoozed_until: string | null;
   // The newest message on the thread, embedded by the list query. The inbox
   // used to title each row `subject || end_user_name || 'Conversation'`, and
   // chat channels never set a subject — so a screenful of live conversations
@@ -49,7 +53,7 @@ export interface SupportMessage {
 // `category` is the TOPIC the triage rules assign (mig 233's set_category) —
 // billing, access, how_to, outage… It is NOT a product list, which is why the
 // inbox facet built on it is labelled "Topic". See SupportInboxPage.
-const CONV_COLS = 'id, channel, status, priority, category, subject, detected_language, handoff_summary, end_user_name, account_external_ref, owner_user_id, csat_score, de_id, last_message_at, created_at, identity_verified, last_message:de_messages(content, role, created_at)';
+const CONV_COLS = 'id, channel, status, priority, category, subject, snoozed_at, snoozed_until, detected_language, handoff_summary, end_user_name, account_external_ref, owner_user_id, csat_score, de_id, last_message_at, created_at, identity_verified, last_message:de_messages(content, role, created_at)';
 
 export async function listSupportConversations(status?: SupportConversation['status'] | 'all'): Promise<SupportConversation[]> {
   const tid = await requireTenantId();
@@ -118,6 +122,21 @@ export async function setConversationState(conversationId: string, state: { stat
   const { error } = await supabase.rpc('set_support_conversation_state', {
     p_conversation_id: conversationId, p_status: state.status ?? null, p_priority: state.priority ?? null,
   });
+  if (error) throw new Error(error.message);
+}
+
+// ── Park & snooze (mig 669) ──────────────────────────────────────────
+// Owner-only (the RPC enforces it — parking someone else's thread would hide
+// their work from them). `until` null = parked until the customer replies.
+export async function parkConversation(conversationId: string, until: Date | null): Promise<void> {
+  const { error } = await supabase.rpc('park_support_conversation', {
+    p_conversation_id: conversationId, p_until: until ? until.toISOString() : null,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function unparkConversation(conversationId: string): Promise<void> {
+  const { error } = await supabase.rpc('unpark_support_conversation', { p_conversation_id: conversationId });
   if (error) throw new Error(error.message);
 }
 

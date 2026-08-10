@@ -3,6 +3,7 @@ import { PageHeader } from '../../../components/ui';
 import { Button, Chip, Banner, FilterBar, INPUT_CLS, SELECT_CLS } from '../../../design/primitives';
 
 import { TOPIC_LABEL } from './supportTopics';
+import { isParked, parkedLabel, parkPresets } from '../../../lib/supportPark';
 import SupportHistoryReport from './SupportHistoryReport';
 import { listDigitalEmployees } from '../../../lib/digitalEmployeesApi';
 import { supabase } from '../../../supabase';
@@ -12,6 +13,7 @@ import {
   approveDraft, setConversationState, subscribeSupport,
   sendEmailReply, approveEmailDraft, handoffBackToDe, getDeDisplayName,
   listConversationChecks, type ConversationCheck,
+  parkConversation, unparkConversation,
   type SupportConversation, type SupportMessage,
 } from '../../../lib/supportInboxApi';
 import type { Page } from '../../../types';
@@ -183,6 +185,12 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
     if (tab === 'resolved') return c.status === 'resolved';
     return c.status !== 'resolved';
   });
+  // Park (mig 669): parked threads leave the working flow of Mine and sit on
+  // their own shelf below it. Recomputed every render — the existing 30s tick
+  // is what brings a timed park back on screen with no reload and no sweep.
+  const parkedMine = tab === 'mine' ? filtered.filter(c => isParked(c, new Date())) : [];
+  const activeRows = tab === 'mine' ? filtered.filter(c => !isParked(c, new Date())) : filtered;
+
   const sel = convs.find(c => c.id === selId) ?? null;
   const pendingDraft = thread.find(m => m.delivery === 'draft_pending');
   const isEmail = sel?.channel === 'email';
@@ -335,7 +343,7 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
                     : tab === 'mine' ? "Nothing is yours right now."
                     : 'No open conversations.'}
                 </p>
-              : filtered.map(c => {
+              : activeRows.map(c => {
                 const meta = STATUS_META[c.status];
                 const active = selId === c.id;
                 const preview = previewOf(c.last_message?.[0]?.content);
@@ -367,6 +375,30 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
                   </button>
                 );
               })}
+            {/* The shelf (mig 669). Anything you park comes back at the time
+                you chose — or the moment they reply — via the 30s tick. */}
+            {parkedMine.length > 0 && (
+              <>
+                <p className="px-3 pt-3 pb-1 text-[11px] uppercase tracking-wide text-dt-muted">Parked</p>
+                {parkedMine.map(c => (
+                  <div key={c.id} className={`relative w-full px-3 py-2.5 border-b border-dt-border ${selId === c.id ? 'bg-dt-inset' : ''}`}>
+                    <button onClick={() => setSelId(c.id)} className="w-full text-left">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-dt-support font-medium truncate flex-1">{titleOf(c)}</span>
+                        <span className="text-xs text-dt-muted flex-shrink-0">{parkedLabel(c)}</span>
+                      </div>
+                      {previewOf(c.last_message?.[0]?.content) && (
+                        <p className="text-xs text-dt-faint truncate mt-0.5">{previewOf(c.last_message?.[0]?.content)}</p>
+                      )}
+                    </button>
+                    <button disabled={busy} onClick={() => void run(() => unparkConversation(c.id))}
+                      className="mt-1 text-xs text-dt-accent-text hover:underline disabled:opacity-50">
+                      Bring it back now
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         </div>
 
@@ -386,6 +418,21 @@ export default function SupportInboxPage({ setPage: _setPage, embedded }: { setP
                     )}
                     {(sel.status === 'human_owned' || sel.status === 'needs_human') && sel.de_id && (
                       <Button size="sm" disabled={busy} onClick={() => setHandback(h => !h)}>Hand back to {deName}</Button>
+                    )}
+                    {/* Park (mig 669): an OWNER's shelf, so it only appears on
+                        your own open thread — the RPC enforces the same rule. */}
+                    {sel.owner_user_id === myId && sel.status === 'human_owned' && (
+                      isParked(sel, new Date())
+                        ? <Button size="sm" disabled={busy}
+                            onClick={() => void run(() => unparkConversation(sel.id))}>Bring it back now</Button>
+                        : <select aria-label="Park until" value="" disabled={busy} className={`${SELECT_CLS} !py-1.5 text-xs`}
+                            onChange={e => {
+                              const p = parkPresets(new Date()).find(x => x.key === e.target.value);
+                              if (p) void run(() => parkConversation(sel.id, p.until));
+                            }}>
+                            <option value="" disabled>Park until…</option>
+                            {parkPresets(new Date()).map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+                          </select>
                     )}
                     {sel.status !== 'resolved'
                       ? <Button size="sm" disabled={busy} onClick={() => void run(() => setConversationState(sel.id, { status: 'resolved' }))}>Mark done</Button>

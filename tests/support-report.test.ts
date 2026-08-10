@@ -150,3 +150,50 @@ describe('saved views (localStorage)', () => {
     expect(readSavedViews(KEY)).toEqual([]);
   });
 });
+
+// ── Park & snooze (mig 669) — read-time semantics, no sweep to rot ──────────
+import { isParked, parkedLabel, parkPresets } from '../src/lib/supportPark';
+
+describe('isParked — the mig-669 view-state', () => {
+  const base = { snoozed_at: '2026-08-10T08:00:00Z', last_message_at: '2026-08-10T07:00:00Z' };
+  it('timed park holds until the clock passes, then returns BY ITSELF', () => {
+    const c = conv({ ...base, snoozed_until: '2026-08-12T09:00:00Z' });
+    expect(isParked(c, new Date('2026-08-11T00:00:00Z'))).toBe(true);
+    expect(isParked(c, new Date('2026-08-12T09:00:01Z'))).toBe(false);
+  });
+  it('"until they reply" (null until) stays parked on the clock alone', () => {
+    const c = conv({ ...base, snoozed_until: null });
+    expect(isParked(c, new Date('2026-09-01T00:00:00Z'))).toBe(true);
+  });
+  it('a NEW inbound message returns it — the park never bumps last_message_at, a reply does', () => {
+    const c = conv({ ...base, snoozed_until: null, last_message_at: '2026-08-10T09:00:00Z' });
+    expect(isParked(c, new Date('2026-08-10T10:00:00Z'))).toBe(false);
+  });
+  it('never parked without snoozed_at', () => {
+    expect(isParked(conv({ snoozed_at: null, snoozed_until: '2026-09-01T00:00:00Z' }), new Date())).toBe(false);
+  });
+});
+
+describe('parkedLabel', () => {
+  it('says the return time for a timed park and the honest phrase for reply-parks', () => {
+    expect(parkedLabel(conv({ snoozed_at: '2026-08-10T08:00:00Z', snoozed_until: null }))).toBe('until they reply');
+    expect(parkedLabel(conv({ snoozed_at: '2026-08-10T08:00:00Z', snoozed_until: '2026-08-12T09:00:00Z' })))
+      .toMatch(/back /);
+  });
+});
+
+describe('parkPresets — computed from now, never hardcoded dates', () => {
+  it('later-today lands at 17:00 today, tomorrow at 09:00, monday on a Monday 09:00', () => {
+    const now = new Date('2026-08-10T10:00:00Z');   // a Monday
+    const p = Object.fromEntries(parkPresets(now).map(x => [x.key, x]));
+    expect(p.later_today.until?.toISOString()).toBe('2026-08-10T17:00:00.000Z');
+    expect(p.tomorrow.until?.toISOString()).toBe('2026-08-11T09:00:00.000Z');
+    expect(p.monday.until?.getUTCDay()).toBe(1);
+    expect(p.monday.until!.getTime()).toBeGreaterThan(now.getTime());
+    expect(p.on_reply.until).toBeNull();
+  });
+  it('later-today after 17:00 falls forward to tomorrow 09:00 rather than the past', () => {
+    const p = Object.fromEntries(parkPresets(new Date('2026-08-10T18:30:00Z')).map(x => [x.key, x]));
+    expect(p.later_today.until?.toISOString()).toBe('2026-08-11T09:00:00.000Z');
+  });
+});
