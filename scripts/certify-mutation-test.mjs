@@ -101,13 +101,86 @@ const CASES = [
              where nm not in ('list_org_tree','match_doc_chunks','tenant_ancestors'))`,
   },
   {
-    name: 'onboarding-bindings-are-runnable',
+    // Condition 1 only (action_key match) — against the LIVE table, deliberately:
+    // 'no_such_verb' genuinely does not exist in production and
+    // 'configure_customer_setup' genuinely does (mig 651), so this is the one
+    // case that also proves the probe's predicate agrees with real data, not
+    // just a synthetic model of it.
+    name: 'onboarding-bindings-are-runnable (named verb does not exist at all)',
     fires: `select 1 where exists (select 1 from (values ('no_such_verb')) v(k)
               where not exists (select 1 from action_definitions ad
                                  where ad.action_key = v.k and ad.status='active'))`,
     silent: `select 1 where exists (select 1 from (values ('configure_customer_setup')) v(k)
               where not exists (select 1 from action_definitions ad
                                  where ad.action_key = v.k and ad.status='active'))`,
+  },
+  // The remaining cases lift the probe's real three-condition predicate
+  //   ad.action_key = i->>'action_key' and ad.status = 'active'
+  //   and (ad.tenant_id is null or ad.tenant_id = v.tenant_id)
+  // verbatim, over a synthesised item(tenant_id, action_key) row and a
+  // synthesised ad(action_key, status, tenant_id) row — no live table read or
+  // depended on, so these hold even if action_definitions' contents change.
+  {
+    // Condition 2 (status = 'active') exercised on its own: same tenant,
+    // same action_key, only the status differs.
+    name: 'onboarding-bindings-are-runnable (named verb exists but is not active)',
+    fires: `select 1 where exists (
+              select 1 from (values ('tenant-a','k')) item(tenant_id, action_key)
+               where not exists (
+                 select 1 from (values ('k','draft',null::text)) ad(action_key, status, tenant_id)
+                  where ad.action_key = item.action_key
+                    and ad.status = 'active'
+                    and (ad.tenant_id is null or ad.tenant_id = item.tenant_id)))`,
+    silent: `select 1 where exists (
+              select 1 from (values ('tenant-a','k')) item(tenant_id, action_key)
+               where not exists (
+                 select 1 from (values ('k','active',null::text)) ad(action_key, status, tenant_id)
+                  where ad.action_key = item.action_key
+                    and ad.status = 'active'
+                    and (ad.tenant_id is null or ad.tenant_id = item.tenant_id)))`,
+  },
+  {
+    // Condition 3, first half: an active verb scoped to a DIFFERENT tenant
+    // must still be flagged — it is unreachable for this template. This is
+    // the branch the coordinator's review found unexercised: if the tenant
+    // clause were dropped, flipped to AND, or compared the wrong column,
+    // this fires query would go from 1 row to 0 and this case would FAIL.
+    name: 'onboarding-bindings-are-runnable (verb active but scoped to a different tenant)',
+    fires: `select 1 where exists (
+              select 1 from (values ('tenant-a','k')) item(tenant_id, action_key)
+               where not exists (
+                 select 1 from (values ('k','active','tenant-b')) ad(action_key, status, tenant_id)
+                  where ad.action_key = item.action_key
+                    and ad.status = 'active'
+                    and (ad.tenant_id is null or ad.tenant_id = item.tenant_id)))`,
+    silent: `select 1 where exists (
+              select 1 from (values ('tenant-a','k')) item(tenant_id, action_key)
+               where not exists (
+                 select 1 from (values ('k','active',null::text)) ad(action_key, status, tenant_id)
+                  where ad.action_key = item.action_key
+                    and ad.status = 'active'
+                    and (ad.tenant_id is null or ad.tenant_id = item.tenant_id)))`,
+  },
+  {
+    // Condition 3, second half: the SAME wrong-tenant violation, checked
+    // against the other clean branch — a verb scoped to the template's OWN
+    // tenant must be reachable. Both silent branches (global and same-tenant)
+    // must independently return zero rows against the identical fires query.
+    name: 'onboarding-bindings-are-runnable (verb scoped to the SAME tenant is reachable)',
+    fires: `select 1 where exists (
+              select 1 from (values ('tenant-a','k')) item(tenant_id, action_key)
+               where not exists (
+                 select 1 from (values ('k','active','tenant-b')) ad(action_key, status, tenant_id)
+                  where ad.action_key = item.action_key
+                    and ad.status = 'active'
+                    and (ad.tenant_id is null or ad.tenant_id = item.tenant_id)))`,
+    silent: `select 1 where exists (
+              select 1 from (values ('tenant-a','k')) item(tenant_id, action_key)
+               where not exists (
+                 select 1 from (values ('k','active','tenant-a')) ad(action_key, status, tenant_id)
+                  where ad.action_key = item.action_key
+                    and ad.status = 'active'
+                    and (ad.tenant_id is null or ad.tenant_id = item.tenant_id)))`,
   },
   {
     name: 'execute-perimeter (revoked fn removed from allowlist detects re-grant)',
