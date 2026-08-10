@@ -57,17 +57,56 @@
 -- — same invariant, same reason mig 648 gives it.
 --
 -- WHAT IT DOES NOT DO. It does not call `onboarding_check_complete`.
--- `update_onboarding_item_as_de`'s closing comment is explicit and this
--- trigger honours it rather than reopening it: "A non-signoff item
--- completing the project is the human function's rule and stays the
--- human function's rule: an employee must not be able to drive a project
--- to completed as a side effect of ticking the last box." A receipt
--- landing is still the employee's work arriving, not a human's decision —
--- so project-level completion stays exactly where it already is, on the
--- human-facing `update_onboarding_item` / `resolve_onboarding_signoff`
--- paths. `progress_pct` still recomputes automatically: it is driven by
--- the pre-existing `onboarding_projects_progress` BEFORE trigger on
--- `items_state`, which this UPDATE fires like any other.
+--
+-- CORRECTED CALLER SURVEY (an earlier draft of this comment claimed "only
+-- human-facing paths call it" — that was checked and found FALSE by review,
+-- so the real list is recorded here instead). `onboarding_check_complete`
+-- has THREE callers today, not two:
+--   1. `update_onboarding_item` — a human, via the authenticated RPC.
+--   2. `resolve_onboarding_signoff` — a human, via `decideHumanTask`
+--      approving/rejecting a sign-off task.
+--   3. `apply_onboarding_verification` (mig 076, dormancy-guarded in mig
+--      547) — NOT human-facing. It is called by the `onboarding-verify`
+--      edge function's `check_due` action, which the function's own
+--      comment describes as "system trigger only (pg_cron dispatch or
+--      service role)" — piggybacked onto `invoke_playbook_dispatch`'s
+--      5-minute cron (076's piggyback #4). When a `verify`-configured item
+--      is confirmed by an independent connector read and does not require
+--      sign-off, this path ALREADY calls `onboarding_check_complete`
+--      autonomously, no human involved in that specific call.
+--
+-- So the codebase does not hold "only a human completes a project" as a
+-- clean invariant today — `apply_onboarding_verification` already crosses
+-- it for read-verified, no-signoff items. This trigger still does NOT call
+-- `onboarding_check_complete`, but on narrower grounds than the earlier
+-- draft claimed: `update_onboarding_item_as_de`'s closing comment ("A
+-- non-signoff item completing the project is the human function's rule and
+-- stays the human function's rule: an employee must not be able to drive a
+-- project to completed as a side effect of ticking the last box") is the
+-- newest and most specific statement of policy for exactly this shape of
+-- evidence — a DE's own action landing — and I judged a completed
+-- `action_execution` closer in kind to that self-report than to
+-- `apply_onboarding_verification`'s independent read-check. That is a
+-- judgment call, not something the corrected survey settles by itself, and
+-- reconciling it against `apply_onboarding_verification`'s existing
+-- behaviour is a project-level policy decision bigger than this task's
+-- stated interface (`complete_onboarding_item_from_execution(uuid)`) — not
+-- something to change unilaterally here.
+--
+-- ⚠ NAMED CONSEQUENCE, not buried: there are now TWO "evidence arrived, no
+-- human required" completion channels with INCONSISTENT project-completion
+-- policy — `apply_onboarding_verification` auto-completes the project via
+-- `onboarding_check_complete`; this trigger does not. Concretely: a project
+-- whose every item is completed exclusively through action-execution
+-- receipts (no verify-configured items, nobody ever calls
+-- `update_onboarding_item`) will sit at `items_state` 100% done/signed_off
+-- forever while `onboarding_projects.status` stays `active` forever too,
+-- because none of the three functions above would ever run for it. That is
+-- a real functional gap, not just a style inconsistency, and it needs a
+-- deliberate decision, not a silent one. `progress_pct` still recomputes
+-- automatically regardless: it is driven by the pre-existing
+-- `onboarding_projects_progress` BEFORE trigger on `items_state`, which
+-- this UPDATE fires like any other.
 -- ==========================================================================
 
 begin;
@@ -123,6 +162,21 @@ $function$;
 -- refuses to CALL/SELECT a `returns trigger` function), but the revoke is
 -- the standing perimeter rule for every new function in this repo and is
 -- asserted, not just stated, below.
+--
+-- On `service_role` specifically (which this migration deliberately never
+-- grants or revokes): Postgres checks EXECUTE privilege on a trigger
+-- function at `CREATE TRIGGER` time, not when the trigger fires for an
+-- arbitrary DML-issuing role — so `service_role` (the role connector-hub
+-- writes `action_executions` as) does not need EXECUTE on this function for
+-- the trigger to fire on its inserts. An earlier draft of this reasoning
+-- cited `advance_dunning_cadence` as proof by example; that citation was
+-- wrong and has been removed — `advance_dunning_cadence` actually carries
+-- `anon=true, authenticated=true` on production (it was simply never
+-- locked down), so its firing history is explained by an open grant and
+-- proves nothing about the CREATE-TRIGGER-time mechanism. No read-only
+-- probe from this repo's toolchain can test the mechanism differentially
+-- either: both `db-query.mjs` and `dev-query.mjs` connect as the `postgres`
+-- superuser, which bypasses ACL checks entirely.
 revoke execute on function public.complete_onboarding_item_from_execution()
   from public, anon, authenticated;
 
