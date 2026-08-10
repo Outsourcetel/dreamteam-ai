@@ -31,8 +31,31 @@ describe('resolveParams', () => {
   it('does not read another verb\'s answer for the same param name', () => {
     const r = resolveParams(binding, {
       accountExternalRef: 'X',
-      requirements: { 'some_other_verb.territory': 'Wrong' },
+      requirements: { territory: 'Wrong' },
     });
     expect(r.missing).toEqual(['territory']);
+    expect(r.params.territory).toBeUndefined();
+  });
+
+  it('treats empty-string @ask answer as missing', () => {
+    const r = resolveParams(binding, {
+      accountExternalRef: 'Grant Plastics Ltd.',
+      requirements: { 'configure_customer_setup.territory': '' },
+    });
+    expect(r.missing).toEqual(['territory']);
+    expect(r.params.territory).toBeUndefined();
+  });
+
+  it('treats null accountExternalRef as missing for @account params', () => {
+    const localBinding = {
+      action_key: 'setup',
+      params: { company_id: '@account' },
+    };
+    const r = resolveParams(localBinding, {
+      accountExternalRef: null,
+      requirements: {},
+    });
+    expect(r.missing).toEqual(['company_id']);
+    expect(r.params.company_id).toBeUndefined();
   });
 });
