@@ -1,5 +1,5 @@
 {
-  "pinned_at": "2026-08-10T21:07:40.891Z",
+  "pinned_at": "2026-08-10T21:37:03.260Z",
   "note": "The EXECUTE surface for anon/authenticated. certify fails on ANY diff. Re-pin only after a DELIBERATE perimeter change.",
   "routines": [
     {
@@ -2064,6 +2064,11 @@
     },
     {
       "sig": "retry_ingestion_job(p_job_id uuid)",
+      "anon": false,
+      "authed": true
+    },
+    {
+      "sig": "revert_entity_amendment(p_id uuid)",
       "anon": false,
       "authed": true
     },
