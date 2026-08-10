@@ -539,6 +539,31 @@ Where `ENTITY_DESKS.onboarding_project` builds its facts (≈ line 981), include
 3. `resolveParams`; if `missing.length` → raise an escalation whose title names the item and whose detail lists the missing fields, then return
 4. otherwise call the same `execute_action` path as the existing tool, with
    `dedupe_key = 'onboarding:' + project_id + ':' + item_key`
+
+   ⚠ **PLAN AMENDMENT (found during Task 3, verified in the source).** This step
+   as originally written **cannot work**. `connector-hub/index.ts:7108` computes
+   the key unconditionally and accepts no caller value:
+
+   ```js
+   const dedupeKey = def.risk.idempotent ? null : `${def.id}:${JSON.stringify(validated.values)}`;
+   ```
+
+   So no caller can produce `onboarding:<project>:<item>`, and Task 3's trigger —
+   already shipped — would never fire on real work. This is the migration-661
+   failure class (a matcher keyed to a shape nothing writes), one notch worse:
+   not a second uncounted route, but **no route at all**.
+
+   Task 5 must therefore ALSO make connector-hub honour an explicit
+   caller-supplied key: take `payload.dedupe_key` when present, else fall back to
+   today's computation. Existing callers pass nothing and are unaffected —
+   verify that by enumerating them rather than assuming.
+
+   ⚠ Note what this changes: `dedupe_key` drives idempotency via
+   `check_action_idempotency`. An item-scoped key means **one configure per item**,
+   which is the intent — but it also means a retry with corrected parameters
+   collides with the failed attempt. Task 5 must decide that deliberately and say
+   which it chose: either include an attempt counter in the key, or scope the
+   dedupe to successful executions only.
 5. on a gated response, call `update_onboarding_item_as_de(project_id, de_id, item_key, 'in_progress', <summary>)`
 6. **never** write `'done'` — Task 3's trigger owns that
 7. **bound retry.** Before proposing, count prior executions on this dedupe key
