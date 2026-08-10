@@ -26,6 +26,10 @@
 // ============================================================
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+// mig 679's ratchet. The pin list, its reasons and the probe SQL live in ONE
+// file, imported by BOTH this gate and certify-mutation-test.mjs — so the
+// mutation test exercises the real query, not a paraphrase of it.
+import { landedPredicateSql } from './landed-predicate.mjs';
 
 const FAST = process.argv.includes('--fast');
 const PIN = process.argv.includes('--pin-allowlist');
@@ -109,6 +113,11 @@ async function perimeterCheck() {
 
 // ── Ring-0 probes — violations-only ────────────────────────────────────────
 const PROBES = [
+  {
+    name: 'landed-reads-use-the-shared-predicate',
+    why: 'four migrations (675-678) each patched a different reader that read a claim-time marker as proof the work happened. mig 679 made the correct test ONE function; this is what forces the fifth reader to use it',
+    sql: landedPredicateSql(),
+  },
   {
     name: 'rls-on-every-public-table',
     why: 'a table without RLS is cross-tenant by default',

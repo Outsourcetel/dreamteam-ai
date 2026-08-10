@@ -8,6 +8,10 @@
 // fires on it. Where a probe reads live catalog state that a SELECT cannot
 // fake, the mutation is described and marked MANUAL.
 import { readFileSync } from 'node:fs';
+// The REAL probe, not a copy of it. mig 661 shipped a pin that could not fail
+// because the check and the thing it checked had drifted apart; the cases below
+// run certify's own query with a pin removed rather than a paraphrase of it.
+import { landedPredicateSql, LANDED_PINS } from './landed-predicate.mjs';
 const REF = 'rfsvmhcqeiyrxivbmpel';
 function token() {
   const env = readFileSync('.env.local', 'utf8').replace(/^﻿/, '');
@@ -30,6 +34,83 @@ async function q(sql) {
 // return 0 (probe silent). Both halves matter: a probe that fires on everything
 // is as useless as one that fires on nothing.
 const CASES = [
+  // ── mig 679's ratchet: landed-reads-use-the-shared-predicate ────────────
+  // The first two run certify's ACTUAL probe against the LIVE production
+  // catalog with one pin removed / one bogus pin added. That is a stronger
+  // proof than any synthesised row: it shows the real query, over real bodies,
+  // names the real function the moment its exemption goes away.
+  {
+    name: 'landed-reads-use-the-shared-predicate (drop a real pin -> the real probe names that function)',
+    fires: landedPredicateSql(LANDED_PINS.filter((n) => n !== 'get_de_action_metrics')),
+    silent: landedPredicateSql(),
+  },
+  {
+    name: 'landed-reads-use-the-shared-predicate (a pin guarding nothing is itself a violation)',
+    fires: landedPredicateSql([...LANDED_PINS, 'zz_pin_for_a_body_that_does_not_exist']),
+    silent: landedPredicateSql(),
+  },
+  {
+    // Isolates the `not ilike '%action_execution_landed%'` clause. Without it
+    // the probe would flag all three fixed readers forever and be switched off;
+    // with it inverted it would flag nobody. Same body, one call added.
+    name: 'landed-reads-use-the-shared-predicate (calling the shared predicate is what clears a body)',
+    fires: `select 1 where exists (select 1 from (values
+              ('a_new_reader','count(*) filter (where decision = auto_executed)')) v(nm, src)
+             where (src ilike '%executed_after_approval%' or src ilike '%auto_executed%')
+               and src not ilike '%action_execution_landed%'
+               and nm not in ('get_de_action_metrics','check_action_idempotency'))`,
+    silent: `select 1 where exists (select 1 from (values
+              ('a_new_reader','count(*) filter (where public.action_execution_landed(ae)) -- was decision = auto_executed')) v(nm, src)
+             where (src ilike '%executed_after_approval%' or src ilike '%auto_executed%')
+               and src not ilike '%action_execution_landed%'
+               and nm not in ('get_de_action_metrics','check_action_idempotency'))`,
+  },
+  {
+    // The OR's SECOND half on its own. A sieve that only looked for
+    // `auto_executed` would miss every gated reader — which is exactly the
+    // half migs 676/677/678 were about.
+    name: 'landed-reads-use-the-shared-predicate (executed_after_approval alone is enough to be caught)',
+    fires: `select 1 where exists (select 1 from (values
+              ('a_new_reader','where decision = executed_after_approval')) v(nm, src)
+             where (src ilike '%executed_after_approval%' or src ilike '%auto_executed%')
+               and src not ilike '%action_execution_landed%'
+               and nm not in ('get_de_action_metrics'))`,
+    silent: `select 1 where exists (select 1 from (values
+              ('a_new_reader','where decision = human_gated_trust')) v(nm, src)
+             where (src ilike '%executed_after_approval%' or src ilike '%auto_executed%')
+               and src not ilike '%action_execution_landed%'
+               and nm not in ('get_de_action_metrics'))`,
+  },
+  {
+    // The VIEW arm. There are zero such views today, so live data cannot
+    // exercise it — which is precisely why it needs a synthesised mutant
+    // rather than a shrug.
+    name: 'landed-reads-use-the-shared-predicate (a VIEW is caught by the same rule)',
+    fires: `select 1 where exists (select 1 from (values
+              ('v_actions_done','select id from action_executions where decision in (auto_executed)')) v(nm, def)
+             where (def ilike '%executed_after_approval%' or def ilike '%auto_executed%')
+               and def not ilike '%action_execution_landed%'
+               and nm not in ('get_de_action_metrics'))`,
+    silent: `select 1 where exists (select 1 from (values
+              ('v_actions_done','select id from action_executions ae where public.action_execution_landed(ae)')) v(nm, def)
+             where (def ilike '%executed_after_approval%' or def ilike '%auto_executed%')
+               and def not ilike '%action_execution_landed%'
+               and nm not in ('get_de_action_metrics'))`,
+  },
+  {
+    // The stale-pin arm's mechanics, isolated from live catalog contents: a
+    // pinned name still fires when NO body of that name names either literal,
+    // and stays silent when one does.
+    name: 'landed-reads-use-the-shared-predicate (stale-pin arm: fires only when the pinned body is gone)',
+    fires: `select 1 from (values ('pinned_name')) v(nm)
+             where not exists (select 1 from (values ('some_other_fn','names auto_executed')) p(nm, src)
+                                where p.nm = v.nm
+                                  and (p.src ilike '%auto_executed%' or p.src ilike '%executed_after_approval%'))`,
+    silent: `select 1 from (values ('pinned_name')) v(nm)
+             where not exists (select 1 from (values ('pinned_name','names auto_executed')) p(nm, src)
+                                where p.nm = v.nm
+                                  and (p.src ilike '%auto_executed%' or p.src ilike '%executed_after_approval%'))`,
+  },
   {
     name: 'no-unattended-public-speech',
     fires: `select 1 where exists (select 1 from (values ('publish_post','{"destructive":false}'::jsonb)) v(k,risk)
