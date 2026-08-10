@@ -1,5 +1,5 @@
 {
-  "pinned_at": "2026-08-10T21:37:03.260Z",
+  "pinned_at": "2026-08-10T23:29:57.435Z",
   "note": "The EXECUTE surface for anon/authenticated. certify fails on ANY diff. Re-pin only after a DELIBERATE perimeter change.",
   "routines": [
     {
@@ -369,6 +369,11 @@
     },
     {
       "sig": "clear_de_operate_login(p_system_id uuid)",
+      "anon": false,
+      "authed": true
+    },
+    {
+      "sig": "clear_review_minutes(p_task_type text)",
       "anon": false,
       "authed": true
     },
@@ -2344,6 +2349,11 @@
     },
     {
       "sig": "set_platform_team_active(p_target_user_id uuid, p_is_active boolean)",
+      "anon": false,
+      "authed": true
+    },
+    {
+      "sig": "set_review_minutes(p_task_type text, p_minutes numeric)",
       "anon": false,
       "authed": true
     },

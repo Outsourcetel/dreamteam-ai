@@ -1,23 +1,22 @@
 {
-  "at": "2026-08-10T22:56:13.204Z",
-  "mode": "fast",
-  "failed": 1,
+  "at": "2026-08-10T23:31:39.412Z",
+  "mode": "full",
+  "failed": 0,
   "results": [
     {
       "section": "typecheck",
       "ok": true,
-      "seconds": 17.6
+      "seconds": 27.3
     },
     {
       "section": "ring0-probes",
-      "ok": false,
-      "seconds": 36.8,
-      "detail": "onboarding-bindings-are-runnable: outsourcetel-hq / SaaS onboarding — starter / locations_configured → propose_connector — needs the \"workforce_assistant\" role, which the employee(s) this workspace gives onboarding work to (Onni) do not have"
+      "ok": true,
+      "seconds": 2.8
     },
     {
       "section": "migration-ledger",
       "ok": true,
-      "seconds": 5.5
+      "seconds": 5.2
     },
     {
       "section": "migration-numbering",
@@ -27,7 +26,32 @@
     {
       "section": "edge-typecheck",
       "ok": true,
-      "seconds": 1.5
+      "seconds": 1.6
+    },
+    {
+      "section": "golden-path",
+      "ok": true,
+      "seconds": 34.4
+    },
+    {
+      "section": "role-gates",
+      "ok": true,
+      "seconds": 7.1
+    },
+    {
+      "section": "silent-refusals",
+      "ok": true,
+      "seconds": 2.6
+    },
+    {
+      "section": "design-drift",
+      "ok": true,
+      "seconds": 0.9
+    },
+    {
+      "section": "suite",
+      "ok": true,
+      "seconds": 49.8
     }
   ]
 }
