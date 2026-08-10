@@ -30,6 +30,7 @@ import { spawnSync } from 'node:child_process';
 // file, imported by BOTH this gate and certify-mutation-test.mjs — so the
 // mutation test exercises the real query, not a paraphrase of it.
 import { landedPredicateSql } from './landed-predicate.mjs';
+import { productionEvidenceSql } from './production-evidence.mjs';
 
 const FAST = process.argv.includes('--fast');
 const PIN = process.argv.includes('--pin-allowlist');
@@ -117,6 +118,11 @@ const PROBES = [
     name: 'landed-reads-use-the-shared-predicate',
     why: 'four migrations (675-678) each patched a different reader that read a claim-time marker as proof the work happened. mig 679 made the correct test ONE function; this is what forces the fifth reader to use it',
     sql: landedPredicateSql(),
+  },
+  {
+    name: 'exam-evidence-stays-out-of-production-metrics',
+    why: 'the same defect shipped three times (158 exam conversations counted as activity; test-provoked guardrail blocks counted as trust evidence; an exam answer able to record a billable resolution). mig 682 made the rule ONE stamp + ONE predicate; this forces every current and future reader onto it, and its data arms catch a regressed writer or backfill',
+    sql: productionEvidenceSql(),
   },
   {
     name: 'rls-on-every-public-table',

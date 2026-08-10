@@ -675,10 +675,12 @@ serve(async (req) => {
           });
         }
         // Outcome metering (#15): a delivered cached answer is a resolution.
+        // 682: same rule as the activity event above — an exam answer is not
+        // business activity, and it must never bill.
         if (convId) {
           await admin.rpc('record_billable_outcome', {
             p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId,
-            p_kind: 'resolution', p_source: 'chat',
+            p_kind: 'resolution', p_source: 'chat', p_origin: isExam ? 'exercise' : 'production',
           });
         }
         return json({
@@ -1019,6 +1021,7 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
       admin.rpc('record_de_token_usage', {
         p_tenant_id: tenantId, p_de_id: subjectDeId, p_model_id: model,
         p_input_tokens: data.usage?.input_tokens ?? 0, p_output_tokens: data.usage?.output_tokens ?? 0,
+        p_origin: isExam ? 'exercise' : 'production',   // 682: exam spend is budget-real but not a business cost metric
       }).then(({ error }: { error: unknown }) => { if (error) console.error('record_de_token_usage:', error); });
     }
 
@@ -1043,6 +1046,7 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
           de_id: subjectDeId,
           type: 'escalation',
           source: 'de',
+          origin: isExam ? 'exercise' : 'production',   // 682: deciding an exam escalation is not trust evidence
           title: `Guardrail block — ${truncated}`,
           detail: `${persona.name}'s draft answer was blocked by guardrail "${blockedBy.rule}". Draft (confidence ${parsed.confidence}%): ${parsed.answer}`,
           related_table: convId ? 'de_conversations' : null,
@@ -1060,7 +1064,8 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
         await auditEvent(admin, tenantId, persona.name, 'de',
           `BLOCKED — chat answer matched guardrail "${blockedBy.rule}" and was withheld; escalated to human`,
           'guardrail_block',
-          { rule_id: blockedBy.id, rule: blockedBy.rule, rule_type: blockedBy.rule_type, question: truncated });
+          { rule_id: blockedBy.id, rule: blockedBy.rule, rule_type: blockedBy.rule_type, question: truncated,
+            origin: isExam ? 'exercise' : 'production' });   // 682: an exam-provoked block is the control being tested
         // Outcome metering (#15): a guardrail block hands off to a human —
         // metered FREE, and it belongs in the benchmark's denominator
         // (consistent with widget-ask; without this, chat blocks silently
@@ -1068,7 +1073,7 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
         if (convId) {
           await admin.rpc('record_billable_outcome', {
             p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId,
-            p_kind: 'escalation', p_source: 'chat',
+            p_kind: 'escalation', p_source: 'chat', p_origin: isExam ? 'exercise' : 'production',   // 682
           });
         }
         await recordSpan(admin, {
@@ -1090,6 +1095,7 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
             account_ref: convId ? `conversation:${convId}` : null,
             status: 'complete', steps: [], answer_status: 'blocked',
             confidence_inputs: { knowledge_hits: 0 },
+            origin: isExam ? 'exercise' : 'production',   // 682
           }).select('id').single();
           if (er?.id) {
             await admin.rpc('record_inquiry_decision', {
@@ -1261,10 +1267,12 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
 
     // Outcome metering (#15): resolution bills per tenant pricing;
     // escalation meters FREE. Idempotent per conversation; never in replay.
+    // 682: never billable from an exam either — the origin stamp forces it.
     if (!replayMode && convId) {
       await admin.rpc('record_billable_outcome', {
         p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId,
         p_kind: escalate ? 'escalation' : 'resolution', p_source: 'chat',
+        p_origin: isExam ? 'exercise' : 'production',
       });
     }
 
@@ -1425,6 +1433,7 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
           status: 'complete', steps: [], answer_status: 'answered',
           answer: parsed.answer.slice(0, 4000),
           confidence_inputs: { knowledge_hits: parsed.sources.length },
+          origin: isExam ? 'exercise' : 'production',   // 682: the activity feed shows work, not exams
         }).select('id').single();
         if (er?.id) {
           await admin.rpc('record_inquiry_decision', {

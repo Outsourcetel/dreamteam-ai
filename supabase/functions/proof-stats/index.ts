@@ -47,9 +47,15 @@ serve(async (req) => {
       conversations, escalations, guardrailBlocks, certsPassed, certsRun,
       amendmentsAdopted, knowledgeDocs, activeDes, auditEvents, workDone,
     ] = await Promise.all([
-      count('de_conversations'),
+      // 682 (G-B): the scope string below claims exam traffic is excluded —
+      // these filters are what make that sentence true. Exam threads carry
+      // channel='exam' (mig 570); new audit rows carry detail.origin.
+      count('de_conversations', (q: any) => q.neq('channel', 'exam')),
+      // TODO(682 Phase A2, after the migration lands): add .neq('origin','exercise')
+      // — the column does not exist until 682 is applied.
       count('human_tasks', (q: any) => q.eq('type', 'escalation')),
-      count('audit_events', (q: any) => q.eq('category', 'guardrail_block')),
+      count('audit_events', (q: any) => q.eq('category', 'guardrail_block')
+        .or('detail->>origin.is.null,detail->>origin.neq.exercise')),
       count('role_certifications', (q: any) => q.eq('status', 'passed')),
       count('role_certifications'),
       count('workforce_entity_amendments', (q: any) => q.in('status', ['applied', 'adopted'])),
@@ -61,7 +67,7 @@ serve(async (req) => {
 
     const body = {
       ok: true,
-      scope: 'Live counts from our own production workspace — we run our company on this product. Demo environments are excluded.',
+      scope: 'Live counts from our own production workspace — we run our company on this product. Demo environments and certification-exam traffic are excluded.',
       generated_at: new Date().toISOString(),
       stats: {
         active_digital_employees: activeDes,

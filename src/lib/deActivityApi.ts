@@ -128,7 +128,9 @@ export interface DEActivityRow {
 // runs, not by their own tenant-wide limit.
 export async function listDEActivity(limit = 30, deId?: string | null): Promise<DEActivityRow[]> {
   const tid = await requireTenantId();
-  let runsQ = supabase.from('evidence_runs').select('*').eq('tenant_id', tid);
+  // 682 (G-B): the founder-facing feeds show WORK. Exam-origin runs (marked by
+  // the migration's backfill + de-answer's stamp) stay in the Proving Ground.
+  let runsQ = supabase.from('evidence_runs').select('*').eq('tenant_id', tid).neq('origin', 'exercise');
   if (deId) runsQ = runsQ.eq('de_id', deId);
   const [{ data: runs, error: runErr }, { data: des }] = await Promise.all([
     runsQ.order('created_at', { ascending: false }).limit(limit),

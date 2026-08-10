@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs';
 // because the check and the thing it checked had drifted apart; the cases below
 // run certify's own query with a pin removed rather than a paraphrase of it.
 import { landedPredicateSql, LANDED_PINS } from './landed-predicate.mjs';
+import { productionEvidenceSql, PRODUCTION_EVIDENCE_PIN_NAMES } from './production-evidence.mjs';
 const REF = 'rfsvmhcqeiyrxivbmpel';
 function token() {
   const env = readFileSync('.env.local', 'utf8').replace(/^﻿/, '');
@@ -48,6 +49,21 @@ const CASES = [
     name: 'landed-reads-use-the-shared-predicate (a pin guarding nothing is itself a violation)',
     fires: landedPredicateSql([...LANDED_PINS, 'zz_pin_for_a_body_that_does_not_exist']),
     silent: landedPredicateSql(),
+  },
+  // ── mig 682's ratchet: exam-evidence-stays-out-of-production-metrics ────
+  // Same construction as 679's: the REAL probe over the LIVE catalog, one pin
+  // removed / one bogus pin added. record_billable_outcome definitely reads
+  // billable_outcomes and (post-682) never calls the predicate — dropping its
+  // pin must make the real query name it.
+  {
+    name: 'exam-evidence-stays-out-of-production-metrics (drop a real pin -> the real probe names that function)',
+    fires: productionEvidenceSql(PRODUCTION_EVIDENCE_PIN_NAMES.filter((n) => n !== 'record_billable_outcome')),
+    silent: productionEvidenceSql(),
+  },
+  {
+    name: 'exam-evidence-stays-out-of-production-metrics (a pin guarding nothing is itself a violation)',
+    fires: productionEvidenceSql([...PRODUCTION_EVIDENCE_PIN_NAMES, 'zz_pin_for_a_body_that_does_not_exist']),
+    silent: productionEvidenceSql(),
   },
   {
     // Isolates the `not ilike '%action_execution_landed%'` clause. Without it
