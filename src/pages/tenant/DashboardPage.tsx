@@ -6,6 +6,7 @@ import type { ChatEscalation } from '../../lib/chatEscalations';
 import type { Page } from '../../types';
 import GettingStartedGuide from '../../components/GettingStartedGuide';
 import OpsAlertsBanner from '../../components/OpsAlertsBanner';
+import TeamMissionPanel from '../../components/TeamMissionPanel';
 import { StatTile, PanelCard, Chip, Button, EmptyState, DecisionCard, SetupChecklist } from '../../design/primitives';
 import {
   listAccounts, listTickets, listInvoices, listHumanTasks, listActivity,
@@ -437,6 +438,13 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
                 </div>
               )}
             </PanelCard>
+
+            {/* Missions front door (founder decision #1, 2026-08-10): orders are
+                given HERE, so mission creation lives here — docs/31 found the
+                fully-wired mission engine had 0 uses ever because creation was
+                buried inside individual employee files. Same panel as the DE
+                Activity board; per-employee missions stay on each file. */}
+            <TeamMissionPanel />
 
             {/* Customer entity card */}
             <div>
