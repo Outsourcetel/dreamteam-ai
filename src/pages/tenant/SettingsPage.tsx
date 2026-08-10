@@ -1,5 +1,6 @@
 import DataExportPanel from '../../components/DataExportPanel';
 import BooksImportCard from '../../components/BooksImportCard';
+import ReviewMinutesCard from '../../components/ReviewMinutesCard';
 import SecurityAccessPage from './governance/SecurityAccessPage';
 import DeleteWorkspacePanel from '../../components/DeleteWorkspacePanel';
 import DomainClaimPanel from '../../components/sso/DomainClaimPanel';
@@ -1081,6 +1082,9 @@ const userHash = crypto
               CSV — invoices, agreements, contacts — while ERPNext keeps
               syncing separately. Import above export/delete on purpose. */}
           <BooksImportCard />
+          {/* The review-minutes model (migs 691/698): the founder's own time,
+              tunable — the human-cost line in the benchmark report reads it. */}
+          <ReviewMinutesCard />
           <DataExportPanel />
           <DeleteWorkspacePanel />
         </div>
