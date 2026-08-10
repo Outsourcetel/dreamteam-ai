@@ -32,6 +32,10 @@ import { defOfDoneGate, assessAndLog } from '../_shared/defOfDone.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { budgetBlocked } from '../_shared/rpcSafety.ts';
 import { loadTenantBrand, brandVoiceDirective } from '../_shared/brandIdentity.ts';
+// Edge twin of src/lib/onboardingTypes.ts — the Deno runtime cannot import from
+// src/. The two copies are kept contract-identical and compared behaviourally by
+// tests/contract-parity.test.ts, which is what certify runs.
+import { resolveParams } from '../_shared/onboardingTypes.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -631,6 +635,15 @@ interface ToolContext {
   subjectRef: string | null;
   /** Registry actions this DE may run: tool name → connector + action key. */
   actionMap: Map<string, { connector_id: string; action_key: string; action_definition_id?: string | null }>;
+  /** THE SAME offers, keyed by action_key instead of tool name.
+   *
+   *  perform_onboarding_item is handed a verb by a template author, not by the
+   *  model, so it must resolve that verb through the DE's OWN offer list — the
+   *  offer list IS the authorisation boundary (mig 643), and a lookup that went
+   *  straight to action_definitions would let a checklist item grant an
+   *  employee reach nobody ever gave it. Built from the same
+   *  get_agentic_tools_for_de rows as actionMap, so the two cannot disagree. */
+  actionByKey: Map<string, { connector_id: string; action_key: string; action_definition_id?: string | null }>;
   workItemId: string;
   objectiveId: string | null;
   /** The case's customer_account id — set only when its entity_kind IS customer_account. */
@@ -650,6 +663,70 @@ interface ToolContext {
   caseEntityRef: string | null;
 }
 
+/** jsonb holds scalars, not only strings — `requirements` and an item's
+ *  `params` are both validated as "string, number or boolean" (mig 674 rule c),
+ *  never as text specifically.
+ *
+ *  The coercion lives HERE, in the callers, and deliberately NOT inside
+ *  `resolveParams`: that function is the twin of `src/lib/onboardingTypes.ts`
+ *  and must stay byte-identical for `certify` › contract-parity to compare the
+ *  two copies behaviourally. Anything that must differ between the runtimes
+ *  belongs outside it. A non-scalar value is DROPPED rather than stringified —
+ *  "[object Object]" reaching a customer's system is worse than a named gap,
+ *  and dropping it makes the param read as unanswered, which escalates. */
+function jsonScalarMap(o: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (o && typeof o === 'object' && !Array.isArray(o)) {
+    for (const [k, v] of Object.entries(o as Record<string, unknown>)) {
+      if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') out[k] = String(v);
+    }
+  }
+  return out;
+}
+
+/** THE ONE call into connector-hub's `execute_action`.
+ *
+ *  Both callers in this file go through here — the model-driven registry tool
+ *  and perform_onboarding_item. A second fetch would be a second decision
+ *  path, and `decide_action_execution` (destructive-floor → guardrail → trust →
+ *  money) lives on the other side of this boundary: anything that skipped it
+ *  would be ungoverned reach wearing the same name.
+ *
+ *  `dedupe_key` is omitted unless a caller supplies one, so the registry path's
+ *  request body is byte-identical to what it sent before this helper existed
+ *  (connector-hub then computes its own key exactly as it always did). */
+async function executeActionViaHub(a: {
+  tenantId: string;
+  deId: string;
+  connectorId: string;
+  actionKey: string;
+  actionDefinitionId: string | null;
+  params: Record<string, unknown>;
+  originKind: string | null;
+  originId: string | null;
+  /** Experience door b (docs/31 Q1): what this action was ABOUT — ledger only;
+   *  connector-hub never puts it in the external request. */
+  entityRef: string | null;
+  /** Linkage a downstream matcher reads (mig 675). Trusted-caller only on the
+   *  hub side; this function always calls with the service-role key. */
+  dedupeKey?: string | null;
+}): Promise<unknown> {
+  const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`, apikey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')! },
+    body: JSON.stringify({
+      action: 'execute_action', connector_id: a.connectorId, tenant_id: a.tenantId,
+      subject_kind: 'de', subject_id: a.deId,
+      action_key: a.actionKey, action_definition_id: a.actionDefinitionId,
+      params: a.params,
+      origin_kind: a.originKind, origin_id: a.originId,
+      entity_ref: a.entityRef,
+      ...(a.dedupeKey ? { dedupe_key: a.dedupeKey } : {}),
+    }),
+  });
+  return await res.json().catch(() => ({ error: 'bad_response' }));
+}
+
 async function dispatchTool(
   admin: SupabaseClient,
   name: string,
@@ -660,7 +737,7 @@ async function dispatchTool(
   // did when these were parameters. Naming every field here is also the check
   // that none was dropped: omit one and its uses stop compiling.
   const {
-    tenantId, deId, subjectRef, actionMap, workItemId, objectiveId, accountRef, oppRef,
+    tenantId, deId, subjectRef, actionMap, actionByKey, workItemId, objectiveId, accountRef, oppRef,
     escRuleset, delegationTargets, entityName, ctxAccountForContacts, caseEntityRef,
   } = ctx;
   // Registry ACTIONS (P1): tools resolved from get_agentic_tools_for_de
@@ -691,17 +768,17 @@ async function dispatchTool(
       }
     }
     try {
-      const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`, apikey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')! },
-        body: JSON.stringify({ action: 'execute_action', connector_id: act.connector_id, tenant_id: tenantId, subject_kind: 'de', subject_id: deId, action_key: act.action_key, action_definition_id: act.action_definition_id ?? null, params: input,
-          origin_kind: workItemId ? 'de_work_item' : null, origin_id: workItemId ?? null,
-          // Experience door b (docs/31 Q1): what this action is ABOUT — ledger
-          // only; connector-hub never puts it in the external request. A
-          // model-supplied schema ref still wins (the merge is a fallback).
-          entity_ref: (input.external_ref as string) ?? subjectRef ?? entityName ?? null }),
+      // A model-supplied schema ref still wins for entity_ref (the merge is a
+      // fallback). No dedupe_key: connector-hub computes its own, exactly as
+      // this call site has always let it.
+      const out = await executeActionViaHub({
+        tenantId, deId,
+        connectorId: act.connector_id, actionKey: act.action_key,
+        actionDefinitionId: act.action_definition_id ?? null,
+        params: input,
+        originKind: workItemId ? 'de_work_item' : null, originId: workItemId ?? null,
+        entityRef: (input.external_ref as string) ?? subjectRef ?? entityName ?? null,
       });
-      const out = await res.json().catch(() => ({ error: 'bad_response' }));
       return { result: out };
     } catch (e) {
       return { result: { error: `action call failed: ${String(e).slice(0, 160)}` } };
@@ -885,6 +962,246 @@ async function dispatchTool(
       const d = data as { error?: string } | null;
       if (d?.error) return { result: { error: d.error } };
       return { result: data };
+    }
+    case 'perform_onboarding_item': {
+      // THE EMPLOYEE PROPOSES. mig 674 lets a checklist item name a verb and
+      // its parameter answers; mig 675 flips the item to done when the RECEIPT
+      // lands. This is the middle piece: turn "item X is bound to verb V" into
+      // a real, governed proposal.
+      //
+      // Everything before the final call is a REFUSAL LADDER. The only rung
+      // that reaches a customer's system routes executeActionViaHub — the same
+      // decide_action_execution gate as every other action this employee has,
+      // so this tool adds no reach, only a reason.
+      if (!caseEntityRef) return { result: { error: 'no onboarding project on this case' } };
+      // The brief's interface names project_id. It is ACCEPTED AND CHECKED, not
+      // trusted: record_onboarding_step already carries the lesson that a
+      // model-supplied id can tick the wrong customer's checklist, silently.
+      const askedProject = String(input.project_id ?? '').trim();
+      if (askedProject && askedProject !== caseEntityRef) {
+        return { result: { error: `This case is about onboarding project ${caseEntityRef}. You cannot perform an item on a different project — open that project's own case.` } };
+      }
+      const projectId = caseEntityRef;
+      const itemKey = String(input.item_key ?? '').trim();
+      if (!itemKey) return { result: { error: 'item_key is required — use the key exactly as shown on the record.' } };
+
+      const { data: projRow, error: projErr } = await admin.from('onboarding_projects')
+        .select('id, status, account_id, template_version_id, requirements, items_state')
+        .eq('id', projectId).eq('tenant_id', tenantId).maybeSingle();
+      if (projErr) return { result: { error: `could not read the onboarding project: ${projErr.message}` } };
+      const proj = projRow as {
+        status?: string; account_id?: string | null; template_version_id?: string;
+        requirements?: Record<string, unknown> | null; items_state?: unknown;
+      } | null;
+      if (!proj) return { result: { error: 'onboarding project not found' } };
+      if (proj.status !== 'active') {
+        return { result: { error: `This project is ${proj.status}, not active. Nothing may be performed on it.` } };
+      }
+
+      const { data: verRow } = await admin.from('onboarding_template_versions')
+        .select('items').eq('id', proj.template_version_id ?? '').eq('tenant_id', tenantId).maybeSingle();
+      const defs = Array.isArray((verRow as { items?: unknown } | null)?.items)
+        ? ((verRow as { items: unknown[] }).items as Array<Record<string, unknown>>) : [];
+      const itemDef = defs.find((d) => d && d.key === itemKey);
+      if (!itemDef) return { result: { error: `There is no checklist item "${itemKey}" on this project. Use a key exactly as shown on the record.` } };
+      const itemLabel = String(itemDef.label ?? itemKey);
+
+      // ── Refusal 1: whose item is it, and does it name a verb at all? ──
+      if (String(itemDef.owner_type ?? '') !== 'de') {
+        return { result: { error: `"${itemLabel}" is owned by ${String(itemDef.owner_type ?? 'a human')} — a person does that one. You can still record where it stands with record_onboarding_step.` } };
+      }
+      const boundActionKey = String(itemDef.action_key ?? '').trim();
+      if (!boundActionKey) {
+        return { result: { error: `"${itemLabel}" names no action to perform. Do the work with your own tools and record it with record_onboarding_step.` } };
+      }
+
+      // ── Refusal 2: is it already finished? ──
+      const states = Array.isArray(proj.items_state) ? (proj.items_state as Array<Record<string, unknown>>) : [];
+      const state = states.find((i) => i && i.key === itemKey);
+      const curStatus = String(state?.status ?? 'pending');
+      if (curStatus === 'done' || curStatus === 'signed_off') {
+        return { result: { error: `"${itemLabel}" is already ${curStatus}. Nothing to do — move on to the next item.` } };
+      }
+
+      // The linkage mig 675's trigger reads. It is also this tool's memory:
+      // every prior attempt on this exact item carries this key.
+      const dedupeKey = `onboarding:${projectId}:${itemKey}`;
+      const { data: priorRows } = await admin.from('action_executions')
+        .select('decision, task_id, result, created_at')
+        .eq('tenant_id', tenantId).eq('dedupe_key', dedupeKey).eq('mode', 'execute')
+        .order('created_at', { ascending: false }).limit(20);
+      const prior = (priorRows ?? []) as Array<{ decision: string; task_id: string | null; result: Record<string, unknown> | null; created_at: string }>;
+
+      /** Record where the item stands. NEVER 'done' — mig 675's trigger owns
+       *  that, and it owns it because a receipt is evidence where a self-report
+       *  is only a claim. */
+      const recordStatus = async (status: 'in_progress' | 'blocked', note: string) => {
+        const { error: uErr } = await admin.rpc('update_onboarding_item_as_de', {
+          p_project_id: projectId, p_de_id: deId, p_key: itemKey,
+          p_status: status, p_note: note.slice(0, 2000),
+        });
+        // .rpc() RESOLVES on a Postgres error; a failure here must not read as
+        // a success anywhere upstream, so it is surfaced, not swallowed.
+        if (uErr) console.error(`perform_onboarding_item: could not set ${itemKey} ${status}: ${uErr.message}`);
+      };
+
+      // ── Refusal 3: BOUND RETRY. Two failures on this exact item is a
+      // question for a person, not a third attempt. Unbounded retry is how
+      // this repo built a queue that amplified itself.
+      //
+      // Of the four decisions counted, only 'failed' and 'guardrail_blocked'
+      // have a writer today: connector-hub returns access_denied WITHOUT
+      // recording a row, and no code path writes 'rejected' onto an execution
+      // (a human rejection lands on the human_task). The other two are counted
+      // anyway — they are legal values of the column's CHECK constraint, and a
+      // bound that only notices the failures that exist today is a bound that
+      // silently widens the day someone adds the writer.
+      const FAILED_DECISIONS = ['failed', 'guardrail_blocked', 'access_denied', 'rejected'];
+      const failures = prior.filter((r) => FAILED_DECISIONS.includes(r.decision));
+      if (failures.length >= 2) {
+        const last = failures[0];
+        const lastReason = String((last.result as { error?: unknown } | null)?.error ?? last.decision);
+        // ESCALATE ONCE. The item is left 'blocked', and a blocked item that
+        // has already failed twice does not raise a second escalation on the
+        // next wake — open_de_escalation does not dedupe, so the guard has to
+        // be here or every shift adds another identical task to the pile.
+        if (curStatus !== 'blocked') {
+          await recordStatus('blocked', `Tried twice and failed. Last reason: ${lastReason}`);
+          await admin.rpc('open_de_escalation', {
+            p_tenant_id: tenantId, p_de_id: deId,
+            p_work_item_id: workItemId ?? null, p_objective_id: objectiveId ?? null,
+            p_title: `Onboarding item failed twice — ${itemLabel}`.slice(0, 300),
+            p_reason: `"${itemLabel}" (${itemKey}) is bound to the action "${boundActionKey}" and has now failed ${failures.length} times on this project. The last failure was: ${lastReason}. I have stopped attempting it rather than retry a third time.`,
+            p_proposed_action: `Check why "${boundActionKey}" is failing for this customer, then unblock the item.`,
+            p_justification: 'Two identical failures is a setup or data problem, not something a third attempt fixes.',
+            p_needs_input: false, p_sla_hours: STALL_HOURS,
+          });
+        }
+        return { result: { error: `"${itemLabel}" has already failed ${failures.length} times (last: ${lastReason}). It is blocked and a person has been asked. Do NOT try it again — move on to another item.` } };
+      }
+
+      // ── Refusal 4: has this item ALREADY been put to a person? A gated
+      // proposal creates a human_task; proposing again creates another one, and
+      // that is the queue amplification this repo has already paid for once.
+      //
+      // The newest row is authoritative: an approval INSERTS a fresh
+      // `executed_after_approval` row (claim_gated_action_execution), so a gate
+      // that has actually run is never the newest.
+      //
+      // NO OUTCOME FALLS THROUGH. Pending means wait; approved-but-not-yet-run
+      // means it is in flight; and REJECTED means a person has already said no
+      // to exactly this — re-proposing it would loop the employee against a
+      // human decision forever, and a rejection leaves NO 'rejected' row on
+      // action_executions for the failure counter above to catch (the decision
+      // lands on the human_task). That gap is why this is a status read and not
+      // just a decision read.
+      const newest = prior[0];
+      if (newest && (newest.decision === 'human_gated_destructive' || newest.decision === 'human_gated_trust')) {
+        let taskStatus = 'pending';   // no task row readable ⇒ assume it is still out there
+        if (newest.task_id) {
+          const { data: t } = await admin.from('human_tasks')
+            .select('status').eq('id', newest.task_id).eq('tenant_id', tenantId).maybeSingle();
+          taskStatus = String((t as { status?: string } | null)?.status ?? 'pending');
+        }
+        if (taskStatus === 'rejected') {
+          if (curStatus !== 'blocked') {
+            await recordStatus('blocked', `A person rejected the proposed "${boundActionKey}" for this item.`);
+          }
+          return { result: { error: `A person REJECTED the proposal to run "${boundActionKey}" for "${itemLabel}". That decision stands — the item is blocked and it is not yours to retry. Move on to another item.` } };
+        }
+        return { result: { error: `"${itemLabel}" has already been proposed and is ${taskStatus === 'approved' ? 'approved and being carried out' : 'waiting for a person to approve it'}. Do NOT propose it again — move on to another item.` } };
+      }
+
+      // ── Resolve the parameters. '@account' from the project's customer,
+      // '@ask' from the recorded requirements, everything else a literal. ──
+      let accountExternalRef: string | null = null;
+      if (proj.account_id) {
+        const { data: acct } = await admin.from('customer_accounts')
+          .select('external_ref').eq('id', proj.account_id).eq('tenant_id', tenantId).maybeSingle();
+        accountExternalRef = ((acct as { external_ref?: string | null } | null)?.external_ref) || null;
+      }
+      const binding = { action_key: boundActionKey, params: jsonScalarMap(itemDef.params) };
+      const { params: resolvedParams, missing } = resolveParams(binding, {
+        accountExternalRef, requirements: jsonScalarMap(proj.requirements),
+      });
+
+      // ── Refusal 5: NAME what is missing. An escalation that says "some
+      // information is missing" is unactionable; one that names the fields is
+      // a form a person can fill in. ──
+      if (missing.length > 0) {
+        const named = missing.join(', ');
+        if (curStatus !== 'blocked') {
+          await recordStatus('blocked', `Waiting on answers for: ${named}`);
+          await admin.rpc('open_de_escalation', {
+            p_tenant_id: tenantId, p_de_id: deId,
+            p_work_item_id: workItemId ?? null, p_objective_id: objectiveId ?? null,
+            p_title: `Onboarding item needs answers — ${itemLabel}`.slice(0, 300),
+            p_reason: `"${itemLabel}" (${itemKey}) runs the action "${boundActionKey}", and these values have not been answered for this customer: ${named}.`
+              + (missing.includes('external_ref') || !accountExternalRef ? ' (The customer record also has no external reference on file, which is where an "@account" value comes from.)' : ''),
+            p_proposed_action: `Record the answers for ${named} on this onboarding project, then I can run "${boundActionKey}".`,
+            p_justification: 'I will not guess a value that reaches a customer\'s system.',
+            p_needs_input: true, p_sla_hours: STALL_HOURS,
+          });
+        }
+        return { result: { error: `"${itemLabel}" cannot run yet — these values are unanswered: ${named}. I have asked a person and blocked the item. Move on to another item.` } };
+      }
+
+      // ── Refusal 6: is this employee actually allowed to run that verb? The
+      // OFFER LIST IS THE AUTHORISATION BOUNDARY (mig 643) — it is scoped by
+      // connector and grant, not by role, and decide_action_execution never
+      // asks "may THIS employee use this action". A template author naming a
+      // verb must therefore not be able to hand an employee reach nobody
+      // granted it. Resolved through the same get_agentic_tools_for_de rows
+      // the model's own action tools come from.
+      const act2 = actionByKey.get(boundActionKey);
+      if (!act2) {
+        return { result: { error: `"${itemLabel}" is bound to the action "${boundActionKey}", which is not one of your permitted actions on any connected system. I cannot run it. Escalate so an admin can grant it — do not try another way round.` } };
+      }
+
+      // ── PROPOSE. Same gate, same ledger, same everything as any other
+      // action — plus the dedupe_key that lets mig 675's trigger recognise the
+      // receipt as this item's completion. ──
+      let out: Record<string, unknown>;
+      try {
+        out = (await executeActionViaHub({
+          tenantId, deId,
+          connectorId: act2.connector_id, actionKey: act2.action_key,
+          actionDefinitionId: act2.action_definition_id ?? null,
+          params: resolvedParams,
+          originKind: workItemId ? 'de_work_item' : null, originId: workItemId ?? null,
+          entityRef: accountExternalRef ?? entityName ?? null,
+          dedupeKey,
+        })) as Record<string, unknown>;
+      } catch (e) {
+        return { result: { error: `action call failed: ${String(e).slice(0, 160)}` } };
+      }
+
+      if (out?.gated === true) {
+        // Gated: a human_task now exists and NOTHING was sent. 'in_progress' is
+        // the honest state — started, not finished.
+        await recordStatus('in_progress', `Proposed "${boundActionKey}" — waiting for human approval. ${String(out.reasoning ?? '')}`.trim());
+        return { result: {
+          gated: true, item_key: itemKey, action_key: boundActionKey,
+          task_id: out.task_id ?? null,
+          note: `Proposed — it needs a person's approval before anything is sent, and the item is marked in progress. Do NOT propose it again; move on to another item.`,
+        } };
+      }
+      if (out?.ok === true) {
+        // Executed for real. The item's completion is NOT this tool's to write:
+        // mig 675's trigger flipped it from the receipt, which is evidence.
+        // Writing a status here would fight that trigger and could downgrade it.
+        return { result: {
+          executed: true, item_key: itemKey, action_key: boundActionKey,
+          receipt: out.receipt ?? null,
+          note: 'Done and recorded automatically from the receipt — do not also mark this item done.',
+        } };
+      }
+      return { result: {
+        item_key: itemKey, action_key: boundActionKey,
+        error: String(out?.error ?? 'the action did not complete'),
+        detail: out?.detail ?? null,
+        note: 'Recorded as attempted. If this fails twice I will stop and ask a person — do not retry it now.',
+      } };
     }
     case 'operate_in_system': {
       // Bridge (mig 243): plain-English → a GOVERNED Browser Operator task on the
@@ -1144,6 +1461,12 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
   let subjectContext = '';
   let objectiveBriefText: string | undefined;   // T1.4: objective text → situational SOP match
   let objectiveKind: string | undefined;        // T1.2: single-hop delegation pre-filter
+  // Item key → the verb it names, for every DE-owned bound item on this
+  // onboarding project. An EMPTY map is the reason NOT to offer
+  // perform_onboarding_item: a tool offered on a project where nothing is bound
+  // answers "there is nothing to perform" every time, and this file already
+  // carries the lesson that offered-and-useless is worse than absent.
+  const onboardingBoundActions = new Map<string, string>();
   if (objectiveId) {
     const { data: obj } = await admin.from('de_objectives').select('entity_kind, entity_ref, title, description, plan').eq('id', objectiveId).maybeSingle();
     objectiveBriefText = `${obj?.title ?? ''}\n${obj?.description ?? ''}`.trim() || undefined;
@@ -1202,8 +1525,69 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
         // the exact failure this wave exists to close. Facet wins if present.
         if (!contactAccountRef && typeof row.account_id === 'string') contactAccountRef = row.account_id;
         entityName = (desk.nameFields.map((f) => row[f]).find((v) => typeof v === 'string' && v) as string) ?? null;
-        accountContext = `\n\n${desk.label} record on file — ${entityName ?? desk.label}: ${renderRecord(desk, row)}.`
+        // An onboarding project's checklist is rendered SEPARATELY below, merged
+        // with its template definitions (label, owner, the verb each item is
+        // bound to, and what that verb is still missing). Rendering the raw
+        // items_state here as well would hand the model two differently-shaped
+        // views of one checklist and invite it to work both.
+        const rowToRender = kind === 'onboarding_project' ? { ...row, items_state: null } : row;
+        accountContext = `\n\n${desk.label} record on file — ${entityName ?? desk.label}: ${renderRecord(desk, rowToRender)}.`
           + ` These are the real facts for this ${desk.label.toLowerCase()} — use them; do not ask to look them up. Anything not listed here is unknown — escalate rather than invent it.`;
+
+        // ── THE CHECKLIST, MERGED. items_state holds only mutable state
+        // (key/status/note); the DEFINITION — label, owner_type, action_key,
+        // params — lives on the template version, and until now the employee
+        // saw one half of each item. It could see that "configure_customer_setup"
+        // was pending and had no way to learn it was DE-owned, bound to a verb,
+        // and short exactly one answer. Naming the missing FIELDS is the whole
+        // point: an escalation that says "something is missing" is unactionable.
+        if (kind === 'onboarding_project') {
+          const { data: p2 } = await admin.from('onboarding_projects')
+            .select('template_version_id, requirements, account_id')
+            .eq('id', ref).eq('tenant_id', tenantId).maybeSingle();
+          const proj2 = p2 as { template_version_id?: string; requirements?: unknown; account_id?: string | null } | null;
+          const { data: ver2 } = proj2?.template_version_id
+            ? await admin.from('onboarding_template_versions')
+                .select('items').eq('id', proj2.template_version_id).eq('tenant_id', tenantId).maybeSingle()
+            : { data: null };
+          const defs2 = Array.isArray((ver2 as { items?: unknown } | null)?.items)
+            ? ((ver2 as { items: unknown[] }).items as Array<Record<string, unknown>>) : [];
+          let acctRef2: string | null = null;
+          if (proj2?.account_id) {
+            const { data: a2 } = await admin.from('customer_accounts')
+              .select('external_ref').eq('id', proj2.account_id).eq('tenant_id', tenantId).maybeSingle();
+            acctRef2 = ((a2 as { external_ref?: string | null } | null)?.external_ref) || null;
+          }
+          const reqs2 = jsonScalarMap(proj2?.requirements);
+          const states2 = Array.isArray(row.items_state) ? (row.items_state as Array<Record<string, unknown>>) : [];
+          const lines2 = defs2.map((d) => {
+            const k = String(d.key ?? '');
+            const st = states2.find((s) => s && s.key === k);
+            const owner = String(d.owner_type ?? 'either');
+            const status = String(st?.status ?? 'pending');
+            let line = `- ${k} — "${String(d.label ?? k)}" [owner ${owner}, status ${status}]`;
+            const ak = String(d.action_key ?? '').trim();
+            if (ak) {
+              const { missing } = resolveParams(
+                { action_key: ak, params: jsonScalarMap(d.params) },
+                { accountExternalRef: acctRef2, requirements: reqs2 },
+              );
+              line += ` — runs the action "${ak}"`;
+              line += missing.length
+                ? `, but these values are UNANSWERED: ${missing.join(', ')}.`
+                : ', and every value it needs is answered.';
+              // mig 674 rule (a) already refuses a bound item that is not
+              // DE-owned at publish time; re-checking here means a row that
+              // predates that rule cannot become performable by accident.
+              if (owner === 'de' && k) onboardingBoundActions.set(k, ak);
+            }
+            return line;
+          });
+          if (lines2.length) {
+            accountContext += `\n\nThis project's checklist:\n${lines2.join('\n')}\n`
+              + `Items marked owner "human" are not yours to do. An item that runs an action is performed with perform_onboarding_item — never by hand, and never twice.`;
+          }
+        }
       }
 
       // Why this case is open at all. run_work_watchers stamped the motion,
@@ -1329,6 +1713,13 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
   // send_payment_reminder is an internal note under one and an email to the
   // customer under another — and connector-hub now refuses to guess.
   const actionMap = new Map(actionTools.filter(t => t.connector_id && t.action_key).map(t => [t.name, { connector_id: t.connector_id!, action_key: t.action_key!, action_definition_id: t.action_definition_id ?? null }]));
+  // The SAME offers keyed by action_key, for perform_onboarding_item — a
+  // checklist item names a verb, not a tool name. Built from the same rows so
+  // the two views cannot disagree about what this employee may run. First offer
+  // wins on a duplicate key: one action_key can have several definitions, and
+  // picking the first matches how the model's own tool list is ordered.
+  const actionByKey = new Map<string, { connector_id: string; action_key: string; action_definition_id?: string | null }>();
+  for (const [, a] of actionMap) if (!actionByKey.has(a.action_key)) actionByKey.set(a.action_key, a);
   // Generic escalation ruleset (mig 262) — loaded once, evaluated per action.
   const escRuleset = await loadEscalationRuleset(admin, tenantId, deId).catch(() => ({} as EscRuleset));
   // Cross-DE delegation (T1.2): a DE may hand a sub-task to a colleague it has
@@ -1493,6 +1884,25 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
         note: { type: 'string', description: 'what you did and how you verified it' },
       }, required: ['item_key', 'status'] },
     });
+    // The employee PERFORMS a bound item. Offered only when at least one item
+    // on THIS project is DE-owned and names a verb this employee is actually
+    // permitted to run — an offer over an empty set is a tool that answers
+    // "nothing to perform" every time, which is the offered-and-useless failure
+    // record_onboarding_step's own comment warns about.
+    const performable = [...onboardingBoundActions]
+      .filter(([, ak]) => actionByKey.has(ak))
+      .map(([k]) => k);
+    if (performable.length > 0) {
+      motionTools.push({
+        name: 'perform_onboarding_item',
+        description: `Actually DO one bound checklist item on this onboarding project — it runs the action the item names, with the customer's answers already filled in. Use this instead of doing the step by hand. Items you can perform on this project: ${performable.join(', ')}. `
+          + `Risky actions go to a human for approval first; if the result says gated, report it and MOVE ON — do not propose the same item again. You never mark a performed item done: it completes on its own when the work actually lands. If the result names missing values, a person has already been asked — go to another item.`,
+        input_schema: { type: 'object', properties: {
+          project_id: { type: 'string', description: "this project's id, exactly as shown on the record" },
+          item_key: { type: 'string', description: "the checklist item's key, e.g. crm_configured" },
+        }, required: ['item_key'] },
+      });
+    }
   }
 
   // DE's registered systems. read_system grounds the DE in the real record;
@@ -1600,7 +2010,7 @@ async function workItem(admin: SupabaseClient, item: { id: string; tenant_id: st
     const toolResults: unknown[] = [];
     for (const tu of toolUses) {
       const out = await dispatchTool(admin, tu.name!, tu.input ?? {}, {
-        tenantId, deId, subjectRef, actionMap, workItemId: item.id, objectiveId,
+        tenantId, deId, subjectRef, actionMap, actionByKey, workItemId: item.id, objectiveId,
         accountRef, oppRef, escRuleset, delegationTargets, entityName,
         ctxAccountForContacts: contactsFor, caseEntityRef: entityRef,
       });

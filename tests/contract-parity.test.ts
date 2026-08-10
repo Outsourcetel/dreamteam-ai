@@ -21,6 +21,8 @@ import * as browserContracts from '../src/lib/categoryContracts';
 import * as edgeContracts from '../supabase/functions/_shared/categoryContracts.ts';
 import * as browserAdapters from '../src/lib/adapterTemplates';
 import * as edgeAdapters from '../supabase/functions/_shared/adapterTemplates.ts';
+import * as browserOnboarding from '../src/lib/onboardingTypes';
+import * as edgeOnboarding from '../supabase/functions/_shared/onboardingTypes.ts';
 
 describe('twin-contract parity (browser vs edge)', () => {
   it('category contracts agree exactly', () => {
@@ -47,6 +49,42 @@ describe('twin-contract parity (browser vs edge)', () => {
     const tpl = 'https://api.example.com/{a}/x?d={days_ago_28}&q={query}';
     const vals = { a: 'A', query: 'Q', ...browserAdapters.dateValues(now) };
     expect(browserAdapters.renderTemplate(tpl, vals)).toEqual(edgeAdapters.renderTemplate(tpl, vals));
+  });
+
+  // The onboarding binding resolver. The browser copy fills the wizard's
+  // "what is still unanswered" hints; the edge copy decides what a digital
+  // employee actually SENDS to a customer's system (de-work's
+  // perform_onboarding_item). A drift between them is not cosmetic: the UI
+  // would show an item ready while the employee escalates, or — the direction
+  // that costs money — the employee would fill a param the UI never asked a
+  // human to answer. Compared behaviourally over the cases that matter,
+  // including both "missing" branches and the per-verb key scoping.
+  it('onboarding param resolution agrees exactly', () => {
+    const binding = {
+      action_key: 'configure_customer_setup',
+      params: { external_ref: '@account', territory: '@ask', payment_terms: 'Net 30' },
+    };
+    const cases: Array<{ b: typeof binding; ctx: { accountExternalRef: string | null; requirements: Record<string, string> } }> = [
+      // everything answered
+      { b: binding, ctx: { accountExternalRef: 'Grant Plastics Ltd.', requirements: { 'configure_customer_setup.territory': 'United Kingdom' } } },
+      // unanswered @ask
+      { b: binding, ctx: { accountExternalRef: 'Grant Plastics Ltd.', requirements: {} } },
+      // empty-string @ask is unanswered, not answered-with-blank
+      { b: binding, ctx: { accountExternalRef: 'X', requirements: { 'configure_customer_setup.territory': '' } } },
+      // a bare key belongs to no verb and must not be read
+      { b: binding, ctx: { accountExternalRef: 'X', requirements: { territory: 'Wrong' } } },
+      // another verb's answer for the same param name must not be read
+      { b: binding, ctx: { accountExternalRef: 'X', requirements: { 'other_verb.territory': 'Wrong' } } },
+      // no customer reference on file → @account is missing, never guessed
+      { b: { action_key: 'setup', params: { company_id: '@account' } }, ctx: { accountExternalRef: null, requirements: {} } },
+      // no params at all
+      { b: { action_key: 'setup', params: {} }, ctx: { accountExternalRef: 'X', requirements: {} } },
+    ];
+    for (const c of cases) {
+      const b = browserOnboarding.resolveParams(c.b, c.ctx);
+      const e = edgeOnboarding.resolveParams(c.b, c.ctx);
+      expect(e, JSON.stringify(c)).toEqual(b);
+    }
   });
 
   it('the validator verdict agrees on a known-good and a known-bad definition', () => {
