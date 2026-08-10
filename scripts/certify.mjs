@@ -180,6 +180,21 @@ const PROBES = [
              )`,
   },
   {
+    name: 'onboarding-bindings-are-runnable',
+    why: 'a checklist item that names a verb nobody can run is a promise that breaks at 2am, in front of a customer — and the template author never finds out',
+    sql: `select t.slug || ' / ' || v.name || ' / ' || (i->>'key')
+                 || ' → ' || (i->>'action_key') as violation
+            from onboarding_template_versions v
+            join tenants t on t.id = v.tenant_id
+            cross join lateral jsonb_array_elements(v.items) i
+           where i ? 'action_key'
+             and not exists (
+               select 1 from action_definitions ad
+                where ad.action_key = i->>'action_key'
+                  and ad.status = 'active'
+                  and (ad.tenant_id is null or ad.tenant_id = v.tenant_id))`,
+  },
+  {
     name: 'workspace-admin-has-an-owner',
     why: 'the other half — restricting the admin verbs to one role is only safe if that role can actually reach them; without this, closing the hole silently leaves a workspace administrable by nobody',
     sql: `select t.slug as violation

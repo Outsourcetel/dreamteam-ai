@@ -101,6 +101,15 @@ const CASES = [
              where nm not in ('list_org_tree','match_doc_chunks','tenant_ancestors'))`,
   },
   {
+    name: 'onboarding-bindings-are-runnable',
+    fires: `select 1 where exists (select 1 from (values ('no_such_verb')) v(k)
+              where not exists (select 1 from action_definitions ad
+                                 where ad.action_key = v.k and ad.status='active'))`,
+    silent: `select 1 where exists (select 1 from (values ('configure_customer_setup')) v(k)
+              where not exists (select 1 from action_definitions ad
+                                 where ad.action_key = v.k and ad.status='active'))`,
+  },
+  {
     name: 'execute-perimeter (revoked fn removed from allowlist detects re-grant)',
     // Real perimeter check compares live grants to the pinned allowlist. Fire =
     // a live grant not in the pinned set. Proven by construction: we just
