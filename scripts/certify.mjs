@@ -147,7 +147,37 @@ const PROBES = [
             join action_definitions ad on ad.id = (x->>'action_definition_id')::uuid
            where t.status = 'active'
              and ad.requires_role is not null
-             and not coalesce(de.is_workforce_assistant, false)`,
+             -- ⚠ mig 669 INVALIDATED this probe's original form, and the probe
+             -- correctly went red rather than quietly widening. It used to read
+             -- "and not coalesce(de.is_workforce_assistant, false)" — i.e. it
+             -- hardcoded "restricted implies workforce_assistant", true when 643
+             -- was the only requirement and false the moment 'finance' existed.
+             -- It now flagged the finance desk holding finance verbs, which is
+             -- the intended state.
+             --
+             -- ⚠ BE PRECISE ABOUT WHAT THIS CAN AND CANNOT CATCH. I first wrote
+             -- that it independently validates every offer. Mutation-testing
+             -- disproved that: get_agentic_tools_for_de FILTERS through
+             -- de_may_use_action, so an action the gate refuses never reaches
+             -- the offer list and this probe sees nothing — clearing a
+             -- requires_role in a rolled-back transaction produced 0 rows here.
+             --
+             -- What it DOES catch is the gate DIVERGING from the mapping below:
+             -- a permissive regression, or a new requires_role arm added to the
+             -- function and not here. Proven, not assumed — replacing
+             -- de_may_use_action with "select true" inside a rolled-back
+             -- transaction lit up 104 violations, "Onboarding DE →
+             -- send_final_notice" first. That is the failure worth guarding:
+             -- the day someone loosens the gate, this names who gained what.
+             -- Deliberately NOT written as a call to de_may_use_action — asking
+             -- the gate whether it agrees with itself is the tautology this
+             -- repo keeps paying for.
+             and not (
+               (ad.requires_role = 'workforce_assistant'
+                 and coalesce(de.is_workforce_assistant, false))
+               or (ad.requires_role = 'finance'
+                 and coalesce(de.archetype_key, '') in ('billing_ar', 'accounting', 'fpa'))
+             )`,
   },
   {
     name: 'workspace-admin-has-an-owner',
