@@ -1,27 +1,32 @@
 {
-  "at": "2026-08-10T10:41:42.203Z",
-  "mode": "offline",
+  "at": "2026-08-10T12:37:54.558Z",
+  "mode": "fast",
   "failed": 0,
   "results": [
     {
       "section": "typecheck",
       "ok": true,
-      "seconds": 15.8
+      "seconds": 17.5
+    },
+    {
+      "section": "ring0-probes",
+      "ok": true,
+      "seconds": 3
+    },
+    {
+      "section": "migration-ledger",
+      "ok": true,
+      "seconds": 6
+    },
+    {
+      "section": "migration-numbering",
+      "ok": true,
+      "seconds": 0
     },
     {
       "section": "edge-typecheck",
       "ok": true,
-      "seconds": 3.9
-    },
-    {
-      "section": "design-drift",
-      "ok": true,
-      "seconds": 3.2
-    },
-    {
-      "section": "suite",
-      "ok": true,
-      "seconds": 1.7
+      "seconds": 2.1
     }
   ]
 }
