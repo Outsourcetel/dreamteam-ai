@@ -93,20 +93,22 @@ export function productionEvidenceSql(pins = PRODUCTION_EVIDENCE_PIN_NAMES) {
   union all
   -- Arm 4 (data): an exam-linked outcome marked production is the original
   -- defect, live. Zero rows or the backfill/writers have regressed.
-  select 'billable_outcomes ' || b.id || ' is exam-linked but marked production' as violation
-    from billable_outcomes b join de_conversations c on c.id = b.conversation_id
-   where c.channel = 'exam' and b.origin = 'production'
-   limit 5
+  -- (Each data arm is parenthesized: LIMIT inside a UNION chain is a syntax
+  -- error otherwise — a defect the mutation suite caught before first run.)
+  (select 'billable_outcomes ' || b.id || ' is exam-linked but marked production' as violation
+     from billable_outcomes b join de_conversations c on c.id = b.conversation_id
+    where c.channel = 'exam' and b.origin = 'production'
+    limit 5)
   union all
   -- Arm 5 (data): an exercise outcome that bills is money invented by a test.
-  select 'billable_outcomes ' || id || ' is origin=exercise AND billable' as violation
-    from billable_outcomes where origin = 'exercise' and billable
-   limit 5
+  (select 'billable_outcomes ' || id || ' is origin=exercise AND billable' as violation
+     from billable_outcomes where origin = 'exercise' and billable
+    limit 5)
   union all
   -- Arm 6 (data): exam-linked evidence runs feeding the activity feeds.
-  select 'evidence_runs ' || er.id || ' is exam-linked but marked production' as violation
-    from evidence_runs er join de_conversations c
-      on er.account_ref = 'conversation:' || c.id::text
-   where c.channel = 'exam' and er.origin = 'production'
-   limit 5`;
+  (select 'evidence_runs ' || er.id || ' is exam-linked but marked production' as violation
+     from evidence_runs er join de_conversations c
+       on er.account_ref = 'conversation:' || c.id::text
+    where c.channel = 'exam' and er.origin = 'production'
+    limit 5)`;
 }

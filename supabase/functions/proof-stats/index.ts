@@ -51,9 +51,7 @@ serve(async (req) => {
       // these filters are what make that sentence true. Exam threads carry
       // channel='exam' (mig 570); new audit rows carry detail.origin.
       count('de_conversations', (q: any) => q.neq('channel', 'exam')),
-      // TODO(682 Phase A2, after the migration lands): add .neq('origin','exercise')
-      // — the column does not exist until 682 is applied.
-      count('human_tasks', (q: any) => q.eq('type', 'escalation')),
+      count('human_tasks', (q: any) => q.eq('type', 'escalation').neq('origin', 'exercise')),
       count('audit_events', (q: any) => q.eq('category', 'guardrail_block')
         .or('detail->>origin.is.null,detail->>origin.neq.exercise')),
       count('role_certifications', (q: any) => q.eq('status', 'passed')),
