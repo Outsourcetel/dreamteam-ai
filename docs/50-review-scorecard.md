@@ -46,8 +46,8 @@ action_executions 94 · evidence_runs 93 · playbook_runs 84 · journal_entries 
 | 1 | Support pipeline (inbox→triage→topic→park→report) | de_messages 796/30d | **proven-live (prod, 2026-08-12)** | Review Lab drive: hosted intake → retrieval-grounded answer (conf 95) → draft gate HELD → escalation task → Inbox-path approve → customer-visible reply → conv `human_owned`; triage classified (general/sev3/normal). Caveats: email channel has 0 conversations EVER; F-5 no-docs drop |
 | 2 | Approvals spine (human_tasks→decide→execute) | human_tasks 313/30d | proven WITH defect class | golden-path 10/10 dev; prod decide driven on Review Lab 2026-08-12 — task→approved atomically, BUT consequence coupling is client-side (F-6). Ring-0 scan: 3 findings (F-1..F-3) |
 | 3 | Order-to-cash (invoice→dunning→payment) | invoices 5 ever | — | machine vs demand — L quantifies |
-| 4 | Mobile `/m` + push | 1 subscription | — | last-hop proof outstanding |
-| 5 | DE runtime (de-work/answer/orchestrate) | dispatch_log 5,695/30d | — | attribute: real work vs heartbeat? |
+| 4 | Mobile `/m` + push | 1 subscription | UI drive done — **F-6 defect** | phone shell renders, lists the task, decides — but its "Approve and send it" does NOT send (F-6). Push last-hop proof still outstanding |
+| 5 | DE runtime (de-work/answer/orchestrate) | dispatch_log 5,695/30d | attributed 2026-08-12 | de-work 2,002 (heartbeat+loop; only 134 work items created → mostly polling) · specialist-consult 1,154 (LIVE consultation organ — called by de-answer/agentic-step/gap-detect, NOT the retired role) · maintenance drains ~1,713 (reembed/embed/fitness/conflict/gap) · real-work slice: playbook-execute 267, connector-hub 246, de-eval-online 184 · push-send 22. Verdict: runtime alive + self-maintaining; externally-valuable work is the thin slice — "wired and starved" confirmed by invocation mix |
 | 6 | Knowledge (ingest→embed→retrieve) | chunks 812/30d, jobs 2/30d | **proven-live (prod, 2026-08-12)** | Review Lab: owner RLS insert → ingest-chunks (1 chunk, 1 embedded) → retrieval grounded the widget answer same-minute. Drain-path (jobs vs chunks) still to explain |
 | 7 | Missions | 1 ever | — | drive one live on Review Lab |
 | 8 | Playbooks | playbook_runs 84/30d | — | |
@@ -74,7 +74,7 @@ action_executions 94 · evidence_runs 93 · playbook_runs 84 · journal_entries 
 | F-4 | golden-path footer | **Dev/prod drift:** dev 915 routines / 294 tables vs prod 881 / 284, same ledger height (657) — 34 routines + 10 tables ahead of prod. Explain in D/E | OPEN |
 
 | F-5 | B drive v1 | **No-knowledge questions vanish:** widget-ask's no-docs branch ([widget-ask/index.ts:631](../supabase/functions/widget-ask/index.ts)) sends canned "check back soon" with `escalated:false`, **no human_task, no event** — a fresh tenant's customer questions are recorded but nobody is ever told. Conv stays `ai_handling` so no inbox surface flags it | OPEN |
-| F-6 | B drive v2 (demonstrated live) | **Hosted draft stranded by non-Inbox decide:** `decide_human_task` flips the task; delivery of the hosted/widget draft happens ONLY in supportInboxApi (`approve_draft_reply`). Raw RPC demonstrated: task=approved, draft stayed `draft_pending`, customer saw nothing. Code-read (not yet UI-driven): MobileShell:101 and HumanTasksPage:480 call plain `decideHumanTask` → same strand. The founder's phone approve = "screen says done, nothing sent" | OPEN — priority |
+| F-6 | B drive v2 + **mobile UI drive 2026-08-12** | **UI-PROVEN on deployed prod app:** in `/m`, the decision card's button reads **"Approve and send it"**; tapping it showed **"Approved and sent." / "All clear."** while the DB read task=`approved`, draft **still `draft_pending`**, conv still `needs_human`. The phone affirmatively claims a send that never happened. Same strand demonstrated earlier via raw RPC; HumanTasksPage:480 shares the call path (code-read). Fix shape: consequence must live server-side (decide RPC or trigger), not in one screen's JS | OPEN — **top priority** |
 | F-7 | analysis of F-6 vs ring-0 | **Gate blind spot:** certify's unexecutable-approval probe scans `action_executions` linkage only; the draft-reply consequence class (de_messages.delivery) is invisible to it — F-6 could recur silently | OPEN |
 
 Certify verdict at review start: **NOT CERTIFIED** (ring0-probes red; all 9 other sections green,
@@ -91,7 +91,10 @@ pre-decision ✅ · decide (raw RPC) ✅ → **draft stranded (F-6)** · Inbox-p
 1. ~~Approvals spine mechanics~~ ✅ · ~~production decide on Review Lab~~ ✅ 2026-08-12 (found F-6).
 2. ~~Support pipeline e2e~~ ✅ 2026-08-12 (hosted channel). Remaining slice: email-inbound
    (0 conversations ever — needs an inbound address) and park/snooze exercise.
-2b. Drive F-6 through the REAL mobile UI (`/m`) to upgrade it from code-read to UI-proven.
+2b. ~~Drive F-6 through the REAL mobile UI~~ ✅ 2026-08-12 — UI-PROVEN, see F-6. (Browser-pane
+    note: taps were dispatched programmatically to the deployed app's own buttons — same React
+    handlers — because the pane was hidden; screen text captured after each tap.)
+3b. Next: one mission e2e · email-inbound slice · park/snooze · F-6/F-5 fixes when founder says go.
 3. DE runtime attribution — split dispatch_log 5,695 into real-work vs heartbeat vs exam.
 4. Mission #7 — drive one mission end-to-end (the keystone has exactly one data point).
 5. Knowledge — ingest one doc on Review Lab; explain jobs=2 vs chunks=812.
