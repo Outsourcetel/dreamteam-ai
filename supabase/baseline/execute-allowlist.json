@@ -1,5 +1,5 @@
 {
-  "pinned_at": "2026-08-10T23:29:57.435Z",
+  "pinned_at": "2026-08-11T21:18:46.206Z",
   "note": "The EXECUTE surface for anon/authenticated. certify fails on ANY diff. Re-pin only after a DELIBERATE perimeter change.",
   "routines": [
     {
@@ -1489,6 +1489,11 @@
     },
     {
       "sig": "list_account_contacts(p_account_id uuid)",
+      "anon": false,
+      "authed": true
+    },
+    {
+      "sig": "list_approval_briefs()",
       "anon": false,
       "authed": true
     },

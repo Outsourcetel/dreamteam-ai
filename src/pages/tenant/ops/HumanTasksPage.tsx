@@ -17,6 +17,11 @@ import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../
 import { Chip, INPUT_CLS, TabBar, Button, DecisionCard } from '../../../design/primitives';
 import { listDigitalEmployees } from '../../../lib/digitalEmployeesApi';
 import { listAssignablePeople } from '../../../lib/orgApi';
+// Advisory briefs (mig 705): rail-computed evidence + risk rank per pending
+// approval. ⛔ ADVISORY ONLY — nothing from this import may pre-select,
+// pre-fill or trigger a decision; the decide path below is untouched.
+import { listApprovalBriefs, briefSortKey, BRIEF_CHIP } from '../../../lib/approvalBriefsApi';
+import type { ApprovalBrief } from '../../../lib/approvalBriefsApi';
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -268,6 +273,9 @@ function taskAge(iso: string): string {
 
 function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const [tasks, setTasks] = useState<DBHumanTask[]>([]);
+  // Advisory briefs keyed by task id. An empty map means "no advice", never
+  // "safe" — the queue renders identically without them.
+  const [briefs, setBriefs] = useState<Map<string, ApprovalBrief>>(new Map());
   const [staleness, setStaleness] = useState<Map<string, StalenessEscalation>>(new Map());
   // Owner names. assigned_user_id holds a user id; without this map the queue
   // would show a uuid or nothing at all, which is how a populated column still
@@ -348,6 +356,9 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
       // applied migration 042 yet (or any transient error) should still
       // show the task list, just without the stalled badges.
       try { setStaleness(await listOpenStalenessEscalations()); } catch { /* noop */ }
+      // Advisory overlay. The server recomputes every brief on this call, so
+      // what renders is current — a failure just means no advice today.
+      try { setBriefs(await listApprovalBriefs()); } catch { /* the queue works without briefs */ }
       try {
         const ppl = await listAssignablePeople();
         setPeopleById(new Map(ppl.map(p => [p.user_id, p.full_name || 'Unnamed user'])));
@@ -533,7 +544,15 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
     inScope(t, scope)
     && matchesDecision(t)
     && (filter === 'all' || t.type === filter)
-    && (!stalledOnly || staleness.has(t.id)));
+    && (!stalledOnly || staleness.has(t.id)))
+    // Risk-ranked (mig 705): the safest approvals first — the one-glance
+    // clears — the risky ones last but wearing a danger chip. Tasks without a
+    // brief (every non-approval type, and everything already decided) keep
+    // their existing order in between; sort() is stable, so ties preserve the
+    // created_at ordering the query returned.
+    .sort((a, b) =>
+      briefSortKey(a.status === 'pending' ? briefs.get(a.id) : undefined)
+      - briefSortKey(b.status === 'pending' ? briefs.get(b.id) : undefined));
   const scopeCount = (s: Scope) => tasks.filter(t => t.status === 'pending' && inScope(t, s)).length;
   // Counts for the decision control, narrowed by the scope already chosen — a
   // count that ignores the other filters tells you a number you cannot click to.
@@ -749,6 +768,10 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                   is to make the queue readable and open the right one. */}
               {visible.map(task => {
                 const stale = staleness.get(task.id);
+                // Advisory only. The chip and the sentence below never touch
+                // the decide path — the card's own comment says why the card
+                // does not decide, and the brief does not change that.
+                const brief = task.status === 'pending' ? briefs.get(task.id) : undefined;
                 const assignee = task.assigned_user_id
                   ? (peopleById.get(task.assigned_user_id) ?? 'Unnamed user') + (task.assigned_role ? ` · ${task.assigned_role}` : '')
                   : task.status === 'pending' ? "nobody's job yet" : null;
@@ -775,8 +798,13 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                           </Button>
                           {task.status !== 'pending' && statusBadge(task.status as TaskStatus)}
                           {task.first_approver_id && <Chip tone="info">One of two approved</Chip>}
+                          {brief && <Chip tone={BRIEF_CHIP[brief.risk].tone}>{BRIEF_CHIP[brief.risk].label}</Chip>}
                         </>
                       }
+                      /* The advisory sentence, in the slot DecisionCard names
+                         for exactly this ("you have approved every Meridian
+                         renewal…"). Labeled as advice; it decides nothing. */
+                      nudge={brief ? `Advisory: ${brief.headline}` : undefined}
                     />
                   </div>
                 );
@@ -954,6 +982,37 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                     )}
                   </div>
                 )}
+
+                {/* The advisory brief (mig 705). Every line is SQL-derived
+                    evidence — precedent, landed history, amount vs this
+                    workspace's dials, standing. Clearly labeled advice; it
+                    does not pre-select anything and the decide controls below
+                    are exactly as they were without it. */}
+                {selected.status === 'pending' && briefs.get(selected.id) && (() => {
+                  const brief = briefs.get(selected.id)!;
+                  return (
+                    <div className="mt-4 bg-dt-page border border-dt-border rounded-lg px-3 py-2.5">
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <p className="text-[11px] uppercase tracking-wide text-dt-muted">
+                          Advisory — from this workspace&apos;s own history
+                        </p>
+                        <Chip tone={BRIEF_CHIP[brief.risk].tone}>{BRIEF_CHIP[brief.risk].label}</Chip>
+                      </div>
+                      <p className="text-xs text-dt-body mb-2">{brief.headline}</p>
+                      <ul className="space-y-1">
+                        {brief.evidence.map((line, i) => (
+                          <li key={i} className="flex gap-1.5 text-[11px] text-dt-support">
+                            <span className="text-dt-faint shrink-0">•</span>
+                            <span>{line}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="mt-2 text-[10px] text-dt-faint">
+                        Advice, not a decision — the choice below stays entirely yours.
+                      </p>
+                    </div>
+                  );
+                })()}
 
                 {selected.type === 'checklist' && selected.status === 'pending' && (
                   <div className="mt-4 space-y-1.5">
