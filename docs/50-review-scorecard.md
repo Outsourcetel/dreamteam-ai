@@ -44,7 +44,7 @@ action_executions 94 · evidence_runs 93 · playbook_runs 84 · journal_entries 
 | # | Module | Census signal | Verdict | Evidence |
 |---|---|---|---|---|
 | 1 | Support pipeline (inbox→triage→topic→park→report) | de_messages 796/30d | — | migs 667–671 claim proven-live; B spot-confirms on Review Lab |
-| 2 | Approvals spine (human_tasks→decide→execute) | human_tasks 313/30d | — | invert no-unexecutable-approval on Review Lab |
+| 2 | Approvals spine (human_tasks→decide→execute) | human_tasks 313/30d | mechanics proven (dev) / **3 live defects (prod)** | golden-path 10/10 (2026-08-12); certify ring-0 scanned 90 pending, 89 routable vs 235 defs → 3 findings below. Prod Review-Lab drive still owed |
 | 3 | Order-to-cash (invoice→dunning→payment) | invoices 5 ever | — | machine vs demand — L quantifies |
 | 4 | Mobile `/m` + push | 1 subscription | — | last-hop proof outstanding |
 | 5 | DE runtime (de-work/answer/orchestrate) | dispatch_log 5,695/30d | — | attribute: real work vs heartbeat? |
@@ -64,10 +64,24 @@ action_executions 94 · evidence_runs 93 · playbook_runs 84 · journal_entries 
 | 19 | Browser operator / computer-use | 4 tasks/30d | — | spike-grade |
 | 20 | Legal pages (ToS/Privacy) | — | — | N: content never reviewed |
 
+## Confirmed findings register (starts 2026-08-12)
+
+| ID | Found by | Finding | Status |
+|---|---|---|---|
+| F-1 | certify ring-0 | **Unexecutable approval, no executor:** outsourcetel-hq task `03aaa6dd` "$15,600 invoice to Meridian Group — test ping" (2026-08-10) has NO action_executions row on either linkage column. Approving it flips to approved and sends nothing. Probe never decides — **needs founder withdraw or re-raise** | OPEN — founder decision |
+| F-2 | certify ring-0 | **Mismatched pair:** kinetic approval "Create a specialist desk" names definition `create_specialist` which is **disabled** (retired Specialist role); resolver only sees active → `action_definition_not_found`, silently nothing sent | OPEN |
+| F-3 | certify ring-0 | **Unrunnable onboarding binding:** outsourcetel-hq SaaS-starter `locations_configured → propose_connector` requires role `workforce_assistant`; assigned employee (Onni) lacks it | OPEN |
+| F-4 | golden-path footer | **Dev/prod drift:** dev 915 routines / 294 tables vs prod 881 / 284, same ledger height (657) — 34 routines + 10 tables ahead of prod. Explain in D/E | OPEN |
+
+Certify verdict at review start: **NOT CERTIFIED** (ring0-probes red; all 9 other sections green,
+incl. typecheck, migration-ledger, role-gates, silent-refusals, golden-path, suite 55.6s).
+
 ## B priority queue (next sessions)
 
-1. Approvals spine on Review Lab — create → decide → verify execution outside the ledger.
-2. Support pipeline on Review Lab — email-inbound → conversation → triage → topic → park.
+1. ~~Approvals spine mechanics~~ ✅ 2026-08-12 (golden-path dev + certify prod scan). Remaining:
+   one PRODUCTION approval driven e2e on Review Lab — needs intake channel, so combine with 2.
+2. Support pipeline on Review Lab — email-inbound → conversation → triage → topic → park →
+   escalation raises a human task → decide → verify execution outside the ledger.
 3. DE runtime attribution — split dispatch_log 5,695 into real-work vs heartbeat vs exam.
 4. Mission #7 — drive one mission end-to-end (the keystone has exactly one data point).
 5. Knowledge — ingest one doc on Review Lab; explain jobs=2 vs chunks=812.
