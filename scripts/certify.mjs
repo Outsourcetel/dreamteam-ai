@@ -32,6 +32,7 @@ import { spawnSync } from 'node:child_process';
 import { landedPredicateSql } from './landed-predicate.mjs';
 import { productionEvidenceSql } from './production-evidence.mjs';
 import { bareContainerLiteralSql } from './bare-container-literal.mjs';
+import { unexecutableApprovalSql } from './unexecutable-approval.mjs';
 
 const FAST = process.argv.includes('--fast');
 const PIN = process.argv.includes('--pin-allowlist');
@@ -129,6 +130,11 @@ const PROBES = [
     name: 'no-untyped-literal-appended-to-a-container',
     why: 'appending a BARE string literal to a text[] (v_errors := v_errors || \'message\') does not append — the untyped literal makes Postgres resolve anyarray||anyarray instead of anyarray||anyelement, so it parses the message AS an array and raises 22P02 at runtime, and that branch can NEVER return its message. jsonb has the identical trap. Four rules of validate_onboarding_items were dead this way from mig 076 until mig 685, and the only reason nobody noticed is that every sibling line used format(), which returns typed text. THE FIX IS A CAST: \'message\'::text (or ::jsonb). format(...) and array_append(arr, \'lit\') are already correct and are deliberately not flagged',
     sql: bareContainerLiteralSql(),
+  },
+  {
+    name: 'no-pending-approval-the-platform-cannot-carry-out',
+    why: 'on 2026-08-11 the SAME defect shipped twice in one day and no gate could see either: mig 701 (the sweep raised approvals with connector_id NULL, so connector-hub refused at the door with connector_id_required and the browser DISCARDED the refusal — the task read as done and no customer was chased) and mig 703 (due_approved_actions held the executor id on every row and dropped it, so the driver would hit action_ambiguous on a five-minute cron with nobody watching). A row sitting in front of a human asking to be approved, that could not be executed even if they said yes, is the class. mig 590 wrote the rule and never got a standing check: "checking that an executor EXISTS is not the same as checking it has what it needs". The resolution rule is lifted from connector-hub\'s resolveActionDefinition (index.ts:2160-2219), not invented — a probe whose rule disagrees with the runtime\'s manufactures findings and misses real ones in the same pass. ⚠ It also reports its own denominator: mig 701 back-filled the two known-bad rows the morning this was written, so the naive form of this probe finds nothing and looks green from having compared nothing — `no-comparisons` is therefore a VIOLATION, never a pass. ⚠ WHAT IT CANNOT SEE: the browser half of mig 701\'s fix lives in TypeScript (src/lib/connectorApi.ts), and a regression that stopped forwarding action_definition_id from there would not show up here',
+    sql: unexecutableApprovalSql(),
   },
   {
     name: 'rls-on-every-public-table',
@@ -536,7 +542,16 @@ const sections = [
       for (const p of PROBES) {
         try {
           const rows = await q(p.sql);
-          for (const r of rows) if (r.violation != null) failures.push(`${p.name}: ${r.violation}`);
+          // A probe may return rows with violation NULL and a `note` — the
+          // DENOMINATOR it compared against. Zero findings from zero
+          // comparisons looks exactly like a clean result, so a probe that
+          // can say how much it examined must be able to print it on a PASS
+          // as well as a fail. Same treatment netExposureFailures already
+          // gets: surfaced, never counted as a failure.
+          for (const r of rows) {
+            if (r.violation != null) failures.push(`${p.name}: ${r.violation}`);
+            else if (r.note != null) console.log(`        ${r.note}`);
+          }
         } catch (e) {
           failures.push(`${p.name}: PROBE ERROR (a broken probe is a failure, not a skip) — ${String(e).slice(0, 160)}`);
         }

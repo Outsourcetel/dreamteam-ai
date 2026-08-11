@@ -14,6 +14,7 @@ import { readFileSync } from 'node:fs';
 import { landedPredicateSql, LANDED_PINS } from './landed-predicate.mjs';
 import { productionEvidenceSql, PRODUCTION_EVIDENCE_PIN_NAMES } from './production-evidence.mjs';
 import { bareContainerLiteralSql } from './bare-container-literal.mjs';
+import { unexecutableApprovalSql } from './unexecutable-approval.mjs';
 
 // ── Fixtures for no-untyped-literal-appended-to-a-container ────────────────
 // The production catalog is CLEAN of this shape, so the probe returns zero rows
@@ -117,13 +118,26 @@ function token() {
   return line.slice('SUPABASE_ACCESS_TOKEN='.length).replace(/^["']|["']$/g, '').trim();
 }
 const TOKEN = token();
-async function q(sql) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Retry policy copied from certify.mjs, and for the same reason: a single
+// transient 502 from the Management API used to throw out of q() and abort the
+// WHOLE suite part-way, leaving a run that had proven some cases and not others
+// while exiting nonzero — indistinguishable at a glance from a real mutation
+// failure. TRANSPORT ONLY. A 4xx is where a genuine SQL error lands, and
+// retrying one would be retrying a broken case into a timeout.
+async function q(sql, attempt = 0) {
   const res = await fetch(`https://api.supabase.com/v1/projects/${REF}/database/query`, {
     method: 'POST', headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ query: sql }),
-  });
+  }).catch((e) => ({ ok: false, status: 0, text: async () => String(e) }));
   const t = await res.text();
-  if (!res.ok) throw new Error(`${res.status}: ${t.slice(0,200)}`);
+  if (!res.ok) {
+    if ((res.status === 429 || res.status >= 500 || res.status === 0) && attempt < 3) {
+      await sleep(1500 * (attempt + 1));
+      return q(sql, attempt + 1);
+    }
+    throw new Error(`${res.status}: ${t.slice(0,200)}`);
+  }
   return JSON.parse(t);
 }
 
@@ -561,6 +575,113 @@ const CASES = [
     fires: bareContainerLiteralSql(BODY_ARG_ARRAY),
     silent: bareContainerLiteralSql(BODY_ARG_ARRAY_CAST),
   },
+  // ── no-pending-approval-the-platform-cannot-carry-out ──────────────────
+  // Every case runs certify's ACTUAL query — real connectors, real
+  // action_definitions, real pg_proc — with ONE synthesised row UNIONed into
+  // the population, and counts only the rows naming that fixture. No writes.
+  // `silent` is never an empty population; it is always the SAME row made
+  // executable, so these prove the probe discriminates rather than merely
+  // fires. (The live, rolled-back-transaction version of these three — real
+  // INSERTs into human_tasks/action_executions inside a transaction that
+  // aborts — was run once against production when the probe shipped; all
+  // three fired and named the right kind, action_executions stayed at 186.
+  // These are the standing form of that proof.)
+  ...(() => {
+    const HQ = '5bb802e1-8e92-4eef-9a7a-ac348785d43f';        // outsourcetel-hq
+    const DEF = '00003ef9-96d6-416e-9b21-3ea7301e83e6';       // send_payment_reminder, erp_financials, active
+    const ERP = '7f595bec-2f73-44d2-8f89-20961ad11e0e';       // erpnext / erp_financials
+    const OTHER = '73ab12eb-ddf1-4d64-8cc3-e4c917c5b604';     // mcp / other — right tenant, WRONG category
+    // A synthesised population row. Defaults are the CLEAN one: the connector
+    // that carries this verb, the definition that was gated, matching category.
+    const row = (o = {}) => {
+      const d = { conn: `'${ERP}'::uuid`, def: `'${DEF}'::uuid`, key: 'send_payment_reminder', ...o };
+      return `  select '00000000-0000-4000-8000-00000000dead'::uuid, '${HQ}'::uuid, ${d.conn}, ${d.def},
+                      '${d.key}'::text, 'outsourcetel-hq'::text, 'MUTATION FIXTURE'::text`;
+    };
+    // Only rows naming the fixture count — production carries one real
+    // violation of this class (kinetic / create_specialist, whose definition
+    // was disabled by mig 611), and a case that counted it would pass without
+    // the mutation.
+    const only = (kind, extra) => `select 1 from (${unexecutableApprovalSql({ extra })}) x
+       where x.violation like '${kind} — %' and x.violation like '%MUTATION FIXTURE%'`;
+    const case_ = (kind, name, mutation) => ({
+      name: `unexecutable-approval (${name})`,
+      fires: only(kind, row(mutation)),
+      silent: only(kind, row()),
+    });
+    return [
+      // mig 701's defect, exactly: the sweep wrote a null routing column.
+      case_('unroutable', 'connector_id NULL -> connector-hub refuses at the door', { conn: 'null::uuid' }),
+      // The other way a row is unroutable: the connector is not this
+      // workspace's (deleted, or another tenant's) -> connector_not_found.
+      case_('unroutable', 'the named connector is not a connector of this workspace',
+            { conn: `'00000000-0000-4000-8000-00000000c0de'::uuid` }),
+      // The named executor is real and active but unreachable THROUGH THIS
+      // CONNECTOR, because the resolver keys on the CONNECTOR's category.
+      case_('mismatched-pair', 'the named executor is not in the connector\'s category',
+            { conn: `'${OTHER}'::uuid` }),
+      // The half of `ambiguous` that a row can carry. It cannot arise from an
+      // INSERT today (action_executions.action_definition_id is NOT NULL) and
+      // that is stated in the probe rather than pretended otherwise — this
+      // case is what keeps the arm honest if the constraint ever goes.
+      case_('ambiguous', 'two live executors and the row names neither', { def: 'null::uuid' }),
+      // ...and the discrimination that matters most: an UNAMBIGUOUS pair with
+      // no disambiguator is NOT a violation. Without this, an arm that fired
+      // on every null would look identical to the correct one.
+      { name: 'unexecutable-approval (a single-executor pair needs no disambiguator and is never flagged)',
+        fires: only('ambiguous', row({ def: 'null::uuid' })),
+        silent: only('ambiguous', row({ def: 'null::uuid', key: 'flag_for_collections' })) },
+    ];
+  })(),
+  {
+    // THE DENOMINATOR ARM. mig 701 back-filled the two known-bad rows hours
+    // before this probe was written, so its three arms find nothing today —
+    // and zero findings from zero comparisons is indistinguishable from a
+    // clean result. This is the case proving the probe refuses to call an
+    // empty population a pass.
+    name: 'unexecutable-approval (an empty population is a VIOLATION, not a pass)',
+    fires: `select 1 from (${unexecutableApprovalSql({ empty: true })}) x
+             where x.violation like 'no-comparisons — %'`,
+    silent: `select 1 from (${unexecutableApprovalSql()}) x
+             where x.violation like 'no-comparisons — %'`,
+  },
+  {
+    // The `ambiguous` arm's OTHER half — mig 703's defect — reads the driver's
+    // selector out of pg_proc, which a SELECT cannot fake. What CAN be tested
+    // as a SELECT is the pattern itself, and it is worth testing: mig 703
+    // recorded that a bare `ae\.action_definition_id` match SURVIVED the
+    // null::uuid mutant, because the JOIN condition further down the body
+    // satisfies it. The anchor to the select list is the fix, and this is what
+    // stops someone "simplifying" it back.
+    name: 'unexecutable-approval (the selector pattern is anchored to the SELECT LIST, not the bare token)',
+    fires: `select 1 where not (
+              'select t.id, t.slug, ht.id, ae.id, ae.connector_id, null::uuid, ad.action_key
+                 from action_executions ae join action_definitions ad on ad.id = ae.action_definition_id'
+              ~ 'ae\\.connector_id,\\s*ae\\.action_definition_id')`,
+    silent: `select 1 where not (
+              'select t.id, t.slug, ht.id, ae.id, ae.connector_id, ae.action_definition_id, ad.action_key
+                 from action_executions ae join action_definitions ad on ad.id = ae.action_definition_id'
+              ~ 'ae\\.connector_id,\\s*ae\\.action_definition_id')`,
+  },
+  {
+    name: 'unexecutable-approval (the bare-token pattern mig 703 rejected would NOT have caught the mutant)',
+    // Same two bodies, the LOOSE pattern. It must stay silent on BOTH — which
+    // is what makes the anchored one load-bearing rather than decorative.
+    fires: `select 1 where not (
+              'select ae.connector_id, null::uuid from action_executions ae'
+              ~ 'ae\\.action_definition_id')`,
+    silent: `select 1 where not (
+              'select ae.connector_id, null::uuid from action_executions ae
+                 join action_definitions ad on ad.id = ae.action_definition_id'
+              ~ 'ae\\.action_definition_id')`,
+  },
+  {
+    name: 'unexecutable-approval (LIVE DDL mutant: due_approved_actions stops forwarding the executor)',
+    manual: 'mig 703 recreated inside a transaction that ABORTS, with null::uuid in the select list and the '
+      + 'return type unchanged: the probe named 4 real production rows as `ambiguous` (outsourcetel-hq '
+      + 'send_payment_reminder, two live ERPNext executors — an internal note and an email to the customer). '
+      + 'Rolled back; the live selector was re-read afterwards and is intact. Directly observed 2026-08-11.',
+  },
   {
     name: 'execute-perimeter (revoked fn removed from allowlist detects re-grant)',
     // Real perimeter check compares live grants to the pinned allowlist. Fire =
@@ -571,8 +692,23 @@ const CASES = [
   },
 ];
 
+// Optional substring filter, so one probe's cases can be re-run on their own
+// after a change without waiting out the whole suite. ⚠ A filtered run proves
+// only what it ran: the total printed below is of the SELECTED cases, and the
+// line above it says so, because "N pass" over a silently narrowed set is the
+// padded number this file exists to stop.
+const FILTER = process.argv.slice(2).find((a) => !a.startsWith('--')) ?? null;
+const SELECTED = FILTER ? CASES.filter((c) => c.name.includes(FILTER)) : CASES;
+if (FILTER) {
+  console.log(`FILTERED to "${FILTER}": ${SELECTED.length} of ${CASES.length} case(s). NOT a full suite run.`);
+  if (SELECTED.length === 0) {
+    console.error('FILTER MATCHED NOTHING — a filter that selects no cases is not a pass.');
+    process.exit(1);
+  }
+}
+
 let pass = 0, fail = 0;
-for (const c of CASES) {
+for (const c of SELECTED) {
   if (c.manual) { console.log(`  MANUAL  ${c.name}\n            ${c.manual}`); pass++; continue; }
   const fired = (await q(c.fires)).length;
   const silent = (await q(c.silent)).length;
@@ -580,5 +716,5 @@ for (const c of CASES) {
   console.log(`  ${ok ? 'PASS' : 'FAIL'}    ${c.name}  (violation→${fired} rows, clean→${silent} rows)`);
   ok ? pass++ : fail++;
 }
-console.log(`\nmutation test: ${pass} pass, ${fail} fail`);
+console.log(`\nmutation test${FILTER ? ` (FILTERED — ${SELECTED.length}/${CASES.length} cases)` : ''}: ${pass} pass, ${fail} fail`);
 process.exit(fail ? 1 : 0);
