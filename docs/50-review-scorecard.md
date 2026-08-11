@@ -109,7 +109,9 @@ pre-decision ✅ · decide (raw RPC) ✅ → **draft stranded (F-6)** · Inbox-p
 2b. ~~Drive F-6 through the REAL mobile UI~~ ✅ 2026-08-12 — UI-PROVEN, see F-6. (Browser-pane
     note: taps were dispatched programmatically to the deployed app's own buttons — same React
     handlers — because the pane was hidden; screen text captured after each tap.)
-3b. Next: one mission e2e · email-inbound slice · park/snooze · F-6/F-5 fixes when founder says go.
+3b. ~~mission e2e~~ ✅ · ~~email-inbound~~ ✅ (dormant-by-config, W-1) · ~~park/snooze~~ ✅ —
+    all 2026-08-12. **B core COMPLETE.** Open B residue: watcher-fire observation (dwell) ·
+    push last-hop. Review widens next to C (security) and D (code health); fixes on founder go.
 3. DE runtime attribution — split dispatch_log 5,695 into real-work vs heartbeat vs exam.
 4. Mission #7 — drive one mission end-to-end (the keystone has exactly one data point).
 5. Knowledge — ingest one doc on Review Lab; explain jobs=2 vs chunks=812.
