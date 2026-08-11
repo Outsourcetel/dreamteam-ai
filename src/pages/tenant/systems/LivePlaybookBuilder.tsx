@@ -1550,7 +1550,11 @@ function LivingDocument({ definitionId, steps, runs, publishedDefs, onDecided }:
         <div className="flex items-center gap-3 flex-wrap rounded-xl border border-dt-border bg-dt-card px-3 py-2 text-[11px]">
           <span className="text-dt-support">📈 {econ.completed}/{econ.runs} runs completed{econ.completion_pct !== null ? ` (${econ.completion_pct}%)` : ''}</span>
           <span className="text-dt-support">AI cost ${(econ.ai_cost_cents / 100).toFixed(2)}</span>
-          <span className="text-dt-support">~{econ.human_minutes_saved} min of human work covered</span>
+          {/* mig 708: minutes render only from the tenant's OWN baseline —
+              the old value was runs × an invented 15-minute default. */}
+          {econ.human_minutes_saved != null
+            ? <span className="text-dt-support">~{econ.human_minutes_saved} min of human work covered</span>
+            : <span className="text-dt-faint">time covered not measured — set per-task minutes in workforce baselines</span>}
           {econ.est_value_usd !== null
             ? <span className="text-emerald-400">≈ ${econ.est_value_usd.toFixed(2)} value (your baseline)</span>
             : <span className="text-dt-faint">set workforce baselines to see $ value</span>}

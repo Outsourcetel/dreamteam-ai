@@ -76,15 +76,19 @@ export function PerformanceDashboard({ performance }: PerformanceDashboardProps)
         })}
       </div>
 
-      {/* ROI Summary */}
+      {/* ROI Summary — mig 708: hours saved was executions × an invented
+          0.5h; an unmeasured number renders as "Not measured", never a guess.
+          The daily figure is real AI spend, and is labeled as such. */}
       <div className="mt-4 pt-4 border-t border-dt-border">
         <div className="text-xs text-dt-support space-y-1">
           <div className="flex justify-between">
             <span>Hours Saved:</span>
-            <span className="text-dt-body font-medium">{performance.roi_hours_saved}h</span>
+            <span className={measured(performance.roi_hours_saved) ? 'text-dt-body font-medium' : 'text-dt-muted'}>
+              {measured(performance.roi_hours_saved) ? `${performance.roi_hours_saved}h` : NOT_MEASURED}
+            </span>
           </div>
           <div className="flex justify-between">
-            <span>FTE Cost:</span>
+            <span>AI Spend:</span>
             <span className="text-dt-body font-medium">${Math.round(performance.fte_equivalent_cost)}/day</span>
           </div>
           <div className="flex justify-between">

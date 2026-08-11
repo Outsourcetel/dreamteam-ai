@@ -44,8 +44,12 @@ export interface DEPerformanceSummary {
   resolution_rate: number | null;
   amendments_applied: number;
   training_sessions: number;
+  /** Real AI spend this month averaged per day (key name kept for
+   *  compatibility — this was never a measured FTE figure). */
   fte_equivalent_cost: number;
-  roi_hours_saved: number;
+  /** mig 708 (§12.3): always null until a tenant-typed baseline exists —
+   *  the old value was executions × an invented 0.5h. */
+  roi_hours_saved: number | null;
   timestamp: string;
 }
 

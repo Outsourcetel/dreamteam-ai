@@ -28,7 +28,10 @@ export default function WorkforceEconomicsPanel({ tenantId }: { tenantId: string
 
   if (hidden || econ === null) return null;
 
-  const hours = Math.round(econ.human_minutes_saved / 60);
+  // mig 708: minutes are null unless the tenant configured its own per-task
+  // baseline. Math.round(null) is 0 in JavaScript — the exact client-side trap
+  // mig 491 documented — so the null must be handled BEFORE arithmetic.
+  const hours = econ.human_minutes_saved != null ? Math.round(econ.human_minutes_saved / 60) : null;
   const save = async () => {
     const n = Number(fte);
     if (!Number.isFinite(n) || n <= 0) { setErr('Enter a monthly cost, e.g. 4200.'); return; }
@@ -55,7 +58,8 @@ export default function WorkforceEconomicsPanel({ tenantId }: { tenantId: string
         <StatTile label="Tasks run" value={econ.playbook_runs} sub={`${econ.playbook_completed} completed`} />
         <StatTile label="AI spend (this period)" value={money(econ.ai_cost_usd)} sub="hard-capped by your budget" />
         {econ.baseline_configured
-          ? <StatTile label="Est. value of time saved" value={econ.est_value_usd != null ? money(econ.est_value_usd) : '—'} sub={`≈ ${hours} human-hour${hours === 1 ? '' : 's'}`} />
+          ? <StatTile label="Est. value of time saved" value={econ.est_value_usd != null ? money(econ.est_value_usd) : '—'}
+              sub={hours != null ? `≈ ${hours} human-hour${hours === 1 ? '' : 's'}` : 'time per task not measured yet'} />
           : <StatTile label="Est. value of time saved" value={<span className="text-dt-muted text-base">set baseline →</span>} />}
       </div>
 

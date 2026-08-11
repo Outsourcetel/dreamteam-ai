@@ -887,7 +887,10 @@ export async function decidePlaybookAmendment(amendmentId: string, approve: bool
 // ── PB3 W8 — the procedure's P&L (real runs, real cost, tenant baselines) ──
 export interface PlaybookEconomics {
   runs: number; completed: number; failed: number; completion_pct: number | null;
-  ai_cost_cents: number; human_minutes_saved: number; est_value_usd: number | null;
+  // mig 708 (§12.3): minutes are null until the tenant's own action_minutes
+  // baseline exists — never the old invented 15-minute default.
+  ai_cost_cents: number; human_minutes_saved: number | null; est_value_usd: number | null;
+  action_minutes_configured?: boolean;
   baseline_configured: boolean;
 }
 export async function getPlaybookEconomics(definitionId: string): Promise<PlaybookEconomics | null> {

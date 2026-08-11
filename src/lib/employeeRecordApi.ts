@@ -121,10 +121,13 @@ export interface WorkforceEconomics {
   digital_employees: number;
   playbook_runs: number;
   playbook_completed: number;
-  human_minutes_saved: number;
+  /** mig 708 (§12.3): null until the tenant configures its own per-task
+   *  minutes — the platform never invents a 15-minute default again. */
+  human_minutes_saved: number | null;
   ai_cost_usd: number;
   est_value_usd: number | null;
   baseline_configured: boolean;
+  action_minutes_configured: boolean;
 }
 
 export async function getWorkforceEconomics(tenantId: string): Promise<WorkforceEconomics> {
