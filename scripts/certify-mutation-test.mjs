@@ -15,6 +15,7 @@ import { landedPredicateSql, LANDED_PINS } from './landed-predicate.mjs';
 import { productionEvidenceSql, PRODUCTION_EVIDENCE_PIN_NAMES } from './production-evidence.mjs';
 import { bareContainerLiteralSql } from './bare-container-literal.mjs';
 import { unexecutableApprovalSql } from './unexecutable-approval.mjs';
+import { advisoryBoundarySql } from './advisory-boundary.mjs';
 
 // ── Fixtures for no-untyped-literal-appended-to-a-container ────────────────
 // The production catalog is CLEAN of this shape, so the probe returns zero rows
@@ -754,6 +755,69 @@ const CASES = [
       + 'cannot see (F4). One further mutant — the same dynamic decision WITHOUT the sanction GUC — is '
       + 'stopped by guard_human_task_decision rather than by mig 704, and is recorded as that rather than '
       + 'claimed as this migration\'s catch. Directly observed 2026-08-11.',
+  },
+  // ── mig 705's boundary: advisory-layer-cannot-decide ────────────────────
+  // The coverage arms run certify's ACTUAL query with a fixture row UNIONed
+  // into the task scan (no writes). Whether a fixture is FLAGGED is decided by
+  // the real approval_briefs table: an orphan uuid has no brief and fires; a
+  // REAL pending approval's task id (briefed by the mig-705 backfill, and its
+  // brief row survives the task being decided — only task DELETION cascades)
+  // stays silent. Firing on one and not the other is the probe discriminating.
+  ...(() => {
+    const HQ = '5bb802e1-8e92-4eef-9a7a-ac348785d43f';        // outsourcetel-hq
+    // A real action_approval on prod, briefed by the 705 backfill: the
+    // outsourcetel-hq "Grant Plastics" follow-up of 2026-08-05. Deciding it
+    // later cannot break this case — the brief row survives a decision (only
+    // task DELETION cascades), and the fixture supplies its own task row.
+    const BRIEFED = '87146a8e-9e2a-4ba1-ab93-93791efb2adb';
+    const ORPHAN = '00000000-0000-4000-8000-0000000005b1';    // referenced by nothing
+    const row = (taskId) => `  select '${taskId}'::uuid, '${HQ}'::uuid,
+                      'outsourcetel-hq'::text, 'MUTATION FIXTURE'::text`;
+    const only = (extra) => `select 1 from (${advisoryBoundarySql({ orphanExtra: extra })}) x
+       where x.violation like 'missing-brief — %' and x.violation like '%MUTATION FIXTURE%'`;
+    return [
+      {
+        name: 'advisory-boundary (missing-brief: a pending approval with no brief row is flagged)',
+        fires: only(row(ORPHAN)),
+        silent: only(row(BRIEFED)),
+      },
+      {
+        name: 'advisory-boundary (an empty task scan is a VIOLATION, not a pass)',
+        fires: `select 1 from (${advisoryBoundarySql({ emptyTasks: true })}) x
+                 where x.violation like 'no-comparisons — %'`,
+        silent: `select 1 from (${advisoryBoundarySql()}) x
+                 where x.violation like 'no-comparisons — %'`,
+      },
+      {
+        // The identity-drift arm's LEFT JOIN mechanics, isolated: an expected
+        // signature with no live counterpart must fire, a matched one must not.
+        name: 'advisory-boundary (identity-drift: a vanished writer function is itself a violation)',
+        fires: `select 1 from (values ('list_approval_briefs()')) exp(sig)
+                 left join (select null::text as sig where false) live on live.sig = exp.sig
+                where live.sig is null`,
+        silent: `select 1 from (values ('list_approval_briefs()')) exp(sig)
+                 left join (values ('list_approval_briefs()')) live(sig) on live.sig = exp.sig
+                where live.sig is null`,
+      },
+    ];
+  })(),
+  {
+    name: 'advisory-boundary (9 live mutants against the REAL probe on dev)',
+    manual: 'Driven against DEV (mig 705 applied) on 2026-08-12, each mutant inside a DO block ending in '
+      + 'RAISE EXCEPTION so the injected break rolls back; the exception message carried the probe rows, '
+      + 'so every catch is scored on the probe NAMING the break. 9 mutants, 9 CAUGHT, 0 survived, '
+      + '0 inconclusive: GRANT EXECUTE on decide_human_task to the role (can-decide); GRANT UPDATE on '
+      + 'human_tasks (can-write-queue); list_approval_briefs owner flipped to postgres (identity-drift); '
+      + 'compute_approval_brief made VOLATILE (identity-drift); refresh writer stripped of SECURITY DEFINER '
+      + '(identity-drift); list_approval_briefs rewritten to serve stored rows without recomputing '
+      + '(identity-drift, the stored-marker trap); role granted EXECUTE on decide_de_escalation '
+      + '(reachable-decider — the two-paths trap); a pending approval whose brief row was deleted '
+      + '(missing-brief, with its in-transaction control: arm silent while the trigger-written brief '
+      + 'existed); the role dropped outright with DROP OWNED (role-gone). The last one first came back '
+      + 'INCONCLUSIVE twice and forced two real fixes: DROP OWNED needed the trigger dropped first, and '
+      + 'has_function_privilege(\'name\',…) RAISES 42704 on a missing role — the probe now resolves the '
+      + 'role through a pg_roles OID join so role-gone reports instead of erroring. Dev verified fully '
+      + 'rolled back afterwards (role/trigger/volatility/privileges intact, 0 leftover fixtures).',
   },
   {
     name: 'execute-perimeter (revoked fn removed from allowlist detects re-grant)',
