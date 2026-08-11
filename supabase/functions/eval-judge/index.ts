@@ -117,9 +117,17 @@ serve(async (req) => {
 
     let judgment_id: string | null = null;
     if (body.persist) {
+      // mig 706: message_id is persisted ATOMICALLY with the judgment. The old
+      // flow (insert here, then the caller UPDATEs message_id on afterwards)
+      // left a race window in which a judgment existed unlinked — and an
+      // unlinked judgment can never prove it graded production. The unique
+      // index on message_id also makes a concurrent double-judge of the same
+      // message fail here instead of persisting twice.
+      const messageId = typeof body.message_id === 'string' && body.message_id ? body.message_id : null;
       const { data: row, error } = await admin.from('eval_judgments').insert({
         tenant_id, de_id: body.de_id ?? null, source: ['golden', 'online', 'simulation', 'regression', 'adhoc'].includes(body.source) ? body.source : 'adhoc',
-        golden_id: body.golden_id ?? null, question: question.slice(0, 4000), answer: answer.slice(0, 8000),
+        golden_id: body.golden_id ?? null, message_id: messageId,
+        question: question.slice(0, 4000), answer: answer.slice(0, 8000),
         reference, verdict, score, dimensions, rationale, model_id: JUDGE_MODEL,
       }).select('id').single();
       if (!error) judgment_id = row.id;
