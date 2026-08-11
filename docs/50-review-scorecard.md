@@ -77,7 +77,8 @@ defects get an F-number and land here the moment they're proven. Ordered by seve
 | 3 | **F-5** — no-knowledge widget branch must raise a human task (or flag the conv) | fresh tenants silently lose customer demand |
 | 4 | **F-7** — extend ring-0 probe to the draft-delivery consequence class | the gate that should have caught F-6 can't see it |
 | 5 | **F-3** — grant workforce_assistant role or rebind the onboarding step | HQ onboarding step can never run |
-| 6 | **F-4** — explain + reconcile dev/prod drift (34 routines, 10 tables) | rebuildability doubt; feeds Workstream E |
+| 2= | **F-4** — bring dev up to prod's ledger (apply the 74 missing migrations) and drop the 7 specialist-era zombie tables | golden-path certifies a schema 74 migrations stale; migs 666–709 have no loop coverage at all |
+| 4= | **F-8** — make golden-path's drift footer *measure* production instead of printing `881 / 284 / 657`; delete the two stale "dev has no ledger" claims | the indicator for F-4 cannot fail, so the drift grew unseen |
 | 7 | **W-1** (wiring, founder decision) — light the email channel: set RESEND_INBOUND_SECRET + RESEND_API_KEY, pick receiving domain/addresses | the default mid-market support channel has never carried a message; fn is deployed and dormant-honest |
 
 ## Confirmed findings register (starts 2026-08-12)
@@ -87,7 +88,8 @@ defects get an F-number and land here the moment they're proven. Ordered by seve
 | F-1 | certify ring-0 | **Unexecutable approval, no executor:** outsourcetel-hq task `03aaa6dd` "$15,600 invoice to Meridian Group — test ping" (2026-08-10) has NO action_executions row on either linkage column. Approving it flips to approved and sends nothing. Probe never decides — **needs founder withdraw or re-raise** | OPEN — founder decision |
 | F-2 | certify ring-0 | **Mismatched pair:** kinetic approval "Create a specialist desk" names definition `create_specialist` which is **disabled** (retired Specialist role); resolver only sees active → `action_definition_not_found`, silently nothing sent | OPEN |
 | F-3 | certify ring-0 | **Unrunnable onboarding binding:** outsourcetel-hq SaaS-starter `locations_configured → propose_connector` requires role `workforce_assistant`; assigned employee (Onni) lacks it | OPEN |
-| F-4 | golden-path footer | **Dev/prod drift:** dev 915 routines / 294 tables vs prod 881 / 284, same ledger height (657) — 34 routines + 10 tables ahead of prod. Explain in D/E | OPEN |
+| F-4 | golden-path footer → **RESOLVED + UPGRADED in D (2026-08-12)** | **Dev is 74 migrations BEHIND production, not ahead.** Ledger: prod 731, dev 657, and **zero** migrations exist in dev that aren't in prod. Dev only *looks* bigger because it carries **7 zombie tables from the retired Specialist era** (de_specialist_assignments, spec_consultations, specialist_profiles, specialist_sources, embed_tokens, scribe_requests, sod_policies) that never shipped. Dev is **missing 5 tables of shipped production features**: `tenant_brand_identity` (666), `conversation_checks` (667/668), `push_subscriptions` (670), `unit_tripwires` (687), `benchmark_samples`. **Consequence: golden-path — certify's ONLY write-path proof, "the spec that runs" — executes against a schema 74 migrations stale, so migs 666–709 are entirely uncovered by it** (incl. 701/703/704, the fixes for the very unexecutable-approval class F-1/F-2 belong to) | OPEN — upgraded to priority 2 |
+| F-8 | Workstream D, reading [golden-path.mjs:327](../scripts/golden-path.mjs) | **The drift indicator is hardcoded fiction.** The footer that exists *specifically* to surface F-4 prints `(production: 881 / 284 / 657)` as a **string literal** — production is never queried. Real prod today: 918 routines / 293 tables / 731 ledger. Two more stale claims in the same file: the L65 comment and the L192 CANNOT-PROVE message both assert dev "has NO migration ledger (0 rows)" — dev has had 657 for some time. A stored marker read as truth: the one organ that would have caught the drift **cannot ever change**, so it reported "in sync" while dev fell 74 behind | OPEN |
 
 | F-5 | B drive v1 | **No-knowledge questions vanish:** widget-ask's no-docs branch ([widget-ask/index.ts:631](../supabase/functions/widget-ask/index.ts)) sends canned "check back soon" with `escalated:false`, **no human_task, no event** — a fresh tenant's customer questions are recorded but nobody is ever told. Conv stays `ai_handling` so no inbox surface flags it | OPEN |
 | F-6 | B drive v2 + **mobile UI drive 2026-08-12** | **UI-PROVEN on deployed prod app:** in `/m`, the decision card's button reads **"Approve and send it"**; tapping it showed **"Approved and sent." / "All clear."** while the DB read task=`approved`, draft **still `draft_pending`**, conv still `needs_human`. The phone affirmatively claims a send that never happened. Same strand demonstrated earlier via raw RPC; HumanTasksPage:480 shares the call path (code-read). Fix shape: consequence must live server-side (decide RPC or trigger), not in one screen's JS | OPEN — **top priority** |
@@ -119,6 +121,29 @@ all 292); (c) the `authenticated`-role default-grant sweep on the 42 new functio
 ([[security_default_execute_grant]] — revoke public+anon+authenticated); (d) anon-role probe (not
 just cross-tenant-authenticated). None blocked by today's evidence; all are breadth, not a
 suspected hole.
+
+## Workstream D — code health & architecture (session 2026-08-12)
+
+**Method: re-score, don't re-derive.** docs/47 + `review/debt-map-findings.json` already hold
+**86 MEASURED findings** across 9 dimensions (giants 11 · duplication 8 · schema 7 · routines 9 ·
+ui 9 · tests 13 · deps 12 · infra 8 · docs 9). D spot-checks the headline claims against today
+rather than repeating the audit.
+
+**Re-scored so far:**
+
+| Debt finding | Then | Today | Verdict |
+|---|---|---|---|
+| #58 CI + runtime floor on Node 20 (EOL) | r4 | `.github/workflows/ci.yml` runs **node-version: 22** on all 3 jobs | **REMEDIATED** |
+| #44 "CI runs 3 of 10 test files" | r5/i5 | CI now runs test:unit, **certify:offline**, audit, audit:toolchain, test:isolation, test:invariants | **materially improved** — re-measure exact file count before final scoring |
+| #46 "cross-tenant isolation behaviourally proven on 1 table of 242" | r5/i5 | Workstream C proved **9 tables + 2 write paths + 10 SECDEF RPCs** under live attack | **materially improved** (still not all 292 — breadth remains) |
+| #74 dev is a divergent environment | r3 | **Confirmed and worse than stated** — see F-4/F-8 | **UPGRADED** |
+
+**Still-standing r5 findings (not yet re-checked, carried forward):** #0 playbook branch executor
+runs 6 of the 9 step types its own validator accepts (a playbook can report COMPLETED having done
+neither of two requested actions — the one debt item that can produce a wrong *business* outcome) ·
+#35 zero component tests over 73,790 lines of UI · #47 the action gate is untested · #57 edge
+functions have no lockfile + 68 floating imports · #70 no automated backups (**feeds E**) ·
+#73 the JWT gate for 59 edge functions exists only inside Supabase.
 
 ## B priority queue (next sessions)
 
