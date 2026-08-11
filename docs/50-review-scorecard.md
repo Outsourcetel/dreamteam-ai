@@ -43,7 +43,7 @@ action_executions 94 · evidence_runs 93 · playbook_runs 84 · journal_entries 
 
 | # | Module | Census signal | Verdict | Evidence |
 |---|---|---|---|---|
-| 1 | Support pipeline (inbox→triage→topic→park→report) | de_messages 796/30d | **proven-live (prod, 2026-08-12)** | Review Lab drive: hosted intake → retrieval-grounded answer (conf 95) → draft gate HELD → escalation task → Inbox-path approve → customer-visible reply → conv `human_owned`; triage classified (general/sev3/normal). Caveats: email channel has 0 conversations EVER; F-5 no-docs drop |
+| 1 | Support pipeline (inbox→triage→topic→park→report) | de_messages 796/30d | **proven-live (prod, 2026-08-12)** | Review Lab drive: hosted intake → retrieval-grounded answer (conf 95) → draft gate HELD → escalation task → Inbox-path approve → customer-visible reply → conv `human_owned`; triage classified (general/sev3/normal). Park/snooze proven 2026-08-12 (7/7 incl. last_message_at NOT bumped, owner-only RPC). Email channel: 0 convs ever — **explained: deployed fn is dormant-honest, 503 `RESEND_INBOUND_SECRET is not set`** — wiring decision, not code defect. F-5 no-docs drop |
 | 2 | Approvals spine (human_tasks→decide→execute) | human_tasks 313/30d | proven WITH defect class | golden-path 10/10 dev; prod decide driven on Review Lab 2026-08-12 — task→approved atomically, BUT consequence coupling is client-side (F-6). Ring-0 scan: 3 findings (F-1..F-3) |
 | 3 | Order-to-cash (invoice→dunning→payment) | invoices 5 ever | — | machine vs demand — L quantifies |
 | 4 | Mobile `/m` + push | 1 subscription | UI drive done — **F-6 defect** | phone shell renders, lists the task, decides — but its "Approve and send it" does NOT send (F-6). Push last-hop proof still outstanding |
@@ -63,6 +63,21 @@ action_executions 94 · evidence_runs 93 · playbook_runs 84 · journal_entries 
 | 18 | Marketing DE | parked (founder lock) | — | never close |
 | 19 | Browser operator / computer-use | 4 tasks/30d | — | spike-grade |
 | 20 | Legal pages (ToS/Privacy) | — | — | N: content never reviewed |
+
+## FIX BACKLOG (founder-directed 2026-08-12: "keep a list of things we need to fix")
+
+This register IS the fix list. Nothing here gets fixed until the founder says go; new confirmed
+defects get an F-number and land here the moment they're proven. Ordered by severity, not date.
+
+| Priority | Fix | Why |
+|---|---|---|
+| 1 | **F-6** — move draft-delivery consequence server-side (decide RPC or trigger) | phone says "Approved and sent." and sends nothing; founder uses this path daily |
+| 2 | **F-1** — withdraw or re-raise the $15.6k Meridian approval (founder one-tap) + F-2 kinetic disabled-def approval | live queue rows that approve into nothing |
+| 3 | **F-5** — no-knowledge widget branch must raise a human task (or flag the conv) | fresh tenants silently lose customer demand |
+| 4 | **F-7** — extend ring-0 probe to the draft-delivery consequence class | the gate that should have caught F-6 can't see it |
+| 5 | **F-3** — grant workforce_assistant role or rebind the onboarding step | HQ onboarding step can never run |
+| 6 | **F-4** — explain + reconcile dev/prod drift (34 routines, 10 tables) | rebuildability doubt; feeds Workstream E |
+| 7 | **W-1** (wiring, founder decision) — light the email channel: set RESEND_INBOUND_SECRET + RESEND_API_KEY, pick receiving domain/addresses | the default mid-market support channel has never carried a message; fn is deployed and dormant-honest |
 
 ## Confirmed findings register (starts 2026-08-12)
 
