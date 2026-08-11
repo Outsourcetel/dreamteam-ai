@@ -43,12 +43,12 @@ action_executions 94 · evidence_runs 93 · playbook_runs 84 · journal_entries 
 
 | # | Module | Census signal | Verdict | Evidence |
 |---|---|---|---|---|
-| 1 | Support pipeline (inbox→triage→topic→park→report) | de_messages 796/30d | — | migs 667–671 claim proven-live; B spot-confirms on Review Lab |
-| 2 | Approvals spine (human_tasks→decide→execute) | human_tasks 313/30d | mechanics proven (dev) / **3 live defects (prod)** | golden-path 10/10 (2026-08-12); certify ring-0 scanned 90 pending, 89 routable vs 235 defs → 3 findings below. Prod Review-Lab drive still owed |
+| 1 | Support pipeline (inbox→triage→topic→park→report) | de_messages 796/30d | **proven-live (prod, 2026-08-12)** | Review Lab drive: hosted intake → retrieval-grounded answer (conf 95) → draft gate HELD → escalation task → Inbox-path approve → customer-visible reply → conv `human_owned`; triage classified (general/sev3/normal). Caveats: email channel has 0 conversations EVER; F-5 no-docs drop |
+| 2 | Approvals spine (human_tasks→decide→execute) | human_tasks 313/30d | proven WITH defect class | golden-path 10/10 dev; prod decide driven on Review Lab 2026-08-12 — task→approved atomically, BUT consequence coupling is client-side (F-6). Ring-0 scan: 3 findings (F-1..F-3) |
 | 3 | Order-to-cash (invoice→dunning→payment) | invoices 5 ever | — | machine vs demand — L quantifies |
 | 4 | Mobile `/m` + push | 1 subscription | — | last-hop proof outstanding |
 | 5 | DE runtime (de-work/answer/orchestrate) | dispatch_log 5,695/30d | — | attribute: real work vs heartbeat? |
-| 6 | Knowledge (ingest→embed→retrieve) | chunks 812/30d, jobs 2/30d | — | jobs vs chunks mismatch to explain |
+| 6 | Knowledge (ingest→embed→retrieve) | chunks 812/30d, jobs 2/30d | **proven-live (prod, 2026-08-12)** | Review Lab: owner RLS insert → ingest-chunks (1 chunk, 1 embedded) → retrieval grounded the widget answer same-minute. Drain-path (jobs vs chunks) still to explain |
 | 7 | Missions | 1 ever | — | drive one live on Review Lab |
 | 8 | Playbooks | playbook_runs 84/30d | — | |
 | 9 | Evals/exams | eval_judgments 248/30d | — | M: exam-vs-prod split |
@@ -59,7 +59,7 @@ action_executions 94 · evidence_runs 93 · playbook_runs 84 · journal_entries 
 | 14 | Governance surfaces (audit, compliance, access) | audit_events 44,943/30d | — | M: reader-side truth |
 | 15 | Tenant lifecycle (suspend/resume/delete) | — | — | Q on Review Lab |
 | 16 | Platform console + team | — | — | |
-| 17 | Widget/portal/hosted chat | 1 session/30d | — | |
+| 17 | Widget/portal/hosted chat | 1 session/30d | **proven-live (prod, 2026-08-12)** | hosted intake + poll + rate-limit + key auth all exercised in the Review Lab drive; near-zero real usage remains the commercial fact |
 | 18 | Marketing DE | parked (founder lock) | — | never close |
 | 19 | Browser operator / computer-use | 4 tasks/30d | — | spike-grade |
 | 20 | Legal pages (ToS/Privacy) | — | — | N: content never reviewed |
@@ -73,15 +73,25 @@ action_executions 94 · evidence_runs 93 · playbook_runs 84 · journal_entries 
 | F-3 | certify ring-0 | **Unrunnable onboarding binding:** outsourcetel-hq SaaS-starter `locations_configured → propose_connector` requires role `workforce_assistant`; assigned employee (Onni) lacks it | OPEN |
 | F-4 | golden-path footer | **Dev/prod drift:** dev 915 routines / 294 tables vs prod 881 / 284, same ledger height (657) — 34 routines + 10 tables ahead of prod. Explain in D/E | OPEN |
 
+| F-5 | B drive v1 | **No-knowledge questions vanish:** widget-ask's no-docs branch ([widget-ask/index.ts:631](../supabase/functions/widget-ask/index.ts)) sends canned "check back soon" with `escalated:false`, **no human_task, no event** — a fresh tenant's customer questions are recorded but nobody is ever told. Conv stays `ai_handling` so no inbox surface flags it | OPEN |
+| F-6 | B drive v2 (demonstrated live) | **Hosted draft stranded by non-Inbox decide:** `decide_human_task` flips the task; delivery of the hosted/widget draft happens ONLY in supportInboxApi (`approve_draft_reply`). Raw RPC demonstrated: task=approved, draft stayed `draft_pending`, customer saw nothing. Code-read (not yet UI-driven): MobileShell:101 and HumanTasksPage:480 call plain `decideHumanTask` → same strand. The founder's phone approve = "screen says done, nothing sent" | OPEN — priority |
+| F-7 | analysis of F-6 vs ring-0 | **Gate blind spot:** certify's unexecutable-approval probe scans `action_executions` linkage only; the draft-reply consequence class (de_messages.delivery) is invisible to it — F-6 could recur silently | OPEN |
+
 Certify verdict at review start: **NOT CERTIFIED** (ring0-probes red; all 9 other sections green,
 incl. typecheck, migration-ledger, role-gates, silent-refusals, golden-path, suite 55.6s).
 
+**B session 2 (2026-08-12) production drive transcript (Review Lab):** owner-signin ✅ ·
+knowledge-doc RLS insert ✅ · chunk+embed 1/1 ✅ · widget-key RLS insert ✅ · hosted ask →
+conf-95 grounded answer ✅ · draft gate held ✅ · escalation task raised ✅ · customer-sees-nothing
+pre-decision ✅ · decide (raw RPC) ✅ → **draft stranded (F-6)** · Inbox-path `approve_draft_reply`
+→ delivery=sent, customer sees reply, conv `human_owned` ✅ · triage classified ✅.
+
 ## B priority queue (next sessions)
 
-1. ~~Approvals spine mechanics~~ ✅ 2026-08-12 (golden-path dev + certify prod scan). Remaining:
-   one PRODUCTION approval driven e2e on Review Lab — needs intake channel, so combine with 2.
-2. Support pipeline on Review Lab — email-inbound → conversation → triage → topic → park →
-   escalation raises a human task → decide → verify execution outside the ledger.
+1. ~~Approvals spine mechanics~~ ✅ · ~~production decide on Review Lab~~ ✅ 2026-08-12 (found F-6).
+2. ~~Support pipeline e2e~~ ✅ 2026-08-12 (hosted channel). Remaining slice: email-inbound
+   (0 conversations ever — needs an inbound address) and park/snooze exercise.
+2b. Drive F-6 through the REAL mobile UI (`/m`) to upgrade it from code-read to UI-proven.
 3. DE runtime attribution — split dispatch_log 5,695 into real-work vs heartbeat vs exam.
 4. Mission #7 — drive one mission end-to-end (the keystone has exactly one data point).
 5. Knowledge — ingest one doc on Review Lab; explain jobs=2 vs chunks=812.
