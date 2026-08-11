@@ -39,6 +39,15 @@ interface DueAction {
   task_id: string;
   execution_id: string;
   connector_id: string;
+  /** WHICH executor was approved. `action_key` alone is not an executor:
+   *  on production today `send_payment_reminder` and `send_final_notice` each
+   *  resolve to TWO live ERPNext definitions — an internal invoice comment and
+   *  an email to the customer. connector-hub refuses to guess between them
+   *  (`action_ambiguous`, index.ts:2186), so a driver that forwards only the
+   *  key can carry out nothing on exactly the rungs it exists to run. The id
+   *  was always on the row being acted on; mig 703 stopped throwing it away.
+   *  NOT NULL at the table, and mig 703 asserts that premise. */
+  action_definition_id: string;
   action_key: string;
   action_label: string;
   params: Record<string, unknown>;
@@ -95,6 +104,15 @@ Deno.serve(async (req) => {
           action: 'execute_action',
           tenant_id: item.tenant_id,
           connector_id: item.connector_id,
+          // NAME THE EXECUTOR. Without this connector-hub re-derives the
+          // definition from (connector, action_key) and refuses when that is
+          // ambiguous — and even a lucky resolution to the wrong sibling would
+          // then be caught by the approval binding at index.ts:7365
+          // (`approval_mismatch`), because the approval was granted for ONE
+          // definition. Same fix shape as mig 701 gave the browser path
+          // (`resolveActionExecution` forwards `row.action_definition_id`), so
+          // the two paths agree on how an approval names what it authorises.
+          action_definition_id: item.action_definition_id,
           action_key: item.action_key,
           params: item.params ?? {},
           approved_execution_id: item.execution_id,
