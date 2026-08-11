@@ -76,6 +76,13 @@ grant approval_brief_writer to postgres;
 grant usage on schema public to approval_brief_writer;
 grant create on schema public to approval_brief_writer;
 
+-- On production auth_tenant_id() carries NO PUBLIC grant (the perimeter work
+-- stripped it; dev still had it via PUBLIC — the migration's own assert
+-- caught the difference before anything shipped). The wrapper derives the
+-- caller's workspace from it, and the RLS policies on approval_briefs
+-- reference it while running AS this role, so the grant is explicit.
+grant execute on function public.auth_tenant_id() to approval_brief_writer;
+
 -- ── 1. The table. One brief per task, keyed by task_id — human_tasks is
 --      guarded and gets NO new columns. ───────────────────────────────────
 create table if not exists approval_briefs (
