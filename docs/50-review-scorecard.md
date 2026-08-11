@@ -57,6 +57,7 @@ action_executions 94 · evidence_runs 93 · playbook_runs 84 · journal_entries 
 | 12 | Onboarding/provisioning | **proven-live 08-12** | proven-live | Review Lab creation above |
 | 13 | Org/routing/trust | assignment_rules 60/30d | — | all DEs still `supervised` |
 | 14 | Governance surfaces (audit, compliance, access) | audit_events 44,943/30d | — | M: reader-side truth |
+| C | **Cross-tenant isolation** | 728 SECDEF fns / 292 tables | **perimeter HELD (prod, 2026-08-12)** | live attack from Review Lab vs outsourcetel-hq: 9 direct reads = 0 rows; 2 direct writes = 0 rows (RLS); 4 object-ID SECDEF RPCs refused (task_not_found / unknown_de / not_found / not authorized); 6 tenant-PARAM SECDEF calls refused (owner-check / permission-denied / Unauthorized); connector_secrets 0 rows, `_decrypted` view permission-denied. **0 real holes.** One probe false-positive (analytics_de_workload returned empty maps not error — verified guard, not leak) |
 | 15 | Tenant lifecycle (suspend/resume/delete) | — | — | Q on Review Lab |
 | 16 | Platform console + team | — | — | |
 | 17 | Widget/portal/hosted chat | 1 session/30d | **proven-live (prod, 2026-08-12)** | hosted intake + poll + rate-limit + key auth all exercised in the Review Lab drive; near-zero real usage remains the commercial fact |
@@ -91,6 +92,7 @@ defects get an F-number and land here the moment they're proven. Ordered by seve
 | F-5 | B drive v1 | **No-knowledge questions vanish:** widget-ask's no-docs branch ([widget-ask/index.ts:631](../supabase/functions/widget-ask/index.ts)) sends canned "check back soon" with `escalated:false`, **no human_task, no event** — a fresh tenant's customer questions are recorded but nobody is ever told. Conv stays `ai_handling` so no inbox surface flags it | OPEN |
 | F-6 | B drive v2 + **mobile UI drive 2026-08-12** | **UI-PROVEN on deployed prod app:** in `/m`, the decision card's button reads **"Approve and send it"**; tapping it showed **"Approved and sent." / "All clear."** while the DB read task=`approved`, draft **still `draft_pending`**, conv still `needs_human`. The phone affirmatively claims a send that never happened. Same strand demonstrated earlier via raw RPC; HumanTasksPage:480 shares the call path (code-read). Fix shape: consequence must live server-side (decide RPC or trigger), not in one screen's JS | OPEN — **top priority** |
 | F-7 | analysis of F-6 vs ring-0 | **Gate blind spot:** certify's unexecutable-approval probe scans `action_executions` linkage only; the draft-reply consequence class (de_messages.delivery) is invisible to it — F-6 could recur silently | OPEN |
+| N-1 (note, not defect) | Workstream C | `analytics_de_workload` (and any fn ANDing `can_access_de` with a service_role branch) returns EMPTY for legitimate userless server calls — a functional over-lock, not a security hole. Flag for I/M when analytics reliability is assessed | NOTE |
 
 Certify verdict at review start: **NOT CERTIFIED** (ring0-probes red; all 9 other sections green,
 incl. typecheck, migration-ledger, role-gates, silent-refusals, golden-path, suite 55.6s).
@@ -100,6 +102,23 @@ knowledge-doc RLS insert ✅ · chunk+embed 1/1 ✅ · widget-key RLS insert ✅
 conf-95 grounded answer ✅ · draft gate held ✅ · escalation task raised ✅ · customer-sees-nothing
 pre-decision ✅ · decide (raw RPC) ✅ → **draft stranded (F-6)** · Inbox-path `approve_draft_reply`
 → delivery=sent, customer sees reply, conv `human_owned` ✅ · triage classified ✅.
+
+## Workstream C — security & tenancy (session 2026-08-12)
+
+**Verdict so far: the cross-tenant perimeter HELD under live attack.** Attacker = Review Lab
+owner (a real tenant with a real JWT), target = outsourcetel-hq. Nothing leaked, nothing mutated,
+no SECDEF function trusted a tenant_id parameter. This spot-confirms the migs 662–664 perimeter
+work against *today's* production and against the 42 SECDEF functions added since (665–706).
+
+Certify's two standing gates both green in the review-start run: `secdef-caller-tenant-ratchet`,
+`secdef-search-path-ratchet`. `rls-on-every-public-table` also green.
+
+**C still owes (next C session):** (a) the security-deferred checklist ([[security_deferred_items]])
+item-by-item; (b) write-side perimeter on a wider table set (I hit the highest-value writes, not
+all 292); (c) the `authenticated`-role default-grant sweep on the 42 new functions
+([[security_default_execute_grant]] — revoke public+anon+authenticated); (d) anon-role probe (not
+just cross-tenant-authenticated). None blocked by today's evidence; all are breadth, not a
+suspected hole.
 
 ## B priority queue (next sessions)
 
