@@ -295,10 +295,13 @@ begin
       v_attention := array_append(v_attention, 'amount above every declared ceiling');
     end if;
     if v_dials.second_above is not null and v_amount > v_dials.second_above then
-      ev := ev || to_jsonb(('Crosses the second-signature threshold ($'
+      -- min() across ALL matching grants, so this is the most conservative
+      -- threshold — an unlimited owner may not need the second signature.
+      -- "may", honestly, never "will".
+      ev := ev || to_jsonb(('Crosses the lowest second-signature threshold ($'
             || to_char(round(v_dials.second_above / 100.0, 2), 'FM999,999,999,990.00')
-            || ') — two different approvers are required.')::text);
-      v_caution := array_append(v_caution, 'needs a second signature');
+            || ') — depending on who approves, a second approver may be required.')::text);
+      v_caution := array_append(v_caution, 'may need a second signature');
     end if;
   end if;
 
