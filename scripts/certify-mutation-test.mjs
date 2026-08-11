@@ -914,18 +914,21 @@ const CASES = [
       + 'intact, 0 leftover fixtures).',
   },
   {
-    name: 'trust-proposer (11-group behavioral fixture matrix drives the REAL detector + writer on dev)',
-    manual: 'Driven against DEV on 2026-08-12 inside one rolled-back transaction: eleven fixture groups, '
-      + 'each isolating ONE conjunct of the mig-710 pattern test — baseline (3 clean landed production '
+    name: 'trust-proposer (13-group behavioral fixture matrix drives the REAL detector + writer on dev)',
+    manual: 'Driven against DEV on 2026-08-12 inside one rolled-back transaction: thirteen fixture groups, '
+      + 'each isolating ONE conjunct of the mig-710/711 pattern test — baseline (3 clean landed production '
       + 'approvals) FIRES; exam-origin decision does not count (682/707 axis); un-landed approval does not '
       + 'count (679 predicate); a rollback voids the pattern; destructive actions are excluded (the dial '
       + 'opens nothing above the destructive gate); a rejection voids the pattern; a DECLINED prior proposal '
       + 'blocks re-raise until the pattern re-accumulates; N=2 stays below the floor of 3; an open proposal '
       + 'blocks a second; a policy-ineligible group (trust_evidence_for says no) is refused; an identical '
-      + 'qualifying group in a SUSPENDED workspace produces nothing. Detector returned EXACTLY the baseline '
-      + 'group and nothing else. Then the REAL writer ran under the role: raised=1, pending_task_id linkage '
-      + 'set, citation carries exactly 3 decisions, mig-705 brief row present at birth, second run raised 0, '
-      + 'suspended workspace raised 0. SCORECARD passes=16, failures NONE. This suite is what caught the '
+      + 'qualifying group in a SUSPENDED workspace produces nothing; the mig-711 bimap shape (specific ladder '
+      + 'approval-blind, generic action_execute+source ladder eligible) FIRES and maps to the generic — the '
+      + 'ladder the evidence actually climbs; the same shape with an open proposal on the blind rung is '
+      + 'blocked chain-wide. Detector returned EXACTLY the two firing groups and nothing else. Then the REAL '
+      + 'writer ran under the role: raised=2, pending_task_id linkage set on both, citation carries exactly '
+      + '3 decisions, mig-705 brief row present at birth, second run raised 0, suspended workspace raised 0. '
+      + 'SCORECARD passes=19, failures NONE. The 710 run of this suite is what caught the '
       + 'silent zero-row UPDATE (RLS applies SELECT policies to the WHERE read of an UPDATE) that would have '
       + 'let every sweep re-raise the same proposal forever.',
   },
