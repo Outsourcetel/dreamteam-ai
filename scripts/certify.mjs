@@ -34,6 +34,7 @@ import { productionEvidenceSql } from './production-evidence.mjs';
 import { bareContainerLiteralSql } from './bare-container-literal.mjs';
 import { unexecutableApprovalSql } from './unexecutable-approval.mjs';
 import { advisoryBoundarySql } from './advisory-boundary.mjs';
+import { trustProposerBoundarySql } from './trust-proposer-boundary.mjs';
 
 const FAST = process.argv.includes('--fast');
 const PIN = process.argv.includes('--pin-allowlist');
@@ -141,6 +142,11 @@ const PROBES = [
     name: 'advisory-layer-cannot-decide',
     why: 'mig 705 put an advisory brief beside every pending approval. Its whole value rests on one sentence: IT NEVER DECIDES — auto-approve is Gap 2 and a founder decision. The boundary is privilege, not promise: every brief writer runs as the NOLOGIN role approval_brief_writer, which holds no EXECUTE on decide_human_task, no write on human_tasks, and reaches nothing that can (the two-paths trap: the front door is not the only pen). The coverage half counts pending approvals WITHOUT a brief and reports its own denominator — zero findings from zero comparisons is a violation, never a pass',
     sql: advisoryBoundarySql(),
+  },
+  {
+    name: 'trust-proposer-cannot-decide',
+    why: 'mig 710 built the Gap-2 seam: repeated identical landed human approvals become ONE trust_promotion proposal on the existing queue. Two proofs, held by privilege and by the ledger, never by promise. PRIVILEGE: the writer runs as the NOLOGIN role trust_pattern_proposer, which holds no EXECUTE on decide_human_task/apply_trust_promotion/trust_apply_level/trust_demote/set_de_autonomy, no UPDATE/DELETE on human_tasks, no write on de_autonomy (the dial) or approval_authority (the limits), and UPDATE on trust_policies only for the four request-bookkeeping columns — plus a reachable-decider sweep (the two-paths trap) and a cannot-file liveness arm (a proposer that silently lost INSERT is the mig-625 built-but-unfed breaker with a privilege cause). EVIDENCE: every OPEN system-raised proposal must cite >= 3 decisions the ledger RE-CONFIRMS at probe time as approved + production-origin + landed (a stored citation is a stored marker, mig 642); suspended workspaces must hold none; a pending proposal no policy points at is unactionable and flagged. The denominator prints on every run; zero open proposals is legal and says so',
+    sql: trustProposerBoundarySql(),
   },
   {
     name: 'rls-on-every-public-table',

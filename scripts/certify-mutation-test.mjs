@@ -16,6 +16,7 @@ import { productionEvidenceSql, PRODUCTION_EVIDENCE_PIN_NAMES, COUNT_READ_PIN_NA
 import { bareContainerLiteralSql } from './bare-container-literal.mjs';
 import { unexecutableApprovalSql } from './unexecutable-approval.mjs';
 import { advisoryBoundarySql } from './advisory-boundary.mjs';
+import { trustProposerBoundarySql } from './trust-proposer-boundary.mjs';
 
 // ── Fixtures for no-untyped-literal-appended-to-a-container ────────────────
 // The production catalog is CLEAN of this shape, so the probe returns zero rows
@@ -889,6 +890,97 @@ const CASES = [
       + 'role through a pg_roles OID join so role-gone reports instead of erroring. Dev verified fully '
       + 'rolled back afterwards (role/trigger/volatility/privileges intact, 0 leftover fixtures).',
   },
+  // ── mig 710's boundary: trust-proposer-cannot-decide ─────────────────────
+  // The evidence arms run certify's ACTUAL query with a fixture proposal
+  // UNIONed into the scan (no writes). Whether a fixture FIRES is decided by
+  // the real LEDGER: a citation naming three genuinely approved, landed,
+  // production decisions stays silent; a citation the ledger cannot confirm
+  // fires. Firing on one and not the other is the probe discriminating.
+  {
+    name: 'trust-proposer (16 live DDL mutants against the REAL probe on dev)',
+    manual: 'Driven against DEV (mig 710 applied) on 2026-08-12, each mutant inside a DO block ending in '
+      + 'RAISE EXCEPTION so the injected break rolls back; the exception message carried the probe rows, so '
+      + 'every catch is scored on the probe NAMING the break. 16 mutants, 16 CAUGHT, 0 survived, 0 '
+      + 'inconclusive, plus a no-mutation CONTROL proving zero violations on clean dev: GRANT EXECUTE on '
+      + 'decide_human_task / apply_trust_promotion / set_de_autonomy to the role (can-decide ×3); GRANT '
+      + 'UPDATE on human_tasks, GRANT UPDATE (current_level) on trust_policies, GRANT INSERT on de_autonomy, '
+      + 'GRANT UPDATE on approval_authority (can-write ×4); REVOKE INSERT on human_tasks and REVOKE UPDATE '
+      + '(pending_task_id) (cannot-file ×2, the built-but-unfed liveness half); writer owner flipped to '
+      + 'postgres, detector made VOLATILE, detector body stubbed losing its conjunct predicates '
+      + '(identity-drift ×3); role granted EXECUTE on set_trust_ladder, whose body reaches the dial '
+      + '(reachable-decider — the two-paths trap); writer granted to authenticated (seam-reachable); '
+      + 'de_governance_sweep_internal stubbed without the proposer call (sweep-unfed); DROP OWNED + DROP '
+      + 'ROLE (role-gone). Dev verified fully rolled back afterwards (owner/volatility/conjuncts/grants '
+      + 'intact, 0 leftover fixtures).',
+  },
+  {
+    name: 'trust-proposer (11-group behavioral fixture matrix drives the REAL detector + writer on dev)',
+    manual: 'Driven against DEV on 2026-08-12 inside one rolled-back transaction: eleven fixture groups, '
+      + 'each isolating ONE conjunct of the mig-710 pattern test — baseline (3 clean landed production '
+      + 'approvals) FIRES; exam-origin decision does not count (682/707 axis); un-landed approval does not '
+      + 'count (679 predicate); a rollback voids the pattern; destructive actions are excluded (the dial '
+      + 'opens nothing above the destructive gate); a rejection voids the pattern; a DECLINED prior proposal '
+      + 'blocks re-raise until the pattern re-accumulates; N=2 stays below the floor of 3; an open proposal '
+      + 'blocks a second; a policy-ineligible group (trust_evidence_for says no) is refused; an identical '
+      + 'qualifying group in a SUSPENDED workspace produces nothing. Detector returned EXACTLY the baseline '
+      + 'group and nothing else. Then the REAL writer ran under the role: raised=1, pending_task_id linkage '
+      + 'set, citation carries exactly 3 decisions, mig-705 brief row present at birth, second run raised 0, '
+      + 'suspended workspace raised 0. SCORECARD passes=16, failures NONE. This suite is what caught the '
+      + 'silent zero-row UPDATE (RLS applies SELECT policies to the WHERE read of an UPDATE) that would have '
+      + 'let every sweep re-raise the same proposal forever.',
+  },
+  ...(() => {
+    const HQ = '5bb802e1-8e92-4eef-9a7a-ac348785d43f';       // outsourcetel-hq (active)
+    const ACME = 'a1b2c3d4-0000-0000-0000-000000000001';     // acme-telecom (suspended)
+    // Morgan's four real approved-and-landed send_payment_reminder decisions
+    // (2026-08-04/05) — production origin, each with a landed execution.
+    // Deciding or even voiding their TASKS later cannot break these cases:
+    // the ledger arms re-check status='approved' + landed, both of which are
+    // terminal states, and the fixture supplies its own proposal row.
+    const REAL = ['c0701141-5d0c-4e7c-b2c6-1942f1462fb9',
+                  '9d3f51b5-8956-41f8-b139-140b0c33843e',
+                  'dfe869eb-27f2-41c6-b6ba-19000a10d858'];
+    const BOGUS = '00000000-0000-4000-8000-000000000710';    // referenced by nothing
+    const evidence = (ids) => `jsonb_build_object('pattern', jsonb_build_object('n_approved', ${ids.length}, 'decisions',
+                      jsonb_build_array(${ids.map((id) => `jsonb_build_object('task_id', '${id}')`).join(', ')})))`;
+    const prop = (tenant, ids) => `  select '00000000-0000-4000-8000-000000000711'::uuid, '${tenant}'::uuid,
+                      'MUTATION FIXTURE'::text, ${evidence(ids)}`;
+    const only = (arm, extra) => `select 1 from (${trustProposerBoundarySql({ proposalExtra: extra })}) x
+       where x.violation like '${arm} — %' and x.violation like '%MUTATION FIXTURE%'`;
+    return [
+      {
+        name: 'trust-proposer (citation-not-in-ledger: a cited decision the ledger cannot confirm is flagged; three real landed decisions are not)',
+        fires: only('citation-not-in-ledger', prop(HQ, [REAL[0], REAL[1], BOGUS])),
+        silent: only('citation-not-in-ledger', prop(HQ, REAL)),
+      },
+      {
+        name: 'trust-proposer (citation-below-floor: fewer than 3 cited decisions is flagged)',
+        fires: only('citation-below-floor', prop(HQ, [REAL[0], REAL[1]])),
+        silent: only('citation-below-floor', prop(HQ, REAL)),
+      },
+      {
+        name: 'trust-proposer (a suspended workspace holding an open system proposal is flagged; an active one is not)',
+        fires: only('proposal-in-dormant-workspace', prop(ACME, REAL)),
+        silent: only('proposal-in-dormant-workspace', prop(HQ, REAL)),
+      },
+      {
+        // The orphan arm's mechanics: a pending proposal NO policy points at
+        // fires; one with a live pending_task_id back-pointer does not. The
+        // silent half rides on acme's stale-but-present linkage
+        // (trust_policies.pending_task_id = 406f7bda…, the July answer_dock
+        // request whose rejection never cleared the pointer) — stable unless
+        // someone re-requests that policy, and the comment in the case name
+        // will say so if it ever flips.
+        name: 'trust-proposer (orphan-proposal: a pending proposal no policy points at is flagged)',
+        fires: `select 1 from (${trustProposerBoundarySql({ orphanExtra:
+          `  select '${BOGUS}'::uuid, 'MUTATION FIXTURE'::text, 'orphan fixture'::text` })}) x
+           where x.violation like 'orphan-proposal — %' and x.violation like '%MUTATION FIXTURE%'`,
+        silent: `select 1 from (${trustProposerBoundarySql({ orphanExtra:
+          `  select '406f7bda-00c9-42b8-9c4c-23be8a10035b'::uuid, 'MUTATION FIXTURE'::text, 'linked fixture'::text` })}) x
+           where x.violation like 'orphan-proposal — %' and x.violation like '%MUTATION FIXTURE%'`,
+      },
+    ];
+  })(),
   {
     name: 'execute-perimeter (revoked fn removed from allowlist detects re-grant)',
     // Real perimeter check compares live grants to the pinned allowlist. Fire =
