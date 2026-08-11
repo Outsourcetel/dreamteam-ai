@@ -1,23 +1,23 @@
 {
-  "at": "2026-08-11T00:42:52.819Z",
+  "at": "2026-08-11T01:38:47.350Z",
   "mode": "fast",
   "failed": 1,
   "results": [
     {
       "section": "typecheck",
       "ok": true,
-      "seconds": 17
+      "seconds": 21.7
     },
     {
       "section": "ring0-probes",
       "ok": false,
-      "seconds": 42.2,
-      "detail": "onboarding-bindings-are-runnable: outsourcetel-hq / SaaS onboarding — starter / locations_configured → propose_connector — needs the \"workforce_assistant\" role, which the employee(s) this workspace gives onboarding work to (Onni) do not have"
+      "seconds": 41.3,
+      "detail": "no-pending-approval-the-platform-cannot-carry-out: mismatched-pair — kinetic / Approve action — Create a specialist desk (DreamTeam AI (self)) [execution bfb462a0-1e22-48cf-a3a0-fa60edd666f4]: the row names definition 18a92cdd-ba11-4c11-8bcc-96a3b8e120b4 (create_specialist), but its status is \"disabled\" and the resolver only ever sees active definitions. connector-hub answers action_definition_not_found and nothing is sent.\nonboarding-bindings-are-runnable: outsourcetel-hq / SaaS onboarding — starter / locations_configured → propose_connector — needs the \"workforce_assistant\" role, which the employee(s) this workspace gives onboarding work to (Onni) do not have"
     },
     {
       "section": "migration-ledger",
       "ok": true,
-      "seconds": 5.5
+      "seconds": 5.8
     },
     {
       "section": "migration-numbering",
@@ -27,7 +27,7 @@
     {
       "section": "edge-typecheck",
       "ok": true,
-      "seconds": 2.4
+      "seconds": 2.9
     }
   ]
 }
