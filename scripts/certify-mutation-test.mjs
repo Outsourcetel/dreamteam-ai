@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 // because the check and the thing it checked had drifted apart; the cases below
 // run certify's own query with a pin removed rather than a paraphrase of it.
 import { landedPredicateSql, LANDED_PINS } from './landed-predicate.mjs';
-import { productionEvidenceSql, PRODUCTION_EVIDENCE_PIN_NAMES } from './production-evidence.mjs';
+import { productionEvidenceSql, PRODUCTION_EVIDENCE_PIN_NAMES, COUNT_READ_PIN_NAMES } from './production-evidence.mjs';
 import { bareContainerLiteralSql } from './bare-container-literal.mjs';
 import { unexecutableApprovalSql } from './unexecutable-approval.mjs';
 import { advisoryBoundarySql } from './advisory-boundary.mjs';
@@ -176,6 +176,76 @@ const CASES = [
     name: 'exam-evidence-stays-out-of-production-metrics (a pin guarding nothing is itself a violation)',
     fires: productionEvidenceSql([...PRODUCTION_EVIDENCE_PIN_NAMES, 'zz_pin_for_a_body_that_does_not_exist']),
     silent: productionEvidenceSql(),
+  },
+  // ── Arms 7-9 (migs 707/709): count-reads carry the exam axis ─────────────
+  // Same construction: the REAL probe over the LIVE catalog, one count-pin
+  // removed / one bogus count-pin added. cluster_gap_candidates definitely
+  // aggregates evidence_run_decisions with no exam axis — dropping its pin
+  // must make the real query name it.
+  {
+    name: 'exam-evidence count-read arm (drop a real COUNT_READ pin -> the real probe names that function)',
+    fires: productionEvidenceSql(PRODUCTION_EVIDENCE_PIN_NAMES, COUNT_READ_PIN_NAMES.filter((n) => n !== 'cluster_gap_candidates')),
+    silent: productionEvidenceSql(),
+  },
+  {
+    name: 'exam-evidence count-read arm (a COUNT_READ pin guarding nothing is itself a violation)',
+    fires: productionEvidenceSql(PRODUCTION_EVIDENCE_PIN_NAMES, [...COUNT_READ_PIN_NAMES, 'zz_count_pin_for_nothing']),
+    silent: productionEvidenceSql(),
+  },
+  {
+    // THE ORGAN THAT SHIPPED THE DEFECT TWICE, pinned by its own history: the
+    // `fires` body is the EXACT decision-read that was live in
+    // assess_de_skills_internal until mig 707 (mig 430's text, verbatim); the
+    // `silent` body is 707's replacement. If anyone re-creates the organ
+    // without the filter — the third recreation the founder brief forbids —
+    // this is the shape the live Arm 7 catches, proven here on the real
+    // predicate rather than assumed.
+    name: 'exam-evidence count-read arm (the exact pre-707 assess_de_skills_internal read is caught; the 707 read is clean)',
+    fires: `select 1 where exists (select 1 from (values ('assess_de_skills_internal_v430',
+              'select count(*), count(*) filter (where d.decision = ''needs_review'') from evidence_run_decisions d join evidence_runs er on er.id = d.evidence_run_id where er.tenant_id = v_de.tenant_id and er.de_id = v_de.id and d.created_at > now() - interval ''30 days''')) v(nm, src)
+             where src ilike '%evidence_run_decisions%' and src ilike '%count(%'
+               and src not ilike '%evidence_is_production%' and src not ilike '%''exam''%'
+               and nm not in (${COUNT_READ_PIN_NAMES.map((n) => `'${n}'`).join(', ')}))`,
+    silent: `select 1 where exists (select 1 from (values ('assess_de_skills_internal_v707',
+              'select count(*), count(*) filter (where d.decision = ''needs_review'') from evidence_run_decisions d join evidence_runs er on er.id = d.evidence_run_id where er.tenant_id = v_de.tenant_id and er.de_id = v_de.id and public.evidence_is_production(er.origin) and d.created_at > now() - interval ''30 days''')) v(nm, src)
+             where src ilike '%evidence_run_decisions%' and src ilike '%count(%'
+               and src not ilike '%evidence_is_production%' and src not ilike '%''exam''%'
+               and nm not in (${COUNT_READ_PIN_NAMES.map((n) => `'${n}'`).join(', ')}))`,
+  },
+  {
+    // The conversations half (arm 8), and the 571-shape channel literal as the
+    // OTHER way to clear a body: a bare volume count fires; the same count
+    // with `channel is distinct from 'exam'` is clean.
+    name: 'exam-evidence count-read arm (a bare de_conversations volume count is caught; the channel literal clears it)',
+    fires: `select 1 where exists (select 1 from (values ('a_new_digest',
+              'select count(*) from de_conversations where tenant_id = v_t and last_message_at >= v_since')) v(nm, src)
+             where src ilike '%from de_conversations%' and src ilike '%count(%'
+               and src not ilike '%evidence_is_production%' and src not ilike '%''exam''%'
+               and nm not in (${COUNT_READ_PIN_NAMES.map((n) => `'${n}'`).join(', ')}))`,
+    silent: `select 1 where exists (select 1 from (values ('a_new_digest',
+              'select count(*) from de_conversations where tenant_id = v_t and channel is distinct from ''exam'' and last_message_at >= v_since')) v(nm, src)
+             where src ilike '%from de_conversations%' and src ilike '%count(%'
+               and src not ilike '%evidence_is_production%' and src not ilike '%''exam''%'
+               and nm not in (${COUNT_READ_PIN_NAMES.map((n) => `'${n}'`).join(', ')}))`,
+  },
+  {
+    // ⚠ prosrc includes comments (the house rule). The UNQUOTED word "exam" in
+    // a comment must NOT silence the sieve — only the quoted literal (an
+    // actual channel filter) or the predicate call does. The known residual —
+    // a comment containing the QUOTED literal would silence it — is documented
+    // at COUNT_READ_PINS; this case pins the discrimination that exists.
+    name: 'exam-evidence count-read arm (the unquoted word exam in a comment does NOT clear a body)',
+    fires: `select 1 where exists (select 1 from (values ('a_commented_organ',
+              '-- exams are not production work, someday we should filter them
+               select count(*) from de_conversations where tenant_id = v_t')) v(nm, src)
+             where src ilike '%from de_conversations%' and src ilike '%count(%'
+               and src not ilike '%evidence_is_production%' and src not ilike '%''exam''%'
+               and nm not in (${COUNT_READ_PIN_NAMES.map((n) => `'${n}'`).join(', ')}))`,
+    silent: `select 1 where exists (select 1 from (values ('a_commented_organ',
+              'select count(*) from de_conversations where tenant_id = v_t and channel is distinct from ''exam''')) v(nm, src)
+             where src ilike '%from de_conversations%' and src ilike '%count(%'
+               and src not ilike '%evidence_is_production%' and src not ilike '%''exam''%'
+               and nm not in (${COUNT_READ_PIN_NAMES.map((n) => `'${n}'`).join(', ')}))`,
   },
   {
     // Isolates the `not ilike '%action_execution_landed%'` clause. Without it

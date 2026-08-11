@@ -43,19 +43,59 @@ export const PRODUCTION_EVIDENCE_PINS = {
   // ══ COUNTERS — cost-side reads where exam rows only make the number MORE
   //    conservative, never better. ═══════════════════════════════════════
   get_de_economics:
-    'COUNTER — the hours-saved model reads de_token_usage on its COST side; exam spend makes economics look worse, never better. Whether to exclude it is a product call, not a leak (mig 131)',
+    'COST-SIDE COUNTER — reads de_token_usage unfiltered ON PURPOSE (exam tokens are real dollars; counting them keeps the economics conservative) while its BENEFIT side calls evidence_is_production since mig 709. The predicate in its body would clear Arm 1 anyway; the pin stays so this asymmetry is a written decision, not an accident',
+  get_de_performance_summary:
+    "COST-SIDE COUNTER — mig 708 rebuilt it on real columns and its only stamped-table read is AI spend this month (de_token_usage × pricing). Exam tokens are real dollars; excluding them would flatter the panel. Every benefit-shaped field is a raw row count or an honest NULL — roi_hours_saved is null by doctrine §12.3. (Arm 1 caught this within minutes of the rebuild — the pin records the decision it forced)",
 };
 
 export const PRODUCTION_EVIDENCE_PIN_NAMES = Object.keys(PRODUCTION_EVIDENCE_PINS);
 
+// ══ COUNT-READ PINS (arms 7-9, added with migs 707/709) ════════════════════
+// The table sieve above covers billable_outcomes / de_token_usage — and that
+// blind spot is exactly how the 571 defect shipped a SECOND time
+// (assess_de_skills_internal counting exam decisions into skill levels, docs/51
+// offender #2) and a THIRD and FOURTH instance sat unnoticed
+// (get_de_economics' benefit side; get_de_inquiry_metrics — the docs/51 census
+// itself missed that one; the widened sieve found it). Arms 7-8 close the
+// class: a function that AGGREGATES evidence_run_decisions or de_conversations
+// must carry the exam axis — public.evidence_is_production(origin) or the
+// quoted 'exam' channel literal (571's `channel is distinct from 'exam'`
+// shape) — or be pinned HERE with a reason that finishes the sentence
+// "exam rows are safe in this count because…".
+//
+// ⚠ prosrc includes comments, so a comment containing the QUOTED literal
+// 'exam' would satisfy the sieve. Keep migration comments to the unquoted
+// word; the mutation suite pins the discrimination either way.
+export const COUNT_READ_PINS = {
+  cluster_gap_candidates:
+    "GAP MINER — counts cluster members to rank severity for the improvement queue; an exam question the employee could not answer reveals a REAL knowledge gap, and the output is a replay-verified, human-approved draft — never a production metric (migs 471+)",
+  get_knowledge_doc_citation_stats:
+    'DOC USAGE LEDGER — counts citations of a knowledge doc wherever they occurred; an exam citing a doc is a genuine retrieval of that doc. Feeds doc hygiene, not employee performance',
+  trg_triage_support_conversation:
+    "TRIAGE TRIGGER — mig 671's channel guard allowlists support channels ('widget','hosted','portal','email','dock') BEFORE classifying, which excludes exams without naming them; its only count(*) is a first-user-message check on de_messages",
+  snapshot_de_kpi_readings:
+    'CSAT-ONLY READ — its de_conversations count requires csat_submitted_at, and an exam thread has no customer to rate it: 0 exam-channel CSAT rows have ever existed (verified live 2026-08-12). If CSAT semantics ever change, add the axis instead of widening this pin',
+  get_de_kpi_status:
+    'CSAT-ONLY READ — same population as snapshot_de_kpi_readings (csat_submitted_at required; 0 exam CSAT rows ever); its decision-shaped KPIs come from exam-filtered get_de_performance_metrics (571)',
+  check_de_retirement_readiness:
+    'DEPENDENCY CHECK — counts OPEN human_tasks/assignments before retirement; the de_conversations subselect only resolves which tasks belong to this employee. Exam-linked open work SHOULD block retirement — losing it silently would be the lie',
+  get_de_work_product:
+    "ACTIVITY LEDGER, CHANNEL-LABELED — reports conversation totals WITH a by_channel breakdown in the same payload, so exam threads are visible AS exam threads rather than blended into a production rate. It answers 'what did this employee do', not 'how well is it performing'",
+};
+
+export const COUNT_READ_PIN_NAMES = Object.keys(COUNT_READ_PINS);
+
 const list = (names) => names.map((n) => `'${n}'`).join(', ');
 const values = (names) => names.map((n) => `('${n}')`).join(', ');
 
-// Violations-only. `pins` is a parameter so the mutation test can run the REAL
-// query with one name removed instead of a paraphrase of it.
-export function productionEvidenceSql(pins = PRODUCTION_EVIDENCE_PIN_NAMES) {
+// Violations-only. `pins` (and `countPins` for arms 7-9) are parameters so the
+// mutation test can run the REAL query with one name removed instead of a
+// paraphrase of it.
+export function productionEvidenceSql(pins = PRODUCTION_EVIDENCE_PIN_NAMES, countPins = COUNT_READ_PIN_NAMES) {
   const L = list(pins.length ? pins : [' none ']);
   const V = values(pins.length ? pins : [' none ']);
+  const CL = list(countPins.length ? countPins : [' none ']);
+  const CV = values(countPins.length ? countPins : [' none ']);
   return `
   -- Arm 1: any function reading the stamped evidence tables must call the
   -- predicate or be pinned with a reason.
@@ -110,5 +150,54 @@ export function productionEvidenceSql(pins = PRODUCTION_EVIDENCE_PIN_NAMES) {
      from evidence_runs er join de_conversations c
        on er.account_ref = 'conversation:' || c.id::text
     where c.channel = 'exam' and er.origin = 'production'
-    limit 5)`;
+    limit 5)
+  union all
+  -- Arm 7 (migs 571/707/709): a function that AGGREGATES evidence_run_decisions
+  -- is a metric organ until proven otherwise, and a metric organ without the
+  -- exam axis is the defect that shipped FOUR times (571's perf metrics, 707's
+  -- skills organ, 709's economics benefit side + inquiry metrics). It must
+  -- carry public.evidence_is_production() or the quoted 'exam' channel filter,
+  -- or be pinned in COUNT_READ_PINS with the reason exam rows are safe there.
+  select p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')'
+         || ' aggregates evidence_run_decisions without the exam axis — the '
+         || 'mig-571 defect shipped four times this way. Filter with '
+         || 'public.evidence_is_production(evidence_runs.origin) (or the '
+         || '''exam'' channel exclusion), or pin it in scripts/'
+         || 'production-evidence.mjs COUNT_READ_PINS with its reason.' as violation
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.prokind in ('f','p')
+     and p.prosrc ilike '%evidence_run_decisions%'
+     and p.prosrc ilike '%count(%'
+     and p.prosrc not ilike '%evidence_is_production%'
+     and p.prosrc not ilike '%''exam''%'
+     and p.proname not in (${CL})
+  union all
+  -- Arm 8: the same rule for de_conversations counts (the volume half of the
+  -- class — 158 exam threads once read as "conversations" on three surfaces).
+  select p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')'
+         || ' counts de_conversations without the exam axis. Add channel IS '
+         || 'DISTINCT FROM ''exam'' (mig 671 split the corpus on channel), or '
+         || 'pin it in scripts/production-evidence.mjs COUNT_READ_PINS with '
+         || 'its reason.' as violation
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.prokind in ('f','p')
+     and p.prosrc ilike '%from de_conversations%'
+     and p.prosrc ilike '%count(%'
+     and p.prosrc not ilike '%evidence_is_production%'
+     and p.prosrc not ilike '%''exam''%'
+     and p.proname not in (${CL})
+  union all
+  -- Arm 9: a COUNT_READ_PIN whose body no longer count-reads either table (or
+  -- no longer exists) guards nothing. Delete it — a pin roster that only grows
+  -- is how an allowlist becomes a blindfold.
+  select v.nm || ' is PINNED in COUNT_READ_PINS but no longer aggregates '
+         || 'evidence_run_decisions or de_conversations (or no longer exists). '
+         || 'Delete the pin.' as violation
+    from (values ${CV}) v(nm)
+   where not exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+            where n.nspname = 'public'
+              and ((p.prosrc ilike '%evidence_run_decisions%' and p.prosrc ilike '%count(%')
+                or (p.prosrc ilike '%from de_conversations%' and p.prosrc ilike '%count(%'))
+              and p.proname = v.nm)`;
 }
