@@ -65,6 +65,41 @@
 // candidate resolution made no comparisons, the probe says so and goes red.
 // Seven gates in this repository have already shipped unable to fail; this one
 // reports its own denominator on every run.
+//
+// ── THE FOURTH KIND: `no-executor` (added 2026-08-11, mig 704) ──────────────
+// The three arms above all start from a JOIN to `action_executions`, so every
+// one of them is blind to the simplest version of the same sentence: a pending
+// `action_approval` with NO execution row behind it AT ALL. Nothing to route,
+// nothing to resolve, nothing to ambiguate — a person is being asked to approve
+// something that has no executor, and clicking yes flips the task to `approved`
+// and sends nothing. It is the class this file is named for, in its purest
+// form, and it sat outside the population because the population was defined by
+// the very join the defect removes.
+//
+// ⚠⚠ THIS ARM IS RED ON PRODUCTION TODAY, AND THAT IS THE CORRECT RESULT.
+// Exactly one row matches — MEASURED, not taken on trust: of 90 pending
+// `action_approval` tasks, 89 are linked by `ae.task_id` and 0 by
+// `ae.resolves_task_id`, leaving 1. It is outsourcetel-hq's "Send a $15,600
+// invoice to Meridian Group — test ping", raised 2026-08-10 as the founder's
+// lock-screen push test. It was never given an executor because it was never
+// meant to be carried out.
+//
+// It is NOT allowlisted, and must not be. An exemption keyed to the one row a
+// check finds is how a gate becomes theatre — this repository removed eight of
+// those on the day this arm was written, and adding a ninth to keep the bar
+// green would be the worst possible trade. The row is a genuine violation of
+// the stated rule: it asks a human to approve something the platform cannot
+// carry out. The remedy is a human withdrawing the test task, exactly as with
+// the `kinetic` / `create_specialist` row that arm 3 reports. UNTIL SOMEONE
+// WITHDRAWS IT, THIS ARM IS EXPECTED TO BE RED, and a green here means either
+// the task was withdrawn or the arm stopped working — check which.
+//
+// The NOT EXISTS is deliberately UNFILTERED: any action_executions row naming
+// the task, by either linkage column, clears it. A rolled-back or already-
+// receipted execution is a different problem for a different check; this arm
+// says only "nothing at all is behind this button". And the tenant join is a
+// LEFT join, so a task whose tenant row has gone missing is still reported
+// rather than silently dropped by an inner join (zero such rows today).
 // ============================================================================
 
 /**
@@ -76,9 +111,20 @@
  *   synthesised violating row instead of writing to production.
  * @param {boolean} [opts.empty]  Drop the live population entirely — the only
  *   way to prove the no-comparisons guard can fire.
+ * @param {string}  [opts.orphanExtra]  Extra rows for the `no-executor` arm's
+ *   population, as a SELECT with the shape (task_id uuid, tenant_id uuid,
+ *   slug text, title text, created_at timestamptz), UNIONed into the live task
+ *   scan. Whether such a row is FLAGGED still depends on the real
+ *   action_executions table, so a fixture carrying a task id that IS linked
+ *   stays silent — which is what makes the mutation cases discriminating.
+ * @param {boolean} [opts.emptyTasks]  Drop the `no-executor` arm's task scan —
+ *   the only way to prove that arm's half of the no-comparisons guard fires.
+ *   Separate from `empty` on purpose: the two arms read DIFFERENT populations
+ *   (one joins through action_executions, one deliberately does not), so one
+ *   denominator going to zero must not be masked by the other being healthy.
  */
 export function unexecutableApprovalSql(opts = {}) {
-  const { extra = null, empty = false } = opts;
+  const { extra = null, empty = false, orphanExtra = null, emptyTasks = false } = opts;
   return `
 with pending as (
   -- THE POPULATION: every execution row parked in front of a human. Same
@@ -106,6 +152,28 @@ with pending as (
      and false` : ''}${extra ? `
   union all
 ${extra}` : ''}
+),
+tasks as (
+  -- THE SECOND POPULATION, and it is second precisely BECAUSE it does not join
+  -- action_executions. \`pending\` above is defined by that join, so it can only
+  -- ever contain rows that HAVE an executor — no arm built on it could see a
+  -- task that has none. This scan is every pending approval as the human sees
+  -- it in their queue, executor or not. LEFT join to tenants: an inner join
+  -- would silently drop a task whose workspace row has gone, and a violation
+  -- that disappears because its tenant did is still a violation.
+  select ht.id         as task_id,
+         ht.tenant_id  as tenant_id,
+         coalesce(t.slug, '(tenant ' || ht.tenant_id || ' missing)') as slug,
+         ht.title      as title,
+         ht.created_at as created_at
+    from human_tasks ht
+    left join tenants t on t.id = ht.tenant_id
+   where ht.type = 'action_approval'
+     and ht.status = 'pending'${emptyTasks ? `
+     -- MUTATION: task scan emptied, to prove ITS half of no-comparisons fires.
+     and false` : ''}${orphanExtra ? `
+  union all
+${orphanExtra}` : ''}
 ),
 selector as (
   -- Does the DRIVER's selector still hand the executor's identity forward?
@@ -158,7 +226,9 @@ resolved as (
     ) l on true
 ),
 counted as (
-  select count(*) as population, coalesce(sum(n_list), 0) as comparisons from resolved
+  select (select count(*) from resolved)                 as population,
+         (select coalesce(sum(n_list), 0) from resolved)  as comparisons,
+         (select count(*) from tasks)                     as task_population
 )
 
 -- ── 1. UNROUTABLE — no connector can carry it. (mig 701's defect.) ──────────
@@ -226,26 +296,63 @@ select 'mismatched-pair — ' || r.slug || ' / ' || coalesce(r.title, '(untitled
 
 union all
 
--- ── 4. NO COMPARISONS — the gate that stops this gate becoming theatre. ─────
+-- ── 4. NO EXECUTOR — nothing at all is behind the button. ───────────────────
+-- The three arms above ask "can this executor be reached?". This one asks the
+-- question that comes before it: is there an executor? Reads \`tasks\`, NOT
+-- \`pending\` — see the CTE comment; an arm built on the join cannot see a row
+-- the join removes.
+--
+-- ⚠ RED ON PRODUCTION TODAY, DELIBERATELY. One row matches: outsourcetel-hq's
+-- "Send a $15,600 invoice to Meridian Group — test ping", the founder's
+-- lock-screen push test of 2026-08-10. It is not allowlisted and must not be —
+-- it is a real instance of the rule, and the remedy is a human withdrawing the
+-- task, the same remedy arm 3's kinetic row has. Expect red here until that
+-- happens.
+select 'no-executor — ' || k.slug || ' / ' || coalesce(k.title, '(untitled)')
+       || ' [task ' || k.task_id || ', raised '
+       || to_char(k.created_at, 'YYYY-MM-DD') || ']: no action_executions row '
+       || 'references this task by EITHER linkage column (task_id, '
+       || 'resolves_task_id). There is no executor behind the approval at all: '
+       || 'deciding it flips the task to "approved", hands connector-hub '
+       || 'nothing, and sends nothing — while the queue empties and the screen '
+       || 'reads as done. A human must withdraw or re-raise it; this probe '
+       || 'reports, it never decides.' as violation,
+       null::text as note
+  from tasks k
+ where not exists (
+   -- Unfiltered on purpose: ANY execution row naming this task, by either
+   -- column, means something is behind it. Whether that something can be
+   -- carried out is arms 1-3's question, not this one's.
+   select 1 from action_executions ae
+    where ae.task_id = k.task_id or ae.resolves_task_id = k.task_id)
+
+union all
+
+-- ── 5. NO COMPARISONS — the gate that stops this gate becoming theatre. ─────
 select 'no-comparisons — this probe examined ' || c.population
-       || ' pending approval(s) and made ' || c.comparisons
-       || ' candidate comparison(s). Zero of either means the three arms above '
-       || 'proved NOTHING this run, and an empty result is indistinguishable '
-       || 'from a clean one. Either the population query has drifted off the '
-       || 'tables it means to read, or every pending approval resolves against '
-       || 'an empty catalog — both are failures, neither is a pass.' as violation,
+       || ' routable pending approval(s) against ' || c.comparisons
+       || ' candidate comparison(s), and scanned ' || c.task_population
+       || ' pending approval task(s) for a missing executor. Zero of any of '
+       || 'those means the four arms above proved NOTHING this run, and an '
+       || 'empty result is indistinguishable from a clean one. Either a '
+       || 'population query has drifted off the tables it means to read, or '
+       || 'every pending approval resolves against an empty catalog — both are '
+       || 'failures, neither is a pass.' as violation,
        null::text as note
   from counted c
- where c.population = 0 or c.comparisons = 0
+ where c.population = 0 or c.comparisons = 0 or c.task_population = 0
 
 union all
 
 -- ── The denominator, surfaced on every run. \`violation\` is NULL, so certify
 --    prints this and does not fail on it. Counting the comparisons is worth
---    nothing if nobody ever sees the count.
+--    nothing if nobody ever sees the count. BOTH denominators are printed:
+--    the arms read different populations, and one healthy number must not
+--    stand in for the other.
 select null::text as violation,
-       'unexecutable-approval: compared ' || c.population || ' pending approval(s) against '
-       || c.comparisons || ' candidate definition(s)' as note
+       'unexecutable-approval: compared ' || c.population || ' routable pending approval(s) against '
+       || c.comparisons || ' candidate definition(s); scanned ' || c.task_population
+       || ' pending approval task(s) for a missing executor' as note
   from counted c
 `;
 }

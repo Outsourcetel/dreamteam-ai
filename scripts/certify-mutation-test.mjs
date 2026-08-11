@@ -633,6 +633,46 @@ const CASES = [
         silent: only('ambiguous', row({ def: 'null::uuid', key: 'flag_for_collections' })) },
     ];
   })(),
+  // ── The FOURTH kind: `no-executor` (mig 704's sibling) ─────────────────
+  // Same construction as the three above, but through the OTHER population
+  // hook: `orphanExtra` feeds the task scan, which deliberately does not join
+  // action_executions. Whether a fixture is FLAGGED is still decided by the
+  // real action_executions table, so `silent` uses a REAL pending approval's
+  // task id — one that genuinely has an execution row — wearing the same
+  // fixture title. Firing on one and not the other is therefore the probe
+  // discriminating, not the harness choosing.
+  ...(() => {
+    const HQ = '5bb802e1-8e92-4eef-9a7a-ac348785d43f';         // outsourcetel-hq
+    // A real pending action_approval linked to a real action_executions row
+    // via task_id (execution 7371abf7…). Deciding it later would not break
+    // this case: a decision does not delete the execution row, and the fixture
+    // supplies its own task row regardless of the real one's status.
+    const LINKED = '87146a8e-9e2a-4ba1-ab93-93791efb2adb';
+    const ORPHAN = '00000000-0000-4000-8000-00000000face';     // referenced by nothing
+    const row = (taskId) => `  select '${taskId}'::uuid, '${HQ}'::uuid, 'outsourcetel-hq'::text,
+                      'MUTATION FIXTURE'::text, '2026-08-11T00:00:00Z'::timestamptz`;
+    // Production carries one REAL row of this kind (the founder's "test ping",
+    // deliberately not allowlisted), so a case that counted every no-executor
+    // row would pass without the mutation. Only the fixture counts.
+    const only = (extra) => `select 1 from (${unexecutableApprovalSql({ orphanExtra: extra })}) x
+       where x.violation like 'no-executor — %' and x.violation like '%MUTATION FIXTURE%'`;
+    return [
+      {
+        name: 'unexecutable-approval (no-executor: a pending approval with NOTHING behind it is flagged)',
+        fires: only(row(ORPHAN)),
+        silent: only(row(LINKED)),
+      },
+    ];
+  })(),
+  {
+    name: 'unexecutable-approval (no-executor: BOTH linkage columns clear a task, not just task_id)',
+    manual: 'Driven against DEV inside a transaction that ABORTS, over the REAL probe query and REAL rows '
+      + '(a values fixture cannot express this — the NOT EXISTS reads the live action_executions table). '
+      + 'A pending action_approval with no execution row: arm named it (1 row). An execution row added '
+      + 'linking ONLY by resolves_task_id (mig 642 linkage, task_id left null): arm went SILENT (0 rows). '
+      + 'That link deleted again: arm named it once more (1 row). So an arm written with task_id alone '
+      + 'would manufacture a finding on a healthy row. Rolled back. Directly observed 2026-08-11.',
+  },
   {
     // THE DENOMINATOR ARM. mig 701 back-filled the two known-bad rows hours
     // before this probe was written, so its three arms find nothing today —
@@ -641,6 +681,18 @@ const CASES = [
     // empty population a pass.
     name: 'unexecutable-approval (an empty population is a VIOLATION, not a pass)',
     fires: `select 1 from (${unexecutableApprovalSql({ empty: true })}) x
+             where x.violation like 'no-comparisons — %'`,
+    silent: `select 1 from (${unexecutableApprovalSql()}) x
+             where x.violation like 'no-comparisons — %'`,
+  },
+  {
+    // ...and the SECOND denominator, separately. The two populations are
+    // different queries — one joins through action_executions, one refuses to
+    // — so one going to zero must not be masked by the other being healthy.
+    // Without this case, the task scan could silently read nothing and the
+    // no-executor arm would look clean from having examined no rows.
+    name: 'unexecutable-approval (an empty TASK SCAN is its own violation, not masked by a healthy population)',
+    fires: `select 1 from (${unexecutableApprovalSql({ emptyTasks: true })}) x
              where x.violation like 'no-comparisons — %'`,
     silent: `select 1 from (${unexecutableApprovalSql()}) x
              where x.violation like 'no-comparisons — %'`,
@@ -681,6 +733,27 @@ const CASES = [
       + 'return type unchanged: the probe named 4 real production rows as `ambiguous` (outsourcetel-hq '
       + 'send_payment_reminder, two live ERPNext executors — an internal note and an email to the customer). '
       + 'Rolled back; the live selector was re-read afterwards and is intact. Directly observed 2026-08-11.',
+  },
+  {
+    name: 'mig 704 retirement guard (19 live DDL mutants against its own assert block)',
+    manual: 'The guard that alerts when an action_definition leaves status=active while a PENDING approval '
+      + 'still names it. Its assert block was extracted from the shipped migration file (not paraphrased) and '
+      + 'run against DEV after each mutation, in transactions that ABORT. Baseline green first, or every '
+      + 'catch below would be meaningless. 19 mutants, 19 CAUGHT, 0 survived, 0 inconclusive — each scored '
+      + 'only because the error NAMED the injected defect. Structural: WHEN clause removed (fires on every '
+      + 'definition update), BEFORE instead of AFTER (can veto a retirement), writes to human_tasks, calls '
+      + 'decide_human_task, never inserts an alert, tenant dropped from the dedup kind, definition dropped '
+      + 'from it, only task_id checked (misses mig 642 resolves_task_id links), pending filter widened, '
+      + 'anon/authenticated/PUBLIC granted EXECUTE, SECURITY DEFINER removed. ⚠ The PUBLIC case needed its '
+      + 'own construction: a grant to PUBLIC also gives anon EXECUTE, so the anon pin fired first and the '
+      + 'run did not name PUBLIC — INCONCLUSIVE under the strict rule, not a catch. Re-run with the anon and '
+      + 'authenticated pins removed so only the PUBLIC pin could speak (plus a control proving that removal '
+      + 'alone keeps the block green). BEHAVIOURAL, all passing the source pins and caught only because the '
+      + 'assert block DRIVES the trigger: alerts on every retirement (F1), never alerts on a real stranding '
+      + '(F3), alert stops naming the task (F3), and a decision made through dynamic SQL the prosrc pin '
+      + 'cannot see (F4). One further mutant — the same dynamic decision WITHOUT the sanction GUC — is '
+      + 'stopped by guard_human_task_decision rather than by mig 704, and is recorded as that rather than '
+      + 'claimed as this migration\'s catch. Directly observed 2026-08-11.',
   },
   {
     name: 'execute-perimeter (revoked fn removed from allowlist detects re-grant)',
