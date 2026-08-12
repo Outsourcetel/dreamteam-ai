@@ -26,13 +26,6 @@
 // ============================================================
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-// Same reason scripts/gen-provider-seed.mjs already carries this: plain node
-// cannot `import` src/lib/connectorApi.ts (it drags in '../supabase' with no
-// extension, then env.ts touches import.meta.env, a Vite-only global). Used
-// by the provider-catalog section below to read PROVIDERS/TOP_PROVIDERS out
-// of the source text instead — already a devDependency, already the compiler
-// this repo builds with.
-import ts from 'typescript';
 // mig 679's ratchet. The pin list, its reasons and the probe SQL live in ONE
 // file, imported by BOTH this gate and certify-mutation-test.mjs — so the
 // mutation test exercises the real query, not a paraphrase of it.
@@ -53,10 +46,11 @@ import { writePerimeterSql, silentNoopWriteSql, WRITE_PERIMETER_SQL } from './wr
 // merely because work is outstanding — see the module header for the argument.
 import { deferredRegisterSection } from './deferred-register.mjs';
 import { triggerExecutePerimeterSql } from './trigger-execute-perimeter.mjs';
-// The SAME derivation scripts/gen-provider-seed.mjs uses to write the seed, so
-// the provider-catalog section checks the generator instead of a paraphrase of
-// it. A gate that re-implements the thing it is gating agrees with itself.
-import { derivedAliases, derivedAuthKind } from './provider-aliases.mjs';
+// The comparison itself, shared with scripts/certify-mutation-test.mjs so the
+// mutation cases exercise the REAL logic rather than a paraphrase of it. It in
+// turn imports the SAME derivation scripts/gen-provider-seed.mjs uses to write
+// the seed, so the gate checks the generator instead of agreeing with itself.
+import { providerCatalogFailures, providerCheckValues, readConnectorConstants } from './provider-catalog-check.mjs';
 
 const FAST = process.argv.includes('--fast');
 const PIN = process.argv.includes('--pin-allowlist');
@@ -633,66 +627,6 @@ async function netExposureFailures() {
   return [];
 }
 
-// ── PROVIDERS / TOP_PROVIDERS, read from connectorApi.ts's SOURCE TEXT ─────
-// The same wall scripts/gen-provider-seed.mjs hit first: a plain `import
-// '../src/lib/connectorApi.ts'` fails under node (it pulls in '../supabase'
-// with no extension) and fails again under tsx (env.ts touches
-// import.meta.env, a Vite-only global). So this walks the parsed AST with the
-// TypeScript compiler instead — it can only read the literal PROVIDERS and
-// TOP_PROVIDERS are actually written as; a spread, a computed key or a
-// function call throws rather than silently guessing. It never executes
-// connectorApi.ts, so it cannot trip either failure above, and the values
-// below are DERIVED from the file every run, never hand-copied.
-function evalConnectorLiteral(node) {
-  if (ts.isObjectLiteralExpression(node)) {
-    const obj = {};
-    for (const prop of node.properties) {
-      if (!ts.isPropertyAssignment(prop)) {
-        throw new Error(`provider-catalog: unsupported object member kind: ${ts.SyntaxKind[prop.kind]}`);
-      }
-      let key;
-      if (ts.isIdentifier(prop.name) || ts.isStringLiteralLike(prop.name)) key = prop.name.text;
-      else throw new Error(`provider-catalog: unsupported property key kind: ${ts.SyntaxKind[prop.name.kind]}`);
-      obj[key] = evalConnectorLiteral(prop.initializer);
-    }
-    return obj;
-  }
-  if (ts.isArrayLiteralExpression(node)) return node.elements.map(evalConnectorLiteral);
-  if (ts.isStringLiteralLike(node)) return node.text;
-  if (ts.isNumericLiteral(node)) return Number(node.text);
-  if (node.kind === ts.SyntaxKind.TrueKeyword) return true;
-  if (node.kind === ts.SyntaxKind.FalseKeyword) return false;
-  throw new Error(`provider-catalog: unsupported literal kind: ${ts.SyntaxKind[node.kind]} (${node.getText()})`);
-}
-function readConnectorConstants() {
-  const SRC = 'src/lib/connectorApi.ts';
-  const source = ts.createSourceFile(
-    SRC, readFileSync(SRC, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS,
-  );
-  const found = {};
-  source.forEachChild((node) => {
-    if (!ts.isVariableStatement(node)) return;
-    for (const decl of node.declarationList.declarations) {
-      if (!ts.isIdentifier(decl.name) || !decl.initializer) continue;
-      if (decl.name.text === 'PROVIDERS' || decl.name.text === 'TOP_PROVIDERS'
-        || decl.name.text === 'AMBIGUOUS_ALIASES') {
-        found[decl.name.text] = decl.initializer;
-      }
-    }
-  });
-  if (!found.PROVIDERS) throw new Error(`could not find "export const PROVIDERS = ..." in ${SRC}`);
-  if (!found.TOP_PROVIDERS) throw new Error(`could not find "export const TOP_PROVIDERS = ..." in ${SRC}`);
-  // Not optional either. If this constant is renamed away, the gate must STOP
-  // rather than fall back to an empty stop-list and green a catalog that has
-  // quietly re-acquired "close", "front" and "box" as system names.
-  if (!found.AMBIGUOUS_ALIASES) throw new Error(`could not find "export const AMBIGUOUS_ALIASES = ..." in ${SRC}`);
-  return {
-    PROVIDERS: evalConnectorLiteral(found.PROVIDERS),
-    TOP_PROVIDERS: evalConnectorLiteral(found.TOP_PROVIDERS),
-    AMBIGUOUS_ALIASES: evalConnectorLiteral(found.AMBIGUOUS_ALIASES),
-  };
-}
-
 // ── Section runner ─────────────────────────────────────────────────────────
 const results = [];
 function section(name, fn) { return { name, fn }; }
@@ -827,134 +761,36 @@ const sections = [
   // against a CHECK constraint — two lists, one truth, nobody watching. The
   // discovery interview reads the DB copy, so a drift means we prepare the
   // wrong connector, or fail to recognise a system the customer named.
+  // This section FETCHES and FORMATS; provider-catalog-check.mjs decides. The
+  // split is what lets certify-mutation-test.mjs hand the real comparison a
+  // mutated copy of live state and watch it fire, instead of proving the gate
+  // works by writing a broken row into the production catalog.
   section('provider-catalog', async () => {
-    const failures = [];
-    const { PROVIDERS, TOP_PROVIDERS, AMBIGUOUS_ALIASES } = readConnectorConstants();
-    const ambiguous = new Set(AMBIGUOUS_ALIASES);
-
+    const constants = readConnectorConstants();
     const rows = await q(`select provider_key, label, category, auth_kind, credential_hint,
                                  default_base_url, implemented, aliases
                             from public.connector_providers where active`);
-    const inDb = new Set(rows.map((r) => r.provider_key));
-    const inTs = Object.keys(PROVIDERS);
-
-    // BOTH directions. Asserting only one half passes a catalog that is empty.
-    for (const k of inTs) if (!inDb.has(k)) failures.push(`catalog missing provider: ${k}`);
-    for (const k of inDb) if (!inTs.includes(k)) failures.push(`catalog has unknown provider: ${k}`);
-
-    // ── The THIRD list: the CHECK on connectors.provider ──────────────────
-    // PROVIDERS <-> catalog was watched. connectors_provider_check was not, in
-    // EITHER direction — so adding a provider to PROVIDERS plus a seed
-    // migration while forgetting the CHECK left this gate GREEN, the UI
-    // offering the provider, and the INSERT failing at runtime. That is
-    // precisely the failure mode the catalog was built to end, surviving one
-    // layer down.
-    //
-    // `dreamteam` is exempt BY NAME, not by category. It is the platform's own
-    // self-connector (supabase/functions/connector-hub/index.ts, dreamteamActions:
-    // hire_from_archetype, create_digital_employee, draft_playbook,
-    // propose_connector) and it holds 17 live rows. It is deliberately NOT in
-    // the catalog, because the catalog is what the discovery interview offers a
-    // CUSTOMER and what PROVIDERS renders in the connector picker: adding it
-    // would have made "DreamTeam" a third-party system customers could sit
-    // there and try to connect to. One named key. Every OTHER value present in
-    // only one of the two lists is still a failure.
-    const CHECK_ONLY_BY_DESIGN = new Set(['dreamteam']);
     const [chk] = await q(`select pg_get_constraintdef(oid) as def from pg_constraint
                             where conrelid = 'public.connectors'::regclass
                               and conname = 'connectors_provider_check'`);
-    const inCheck = new Set([...String(chk?.def ?? '').matchAll(/'([^']+)'::text/g)].map((m) => m[1]));
-    if (inCheck.size === 0) {
-      failures.push('could not read connectors_provider_check — the third list is unwatched');
-    }
-    for (const k of inCheck) {
-      if (!inDb.has(k) && !CHECK_ONLY_BY_DESIGN.has(k)) {
-        failures.push(`connectors.provider accepts "${k}" but the catalog has never heard of it`);
-      }
-    }
-    for (const k of inDb) {
-      if (!inCheck.has(k)) failures.push(`catalog offers "${k}" but connectors.provider would REJECT the insert`);
-    }
-    // The exemption is itself a ratchet: once dreamteam leaves the CHECK, the
-    // exemption is stale and must be deleted rather than left to bless a key
-    // nobody uses any more.
-    for (const k of CHECK_ONLY_BY_DESIGN) {
-      if (!inCheck.has(k)) failures.push(`exempt provider "${k}" is gone from connectors_provider_check — drop the exemption`);
-    }
-
-    const seen = new Map();
-    for (const r of rows) {
-      for (const a of r.aliases ?? []) {
-        if (seen.has(a)) failures.push(`alias "${a}" resolves to both ${seen.get(a)} and ${r.provider_key}`);
-        else seen.set(a, r.provider_key);
-        // mig 729. An alias that is an ordinary English word made
-        // matchProvider read "we close deals on monday" as four systems, all at
-        // confidence 'exact'. The stop-list is only a fix while the DATA obeys
-        // it, so this is where a re-seed that reintroduced one gets caught.
-        if (ambiguous.has(a)) {
-          failures.push(`alias "${a}" (${r.provider_key}) is ordinary English — AMBIGUOUS_ALIASES says it must not be an alias`);
-        }
-      }
-    }
-
-    // ── Field-level, not just key-level ───────────────────────────────────
-    // Key-set parity was the ONLY thing compared, leaving 7 of 8 columns as
-    // unguarded copies. `auth_kind` decides whether the interview tells a
-    // customer "sign in" or "paste a key"; `credential_hint` is the literal
-    // instruction they follow. A drift in either is silent and customer-facing.
-    //
-    // Aliases are compared by CONTAINMENT, not equality, and deliberately: mig
-    // 727 added curated synonyms ('sfdc', 'qb', 'qbo', 'hub spot', 'zen desk')
-    // that no derivation can infer. So the assertion is "everything the
-    // generator would produce is present" — a hand-curated extra is allowed,
-    // and the ambiguity checks above are what keep an extra from being junk.
-    let compared = 0;
-    const byKey = new Map(rows.map((r) => [r.provider_key, r]));
-    for (const [key, m] of Object.entries(PROVIDERS)) {
-      const row = byKey.get(key);
-      if (!row) continue;                       // already reported as missing above
-      const want = {
-        label: m.label,
-        category: m.defaultCategory,
-        auth_kind: derivedAuthKind(m),
-        credential_hint: m.help ?? null,
-        default_base_url: m.baseUrlPlaceholder ?? null,
-        implemented: !!m.implemented,
-      };
-      for (const [col, v] of Object.entries(want)) {
-        compared++;
-        const got = row[col] ?? null;
-        if (String(got) !== String(v ?? null)) {
-          failures.push(`${key}.${col} drifted — catalog ${JSON.stringify(got)} vs PROVIDERS ${JSON.stringify(v)}`);
-        }
-      }
-      for (const a of derivedAliases(key, m, ambiguous)) {
-        compared++;
-        if (!(row.aliases ?? []).includes(a)) failures.push(`${key}.aliases is missing the derived alias "${a}"`);
-      }
-    }
-
-    const cats = await q(`select distinct unnest(required_connector_categories) as cat
-                            from public.role_archetypes
-                           where required_connector_categories is not null`);
-    for (const { cat } of cats) {
-      if (!TOP_PROVIDERS[cat]?.length) failures.push(`no provider suggested for category: ${cat}`);
-    }
-
-    // Structural, not behavioral: certify runs against PRODUCTION and a real
-    // DELETE probe is not safe there, so this reads the grant rather than
-    // attempting the write it forbids.
+    const catRows = await q(`select distinct unnest(required_connector_categories) as cat
+                               from public.role_archetypes
+                              where required_connector_categories is not null`);
     const [priv] = await q(`select has_table_privilege('authenticated','public.connector_providers','select') as can_read,
                                    has_table_privilege('authenticated','public.connector_providers','delete') as can_delete`);
-    if (!priv.can_read) failures.push('authenticated cannot read the catalog');
-    if (priv.can_delete) failures.push('authenticated can DELETE from the catalog');
+
+    const inCheck = providerCheckValues(chk?.def);
+    const cats = catRows.map((r) => r.cat);
+    const { failures, compared, aliasCount } =
+      providerCatalogFailures({ ...constants, rows, inCheck, cats, priv });
 
     // Count the comparisons, not just the findings. Zero findings from zero
     // comparisons looks exactly like a clean result.
     const detail = failures.length
       ? failures.join('\n')
-      : `compared ${inTs.length} providers x 3 lists (${inCheck.size} CHECK values), `
-        + `${compared} field values, ${seen.size} aliases, ${cats.length} required categories`;
+      : `compared ${Object.keys(constants.PROVIDERS).length} providers x 3 lists `
+        + `(${inCheck.size} CHECK values), ${compared} field values, ${aliasCount} aliases, `
+        + `${cats.length} required categories`;
     if (!failures.length) console.log(`        provider-catalog: ${detail}`);
     return { ok: failures.length === 0, detail };
   }),

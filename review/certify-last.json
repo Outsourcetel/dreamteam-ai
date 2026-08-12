@@ -1,29 +1,29 @@
 {
-  "at": "2026-08-12T18:17:39.160Z",
+  "at": "2026-08-12T19:13:07.650Z",
   "mode": "fast",
   "failed": 2,
   "results": [
     {
       "section": "typecheck",
       "ok": true,
-      "seconds": 17.5
+      "seconds": 18
     },
     {
       "section": "ring0-probes",
       "ok": false,
-      "seconds": 72.7,
-      "detail": "execute-perimeter: NEW/CHANGED grant not in allowlist: guardrail_enforcement_status(p_tenant_id uuid)|anon=false|authed=true\nexecute-perimeter: NEW/CHANGED grant not in allowlist: restore_guardrail_rule(p_rule_id uuid)|anon=false|authed=true\nexecute-perimeter: NEW/CHANGED grant not in allowlist: retire_guardrail_rule(p_rule_id uuid, p_reason text)|anon=false|authed=true\nno-pending-approval-the-platform-cannot-carry-out: mismatched-pair — kinetic / Approve action — Create a specialist desk (DreamTeam AI (self)) [execution bfb462a0-1e22-48cf-a3a0-fa60edd666f4]: the row names definition 18a92cdd-ba11-4c11-8bcc-96a3b8e120b4 (create_specialist), but its status is \"disabled\" and the resolver only ever sees active definitions. connector-hub answers action_definition_not_found and nothing is sent.\nno-pending-approval-the-platform-cannot-carry-out: no-executor — outsourcetel-hq / Send a $15,600 invoice to Meridian Group — test ping [task 03aaa6dd-379b-438a-aadd-d9b8e262638b, raised 2026-08-10]: no action_executions row references this task by EITHER linkage column (task_id, resolves_task_id). There is no executor behind the approval at all: deciding it flips the task to \"approved\", hands connector-hub nothing, and sends nothing — while the queue empties and the screen reads as done. A human must withdraw or re-raise it; this probe reports, it never decides.\nonboarding-bindings-are-runnable: outsourcetel-hq / SaaS onboarding — starter / locations_configured → propose_connector — needs the \"workforce_assistant\" role, which the employee(s) this workspace gives onboarding work to (Onni) do not have"
+      "seconds": 66.4,
+      "detail": "no-pending-approval-the-platform-cannot-carry-out: mismatched-pair — kinetic / Approve action — Create a specialist desk (DreamTeam AI (self)) [execution bfb462a0-1e22-48cf-a3a0-fa60edd666f4]: the row names definition 18a92cdd-ba11-4c11-8bcc-96a3b8e120b4 (create_specialist), but its status is \"disabled\" and the resolver only ever sees active definitions. connector-hub answers action_definition_not_found and nothing is sent.\nno-pending-approval-the-platform-cannot-carry-out: no-executor — outsourcetel-hq / Send a $15,600 invoice to Meridian Group — test ping [task 03aaa6dd-379b-438a-aadd-d9b8e262638b, raised 2026-08-10]: no action_executions row references this task by EITHER linkage column (task_id, resolves_task_id). There is no executor behind the approval at all: deciding it flips the task to \"approved\", hands connector-hub nothing, and sends nothing — while the queue empties and the screen reads as done. A human must withdraw or re-raise it; this probe reports, it never decides.\nonboarding-bindings-are-runnable: outsourcetel-hq / SaaS onboarding — starter / locations_configured → propose_connector — needs the \"workforce_assistant\" role, which the employee(s) this workspace gives onboarding work to (Onni) do not have"
     },
     {
       "section": "deferred-register",
       "ok": true,
-      "seconds": 9.7
+      "seconds": 6.4
     },
     {
       "section": "migration-ledger",
       "ok": false,
-      "seconds": 6.6,
-      "detail": "  APPLIED    381   recorded by the runner, file unchanged\n  ASSUMED    369   predates the ledger — believed applied, never verified\n  DRIFTED      0   applied, then the FILE CHANGED\n  PENDING      0   in the repo, never applied here\n  ORPHANED     2   in the ledger, no longer in the repo\nORPHANED:\n  715_the_definition_says_which_engine_owns_it.sql\n  717_four_roles_get_a_procedure_and_intake.sql"
+      "seconds": 5.7,
+      "detail": "  APPLIED    382   recorded by the runner, file unchanged\n  ASSUMED    369   predates the ledger — believed applied, never verified\n  DRIFTED      0   applied, then the FILE CHANGED\n  PENDING      0   in the repo, never applied here\n  ORPHANED     2   in the ledger, no longer in the repo\nORPHANED:\n  715_the_definition_says_which_engine_owns_it.sql\n  717_four_roles_get_a_procedure_and_intake.sql"
     },
     {
       "section": "migration-numbering",
@@ -33,12 +33,12 @@
     {
       "section": "provider-catalog",
       "ok": true,
-      "seconds": 8
+      "seconds": 7.9
     },
     {
       "section": "edge-typecheck",
       "ok": true,
-      "seconds": 3.4
+      "seconds": 2.4
     }
   ]
 }

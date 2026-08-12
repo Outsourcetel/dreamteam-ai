@@ -20,6 +20,11 @@ import { trustProposerBoundarySql } from './trust-proposer-boundary.mjs';
 import { gapGateConductSql, auditedStepsWritesSql, snapshotGateSql, gapEvidenceSql } from './playbook-gap-probes.mjs';
 import { writePerimeterSql, silentNoopWriteSql } from './write-perimeter.mjs';
 import { triggerExecutePerimeterSql, TRIGGER_FN_SOURCE } from './trigger-execute-perimeter.mjs';
+// certify's ACTUAL provider-catalog comparison, imported rather than restated.
+// Its assertions are all silent against a clean production, so the only thing
+// that can prove they fire is running the real function over a mutated copy of
+// real state — see the cases at the end of CASES.
+import { providerCatalogFailures, providerCheckValues, readConnectorConstants } from './provider-catalog-check.mjs';
 
 // ── Fixtures for no-untyped-literal-appended-to-a-container ────────────────
 // The production catalog is CLEAN of this shape, so the probe returns zero rows
@@ -1407,6 +1412,117 @@ const CASES = [
     name: `deferred-register --mutate=${mut} (MANUAL, a JS evaluation over a JSON register: a SELECT cannot fake it)`,
     manual: `${evidence} Verified 2026-08-12 against the live register (47 items, 38 verified); exit 0 = caught and named.`,
   })),
+  // ── provider-catalog ─────────────────────────────────────────────────────
+  // The section's three newest assertions — the connectors_provider_check edge
+  // in BOTH directions, field-level drift, and the AMBIGUOUS_ALIASES ratchet —
+  // are all silent today because production is clean. That is exactly the shape
+  // this file exists to distrust.
+  //
+  // The original plan proved its assertions by WRITING a broken row to the live
+  // catalog and restoring it. That is not available here (the write was
+  // refused) and was the wrong shape anyway: an interrupted run leaves the
+  // product catalog wrong for real customers. Instead these fetch the live
+  // state ONCE, mutate a COPY of it in memory, and run certify's actual
+  // comparison function over it — the same providerCatalogFailures() the gate
+  // calls, imported, not paraphrased.
+  ...(await (async () => {
+    const constants = readConnectorConstants();
+    const rows = await q(`select provider_key, label, category, auth_kind, credential_hint,
+                                 default_base_url, implemented, aliases
+                            from public.connector_providers where active`);
+    const [chk] = await q(`select pg_get_constraintdef(oid) as def from pg_constraint
+                            where conrelid = 'public.connectors'::regclass
+                              and conname = 'connectors_provider_check'`);
+    const catRows = await q(`select distinct unnest(required_connector_categories) as cat
+                               from public.role_archetypes
+                              where required_connector_categories is not null`);
+    const [priv] = await q(`select has_table_privilege('authenticated','public.connector_providers','select') as can_read,
+                                   has_table_privilege('authenticated','public.connector_providers','delete') as can_delete`);
+    const base = {
+      ...constants,
+      rows,
+      inCheck: providerCheckValues(chk?.def),
+      cats: catRows.map((r) => r.cat),
+      priv,
+    };
+    const clean = () => providerCatalogFailures(base).failures;
+    // Every case mutates ONE thing against otherwise-live state, so a finding
+    // can only have come from the thing that was broken.
+    const withState = (patch) => () => providerCatalogFailures({ ...base, ...patch }).failures;
+    const rowsWithout = (key) => rows.filter((r) => r.provider_key !== key);
+    const rowsPatched = (key, patch) =>
+      rows.map((r) => (r.provider_key === key ? { ...r, ...patch } : r));
+
+    return [
+      {
+        // Direction A. `dreamteam` is the exempt key; xero is not. Dropping
+        // xero from the catalog must be caught BY THE CHECK ARM, proving the
+        // exemption is one name and not a category anything can slip into.
+        name: 'provider-catalog (a CHECK value missing from the catalog fires — the dreamteam exemption is ONE key)',
+        firesJs: withState({ rows: rowsWithout('xero') }),
+        silentJs: clean,
+      },
+      {
+        // Direction B, and the one that matters most: the catalog offering a
+        // provider connectors.provider would refuse is a runtime INSERT
+        // failure the UI cannot see coming.
+        name: 'provider-catalog (a catalog row the CHECK would REJECT fires)',
+        firesJs: withState({
+          rows: [...rows, {
+            provider_key: 'zz_not_in_the_check', label: 'ZZ', category: 'other',
+            auth_kind: 'basic', credential_hint: null, default_base_url: null,
+            implemented: false, aliases: [],
+          }],
+        }),
+        silentJs: clean,
+      },
+      {
+        // The exemption's own ratchet: if dreamteam ever leaves the CHECK, the
+        // entry is stale and must go. Without this the exemption would outlive
+        // its reason and quietly bless a key nobody uses.
+        name: 'provider-catalog (a stale dreamteam exemption is itself a violation)',
+        firesJs: withState({ inCheck: new Set([...base.inCheck].filter((k) => k !== 'dreamteam')) }),
+        silentJs: clean,
+      },
+      {
+        // Finding 3. auth_kind decides whether the interview tells a customer
+        // "sign in" or "paste a key" — xero is oauth, so basic is a real lie.
+        name: 'provider-catalog (field-level drift on auth_kind fires)',
+        firesJs: withState({ rows: rowsPatched('xero', { auth_kind: 'basic' }) }),
+        silentJs: clean,
+      },
+      {
+        // ...and credential_hint, the literal instruction shown to a customer.
+        name: 'provider-catalog (field-level drift on credential_hint fires)',
+        firesJs: withState({ rows: rowsPatched('zendesk', { credential_hint: 'ask someone' }) }),
+        silentJs: clean,
+      },
+      {
+        // A derived alias silently absent is how the seed and PROVIDERS part
+        // company without either list changing length.
+        name: 'provider-catalog (a missing DERIVED alias fires)',
+        firesJs: withState({ rows: rowsPatched('zendesk', { aliases: [] }) }),
+        silentJs: clean,
+      },
+      {
+        // mig 729's ratchet. Re-adding "close" is precisely what a regenerated
+        // seed would do if AMBIGUOUS_ALIASES were dropped, and it is what made
+        // "we close deals on monday" resolve to four systems at 'exact'.
+        name: 'provider-catalog (an ordinary-English alias back in the data fires)',
+        firesJs: withState({ rows: rowsPatched('close', { aliases: ['close'] }) }),
+        silentJs: clean,
+      },
+      {
+        // The pairing rule applied to the stop-list itself: emptying
+        // AMBIGUOUS_ALIASES must not be a way to make the run green. It cannot
+        // be — the aliases are gone from the DATA — but the derived-alias arm
+        // then demands them back, so the two halves hold each other.
+        name: 'provider-catalog (emptying AMBIGUOUS_ALIASES does not buy silence)',
+        firesJs: withState({ AMBIGUOUS_ALIASES: [] }),
+        silentJs: clean,
+      },
+    ];
+  })()),
 ];
 
 // Optional substring filter, so one probe's cases can be re-run on their own
@@ -1427,8 +1543,13 @@ if (FILTER) {
 let pass = 0, fail = 0;
 for (const c of SELECTED) {
   if (c.manual) { console.log(`  MANUAL  ${c.name}\n            ${c.manual}`); pass++; continue; }
-  const fired = (await q(c.fires)).length;
-  const silent = (await q(c.silent)).length;
+  // Most probes ARE SQL, so `fires`/`silent` are queries. A few — the
+  // provider-catalog comparison — are JavaScript over already-fetched state;
+  // those supply `firesJs`/`silentJs`, thunks returning the violation list. The
+  // pass condition is identical either way: the mutation must produce at least
+  // one finding and the clean state must produce none.
+  const fired = (c.firesJs ? await c.firesJs() : await q(c.fires)).length;
+  const silent = (c.silentJs ? await c.silentJs() : await q(c.silent)).length;
   const ok = fired >= 1 && silent === 0;
   console.log(`  ${ok ? 'PASS' : 'FAIL'}    ${c.name}  (violation→${fired} rows, clean→${silent} rows)`);
   ok ? pass++ : fail++;
