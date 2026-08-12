@@ -1944,30 +1944,94 @@ export type ProviderMatch = {
   provider_key: string; matched_on: string; confidence: 'exact' | 'alias' | 'partial';
 };
 
-/** Resolve free text ("we do our books in zero") to known providers.
+/** Aliases that are ORDINARY ENGLISH before they are product names.
+ *
+ *  The seed derives an alias from every provider's lowercased label, and a
+ *  number of products are named after common words. Against the live 75-row
+ *  catalog that made "we close deals on monday and the team meets in front of
+ *  the box" resolve to four systems, all at confidence 'exact' — the exact
+ *  inversion of what matchProvider's docstring promises.
+ *
+ *  This is a STOP-LIST, not an alias list: the aliases themselves stay derived
+ *  from PROVIDERS (scripts/gen-provider-seed.mjs), and this filters that
+ *  derivation. The rule for adding a word is narrow and testable — *could a
+ *  business person plausibly type this word in a sentence that is not about
+ *  software?* By it, `sentry`, `asana`, `clio` and `procore` are NOT here:
+ *  they are dictionary words or loanwords that do not turn up in workplace
+ *  prose, and stop-listing them would cost real recall for nothing.
+ *
+ *  A provider is never made unreachable by this. It keeps every distinctive
+ *  alias it had ("microsoft teams", "monday.com", "canvas lms", "sfdc"), and
+ *  where the ordinary word IS the whole product name — Close, Box, Slack — the
+ *  exact-label pass in matchProvider still resolves it from the capitalised
+ *  form a customer writes. Cost: a bare LOWERCASE mention ("we use slack") now
+ *  misses. That is the trade the docstring already made — a miss just means we
+ *  ask one more question.
+ *
+ *  ⚠ The live `connector_providers.aliases` column must agree with this list.
+ *  The generator filters by it, a migration swept the already-seeded rows, and
+ *  certify's `provider-catalog` section fails if any live alias appears here. */
+export const AMBIGUOUS_ALIASES: string[] = [
+  'accounting software', 'books', 'box', 'canvas', 'close', 'confluence',
+  'dynamics', 'epic', 'front', 'greenhouse', 'guru', 'gusto', 'intercom',
+  'lever', 'linear', 'monday', 'notion', 'slack', 'square', 'stripe',
+  'teams', 'template', 'toast', 'zero',
+];
+
+/** Space-padded, punctuation-flattened, so `includes()` is a word-boundary
+ *  test. Case is deliberately NOT touched here — the two passes below want
+ *  different answers about it. */
+function padForWordMatch(s: string): string {
+  return ` ${s.replace(/[^A-Za-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim()} `;
+}
+
+/** Resolve free text ("we run everything through xero") to known providers.
  *
  *  Deliberately conservative: it matches on WORD BOUNDARIES only, and returns
  *  an empty array rather than a best guess. The discovery interview acts on
  *  what this returns — preparing a connector row and binding an employee's
  *  access to it — so a false positive is worse than a miss. A miss just means
- *  we ask one more question. */
+ *  we ask one more question.
+ *
+ *  Two passes, and the second is why an ordinary-word product still resolves:
+ *
+ *  1. ALIASES, case-insensitively. The column is already filtered against
+ *     AMBIGUOUS_ALIASES, so nothing here is a bare English word.
+ *  2. The EXACT LABEL, case-SENSITIVELY. "we use Close" is a proper noun and
+ *     resolves; "we close deals" is a verb and does not. Sentence-initial
+ *     capitals are lowered first, because a capital at the start of a sentence
+ *     is grammar, not a product name — otherwise "Close of business is five."
+ *     would be a false positive with a capital letter as its only evidence.
+ *
+ *  Known residual: a writer who capitalises mid-sentence for emphasis, or
+ *  writes in Title Case, can still produce a match on an ordinary word. That is
+ *  a far narrower hole than matching the bare lowercase word, and it errs in
+ *  the direction the caller can see (the interview quotes what it matched). */
 export function matchProvider(text: string, catalog: ProviderCatalogRow[]): ProviderMatch[] {
-  const haystack = ` ${text.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ')} `;
+  const cased = padForWordMatch(
+    text.replace(/(^|[.!?\n]\s*)([A-Z])/g, (_m, pre: string, c: string) => pre + c.toLowerCase()),
+  );
+  const lower = cased.toLowerCase();
   const hits = new Map<string, ProviderMatch>();
+
+  const record = (row: ProviderCatalogRow, matchedOn: string, confidence: ProviderMatch['confidence']) => {
+    const existing = hits.get(row.provider_key);
+    if (!existing || (existing.confidence !== 'exact' && confidence === 'exact')) {
+      hits.set(row.provider_key, { provider_key: row.provider_key, matched_on: matchedOn, confidence });
+    }
+  };
 
   for (const row of catalog) {
     for (const alias of row.aliases) {
-      const needle = ` ${alias.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ')} `;
+      const needle = padForWordMatch(alias).toLowerCase();
       if (needle.trim() === '') continue;
-      if (!haystack.includes(needle)) continue;
-      const confidence: ProviderMatch['confidence'] =
+      if (!lower.includes(needle)) continue;
+      record(row, alias,
         alias.toLowerCase() === row.label.toLowerCase() ? 'exact'
-        : alias === row.provider_key ? 'exact' : 'alias';
-      const existing = hits.get(row.provider_key);
-      if (!existing || (existing.confidence !== 'exact' && confidence === 'exact')) {
-        hits.set(row.provider_key, { provider_key: row.provider_key, matched_on: alias, confidence });
-      }
+        : alias === row.provider_key ? 'exact' : 'alias');
     }
+    const label = padForWordMatch(row.label);
+    if (label.trim() !== '' && cased.includes(label)) record(row, row.label, 'exact');
   }
   return [...hits.values()];
 }
