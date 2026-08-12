@@ -329,21 +329,33 @@ alter table public.connectors add constraint connectors_status_check
   check (status in ('connected', 'error', 'disconnected', 'pending_credentials'));
 
 do $$
-declare v_bad int;
+declare v_bad int; v_tenant uuid;
 begin
   -- Widening must not have stranded an existing row.
   select count(*) into v_bad from public.connectors
    where status not in ('connected','error','disconnected','pending_credentials');
   if v_bad > 0 then raise exception '<n>: % connector rows hold a status the new CHECK rejects', v_bad; end if;
 
-  -- And it must not have become permissive. Prove the fence by trying to cross it.
+  -- And it must not have become permissive. Prove the fence by trying to cross
+  -- it — with a REAL tenant_id, so that the CHECK is what refuses us.
+  --
+  -- ⚠ An earlier draft used a zero UUID and caught foreign_key_violation as
+  -- "also fine". That is a check that cannot fail: the FK refuses the row
+  -- before the CHECK is ever the reason, so the probe reports success whether
+  -- or not the CHECK exists. Use a tenant that exists; catch ONLY
+  -- check_violation. The insert never commits — either the CHECK rejects it,
+  -- or we raise and the whole migration rolls back.
+  select id into v_tenant from public.tenants limit 1;
+  if v_tenant is null then
+    raise exception '<n>: no tenant to probe with — cannot prove the CHECK holds';
+  end if;
+
   begin
     insert into public.connectors (tenant_id, provider, display_name, status, category)
-    values ('00000000-0000-0000-0000-000000000000', 'mcp', 'CHECK probe', 'not_a_real_status', 'other');
+    values (v_tenant, 'mcp', 'CHECK probe — never commits', 'not_a_real_status', 'other');
     raise exception '<n>: the status CHECK accepted a value it should refuse';
   exception
-    when check_violation then null;      -- correct
-    when foreign_key_violation then null; -- also fine: the CHECK is evaluated, tenant just does not exist
+    when check_violation then null;   -- the only acceptable outcome
   end;
 end $$;
 
