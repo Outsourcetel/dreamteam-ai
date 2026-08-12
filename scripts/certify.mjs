@@ -388,13 +388,18 @@ const PROBES = [
   },
   {
     name: 'workspace-admin-has-an-owner',
-    why: 'the other half — restricting the admin verbs to one role is only safe if that role can actually reach them; without this, closing the hole silently leaves a workspace administrable by nobody',
+    why: 'the other half — restricting the admin verbs to one role is only safe if that role can actually reach them, whatever the reason it might not: a missing connector included. The old form used a connected platform_admin connector as a precondition to even look at a tenant, so deleting that connector silenced the exact failure this probe exists to catch — a workspace nobody can administer',
     sql: `select t.slug as violation
             from tenants t
            where t.status = 'active'
-             and exists (select 1 from connectors c
-                          where c.tenant_id = t.id and c.status = 'connected'
-                            and c.category = 'platform_admin')
+             -- Provisioning refuses this tenant by id, on purpose: both
+             -- provision_onboarding_architect and provision_tenant_baseline_internal
+             -- (mig 730) return early for the demo tenant, so it genuinely has no
+             -- platform_admin connector and never will under current provisioning.
+             -- Same exclusion audit_tenant_feature_parity and audit_tenant_provisioning
+             -- use (mig 723) — match the house convention. Remove this line if
+             -- provisioning ever starts covering the demo tenant too.
+             and t.id <> 'a0000000-0000-0000-0000-000000000001'
              and exists (select 1 from digital_employees d
                           where d.tenant_id = t.id and coalesce(d.is_workforce_assistant, false))
              and not exists (

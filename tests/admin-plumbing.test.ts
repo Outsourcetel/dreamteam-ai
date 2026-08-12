@@ -57,3 +57,20 @@ run('the platform_admin connector is baseline plumbing', () => {
     expect(rows.map((r) => r.slug), 'workspaces with an assistant but no admin connector').toEqual([]);
   });
 });
+
+run('the admin gate cannot be silenced by removing the connector', () => {
+  it('examines a workspace with an assistant regardless of its connectors', async () => {
+    // The old probe required a connected platform_admin connector before it
+    // would look at a tenant at all — so deleting that connector made the
+    // check go quiet on exactly the workspace it was meant to protect.
+    // Assert on the shipped probe text: the connector must not appear as a
+    // precondition alongside the tenant-status filter.
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync('scripts/certify.mjs', 'utf8');
+    const start = src.indexOf("name: 'workspace-admin-has-an-owner'");
+    expect(start, 'probe not found').toBeGreaterThan(-1);
+    const probe = src.slice(start, start + 1600);
+    expect(probe).toContain('is_workforce_assistant');
+    expect(probe).not.toMatch(/exists\s*\(\s*select 1 from connectors/);
+  });
+});
