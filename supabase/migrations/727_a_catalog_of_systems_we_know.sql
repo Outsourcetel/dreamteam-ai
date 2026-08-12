@@ -136,8 +136,11 @@ on conflict (provider_key) do update set
 -- resolve: a customer says "we do our books in zero", not "xero".
 update public.connector_providers set aliases = aliases || array['zero','books','accounting software']
   where provider_key = 'xero';
-update public.connector_providers set aliases = aliases || array['qb','quickbooks online','qbo']
+update public.connector_providers set aliases = aliases || array['qb','qbo']
   where provider_key = 'quickbooks';
+-- ('quickbooks online' deliberately absent here — the generator already
+-- derives it from the label, and listing it twice on one row is what tripped
+-- the duplicate-alias check below on the first run of this migration.)
 update public.connector_providers set aliases = aliases || array['sfdc','sales force']
   where provider_key = 'salesforce';
 update public.connector_providers set aliases = aliases || array['hub spot']
