@@ -1209,6 +1209,14 @@ export const TOP_PROVIDERS: Partial<Record<SystemCategory, ConnectorProvider[]>>
   payroll_hcm: ['gusto', 'bamboohr'],
   pos: ['square', 'shopify', 'clover', 'toast'],
   product_system: ['generic_rest', 'mcp'],
+  // No ads/social/web-analytics adapter is built yet (google_ads, marketing,
+  // social_media and seo archetypes require these categories regardless), so
+  // — same principle as product_system/other — the honest rail is the escape
+  // hatches rather than naming a platform (Google Ads, Meta, GA4) we cannot
+  // actually connect to.
+  ads: ['mcp', 'generic_rest'],
+  social: ['mcp', 'generic_rest'],
+  web_analytics: ['mcp', 'generic_rest'],
   other: ['mcp', 'generic_rest'],
 };
 

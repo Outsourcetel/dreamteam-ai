@@ -96,3 +96,19 @@ describe('matchProvider', () => {
     expect(matchProvider('our zeroth priority is hiring', catalog)).toEqual([]);
   });
 });
+
+run('every category a role needs has something to suggest', () => {
+  it('leaves no archetype demanding a system we cannot name', async () => {
+    const rows = await runQuery<{ cat: string; keys: string[] }>(`
+      select distinct unnest(required_connector_categories) as cat,
+             array_agg(distinct key) as keys
+        from public.role_archetypes
+       where required_connector_categories is not null
+       group by 1`);
+    const { TOP_PROVIDERS } = await import('../src/lib/connectorApi');
+    const orphans = rows
+      .filter((r) => !(TOP_PROVIDERS as Record<string, string[] | undefined>)[r.cat]?.length)
+      .map((r) => `${r.cat} (needed by ${r.keys.join(', ')})`);
+    expect(orphans, `categories with no suggested provider: ${orphans.join(' | ')}`).toEqual([]);
+  });
+});
