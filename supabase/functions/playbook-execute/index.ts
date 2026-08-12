@@ -214,10 +214,27 @@ const POST_GATE_ALLOWED = new Set([
   'wait', 'sub_playbook', 'agentic_step', 'custom_step', 'start_onboarding',
   'emit_event', 'check_knowledge', 'read_reference', 'gap_gate',
 ]);
-// Steps allowed INSIDE a decision's then/else branch — ONE level of
-// nesting only (a decision cannot appear inside a branch in v1).
+// Steps allowed INSIDE a decision's then/else branch.
+//
+// ⚠ THIS SET IS A CONTRACT WITH `runBranchStep` BELOW: every key here MUST
+// have its own `case` arm there. It did not, for months — the set listed 9
+// keys and the switch implemented 6, so `update_record`, `check_knowledge`
+// and `read_reference` passed validation, fell to the default, were recorded
+// `skipped`, and the run reported COMPLETED having done neither requested
+// action. `wait` was a 4th: it had an arm, but the arm only ever said "not
+// supported inside a branch" — a playbook that meant "wait three days, then
+// send the final notice" sent it immediately. `decision` was a 5th, admitted
+// by validateBranch's own nesting rule rather than by this set.
+//
+// `wait` is now REFUSED rather than implemented: a mid-branch pause has no
+// resume address — `playbook_runs.current_step` addresses TOP-LEVEL steps
+// only, so there is nowhere for the run to come back to. Authors use a
+// top-level wait step, which does work.
+//
+// scripts/playbook-branch-parity.mjs is the ratchet: arms ⊇ this set, checked
+// in source AND driven against the deployed function.
 const BRANCH_ALLOWED = new Set([
-  'instruction', 'checklist', 'wait', 'log_activity', 'update_record',
+  'instruction', 'checklist', 'log_activity', 'update_record',
   'connector_action', 'guardrail_check',
   'check_knowledge', 'read_reference',
 ]);
@@ -235,11 +252,11 @@ interface DefStep {
 }
 interface ValidationError { index: number; code: string; message: string }
 
-// Validates a single decision branch (then_steps or else_steps) — used
-// both at the top level (depth 0→1, allowed) and recursively to catch
-// depth 2 (rejected with a plain-language message).
+// Validates a single decision branch (then_steps or else_steps). There is no
+// depth parameter any more: branches are FLAT, because the executor runs them
+// flat. See the `decision` arm below.
 function validateBranch(
-  branch: unknown, parentIndex: number, side: 'then' | 'else', depth: number, errs: ValidationError[],
+  branch: unknown, parentIndex: number, side: 'then' | 'else', errs: ValidationError[],
 ): void {
   if (!Array.isArray(branch)) return;
   for (const bs of branch as DefStep[]) {
@@ -247,15 +264,19 @@ function validateBranch(
       errs.push({ index: parentIndex, code: 'bad_branch_step', message: `A step inside the ${side} branch is missing a type.` });
       continue;
     }
+    // A decision inside a branch is REFUSED at every depth. The old rule
+    // ("one level deep") let depth-1 through, and `runBranchStep` has never
+    // had a `case 'decision'` — so a nested decision validated, published,
+    // ran, was recorded `skipped`, and the run reported COMPLETED with the
+    // whole conditional silently unevaluated. Refusing is the honest fix:
+    // no published snapshot has ever contained one (measured, 0 of 104), and
+    // an author who needs a second condition gets a top-level decision, which
+    // executes for real.
     if (bs.key === 'decision') {
-      if (depth >= 1) {
-        errs.push({
-          index: parentIndex, code: 'decision_nesting_too_deep',
-          message: `This decision is nested inside another decision's ${side} branch — decisions can only be nested one level deep. Move the inner decision to its own top-level step.`,
-        });
-        continue;
-      }
-      validateDecisionParams(bs, parentIndex, errs, depth + 1);
+      errs.push({
+        index: parentIndex, code: 'decision_nesting_too_deep',
+        message: `A decision cannot go inside another decision's ${side} branch — the engine runs branch steps in place and has no way to evaluate a second condition there. Move this decision to its own top-level step.`,
+      });
       continue;
     }
     if (!BRANCH_ALLOWED.has(bs.key)) {
@@ -267,7 +288,7 @@ function validateBranch(
   }
 }
 
-function validateDecisionParams(s: DefStep, i: number, errs: ValidationError[], depth = 0): void {
+function validateDecisionParams(s: DefStep, i: number, errs: ValidationError[]): void {
   const p = (s.params ?? {}) as Record<string, unknown>;
   if (typeof p.on !== 'string' || !p.on.trim()) {
     errs.push({ index: i, code: 'bad_params', message: 'A decision needs to know what to look at — pick a prior step and field.' });
@@ -278,8 +299,8 @@ function validateDecisionParams(s: DefStep, i: number, errs: ValidationError[], 
   if (p.operator !== 'exists' && (p.value === undefined || p.value === null || p.value === '')) {
     errs.push({ index: i, code: 'bad_params', message: 'This decision needs a value to compare against.' });
   }
-  validateBranch(s.then_steps, i, 'then', depth, errs);
-  validateBranch(s.else_steps, i, 'else', depth, errs);
+  validateBranch(s.then_steps, i, 'then', errs);
+  validateBranch(s.else_steps, i, 'else', errs);
 }
 
 function validateSteps(steps: unknown): ValidationError[] {
@@ -434,7 +455,7 @@ function validateSteps(steps: unknown): ValidationError[] {
         break;
       }
       case 'decision':
-        validateDecisionParams(s, i, errs, 0);
+        validateDecisionParams(s, i, errs);
         break;
       case 'checklist': {
         const items = Array.isArray(p.items) ? p.items as unknown[] : [];
@@ -951,17 +972,203 @@ async function executeDefinitionSteps(
     }
   }
 
+  // ── Shared primitive bodies ──────────────────────────────────────
+  // These three were the Debt #0 gap: BRANCH_ALLOWED listed them, the top
+  // level implemented them, and `runBranchStep` had no arm — so inside a
+  // decision they were dropped and the run still reported completed. They
+  // are extracted rather than copied ON PURPOSE: a second copy is how the
+  // two sides drift apart again, and this file already carries the scar of
+  // that (connector_action, fixed the same way).
+
+  type StepLike = { status: string; at: string | null; detail: string; output?: Record<string, unknown> };
+  /** 'halt' = this step failed in a way that must STOP the run, not be skipped past. */
+  type StepOutcome = 'ok' | 'halt';
+
+  async function execUpdateRecord(stepLike: StepLike, p: Record<string, unknown>): Promise<void> {
+    const table = p.table as string;
+    const status = ((p.set ?? {}) as Record<string, unknown>).status as string;
+    const allowed = UPDATE_WHITELIST[table] ?? [];
+    const targetId = table === 'renewal_invoices' ? ctx.invoice_id : ctx.ticket_id;
+    if (run.preview) {
+      stepLike.status = 'done'; stepLike.at = now();
+      stepLike.detail = `PREVIEW — would set ${table}.status → ${status} (not persisted)`;
+      return;
+    }
+    if (!allowed.includes(status)) {
+      stepLike.status = 'skipped'; stepLike.at = now();
+      stepLike.detail = `skipped: "${status}" is not a whitelisted status for ${table}`;
+      return;
+    }
+    if (!targetId) {
+      stepLike.status = 'skipped'; stepLike.at = now();
+      stepLike.detail = 'skipped: no target record in run context';
+      return;
+    }
+    const { error: updErr } = await admin.from(table)
+      .update({ status }).eq('id', targetId).eq('tenant_id', tenantId);
+    if (updErr) throw new Error(updErr.message);
+    if (table === 'renewal_invoices') ctx.invoice_status = status;
+    stepLike.status = 'done'; stepLike.at = now();
+    stepLike.detail = `${table}.status → ${status}`;
+  }
+
+  async function execCheckKnowledge(
+    stepLike: StepLike, p: Record<string, unknown>, stepLabel: string,
+  ): Promise<StepOutcome> {
+    const query = renderTemplate(String(p.query_template ?? ''), ctx, run.id, run.steps).trim();
+    const matchCount = Math.min(10, Math.max(1, Number(p.match_count ?? 5)));
+    const onMiss = ['continue', 'escalate', 'fail'].includes(String(p.on_miss)) ? String(p.on_miss) : 'escalate';
+    if (!query) {
+      stepLike.status = 'skipped'; stepLike.at = now();
+      stepLike.detail = 'skipped: query template rendered empty';
+      return 'ok';
+    }
+    if (run.preview) {
+      stepLike.status = 'done'; stepLike.at = now();
+      stepLike.detail = `PREVIEW — would search the knowledge base for "${query.slice(0, 80)}" (${matchCount} matches, on miss: ${onMiss})`;
+      stepLike.output = { found: true, matches: matchCount, preview: true };
+      return 'ok';
+    }
+    const ckRunDeId = await resolveRunDeId();
+    const qEmbedding = await embedText(query);
+    const { data: chunks, error: ckErr } = await admin.rpc('hybrid_match_knowledge', {
+      p_tenant_id: tenantId, p_query_text: query, p_account_id: null,
+      p_query_embedding: qEmbedding, p_match_count: matchCount,
+      p_subject_kind: ckRunDeId ? 'de' : null, p_subject_id: ckRunDeId,
+    });
+    if (ckErr) {
+      stepLike.status = 'skipped'; stepLike.at = now();
+      stepLike.detail = `skipped: knowledge search failed honestly (${ckErr.message.slice(0, 120)})`;
+      return 'ok';
+    }
+    const rows = (chunks ?? []) as Array<{ doc_title: string; content: string; distance: number | null }>;
+    const found = rows.length > 0;
+    stepLike.output = {
+      found, matches: rows.length,
+      top_title: rows[0]?.doc_title ?? null,
+      top_distance: rows[0]?.distance ?? null,
+    };
+    if (found) {
+      // Feed what was found into the run's working context (capped)
+      // so later agentic / specialist steps actually read it.
+      const bundle = rows.map((r) => `### ${r.doc_title}\n${r.content}`).join('\n\n').slice(0, 6000);
+      ctx.knowledge_context = [...((ctx.knowledge_context as string[] | undefined) ?? []), `## Knowledge check: ${query.slice(0, 120)}\n${bundle}`];
+      stepLike.status = 'done'; stepLike.at = now();
+      stepLike.detail = `Found ${rows.length} knowledge match(es) for "${query.slice(0, 80)}" — top: ${rows[0]?.doc_title ?? '—'}`;
+      return 'ok';
+    }
+    // Miss — author-chosen behavior.
+    if (onMiss === 'continue') {
+      stepLike.status = 'skipped'; stepLike.at = now();
+      stepLike.detail = `No knowledge found for "${query.slice(0, 80)}" — continuing (author's choice)`;
+      return 'ok';
+    }
+    stepLike.status = 'failed'; stepLike.at = now();
+    stepLike.detail = `No knowledge found for "${query.slice(0, 80)}" — ${onMiss === 'escalate' ? 'escalated to a human' : 'run stopped'} (author's choice)`;
+    if (onMiss === 'escalate') {
+      await admin.from('human_tasks').insert({
+        tenant_id: tenantId, type: 'escalation', source: 'de',
+        title: `Playbook knowledge check failed — ${stepLabel}`,
+        detail: `The knowledge base has no answer for "${query.slice(0, 200)}". The run was stopped for review. Run ${run.id}.`,
+      });
+    }
+    return 'halt';
+  }
+
+  async function execReadReference(
+    stepLike: StepLike, p: Record<string, unknown>, stepLabel: string,
+  ): Promise<void> {
+    const refs = (Array.isArray(p.refs) ? p.refs : []) as Array<Record<string, unknown>>;
+    const title = String(p.title ?? stepLabel ?? 'Reference');
+    if (run.preview) {
+      stepLike.status = 'done'; stepLike.at = now();
+      stepLike.detail = `PREVIEW — would read ${refs.length} reference(s) into the run context`;
+      stepLike.output = { sources: refs.length, chars: 0, preview: true };
+      return;
+    }
+    const readParts: string[] = [];
+    const readNotes: string[] = [];
+    for (const r of refs.slice(0, 5)) {
+      const kind = String(r.kind ?? '');
+      try {
+        if (kind === 'doc') {
+          const { data: doc } = await admin.from('knowledge_docs')
+            .select('id, title, content, visibility')
+            .eq('id', r.doc_id).eq('tenant_id', tenantId).maybeSingle();
+          if (!doc) { readNotes.push(`doc ${String(r.doc_id).slice(0, 8)}… not found`); continue; }
+          if (doc.visibility === 'scoped') {
+            // Mirror the retrieval RPC's scope filter: a scoped doc
+            // is readable only if the run's DE is on its scope list.
+            const rrDeId = await resolveRunDeId();
+            const { data: scopeRow } = rrDeId ? await admin.from('knowledge_doc_scopes')
+              .select('id').eq('doc_id', doc.id).eq('subject_kind', 'de').eq('subject_id', rrDeId).maybeSingle()
+              : { data: null };
+            if (!scopeRow) { readNotes.push(`"${doc.title}" is scoped to other employees — not readable in this run`); continue; }
+          }
+          readParts.push(`## ${doc.title}\n${String(doc.content ?? '').slice(0, 20000)}`);
+        } else if (kind === 'url') {
+          const url = String(r.url ?? '');
+          if (!isSafeExternalUrl(url)) { readNotes.push(`URL blocked by safety policy: ${url.slice(0, 80)}`); continue; }
+          const resp = await fetch(url, { signal: AbortSignal.timeout(10000), headers: { 'Accept': 'text/html, text/plain, text/markdown, application/json' } });
+          if (!resp.ok) { readNotes.push(`URL returned ${resp.status}: ${url.slice(0, 80)}`); continue; }
+          const raw = (await resp.text()).slice(0, 200000);
+          // Naive HTML strip — scripts/styles out, tags out, entities kept simple.
+          const text = raw
+            .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+            .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 20000);
+          if (!text) { readNotes.push(`URL had no readable text: ${url.slice(0, 80)}`); continue; }
+          readParts.push(`## ${url}\n${text}`);
+        } else if (kind === 'asset') {
+          const { data: asset } = await admin.from('media_assets')
+            .select('id, storage_path, mime, kind')
+            .eq('id', r.asset_id).eq('tenant_id', tenantId).maybeSingle();
+          if (!asset) { readNotes.push(`document ${String(r.asset_id).slice(0, 8)}… not found`); continue; }
+          const mime = String(asset.mime ?? '');
+          const textLike = mime.startsWith('text/') || mime.includes('markdown') || mime.includes('json');
+          if (!textLike) { readNotes.push(`"${asset.storage_path.split('/').pop()}" is ${mime || 'binary'} — only text documents are readable (PDF extraction not built yet)`); continue; }
+          const { data: blob } = await admin.storage.from('playbook-media').download(asset.storage_path);
+          if (!blob) { readNotes.push(`could not read stored document ${String(r.asset_id).slice(0, 8)}…`); continue; }
+          const text = (await blob.text()).slice(0, 20000);
+          readParts.push(`## ${asset.storage_path.split('/').pop()}\n${text}`);
+        } else {
+          readNotes.push(`unknown reference kind "${kind}"`);
+        }
+      } catch (e) {
+        readNotes.push(`reference failed honestly: ${String((e as Error)?.message ?? e).slice(0, 100)}`);
+      }
+    }
+    const totalChars = readParts.reduce((s, part) => s + part.length, 0);
+    if (readParts.length > 0) {
+      ctx.reference_context = [...((ctx.reference_context as string[] | undefined) ?? []), `# ${title}\n${readParts.join('\n\n')}`];
+    }
+    stepLike.output = { sources: readParts.length, chars: totalChars, skipped: readNotes.length };
+    stepLike.status = readParts.length > 0 ? 'done' : 'skipped'; stepLike.at = now();
+    stepLike.detail = readParts.length > 0
+      ? `Read ${readParts.length} reference(s) (${totalChars.toLocaleString()} chars) into the run context${readNotes.length ? ` · ${readNotes.length} skipped: ${readNotes.join('; ').slice(0, 160)}` : ''}`
+      : `skipped: no readable references (${readNotes.join('; ').slice(0, 200)})`;
+  }
+
   // Executes one branch step (decision then/else) IN PLACE — same
   // primitive semantics, simplified (no gates allowed inside a branch,
   // enforced at validation time).
-  const runBranchStep = async (bs: RunStep): Promise<void> => {
+  //
+  // Returns 'halt' when the step could NOT be carried out. It used to return
+  // nothing and let every unrecognised key fall through to a `skipped` that
+  // the run walked straight past, so a playbook could report COMPLETED having
+  // performed neither requested action. There is no longer any path through
+  // this function that leaves work undone and lets the run finish.
+  const runBranchStep = async (bs: RunStep): Promise<StepOutcome> => {
     const p = (bs.params ?? {}) as Record<string, unknown>;
     if (run.preview && (bs.key === 'connector_action')) {
       bs.status = 'done'; bs.at = now();
       bs.detail = typeof p.action_key === 'string' && p.action_key
         ? `PREVIEW — would call ${String(p.action_category ?? 'connector')} action "${p.action_key}" (simulated, no external call)`
         : `PREVIEW — would call ${String(p.category ?? p.provider ?? 'connector')}.${String(p.op ?? '')} (not actually called)`;
-      return;
+      return 'ok';
     }
     switch (bs.key) {
       case 'instruction': {
@@ -976,9 +1183,15 @@ async function executeDefinitionSteps(
         bs.detail = `${items.length} item(s) presented inline (branch checklists auto-confirm — no separate human gate)`;
         break;
       }
-      case 'wait': {
-        bs.status = 'skipped'; bs.at = now();
-        bs.detail = `skipped: wait is not supported inside a decision branch — use a top-level wait step`;
+      case 'update_record': {
+        await execUpdateRecord(bs, p);
+        break;
+      }
+      case 'check_knowledge': {
+        return await execCheckKnowledge(bs, p, bs.label);
+      }
+      case 'read_reference': {
+        await execReadReference(bs, p, bs.label);
         break;
       }
       case 'log_activity': {
@@ -1014,11 +1227,26 @@ async function executeDefinitionSteps(
         }
         break;
       }
+      // ⚠ THE DEFECT THIS FUNCTION WAS BUILT AROUND. This arm used to read
+      //     bs.status = 'skipped';
+      //     bs.detail = `skipped: "${bs.key}" not executed in branch preview path`;
+      // and the caller walked on, so a run reached `complete` and reported
+      // COMPLETED having silently done nothing the author asked for. That is
+      // worse than a crash: a crash is investigated, a green run is filed.
+      //
+      // An unhandled key is now a HARD STOP. It should be unreachable —
+      // validateSteps refuses every key outside BRANCH_ALLOWED, and
+      // playbook-branch-parity keeps this switch ⊇ that set — but "should be
+      // unreachable" is exactly what was believed the last time, and a
+      // snapshot published under an older vocabulary still resumes through
+      // here without re-validation.
       default: {
-        bs.status = 'skipped'; bs.at = now();
-        bs.detail = `skipped: "${bs.key}" not executed in branch preview path`;
+        bs.status = 'failed'; bs.at = now();
+        bs.detail = `failed: "${bs.key}" cannot run inside a decision branch — this engine has no step of that type here, and the run was stopped rather than reported as finished with the step silently dropped`;
+        return 'halt';
       }
     }
+    return 'ok';
   };
 
   for (let i = startIndex; i < run.steps.length; i++) {
@@ -1606,29 +1834,8 @@ async function executeDefinitionSteps(
 
         // ────────────────────────────────────────────────
         case 'update_record': {
-          const table = params.table as string;
-          const status = ((params.set ?? {}) as Record<string, unknown>).status as string;
-          const allowed = UPDATE_WHITELIST[table] ?? [];
-          const targetId = table === 'renewal_invoices' ? ctx.invoice_id : ctx.ticket_id;
-          if (run.preview) {
-            step.status = 'done'; step.at = now();
-            step.detail = `PREVIEW — would set ${table}.status → ${status} (not persisted)`;
-            break;
-          }
-          if (!allowed.includes(status)) {
-            step.status = 'skipped'; step.at = now();
-            step.detail = `skipped: "${status}" is not a whitelisted status for ${table}`;
-          } else if (!targetId) {
-            step.status = 'skipped'; step.at = now();
-            step.detail = 'skipped: no target record in run context';
-          } else {
-            const { error: updErr } = await admin.from(table)
-              .update({ status }).eq('id', targetId).eq('tenant_id', tenantId);
-            if (updErr) throw new Error(updErr.message);
-            if (table === 'renewal_invoices') ctx.invoice_status = status;
-            step.status = 'done'; step.at = now();
-            step.detail = `${table}.status → ${status}`;
-          }
+          // Shared with the decision-branch arm — see execUpdateRecord.
+          await execUpdateRecord(step, params);
           break;
         }
 
@@ -1716,7 +1923,7 @@ async function executeDefinitionSteps(
           await stepAudit(i, { on: onRef, operator, value: params.value ?? null, actual: actual ?? null, branch_taken: step.branch_taken });
           await saveRun(admin, run);
           for (const bs of branch) {
-            await runBranchStep(bs);
+            const outcome = await runBranchStep(bs);
             await saveRun(admin, run);
             if (!run.preview) {
               await audit(admin, tenantId,
@@ -1724,6 +1931,21 @@ async function executeDefinitionSteps(
                 'playbook_step',
                 { run_id: run.id, definition_id: run.definition_id, step_index: i, branch: step.branch_taken, branch_step_key: bs.key },
                 'Playbook DE');
+            }
+            // A branch step that could NOT be carried out stops the run.
+            // Previously the loop swallowed every outcome, so the run walked
+            // on to `complete` and was filed as a success — the actual Debt
+            // #0 defect (the false report, not the missing feature). The
+            // decision step itself is marked failed too, because "took the
+            // then branch" is not true if the branch did not happen.
+            if (outcome === 'halt') {
+              step.status = 'failed'; step.at = now();
+              step.detail = `Branch step "${bs.label}" (${bs.key}) could not be carried out — ${bs.detail}`;
+              run.status = 'failed';
+              run.waiting_task_id = null;
+              await saveRun(admin, run);
+              await stepAudit(i, { branch: step.branch_taken, branch_step_key: bs.key, halted_on: bs.key });
+              return { status: 'failed' };
             }
           }
           continue;
@@ -2081,66 +2303,13 @@ async function executeDefinitionSteps(
         // migration 046), scoped to the run's DE (migration 030) — free
         // built-in embeddings, degrades to lexical-only without them.
         case 'check_knowledge': {
-          const query = renderTemplate(String(params.query_template ?? ''), ctx, run.id, run.steps).trim();
-          const matchCount = Math.min(10, Math.max(1, Number(params.match_count ?? 5)));
-          const onMiss = ['continue', 'escalate', 'fail'].includes(String(params.on_miss)) ? String(params.on_miss) : 'escalate';
-          if (!query) {
-            step.status = 'skipped'; step.at = now();
-            step.detail = 'skipped: query template rendered empty';
-            break;
+          // Shared with the decision-branch arm — see execCheckKnowledge.
+          if (await execCheckKnowledge(step, params, step.label) === 'halt') {
+            run.status = 'failed';
+            await saveRun(admin, run); await stepAudit(i);
+            return { status: 'failed' };
           }
-          if (run.preview) {
-            step.status = 'done'; step.at = now();
-            step.detail = `PREVIEW — would search the knowledge base for "${query.slice(0, 80)}" (${matchCount} matches, on miss: ${onMiss})`;
-            step.output = { found: true, matches: matchCount, preview: true };
-            break;
-          }
-          const ckRunDeId = await resolveRunDeId();
-          const qEmbedding = await embedText(query);
-          const { data: chunks, error: ckErr } = await admin.rpc('hybrid_match_knowledge', {
-            p_tenant_id: tenantId, p_query_text: query, p_account_id: null,
-            p_query_embedding: qEmbedding, p_match_count: matchCount,
-            p_subject_kind: ckRunDeId ? 'de' : null, p_subject_id: ckRunDeId,
-          });
-          if (ckErr) {
-            step.status = 'skipped'; step.at = now();
-            step.detail = `skipped: knowledge search failed honestly (${ckErr.message.slice(0, 120)})`;
-            break;
-          }
-          const rows = (chunks ?? []) as Array<{ doc_title: string; content: string; distance: number | null }>;
-          const found = rows.length > 0;
-          step.output = {
-            found, matches: rows.length,
-            top_title: rows[0]?.doc_title ?? null,
-            top_distance: rows[0]?.distance ?? null,
-          };
-          if (found) {
-            // Feed what was found into the run's working context (capped)
-            // so later agentic / specialist steps actually read it.
-            const bundle = rows.map((r) => `### ${r.doc_title}\n${r.content}`).join('\n\n').slice(0, 6000);
-            ctx.knowledge_context = [...((ctx.knowledge_context as string[] | undefined) ?? []), `## Knowledge check: ${query.slice(0, 120)}\n${bundle}`];
-            step.status = 'done'; step.at = now();
-            step.detail = `Found ${rows.length} knowledge match(es) for "${query.slice(0, 80)}" — top: ${rows[0]?.doc_title ?? '—'}`;
-            break;
-          }
-          // Miss — author-chosen behavior.
-          if (onMiss === 'continue') {
-            step.status = 'skipped'; step.at = now();
-            step.detail = `No knowledge found for "${query.slice(0, 80)}" — continuing (author's choice)`;
-            break;
-          }
-          step.status = 'failed'; step.at = now();
-          step.detail = `No knowledge found for "${query.slice(0, 80)}" — ${onMiss === 'escalate' ? 'escalated to a human' : 'run stopped'} (author's choice)`;
-          run.status = 'failed';
-          if (onMiss === 'escalate') {
-            await admin.from('human_tasks').insert({
-              tenant_id: tenantId, type: 'escalation', source: 'de',
-              title: `Playbook knowledge check failed — ${step.label}`,
-              detail: `The knowledge base has no answer for "${query.slice(0, 200)}". The run was stopped for review. Run ${run.id}.`,
-            });
-          }
-          await saveRun(admin, run); await stepAudit(i);
-          return { status: 'failed' };
+          break;
         }
 
         // ────────────────────────────────────────────────
@@ -2150,78 +2319,8 @@ async function executeDefinitionSteps(
         // guard; storage assets must be text-like (PDF extraction is
         // deliberately not faked — no extractor exists yet).
         case 'read_reference': {
-          const refs = (Array.isArray(params.refs) ? params.refs : []) as Array<Record<string, unknown>>;
-          const title = String(params.title ?? step.label ?? 'Reference');
-          if (run.preview) {
-            step.status = 'done'; step.at = now();
-            step.detail = `PREVIEW — would read ${refs.length} reference(s) into the run context`;
-            step.output = { sources: refs.length, chars: 0, preview: true };
-            break;
-          }
-          const readParts: string[] = [];
-          const readNotes: string[] = [];
-          for (const r of refs.slice(0, 5)) {
-            const kind = String(r.kind ?? '');
-            try {
-              if (kind === 'doc') {
-                const { data: doc } = await admin.from('knowledge_docs')
-                  .select('id, title, content, visibility')
-                  .eq('id', r.doc_id).eq('tenant_id', tenantId).maybeSingle();
-                if (!doc) { readNotes.push(`doc ${String(r.doc_id).slice(0, 8)}… not found`); continue; }
-                if (doc.visibility === 'scoped') {
-                  // Mirror the retrieval RPC's scope filter: a scoped doc
-                  // is readable only if the run's DE is on its scope list.
-                  const rrDeId = await resolveRunDeId();
-                  const { data: scopeRow } = rrDeId ? await admin.from('knowledge_doc_scopes')
-                    .select('id').eq('doc_id', doc.id).eq('subject_kind', 'de').eq('subject_id', rrDeId).maybeSingle()
-                    : { data: null };
-                  if (!scopeRow) { readNotes.push(`"${doc.title}" is scoped to other employees — not readable in this run`); continue; }
-                }
-                readParts.push(`## ${doc.title}\n${String(doc.content ?? '').slice(0, 20000)}`);
-              } else if (kind === 'url') {
-                const url = String(r.url ?? '');
-                if (!isSafeExternalUrl(url)) { readNotes.push(`URL blocked by safety policy: ${url.slice(0, 80)}`); continue; }
-                const resp = await fetch(url, { signal: AbortSignal.timeout(10000), headers: { 'Accept': 'text/html, text/plain, text/markdown, application/json' } });
-                if (!resp.ok) { readNotes.push(`URL returned ${resp.status}: ${url.slice(0, 80)}`); continue; }
-                const raw = (await resp.text()).slice(0, 200000);
-                // Naive HTML strip — scripts/styles out, tags out, entities kept simple.
-                const text = raw
-                  .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-                  .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-                  .replace(/<[^>]+>/g, ' ')
-                  .replace(/\s+/g, ' ')
-                  .trim()
-                  .slice(0, 20000);
-                if (!text) { readNotes.push(`URL had no readable text: ${url.slice(0, 80)}`); continue; }
-                readParts.push(`## ${url}\n${text}`);
-              } else if (kind === 'asset') {
-                const { data: asset } = await admin.from('media_assets')
-                  .select('id, storage_path, mime, kind')
-                  .eq('id', r.asset_id).eq('tenant_id', tenantId).maybeSingle();
-                if (!asset) { readNotes.push(`document ${String(r.asset_id).slice(0, 8)}… not found`); continue; }
-                const mime = String(asset.mime ?? '');
-                const textLike = mime.startsWith('text/') || mime.includes('markdown') || mime.includes('json');
-                if (!textLike) { readNotes.push(`"${asset.storage_path.split('/').pop()}" is ${mime || 'binary'} — only text documents are readable (PDF extraction not built yet)`); continue; }
-                const { data: blob } = await admin.storage.from('playbook-media').download(asset.storage_path);
-                if (!blob) { readNotes.push(`could not read stored document ${String(r.asset_id).slice(0, 8)}…`); continue; }
-                const text = (await blob.text()).slice(0, 20000);
-                readParts.push(`## ${asset.storage_path.split('/').pop()}\n${text}`);
-              } else {
-                readNotes.push(`unknown reference kind "${kind}"`);
-              }
-            } catch (e) {
-              readNotes.push(`reference failed honestly: ${String((e as Error)?.message ?? e).slice(0, 100)}`);
-            }
-          }
-          const totalChars = readParts.reduce((s, p) => s + p.length, 0);
-          if (readParts.length > 0) {
-            ctx.reference_context = [...((ctx.reference_context as string[] | undefined) ?? []), `# ${title}\n${readParts.join('\n\n')}`];
-          }
-          step.output = { sources: readParts.length, chars: totalChars, skipped: readNotes.length };
-          step.status = readParts.length > 0 ? 'done' : 'skipped'; step.at = now();
-          step.detail = readParts.length > 0
-            ? `Read ${readParts.length} reference(s) (${totalChars.toLocaleString()} chars) into the run context${readNotes.length ? ` · ${readNotes.length} skipped: ${readNotes.join('; ').slice(0, 160)}` : ''}`
-            : `skipped: no readable references (${readNotes.join('; ').slice(0, 200)})`;
+          // Shared with the decision-branch arm — see execReadReference.
+          await execReadReference(step, params, step.label);
           break;
         }
 
@@ -2239,9 +2338,24 @@ async function executeDefinitionSteps(
           return { status: 'completed' };
         }
 
+        // Same defect, same class, the TOP level of the switch. `skipped:
+        // unknown primitive "consult_specialist"` is the recorded history
+        // here: migration 611 retired that primitive, the engine kept no arm
+        // for it, and any run still holding one walked past the review
+        // somebody put in the playbook on purpose and finished green.
+        //
+        // A run whose steps came from `start` cannot reach this (validateSteps
+        // refuses unknown keys first). A run RESUMED through `advance` can:
+        // resume replays `playbook_runs.steps` as stored, with no
+        // re-validation, so a snapshot published under an older vocabulary
+        // arrives here intact. That is precisely the case that must not pass.
         default: {
-          step.status = 'skipped'; step.at = now();
-          step.detail = `skipped: unknown primitive "${step.key}"`;
+          step.status = 'failed'; step.at = now();
+          step.detail = `failed: this engine has no step of type "${step.key}" — the run was stopped rather than reported as finished with the step silently dropped`;
+          run.status = 'failed';
+          await saveRun(admin, run);
+          await stepAudit(i);
+          return { status: 'failed' };
         }
       }
     } catch (err) {

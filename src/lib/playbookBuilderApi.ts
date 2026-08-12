@@ -63,10 +63,18 @@ export const DECISION_OPERATORS = [
 ] as const;
 
 // Primitives allowed inside a decision's then/else branch — no gates,
-// no invoice generation, no complete (one level of nesting, v1).
+// no invoice generation, no complete.
+//
+// ⚠ MUST STAY SET-EQUAL to BRANCH_ALLOWED in
+// supabase/functions/playbook-execute/index.ts, which is the authority; this
+// copy exists only so the builder can grey a button out before the server
+// says no. It had drifted twice over: it offered `consult_specialist` (RETIRED
+// by migration 611 — the server refuses it outright) and `wait` (which the
+// server accepted and then could not perform inside a branch). Both are gone.
+// scripts/playbook-branch-parity.mjs compares the two lists on every run.
 export const BRANCH_PRIMITIVES: PrimitiveKey[] = [
-  'instruction', 'checklist', 'wait', 'log_activity', 'update_record',
-  'connector_action', 'guardrail_check', 'consult_specialist',
+  'instruction', 'checklist', 'log_activity', 'update_record',
+  'connector_action', 'guardrail_check',
   'check_knowledge', 'read_reference',
 ];
 
@@ -222,16 +230,15 @@ export async function listActionDefinitions(): Promise<ActionDefinition[]> {
 export interface ValidationError { index: number; code: string; message: string }
 
 function validateBranchClient(
-  branch: DefinitionStep[] | undefined, parentIndex: number, side: 'then' | 'else', depth: number, errs: ValidationError[],
+  branch: DefinitionStep[] | undefined, parentIndex: number, side: 'then' | 'else', errs: ValidationError[],
 ): void {
   if (!Array.isArray(branch)) return;
   for (const bs of branch) {
+    // Mirrors the server: a decision inside a branch is refused at EVERY
+    // depth, because the engine runs branch steps in place and has no arm
+    // that can evaluate a second condition there.
     if (bs.key === 'decision') {
-      if (depth >= 1) {
-        errs.push({ index: parentIndex, code: 'decision_nesting_too_deep', message: `This decision is nested inside another decision's ${side} branch — decisions can only be nested one level deep. Move the inner decision to its own top-level step.` });
-        continue;
-      }
-      validateDecisionClient(bs, parentIndex, depth + 1, errs);
+      errs.push({ index: parentIndex, code: 'decision_nesting_too_deep', message: `A decision cannot go inside another decision's ${side} branch — move it to its own top-level step.` });
       continue;
     }
     if (!BRANCH_PRIMITIVES.includes(bs.key)) {
@@ -240,7 +247,7 @@ function validateBranchClient(
   }
 }
 
-function validateDecisionClient(s: DefinitionStep, i: number, depth: number, errs: ValidationError[]): void {
+function validateDecisionClient(s: DefinitionStep, i: number, errs: ValidationError[]): void {
   const p = s.params ?? {};
   if (!(typeof p.on === 'string' && p.on.trim())) {
     errs.push({ index: i, code: 'bad_params', message: 'This decision needs to know what to look at — pick a prior step and field.' });
@@ -251,8 +258,8 @@ function validateDecisionClient(s: DefinitionStep, i: number, depth: number, err
   if (p.operator !== 'exists' && (p.value === undefined || p.value === null || p.value === '')) {
     errs.push({ index: i, code: 'bad_params', message: 'This decision needs a value to compare against.' });
   }
-  validateBranchClient(s.then_steps, i, 'then', depth, errs);
-  validateBranchClient(s.else_steps, i, 'else', depth, errs);
+  validateBranchClient(s.then_steps, i, 'then', errs);
+  validateBranchClient(s.else_steps, i, 'else', errs);
 }
 
 export function validateStepsClient(steps: DefinitionStep[]): ValidationError[] {
@@ -352,7 +359,7 @@ export function validateStepsClient(steps: DefinitionStep[]): ValidationError[] 
         errs.push({ index: i, code: 'bad_rule', message: 'A step rule needs a pattern to look for.' });
       }
     }
-    if (s.key === 'decision') validateDecisionClient(s, i, 0, errs);
+    if (s.key === 'decision') validateDecisionClient(s, i, errs);
     if (s.key === 'complete') completeCount++;
   });
   // decision.on must reference an earlier step (client sends "step:<index>[.field]").
