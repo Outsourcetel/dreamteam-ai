@@ -30,8 +30,8 @@ export default function MyProfilePage() {
       <div>
         <h1 className="text-xl font-semibold text-dt-body">My profile</h1>
         <p className="text-sm text-dt-support mt-1">
-          Your details. Contact information and how you are addressed are yours to
-          change; job details are maintained by an owner, admin or manager.
+          Your details. Your name, your contact information and how you are addressed
+          are yours to change; job details are maintained by an owner, admin or manager.
         </p>
       </div>
       <EmployeeProfileDrawer userId={authedUser.id} inline />

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   getEmployeeRecord, updateEmployeeProfile, updateEmployeePrivate, setEmployeeCompensation,
   EMPLOYMENT_TYPES, EMPLOYMENT_STATUSES, PAY_FREQUENCIES,
@@ -6,7 +6,8 @@ import {
 import type { EmployeeRecord, EmployeeProfile, EmployeePrivate } from '../lib/employeeApi';
 import { loadOrgTree, listAssignablePeople } from '../lib/orgApi';
 import type { OrgUnit, AssignablePerson } from '../lib/orgApi';
-import { Drawer, Button, Chip, Field, INPUT_CLS, Banner, TabBar, TableScroll, TH, TD } from '../design/primitives';
+import { useAuth } from '../context/AuthContext';
+import { Drawer, Button, Chip, Field, INPUT_CLS, Banner, TabBar, TableScroll, TH, TD, SetupChecklist } from '../design/primitives';
 
 // ============================================================
 // The employee record — what ADP and Salesforce would call a person.
@@ -41,7 +42,16 @@ export function EmployeeProfileDrawer({ userId, onClose, inline }: {
    *  finding the admin screen for managing everyone else. */
   inline?: boolean;
 }) {
+  const { authedUser } = useAuth();
+  // Whose record this is. The drawer serves both "my profile" and an admin
+  // looking at someone else, and two things below MUST know the difference:
+  // the sign-in address is only a sensible suggestion for your OWN work email,
+  // and a checklist addressed to "you" is wrong on somebody else's record.
+  const isSelf = !!authedUser?.id && authedUser.id === userId;
+  const signInEmail = authedUser?.email || null;
+
   const [tab, setTab] = useState<TabId>('job');
+  const formRef = useRef<HTMLDivElement>(null);
   const [rec, setRec] = useState<EmployeeRecord | null>(null);
   const [tree, setTree] = useState<OrgUnit[]>([]);
   const [people, setPeople] = useState<AssignablePerson[]>([]);
@@ -107,25 +117,109 @@ export function EmployeeProfileDrawer({ userId, onClose, inline }: {
     ? (rec.profile.preferred_name || rec.profile.full_name || 'Employee')
     : 'Employee';
 
+  // ── The name we already knew ──────────────────────────────────────────────
+  // `full_name` is populated on 21 of 23 profiles in production, because it is
+  // the one name signup collects. The sidebar renders it (AuthContext), so does
+  // the people picker (orgApi) and the support inbox. This drawer computed
+  // `title` from it and then threw it away in inline mode — which made My
+  // Profile the only screen in the product that hid a name it was holding.
+  const displayName = rec ? (rec.profile.preferred_name || rec.profile.full_name || null) : null;
+  const initials = (displayName || signInEmail || '')
+    .split(/[\s@._-]+/).filter(Boolean).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+  // Second line: the full name when a preferred name is masking it, otherwise
+  // the address we can actually vouch for. Never a placeholder dash — an empty
+  // line is quieter than a fake fact.
+  const identitySub = rec
+    ? ((rec.profile.preferred_name && rec.profile.full_name && rec.profile.preferred_name !== rec.profile.full_name)
+        ? rec.profile.full_name
+        : (rec.profile.work_email || (isSelf ? signInEmail : null)))
+    : null;
+
+  // ── "Hired but unfinished" ───────────────────────────────────────────────
+  // Signup collects a name, an email, a password, an org name and an industry
+  // — and nothing else. Every other box on this form is therefore blank on day
+  // one, which is what the founder walked into. SetupChecklist is the schema
+  // for that (design-system §2 v2): a half-built thing is not an empty one, so
+  // this is NOT EmptyState. Done items stay visible and struck through.
+  // `field` is the box this line is ABOUT, so the button below can land on the
+  // first thing the list actually names. Walking the DOM for "first empty
+  // input" instead would drop the cursor in First name — a field this list
+  // never mentions and that nothing in the product populates.
+  const gaps = rec ? [
+    { field: 'full_name', label: 'Your name', done: !!(rec.profile.full_name || rec.profile.preferred_name) },
+    { field: 'work_email', label: 'Work email', done: !!rec.profile.work_email },
+    { field: 'job_title', label: 'Job title', done: !!rec.profile.job_title },
+    { field: 'work_phone', label: 'A phone number we can reach you on', done: !!(rec.profile.work_phone || rec.profile.mobile_phone) },
+    { field: 'time_zone', label: 'Your time zone', done: !!rec.profile.time_zone },
+  ] : [];
+  const showChecklist = inline && isSelf && gaps.some((g) => !g.done);
+
+  // One button, and it lands on the first box the checklist says is missing.
+  const focusFirstGap = () => {
+    setTab('job');
+    window.setTimeout(() => {
+      const next = gaps.find((g) => !g.done);
+      const target = (next && formRef.current?.querySelector<HTMLElement>(`[data-field="${next.field}"]:not([disabled])`))
+        // A gap whose box is disabled for this caller (job_title needs an
+        // owner/admin/manager) leaves nothing to focus — fall back to the top
+        // of the form rather than silently doing nothing.
+        ?? formRef.current?.querySelector<HTMLElement>('input:not([disabled]), select:not([disabled])');
+      target?.focus();
+      target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 0);
+  };
+
   const body = (
     <>
       {!rec ? (
         <div className="text-sm text-dt-muted">Loading…</div>
       ) : (
         <div className="space-y-4">
-          <div className="flex items-center gap-2 flex-wrap">
-            {rec.profile.job_title && <Chip tone="accent">{rec.profile.job_title}</Chip>}
-            {rec.profile.employment_status && (
-              <Chip tone={rec.profile.employment_status === 'active' ? 'ok' : 'warn'}>
-                {EMPLOYMENT_STATUSES.find((s) => s.value === rec.profile.employment_status)?.label
-                  ?? rec.profile.employment_status}
-              </Chip>
-            )}
-            {rec.profile.employee_number && <Chip tone="neutral">#{rec.profile.employee_number}</Chip>}
-          </div>
+          {/* Inline mode is a PAGE, so it has no Drawer chrome to carry the
+              title — and until now nothing replaced it. The Profile template
+              (design-system §3) leads with an identity card; this is it. */}
+          {inline && (
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="w-11 h-11 rounded-xl bg-dt-accent-soft text-dt-accent-text flex items-center justify-center text-base font-semibold shrink-0">
+                {initials || '·'}
+              </span>
+              <div className="min-w-0">
+                <div className="text-lg font-semibold text-dt-title truncate">
+                  {displayName ?? 'Your record'}
+                </div>
+                {identitySub && <div className="text-xs text-dt-support truncate">{identitySub}</div>}
+              </div>
+            </div>
+          )}
+
+          {/* All three chips are optional, and on a fresh signup all three are
+              absent — which rendered an empty flex row and a gap of dead space
+              at the top of the page. Nothing is not worth a row. */}
+          {(rec.profile.job_title || rec.profile.employment_status || rec.profile.employee_number) && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {rec.profile.job_title && <Chip tone="accent">{rec.profile.job_title}</Chip>}
+              {rec.profile.employment_status && (
+                <Chip tone={rec.profile.employment_status === 'active' ? 'ok' : 'warn'}>
+                  {EMPLOYMENT_STATUSES.find((s) => s.value === rec.profile.employment_status)?.label
+                    ?? rec.profile.employment_status}
+                </Chip>
+              )}
+              {rec.profile.employee_number && <Chip tone="neutral">#{rec.profile.employee_number}</Chip>}
+            </div>
+          )}
 
           {err && <Banner tone="danger">{err}</Banner>}
           {saved && <Banner tone="info">{saved}</Banner>}
+
+          {showChecklist && (
+            <SetupChecklist
+              title="Your profile is still mostly blank"
+              why="Signing up only asked for your name and email, so the rest of this record has never been filled in. Your name is what colleagues see in the sidebar, the people picker and every conversation."
+              items={gaps}
+              action={<Button kind="primary" onClick={focusFirstGap}>Fill in the rest</Button>}
+              estimate="about a minute"
+            />
+          )}
 
           <TabBar<TabId> tabs={TABS} active={tab} onSelect={setTab} />
 
@@ -134,7 +228,21 @@ export function EmployeeProfileDrawer({ userId, onClose, inline }: {
               {!rec.can_edit_job && (
                 <Banner tone="info">You can view this but not change it. Job details are edited by an owner, admin or manager.</Banner>
               )}
-              <div className="grid grid-cols-2 gap-3">
+              <div ref={formRef} className="grid grid-cols-2 gap-3">
+                {/* Full name LEADS, and not for cosmetic reasons. In production
+                    21 of 23 profiles carry a full_name and 8 carry a
+                    first_name, because signup writes the one and nothing
+                    writes the other. The form used to open with two boxes no
+                    code path ever fills while omitting the field that actually
+                    identifies the person. Not gated on can_edit_job: after
+                    migration 725 full_name is self-editable, like preferred
+                    name and pronouns beside it. */}
+                <div className="col-span-2">
+                  <Field label="Full name" hint="How you appear to everyone else in the workspace.">
+                    <input className={INPUT_CLS} data-field="full_name" value={job.full_name ?? ''}
+                      onChange={(e) => setJob({ ...job, full_name: e.target.value })} />
+                  </Field>
+                </div>
                 <Field label="First name">
                   <input className={INPUT_CLS} disabled={!rec.can_edit_job} value={job.first_name ?? ''}
                     onChange={(e) => setJob({ ...job, first_name: e.target.value })} />
@@ -156,7 +264,7 @@ export function EmployeeProfileDrawer({ userId, onClose, inline }: {
                     onChange={(e) => setJob({ ...job, employee_number: e.target.value })} />
                 </Field>
                 <Field label="Job title">
-                  <input className={INPUT_CLS} disabled={!rec.can_edit_job} value={job.job_title ?? ''}
+                  <input className={INPUT_CLS} data-field="job_title" disabled={!rec.can_edit_job} value={job.job_title ?? ''}
                     onChange={(e) => setJob({ ...job, job_title: e.target.value })} />
                 </Field>
                 <Field label="Department or team">
@@ -200,11 +308,25 @@ export function EmployeeProfileDrawer({ userId, onClose, inline }: {
                     onChange={(e) => setJob({ ...job, end_date: e.target.value || null })} />
                 </Field>
                 <Field label="Work email">
-                  <input className={INPUT_CLS} disabled={!rec.can_edit_job} value={job.work_email ?? ''}
+                  <input className={INPUT_CLS} data-field="work_email" disabled={!rec.can_edit_job} value={job.work_email ?? ''}
                     onChange={(e) => setJob({ ...job, work_email: e.target.value })} />
+                  {/* OFFERED, never pre-filled. Both real self-signups have a
+                      null work_email (the 21 rows that have one are seeded
+                      demo tenants), and the address they signed in with is
+                      almost certainly it. But writing it into the box on load
+                      would make an unsaved guess look identical to a stored
+                      fact — the exact confusion this repo keeps paying for. So
+                      the box stays empty until a human clicks. */}
+                  {isSelf && rec.can_edit_job && !job.work_email && signInEmail && (
+                    <button type="button"
+                      onClick={() => setJob({ ...job, work_email: signInEmail })}
+                      className="mt-1 text-xs text-dt-accent-text hover:underline text-left">
+                      Use {signInEmail}
+                    </button>
+                  )}
                 </Field>
                 <Field label="Work phone">
-                  <input className={INPUT_CLS} value={job.work_phone ?? ''}
+                  <input className={INPUT_CLS} data-field="work_phone" value={job.work_phone ?? ''}
                     onChange={(e) => setJob({ ...job, work_phone: e.target.value })} />
                 </Field>
                 <Field label="Mobile">
@@ -216,7 +338,7 @@ export function EmployeeProfileDrawer({ userId, onClose, inline }: {
                     onChange={(e) => setJob({ ...job, work_location: e.target.value })} />
                 </Field>
                 <Field label="Time zone">
-                  <input className={INPUT_CLS} placeholder="e.g. Europe/London" value={job.time_zone ?? ''}
+                  <input className={INPUT_CLS} data-field="time_zone" placeholder="e.g. Europe/London" value={job.time_zone ?? ''}
                     onChange={(e) => setJob({ ...job, time_zone: e.target.value })} />
                 </Field>
                 <Field label="Language">
