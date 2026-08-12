@@ -1,23 +1,23 @@
 {
-  "at": "2026-08-12T02:57:19.070Z",
+  "at": "2026-08-12T09:03:52.040Z",
   "mode": "fast",
   "failed": 1,
   "results": [
     {
       "section": "typecheck",
       "ok": true,
-      "seconds": 19.1
+      "seconds": 18.7
     },
     {
       "section": "ring0-probes",
       "ok": false,
-      "seconds": 51.9,
+      "seconds": 54.8,
       "detail": "no-pending-approval-the-platform-cannot-carry-out: mismatched-pair — kinetic / Approve action — Create a specialist desk (DreamTeam AI (self)) [execution bfb462a0-1e22-48cf-a3a0-fa60edd666f4]: the row names definition 18a92cdd-ba11-4c11-8bcc-96a3b8e120b4 (create_specialist), but its status is \"disabled\" and the resolver only ever sees active definitions. connector-hub answers action_definition_not_found and nothing is sent.\nno-pending-approval-the-platform-cannot-carry-out: no-executor — outsourcetel-hq / Send a $15,600 invoice to Meridian Group — test ping [task 03aaa6dd-379b-438a-aadd-d9b8e262638b, raised 2026-08-10]: no action_executions row references this task by EITHER linkage column (task_id, resolves_task_id). There is no executor behind the approval at all: deciding it flips the task to \"approved\", hands connector-hub nothing, and sends nothing — while the queue empties and the screen reads as done. A human must withdraw or re-raise it; this probe reports, it never decides.\nonboarding-bindings-are-runnable: outsourcetel-hq / SaaS onboarding — starter / locations_configured → propose_connector — needs the \"workforce_assistant\" role, which the employee(s) this workspace gives onboarding work to (Onni) do not have"
     },
     {
       "section": "migration-ledger",
       "ok": true,
-      "seconds": 5.4
+      "seconds": 5.2
     },
     {
       "section": "migration-numbering",
@@ -27,7 +27,7 @@
     {
       "section": "edge-typecheck",
       "ok": true,
-      "seconds": 2.4
+      "seconds": 1.9
     }
   ]
 }

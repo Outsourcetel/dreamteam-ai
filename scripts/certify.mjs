@@ -692,6 +692,15 @@ const sections = [
     shell('golden-path', 'node', ['scripts/golden-path.mjs']),
     shell('role-gates', 'npm', ['run', '-s', 'audit:role-gates']),
     shell('silent-refusals', 'npm', ['run', '-s', 'audit:silent-refusals']),
+    // mig 713's anti-drift ratchet. The gate on playbook_versions is a SQL
+    // TWIN of playbook-execute's validateSteps, and this repo already
+    // ratchets browser/edge twins because a second copy of a contract rots
+    // into a gate that passes what the real validator refuses. Drives BOTH
+    // implementations over a shared fixture corpus and asserts verdict
+    // parity in both directions, with a liveness arm so a corpus that
+    // refuses nothing (or everything) cannot report parity. Not in --fast:
+    // it makes ~80 calls to the deployed validator.
+    shell('gate-parity', 'node', ['scripts/playbook-gate-parity.mjs']),
     shell('design-drift', 'node', ['scripts/design-drift.mjs']),
     // OFFLINE runs only the credential-free test files. `npx vitest run` sweeps
     // ALL of tests/**, and two of those hard-throw at module load without

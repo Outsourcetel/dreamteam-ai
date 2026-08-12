@@ -29,6 +29,7 @@
     "certify": "node scripts/certify.mjs",
     "certify:fast": "node scripts/certify.mjs --fast",
     "certify:mutation": "node scripts/certify-mutation-test.mjs",
+    "gate:parity": "node scripts/playbook-gate-parity.mjs",
     "golden-path": "node scripts/golden-path.mjs",
     "dev:sync": "node scripts/dev-sync.mjs",
     "dev:sync:check": "node scripts/dev-sync.mjs --dry-run",
