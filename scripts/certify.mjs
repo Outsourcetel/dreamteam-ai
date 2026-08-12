@@ -53,6 +53,10 @@ import { writePerimeterSql, silentNoopWriteSql, WRITE_PERIMETER_SQL } from './wr
 // merely because work is outstanding — see the module header for the argument.
 import { deferredRegisterSection } from './deferred-register.mjs';
 import { triggerExecutePerimeterSql } from './trigger-execute-perimeter.mjs';
+// The SAME derivation scripts/gen-provider-seed.mjs uses to write the seed, so
+// the provider-catalog section checks the generator instead of a paraphrase of
+// it. A gate that re-implements the thing it is gating agrees with itself.
+import { derivedAliases, derivedAuthKind } from './provider-aliases.mjs';
 
 const FAST = process.argv.includes('--fast');
 const PIN = process.argv.includes('--pin-allowlist');
@@ -670,16 +674,22 @@ function readConnectorConstants() {
     if (!ts.isVariableStatement(node)) return;
     for (const decl of node.declarationList.declarations) {
       if (!ts.isIdentifier(decl.name) || !decl.initializer) continue;
-      if (decl.name.text === 'PROVIDERS' || decl.name.text === 'TOP_PROVIDERS') {
+      if (decl.name.text === 'PROVIDERS' || decl.name.text === 'TOP_PROVIDERS'
+        || decl.name.text === 'AMBIGUOUS_ALIASES') {
         found[decl.name.text] = decl.initializer;
       }
     }
   });
   if (!found.PROVIDERS) throw new Error(`could not find "export const PROVIDERS = ..." in ${SRC}`);
   if (!found.TOP_PROVIDERS) throw new Error(`could not find "export const TOP_PROVIDERS = ..." in ${SRC}`);
+  // Not optional either. If this constant is renamed away, the gate must STOP
+  // rather than fall back to an empty stop-list and green a catalog that has
+  // quietly re-acquired "close", "front" and "box" as system names.
+  if (!found.AMBIGUOUS_ALIASES) throw new Error(`could not find "export const AMBIGUOUS_ALIASES = ..." in ${SRC}`);
   return {
     PROVIDERS: evalConnectorLiteral(found.PROVIDERS),
     TOP_PROVIDERS: evalConnectorLiteral(found.TOP_PROVIDERS),
+    AMBIGUOUS_ALIASES: evalConnectorLiteral(found.AMBIGUOUS_ALIASES),
   };
 }
 
@@ -819,9 +829,12 @@ const sections = [
   // wrong connector, or fail to recognise a system the customer named.
   section('provider-catalog', async () => {
     const failures = [];
-    const { PROVIDERS, TOP_PROVIDERS } = readConnectorConstants();
+    const { PROVIDERS, TOP_PROVIDERS, AMBIGUOUS_ALIASES } = readConnectorConstants();
+    const ambiguous = new Set(AMBIGUOUS_ALIASES);
 
-    const rows = await q(`select provider_key, aliases from public.connector_providers where active`);
+    const rows = await q(`select provider_key, label, category, auth_kind, credential_hint,
+                                 default_base_url, implemented, aliases
+                            from public.connector_providers where active`);
     const inDb = new Set(rows.map((r) => r.provider_key));
     const inTs = Object.keys(PROVIDERS);
 
@@ -829,11 +842,95 @@ const sections = [
     for (const k of inTs) if (!inDb.has(k)) failures.push(`catalog missing provider: ${k}`);
     for (const k of inDb) if (!inTs.includes(k)) failures.push(`catalog has unknown provider: ${k}`);
 
+    // ── The THIRD list: the CHECK on connectors.provider ──────────────────
+    // PROVIDERS <-> catalog was watched. connectors_provider_check was not, in
+    // EITHER direction — so adding a provider to PROVIDERS plus a seed
+    // migration while forgetting the CHECK left this gate GREEN, the UI
+    // offering the provider, and the INSERT failing at runtime. That is
+    // precisely the failure mode the catalog was built to end, surviving one
+    // layer down.
+    //
+    // `dreamteam` is exempt BY NAME, not by category. It is the platform's own
+    // self-connector (supabase/functions/connector-hub/index.ts, dreamteamActions:
+    // hire_from_archetype, create_digital_employee, draft_playbook,
+    // propose_connector) and it holds 17 live rows. It is deliberately NOT in
+    // the catalog, because the catalog is what the discovery interview offers a
+    // CUSTOMER and what PROVIDERS renders in the connector picker: adding it
+    // would have made "DreamTeam" a third-party system customers could sit
+    // there and try to connect to. One named key. Every OTHER value present in
+    // only one of the two lists is still a failure.
+    const CHECK_ONLY_BY_DESIGN = new Set(['dreamteam']);
+    const [chk] = await q(`select pg_get_constraintdef(oid) as def from pg_constraint
+                            where conrelid = 'public.connectors'::regclass
+                              and conname = 'connectors_provider_check'`);
+    const inCheck = new Set([...String(chk?.def ?? '').matchAll(/'([^']+)'::text/g)].map((m) => m[1]));
+    if (inCheck.size === 0) {
+      failures.push('could not read connectors_provider_check — the third list is unwatched');
+    }
+    for (const k of inCheck) {
+      if (!inDb.has(k) && !CHECK_ONLY_BY_DESIGN.has(k)) {
+        failures.push(`connectors.provider accepts "${k}" but the catalog has never heard of it`);
+      }
+    }
+    for (const k of inDb) {
+      if (!inCheck.has(k)) failures.push(`catalog offers "${k}" but connectors.provider would REJECT the insert`);
+    }
+    // The exemption is itself a ratchet: once dreamteam leaves the CHECK, the
+    // exemption is stale and must be deleted rather than left to bless a key
+    // nobody uses any more.
+    for (const k of CHECK_ONLY_BY_DESIGN) {
+      if (!inCheck.has(k)) failures.push(`exempt provider "${k}" is gone from connectors_provider_check — drop the exemption`);
+    }
+
     const seen = new Map();
     for (const r of rows) {
       for (const a of r.aliases ?? []) {
         if (seen.has(a)) failures.push(`alias "${a}" resolves to both ${seen.get(a)} and ${r.provider_key}`);
         else seen.set(a, r.provider_key);
+        // mig 729. An alias that is an ordinary English word made
+        // matchProvider read "we close deals on monday" as four systems, all at
+        // confidence 'exact'. The stop-list is only a fix while the DATA obeys
+        // it, so this is where a re-seed that reintroduced one gets caught.
+        if (ambiguous.has(a)) {
+          failures.push(`alias "${a}" (${r.provider_key}) is ordinary English — AMBIGUOUS_ALIASES says it must not be an alias`);
+        }
+      }
+    }
+
+    // ── Field-level, not just key-level ───────────────────────────────────
+    // Key-set parity was the ONLY thing compared, leaving 7 of 8 columns as
+    // unguarded copies. `auth_kind` decides whether the interview tells a
+    // customer "sign in" or "paste a key"; `credential_hint` is the literal
+    // instruction they follow. A drift in either is silent and customer-facing.
+    //
+    // Aliases are compared by CONTAINMENT, not equality, and deliberately: mig
+    // 727 added curated synonyms ('sfdc', 'qb', 'qbo', 'hub spot', 'zen desk')
+    // that no derivation can infer. So the assertion is "everything the
+    // generator would produce is present" — a hand-curated extra is allowed,
+    // and the ambiguity checks above are what keep an extra from being junk.
+    let compared = 0;
+    const byKey = new Map(rows.map((r) => [r.provider_key, r]));
+    for (const [key, m] of Object.entries(PROVIDERS)) {
+      const row = byKey.get(key);
+      if (!row) continue;                       // already reported as missing above
+      const want = {
+        label: m.label,
+        category: m.defaultCategory,
+        auth_kind: derivedAuthKind(m),
+        credential_hint: m.help ?? null,
+        default_base_url: m.baseUrlPlaceholder ?? null,
+        implemented: !!m.implemented,
+      };
+      for (const [col, v] of Object.entries(want)) {
+        compared++;
+        const got = row[col] ?? null;
+        if (String(got) !== String(v ?? null)) {
+          failures.push(`${key}.${col} drifted — catalog ${JSON.stringify(got)} vs PROVIDERS ${JSON.stringify(v)}`);
+        }
+      }
+      for (const a of derivedAliases(key, m, ambiguous)) {
+        compared++;
+        if (!(row.aliases ?? []).includes(a)) failures.push(`${key}.aliases is missing the derived alias "${a}"`);
       }
     }
 
@@ -856,7 +953,8 @@ const sections = [
     // comparisons looks exactly like a clean result.
     const detail = failures.length
       ? failures.join('\n')
-      : `compared ${inTs.length} providers, ${seen.size} aliases, ${cats.length} required categories`;
+      : `compared ${inTs.length} providers x 3 lists (${inCheck.size} CHECK values), `
+        + `${compared} field values, ${seen.size} aliases, ${cats.length} required categories`;
     if (!failures.length) console.log(`        provider-catalog: ${detail}`);
     return { ok: failures.length === 0, detail };
   }),
