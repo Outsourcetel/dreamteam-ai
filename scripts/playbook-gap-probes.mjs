@@ -22,9 +22,32 @@
 // (found during this build; flagged, not fixed). The strictness pin
 // therefore ratchets from the pin date and REPORTS the excluded legacy
 // count so the debt stays visible.
+//
+// mig 713 (2026-08-12, same day) closed the DOOR the 14 came through: a
+// BEFORE INSERT OR UPDATE trigger on playbook_versions runs a SQL floor of
+// validateSteps' key-and-order rules, so no path — SQL function, migration,
+// edge function or raw SQL — can add a 15th. The pin date does NOT move:
+// the 14 are still there, still named, and moving the date would erase
+// them from the denominator without correcting one of them. What moves is
+// the ratchet: LEGACY_MAX below is a HIGH-WATER MARK. If the pre-pin
+// failing count ever exceeds it, something inserted a backdated invalid
+// snapshot and the gate leaked; it may only ever shrink, one corrected
+// playbook at a time, and each shrink is a deliberate edit here.
+//
+// WHY THE 14 ARE STILL NAMED AND NOT CORRECTED (measured 2026-08-12, all
+// 14 driven through the DEPLOYED validator): appending the missing
+// `complete` does NOT make them valid — every one ALSO fails bad_params
+// (their instruction steps carry the title in `label`, not `params.title`),
+// and their source of truth, role_archetypes.sop_playbook, is prose in
+// 15/15 archetypes. Correcting them would turn 11 published starter
+// playbooks in one tenant from "cannot run at all" (invalid_definition/422,
+// zero runs ever) into "runs" — a behaviour change, not a maintenance fix.
 // ============================================================
 
 const PIN_DATE = '2026-08-12';
+// High-water mark for pre-pin snapshots failing the floor. Measured
+// 2026-08-12: exactly 14, all tenant Outsourcetel, across 11 definitions.
+const LEGACY_MAX = 14;
 const sq = (s) => `'${String(s).replace(/'/g, "''")}'`;
 const jfx = (rows) => rows
   .map((r) => `(${sq(JSON.stringify(r))}::jsonb)`)
@@ -175,14 +198,28 @@ select null,
  * (The behavioural refusal-code pin lives in tests/playbook-gate.test.ts,
  * which drives the deployed dev validator with refusal fixtures.)
  *
+ * mig 713 adds two arms that make this probe fail on a REGRESSION as well
+ * as on a bad row:
+ *   · DRIVING OBJECT — the playbook_versions_gate trigger must exist,
+ *     be enabled ('O'), be BEFORE INSERT+UPDATE and be wired to
+ *     playbook_versions_gate(). Dropped or disabled, every insert path is
+ *     ungated again even with zero bad rows to show for it. Pinned as a
+ *     pg_trigger row, not a prosrc grep.
+ *   · LEGACY RATCHET — the pre-pin failing count may not exceed
+ *     LEGACY_MAX. A backdated invalid snapshot is the one way the gate
+ *     could be bypassed without tripping the post-pin arms.
+ *
  * @param {Array<{id: string, published_at: string, steps: Array<object>}>|null} versionsFixture
+ * @param {{triggerName?: string, legacyMax?: number}|null} opts
  */
-export function snapshotGateSql(versionsFixture = null) {
+export function snapshotGateSql(versionsFixture = null, opts = null) {
   const source = versionsFixture
     ? `select (v.j->>'id') as id, (v.j->>'published_at')::timestamptz as published_at, (v.j->'steps') as steps
          from (values ${jfx(versionsFixture)}) as v(j)`
     : `select id::text as id, published_at, steps from playbook_versions`;
   const keysList = SNAPSHOT_KEYS.map(sq).join(', ');
+  const triggerName = opts?.triggerName ?? 'playbook_versions_gate';
+  const legacyMax = opts?.legacyMax ?? LEGACY_MAX;
   return String.raw`
 with vers as (
 ${source}
@@ -192,7 +229,35 @@ scoped as (
 ),
 legacy as (
   select count(*) as n from vers where published_at <= timestamptz '${PIN_DATE}'
+),
+legacy_bad as (
+  select count(*) as n from vers
+   where published_at <= timestamptz '${PIN_DATE}'
+     and (jsonb_array_length(steps) = 0
+          or (steps->(jsonb_array_length(steps)-1))->>'key' is distinct from 'complete')
+),
+gate_trigger as (
+  select count(*) as n
+    from pg_trigger t
+    join pg_class c on c.oid = t.tgrelid
+    join pg_proc p on p.oid = t.tgfoid
+   where c.relname = 'playbook_versions'
+     and t.tgname = ${sq(triggerName)}
+     and t.tgenabled = 'O'
+     and p.proname = 'playbook_versions_gate'
 )
+select 'the playbook_versions_gate trigger is MISSING or DISABLED — mig 713 put the floor ON THE TABLE '
+       || 'precisely because NINE insert paths exist and gating them one at a time leaves the next one '
+       || 'ungated by construction. Without it, install_role_kit, provision_starter_de_internal, any '
+       || 'migration DO block and any service-role write can publish a snapshot the runtime will refuse.'
+       as violation, null as note
+  from gate_trigger where n = 0
+union all
+select 'pre-pin snapshots failing the floor rose to ' || n || ' (high-water mark ' || ${legacyMax}
+       || ') — the 14 named legacy rows can only SHRINK. A rise means a snapshot was inserted with a '
+       || 'backdated published_at, which is the one route past the post-pin arms.', null
+  from legacy_bad where n > ${legacyMax}
+union all
 select 'snapshot ' || v.id || ': step ' || (i.ord)::text || ' uses key "' || (i.s->>'key')
        || '", which is outside the pinned snapshot vocabulary — either the gate was relaxed '
        || 'or a new primitive shipped without a deliberate re-pin here'
@@ -223,9 +288,13 @@ select 'snapshot ' || v.id || ': a gap_gate step carries no gap_id — a gate th
    and coalesce(s->'params'->>'gap_id', '') = ''
 union all
 select null,
-       'published-snapshots-respect-the-gate: examined ' || (select count(*) from scoped)
+       'published-snapshots-respect-the-gate: table gate '
+       || case when (select n from gate_trigger) > 0 then 'ENABLED (mig 713)' else 'MISSING' end
+       || '; examined ' || (select count(*) from scoped)
        || ' snapshot(s) published after ${PIN_DATE}; ' || (select n from legacy)
-       || ' legacy snapshot(s) excluded as named debt (14 of them end in instruction, published 2026-07-21..08-10 through a pre-pin bypass)'`;
+       || ' legacy snapshot(s) excluded as named debt, of which ' || (select n from legacy_bad)
+       || ' fail the floor (high-water mark ${legacyMax}) — all tenant Outsourcetel, 11 definitions, ZERO runs ever; '
+       || 'they end in instruction AND fail bad_params, so appending complete would not make them runnable'`;
 }
 
 /**

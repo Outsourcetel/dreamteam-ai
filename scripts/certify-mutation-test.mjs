@@ -1053,6 +1053,33 @@ const CASES = [
         silent: viol(snapshotGateSql([{ id: 'fx-v', published_at: '2026-07-01T00:00:00Z', steps: [{ key: 'gap_gate', params: {} }, { key: 'instruction' }] }])),
       },
       {
+        // mig 713 DRIVING ARM. The 14 legacy rows are excluded by date, so a
+        // clean post-pin corpus alone can NEVER fail this probe — a dropped
+        // table gate would be invisible. Pointing the pin at a trigger name
+        // that does not exist simulates exactly that drop.
+        name: 'published-snapshots-respect-the-gate (DRIVING ARM, mig 713: the playbook_versions table gate dropped or disabled is named even with zero bad rows)',
+        fires: viol(snapshotGateSql(
+          [{ id: 'fx-v', published_at: '2026-08-13T00:00:00Z', steps: [{ key: 'instruction' }, { key: 'complete' }] }],
+          { triggerName: 'zz_no_such_trigger_713' }), 'MISSING or DISABLED'),
+        silent: viol(snapshotGateSql(
+          [{ id: 'fx-v', published_at: '2026-08-13T00:00:00Z', steps: [{ key: 'instruction' }, { key: 'complete' }] }])),
+      },
+      {
+        // mig 713 RATCHET ARM. A snapshot inserted with a BACKDATED
+        // published_at is the one route past every post-pin arm; the
+        // high-water mark is what notices it. Inverted by lifting the mark
+        // over the same rows — the ratchet must go quiet, not the fixture.
+        name: 'published-snapshots-respect-the-gate (RATCHET ARM, mig 713: pre-pin failing snapshots rising above the high-water mark fires; the same rows under a raised mark are silent)',
+        fires: viol(snapshotGateSql([
+          { id: 'fx-old-1', published_at: '2026-07-01T00:00:00Z', steps: [{ key: 'instruction' }] },
+          { id: 'fx-old-2', published_at: '2026-07-02T00:00:00Z', steps: [{ key: 'instruction' }] },
+        ], { legacyMax: 1 }), 'high-water mark'),
+        silent: viol(snapshotGateSql([
+          { id: 'fx-old-1', published_at: '2026-07-01T00:00:00Z', steps: [{ key: 'instruction' }] },
+          { id: 'fx-old-2', published_at: '2026-07-02T00:00:00Z', steps: [{ key: 'instruction' }] },
+        ], { legacyMax: 2 })),
+      },
+      {
         name: 'playbook-gaps-hold-their-evidence (a RESOLVED knowledge gap with no retrieved doc in its answer is a say-so closure and fires)',
         fires: viol(gapEvidenceSql({
           gaps: [{ ...gapBase, status: 'resolved', answer: { note: 'trust me' }, answered_at: '2026-08-13T10:00:00Z', resolved_at: '2026-08-13T10:00:00Z' }],
