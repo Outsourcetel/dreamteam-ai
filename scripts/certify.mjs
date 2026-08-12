@@ -33,6 +33,7 @@ import { landedPredicateSql } from './landed-predicate.mjs';
 import { productionEvidenceSql } from './production-evidence.mjs';
 import { bareContainerLiteralSql } from './bare-container-literal.mjs';
 import { unexecutableApprovalSql } from './unexecutable-approval.mjs';
+import { strandedDraftSql } from './stranded-draft.mjs';
 import { advisoryBoundarySql } from './advisory-boundary.mjs';
 import { trustProposerBoundarySql } from './trust-proposer-boundary.mjs';
 import { gapGateConductSql, auditedStepsWritesSql, snapshotGateSql, gapEvidenceSql } from './playbook-gap-probes.mjs';
@@ -179,6 +180,11 @@ const PROBES = [
     name: 'no-pending-approval-the-platform-cannot-carry-out',
     why: 'on 2026-08-11 the SAME defect shipped twice in one day and no gate could see either: mig 701 (the sweep raised approvals with connector_id NULL, so connector-hub refused at the door with connector_id_required and the browser DISCARDED the refusal — the task read as done and no customer was chased) and mig 703 (due_approved_actions held the executor id on every row and dropped it, so the driver would hit action_ambiguous on a five-minute cron with nobody watching). A row sitting in front of a human asking to be approved, that could not be executed even if they said yes, is the class. mig 590 wrote the rule and never got a standing check: "checking that an executor EXISTS is not the same as checking it has what it needs". The resolution rule is lifted from connector-hub\'s resolveActionDefinition (index.ts:2160-2219), not invented — a probe whose rule disagrees with the runtime\'s manufactures findings and misses real ones in the same pass. ⚠ It also reports its own denominator: mig 701 back-filled the two known-bad rows the morning this was written, so the naive form of this probe finds nothing and looks green from having compared nothing — `no-comparisons` is therefore a VIOLATION, never a pass. ⚠ WHAT IT CANNOT SEE: the browser half of mig 701\'s fix lives in TypeScript (src/lib/connectorApi.ts), and a regression that stopped forwarding action_definition_id from there would not show up here. ⚠⚠ A FOURTH ARM, `no-executor`, IS RED ON PRODUCTION TODAY AND THAT IS CORRECT: a pending action_approval with NO action_executions row behind it at all (neither task_id nor resolves_task_id) asks a human to approve something with no executor — clicking yes flips the task to approved and sends nothing. Exactly one row matches, measured: outsourcetel-hq\'s "Send a $15,600 invoice to Meridian Group — test ping", the founder\'s lock-screen push test of 2026-08-10. It is deliberately NOT allowlisted — an exemption keyed to the one row a check finds is how a gate becomes theatre — and the remedy is a human withdrawing the test task, same as the kinetic row',
     sql: unexecutableApprovalSql(),
+  },
+  {
+    name: 'no-approval-that-said-sent-and-sent-nothing',
+    why: 'F-6, the sibling class the probe above CANNOT see. Every arm of unexecutable-approval starts from a JOIN to action_executions; a gated customer REPLY has no action_execution — its consequence is a column on de_messages — so the whole class was invisible to the gate that most looks like the gate that should have caught it (docs/50 F-7). The defect was UI-proven on the deployed app on 2026-08-12: /m\'s button read "Approve and send it" and its toast read "Approved and sent." while the draft stayed draft_pending and the conversation stayed needs_human. approve_draft_reply — the only code that flips a gated reply to sent — was reachable from ONE screen, so approving from anywhere else recorded the decision, wrote the audit event, closed the task and delivered nothing. mig 721 moved the consequence onto the row as a sixth status-sync trigger. ⚠ THE ARM THAT STOPS THIS BEING THEATRE IS THE MECHANISM ARM, not the data arm: a quiet week finds no stranded rows whether the trigger is installed or deleted, so the trigger must be present, ENABLED, attached to AFTER UPDATE OF status, and still carry both safety properties — approvals only (a decline that delivers the reply is worse than the original bug) and an ALLOW-LIST of self-delivering channels (a deny-list fails OPEN on the next carrier channel, which is the same lie one layer down). ⚠ Data arm 1 is scoped to decisions from mig 721 onward — not because older strandings are acceptable, but because a red keyed to history can never go green; every pre-fix row is printed individually by id in the notes instead of disappearing into an aggregate. Exactly one exists today: Review Lab task b6cd7764, message 27f98c5a, approved 08-11 20:45. A fourth arm flags the inverse — a PENDING approval on an email conversation holding a draft with no outbound_drafts row to carry it, i.e. a person being asked to approve a send with nothing behind it. Denominators print on every run',
+    sql: strandedDraftSql(),
   },
   {
     name: 'advisory-layer-cannot-decide',
@@ -756,6 +762,18 @@ const sections = [
     // refuses nothing (or everything) cannot report parity. Not in --fast:
     // it makes ~80 calls to the deployed validator.
     shell('gate-parity', 'node', ['scripts/playbook-gate-parity.mjs']),
+    // Debt #0's ratchet — the SAME disease one level down. gate-parity above
+    // compares two copies of the TOP-LEVEL vocabulary; nothing compared the
+    // decision-BRANCH vocabulary against the arms that carry it out, and for
+    // months validateSteps accepted 10 keys the executor could perform 6 of.
+    // The other four were recorded `skipped` and the run reported COMPLETED.
+    // Five arms: two read the repo (arms ⊇ accepted keys, builder == server),
+    // three drive the DEPLOYED function — including one that creates a run
+    // holding an unrunnable key, advances it, asserts it FAILED, and deletes
+    // it, because the vocabulary being right is not the same claim as the
+    // engine refusing to file undone work as a success. Not in --fast: ~20
+    // calls to the deployed function plus a create/delete round trip.
+    shell('branch-parity', 'node', ['scripts/playbook-branch-parity.mjs']),
     shell('design-drift', 'node', ['scripts/design-drift.mjs']),
     // OFFLINE runs only the credential-free test files. `npx vitest run` sweeps
     // ALL of tests/**, and two of those hard-throw at module load without

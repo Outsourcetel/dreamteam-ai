@@ -1287,6 +1287,33 @@ const CASES = [
       },
     ];
   })(),
+
+  // ── branch-parity (Debt #0) ────────────────────────────────────────────
+  // These five cannot be faked by a SELECT: the probe's live arms drive the
+  // DEPLOYED playbook-execute over HTTP and, in ARM 5, create/advance/delete a
+  // real run row. So the mutations live in the probe itself behind --mutate,
+  // the same shape playbook-gate-parity.mjs uses, and each --mutate run exits
+  // 0 ONLY if the injected break was caught AND named in the output. Recorded
+  // here so the count is in the suite's denominator rather than in a commit
+  // message nobody re-runs.
+  //
+  // Re-run any of them with:
+  //   node scripts/playbook-branch-parity.mjs --mutate=<case>
+  ...[
+    ['arm-goes-missing',
+      'ARM 1 (source). Drops `update_record` from the parsed executor arms. CAUGHT — "ARM 1 MISSING EXECUTOR ARM: validateSteps accepts \\"update_record\\" inside a decision branch and runBranchStep has no case for it". This is literally Debt #0: the pre-fix source scored 10 accepted keys against 6 arms.'],
+    ['twin-drift',
+      'ARM 2 (twin). Adds `consult_specialist` back to the builder\'s BRANCH_PRIMITIVES. CAUGHT — "ARM 2 TWIN DRIFT: only-in-builder=[consult_specialist] only-in-engine=[] — the palette offers a step the server will refuse". That was the REAL state of the file before this session.'],
+    ['live-arm-silently-skips',
+      'ARM 3 (live accept). Replaces one live preview result with the old default\'s wording. CAUGHT — "ARM 3 SILENT SKIP IS LIVE: the deployed executor dropped branch step \\"update_record\\" ... and the run reported completed — the exact Debt #0 behaviour".'],
+    ['validator-accepts-junk',
+      'ARM 4 (live refuse). Pretends the deployed validator accepted a junk key in a branch. CAUGHT — "ARM 4 VALIDATOR TOO LOOSE: the deployed validator ACCEPTS \\"teleport_money\\" inside a decision branch".'],
+    ['unhandled-key-completes',
+      'ARM 5 (live behaviour — the one that matters). Pretends the advanced run came back `completed`. CAUGHT — "ARM 5 THE SILENT DEFAULT IS ALIVE: a run whose branch holds \\"a_step_this_engine_cannot_run\\" reported COMPLETED ... filed as a success having performed neither requested action". Against the PRE-FIX deployment this arm fired for real, unmutated.'],
+  ].map(([mut, evidence]) => ({
+    name: `playbook-branch-parity --mutate=${mut} (MANUAL, drives the DEPLOYED edge function: a SELECT cannot fake an HTTP run)`,
+    manual: `${evidence} Verified 2026-08-12 against playbook-execute v49; exit 0 = caught and named.`,
+  })),
 ];
 
 // Optional substring filter, so one probe's cases can be re-run on their own
