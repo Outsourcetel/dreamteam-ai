@@ -44,6 +44,19 @@ export interface GuardrailRule {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  /** Set when this row is a materialized copy of a shared compliance-pack rule.
+   *  Such a row cannot be switched off or retired one at a time — the pack is
+   *  detached as a whole (trg_guard_compliance_guardrails enforces this). It
+   *  was always selected by `select *`; it just had no name in this type, so no
+   *  screen could tell the two kinds of rule apart. */
+  compliance_pack_key: string | null;
+  /** mig 726 — when a person took this rule out of the working list. The row
+   *  survives so a block recorded months ago can still be explained. Retiring
+   *  also sets `active = false`, and a CHECK constraint keeps those two facts
+   *  agreeing: that is what makes a retired rule stop being enforced by every
+   *  reader, all of which filter on `active`. */
+  retired_at: string | null;
+  retired_by: string | null;
 }
 
 export type AuditCategory =
@@ -70,14 +83,40 @@ import { raise, requireTenantId } from './liveShared';
 
 // ── Guardrail rules CRUD ──────────────────────────────────────────
 
+/**
+ * The workspace's WORKING list of guardrails — retired rules excluded.
+ *
+ * ⚠ The exclusion lives here, in the one loader, deliberately. Five surfaces
+ * call this (this page, the per-employee ScopedGuardrails panel, the hire
+ * wizard, Company Setup, and the governance assistant's proposal targeting),
+ * and a retired rule must be invisible to all of them — including as the target
+ * of an assistant "resume" proposal. Excluding it at each call site would be
+ * five chances to forget.
+ */
 export async function listGuardrailRules(): Promise<GuardrailRule[]> {
   const tid = await requireTenantId();
   const { data, error } = await supabase
     .from('guardrail_rules')
     .select('*')
     .eq('tenant_id', tid)
+    .is('retired_at', null)
     .order('created_at', { ascending: true });
   if (error) raise('listGuardrailRules', error);
+  return (data ?? []) as GuardrailRule[];
+}
+
+/** The retired shelf — newest first. Loaded only when someone asks to see it;
+ *  the point of retiring is that these stay out of the way while remaining
+ *  recoverable and still able to explain an old block. */
+export async function listRetiredGuardrailRules(): Promise<GuardrailRule[]> {
+  const tid = await requireTenantId();
+  const { data, error } = await supabase
+    .from('guardrail_rules')
+    .select('*')
+    .eq('tenant_id', tid)
+    .not('retired_at', 'is', null)
+    .order('retired_at', { ascending: false });
+  if (error) raise('listRetiredGuardrailRules', error);
   return (data ?? []) as GuardrailRule[];
 }
 
@@ -146,6 +185,13 @@ export async function updateGuardrailRule(
   updates: Partial<Pick<GuardrailRule, 'rule' | 'pattern' | 'threshold' | 'applies_to' | 'severity' | 'active'>>
 ): Promise<GuardrailRule> {
   const tid = await requireTenantId();
+  // A retired rule cannot be switched back on from here. The database CHECK
+  // (mig 726) refuses it anyway — this turns a 23514 into a sentence, and it
+  // covers the assistant's "resume" proposal path too, which reaches this same
+  // function with { active: true } and would otherwise surface the raw error.
+  if (rule.retired_at && updates.active === true) {
+    throw new CustomerApiError('This guardrail is retired. Restore it first, then switch it on.', false);
+  }
   const { data, error } = await supabase
     .from('guardrail_rules')
     .update({ ...updates, version: rule.version + 1 })
@@ -164,6 +210,89 @@ export async function updateGuardrailRule(
     detail: { rule_id: next.id, changes: updates as Record<string, unknown>, version: next.version },
   });
   return next;
+}
+
+/**
+ * Take a guardrail out of the working list without destroying it (mig 726).
+ *
+ * ⚠ NOT A DELETE, and there is no delete to fall back to: `authenticated` holds
+ * no DELETE grant on guardrail_rules, so a hand-rolled `.delete()` fails 42501
+ * at the table grant before RLS is ever consulted. That grant stays shut on
+ * purpose — audit_events.detail records a block by `rule_id` and nothing else,
+ * so a deleted row turns every block it ever caused into an unexplainable one.
+ *
+ * The RPC does the whole thing in one transaction: it checks owner/admin,
+ * refuses compliance-pack rules (detach the pack instead), sets
+ * `active = false` — which is what actually stops enforcement, because every
+ * reader filters on `active` — and writes the audit row. No audit row, no
+ * retirement.
+ */
+export async function retireGuardrailRule(rule: GuardrailRule, reason?: string): Promise<void> {
+  // ⚠ .rpc() RESOLVES on a Postgres error — the error lives on the result, not
+  // in a rejection. Reading it is the difference between a refusal and a
+  // silently successful-looking no-op.
+  const { error } = await supabase.rpc('retire_guardrail_rule', {
+    p_rule_id: rule.id,
+    p_reason: reason?.trim() ? reason.trim() : null,
+  });
+  if (error) raise('retireGuardrailRule', error);
+}
+
+/** Put a retired guardrail back in the list. It returns SWITCHED OFF — undoing
+ *  the filing decision is not the same as deciding to enforce it again, and a
+ *  rule that quietly resumed blocking because someone clicked "restore" would
+ *  be the same surprise in the other direction. */
+export async function restoreGuardrailRule(rule: GuardrailRule): Promise<void> {
+  const { error } = await supabase.rpc('restore_guardrail_rule', { p_rule_id: rule.id });
+  if (error) raise('restoreGuardrailRule', error);
+}
+
+// ── What is actually enforced (mig 726) ───────────────────────────────────
+// The Compliance page used to print the literal string 'Live' in an
+// "Enforcement" tile, derived from nothing. Three separate layers decide the
+// real answer and two of them are configured platform-side, in a table
+// `authenticated` cannot read at all — hence an RPC that mirrors the two
+// edge-function gates and returns only booleans and mode words.
+
+export interface EnforcementStatus {
+  /** Deterministic pattern matching. `live` is structurally true — it is
+   *  unconditional code, not a flag — so the number is the load-bearing part:
+   *  zero blocking rules means the check runs and has nothing to enforce. */
+  patterns: { live: boolean; blocking_rules: number };
+  /** The meaning judge (_shared/guardrailJudge.ts). `shadow` logs a verdict and
+   *  never blocks; only `enforce` withholds an answer. */
+  semantic: { enabled: boolean; mode: 'shadow' | 'enforce' | null };
+  /** The adjudicator (_shared/guardrailAdjudicator.ts) — the only thing that can
+   *  UN-block. `shadow` records `would_clear` and applies nothing. */
+  adjudication: { enabled: boolean; mode: 'shadow' | 'enforce' | null };
+}
+
+/**
+ * Read the three enforcement layers for this workspace.
+ *
+ * Returns null when it could not be established — and the caller must SAY so
+ * rather than fall back to a confident word. A tile that prints "Live" because
+ * a read failed is the defect this replaces, not a graceful degradation.
+ */
+export async function getEnforcementStatus(): Promise<EnforcementStatus | null> {
+  try {
+    const tid = await requireTenantId();
+    const { data, error } = await supabase.rpc('guardrail_enforcement_status', { p_tenant_id: tid });
+    if (error || !data) return null;
+    const d = data as Partial<EnforcementStatus>;
+    const mode = (m: unknown): 'shadow' | 'enforce' | null =>
+      m === 'enforce' ? 'enforce' : m === 'shadow' ? 'shadow' : null;
+    return {
+      patterns: {
+        live: d.patterns?.live === true,
+        blocking_rules: Number(d.patterns?.blocking_rules ?? 0),
+      },
+      semantic: { enabled: d.semantic?.enabled === true, mode: mode(d.semantic?.mode) },
+      adjudication: { enabled: d.adjudication?.enabled === true, mode: mode(d.adjudication?.mode) },
+    };
+  } catch {
+    return null;
+  }
 }
 
 /** Starter guardrails for a tenant with zero rules. */

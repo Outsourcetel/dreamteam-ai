@@ -1,20 +1,21 @@
 import { useIsTenantAdmin } from '../../../lib/useRoleGate';
 import React, { useState, useEffect } from 'react'
-import { Modal } from '../../../design/primitives'
+import { Modal, StatTile, Button, INPUT_CLS } from '../../../design/primitives'
+import type { Tone } from '../../../design/primitives'
 import { useAuth } from '../../../context/AuthContext'
 import type { Page } from '../../../types'
 import type { CompanyId } from '../../../data/companies'
 import { PageHeader, th, td } from '../../../components/ui'
 import { CustomerApiError } from '../../../lib/customerApi'
 import {
-  listGuardrailRules, addGuardrailRule, updateGuardrailRule, installStarterGuardrails,
-  getGuardrailBlockCounts,
+  listGuardrailRules, listRetiredGuardrailRules, addGuardrailRule, updateGuardrailRule,
+  retireGuardrailRule, restoreGuardrailRule, installStarterGuardrails,
+  getGuardrailBlockCounts, getEnforcementStatus,
 } from '../../../lib/guardrailApi'
-import type { GuardrailRule, GuardrailRuleType, GuardrailScope } from '../../../lib/guardrailApi'
+import type { GuardrailRule, GuardrailRuleType, GuardrailScope, EnforcementStatus } from '../../../lib/guardrailApi'
 import { listDigitalEmployees } from '../../../lib/digitalEmployeesApi'
 import type { DigitalEmployee } from '../../../lib/digitalEmployeesApi'
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates'
-import { ConfirmDeleteModal } from '../../../components'
 import GovernanceAIPanel from '../../../components/GovernanceAIPanel'
 import GuardrailAdjudicationPanel from '../../../components/GuardrailAdjudicationPanel'
 import { listPendingProposals, approveProposal, dismissProposal, type GovernanceProposal } from '../../../lib/governanceAiApi'
@@ -47,6 +48,64 @@ const SCOPE_META: Record<'workspace' | 'department' | 'employee', { label: strin
   employee: { label: 'One employee', hint: 'Applies only to the chosen Digital Employee' },
 }
 
+// ═══════════════════════════════════════════════════════════════
+// The Enforcement tile.
+//
+// ⚠ THIS USED TO BE THE STRING 'Live', HARDCODED, DERIVED FROM NOTHING. It was
+// wrong: measured on 2026-08-12, only ONE of the three screening layers was
+// actually stopping anything. Deterministic word/phrase matching was live (30
+// guardrail_block events); the meaning judge was off platform-wide (no
+// `semantic_guardrail.enabled` row at all, so the master gate fails inert —
+// note the feature_registry row says default_enabled=true, which is exactly how
+// reading the wrong table produces a confident wrong answer); and the AI second
+// opinion was in shadow mode, recording what it would have done and applying
+// none of it.
+//
+// The rule for this function is the same one that made the tile a defect: never
+// replace one confident string with another. Every branch below is derived from
+// a value read out of config at request time, and the failure branch SAYS it
+// failed rather than falling back to a reassuring word.
+// ═══════════════════════════════════════════════════════════════
+function describeEnforcement(s: EnforcementStatus | null, checked: boolean):
+  { value: string; sub: string; explain: string; tone: Tone } {
+  if (!checked) return { value: '…', sub: 'Checking', explain: '', tone: 'neutral' }
+  if (!s) {
+    return {
+      value: 'Unknown',
+      sub: "Couldn't read the settings",
+      explain: 'The check for what is currently switched on did not come back. This tile says so rather than guessing — the version before this one printed "Live" no matter what was true.',
+      tone: 'warn',
+    }
+  }
+  // 'watching only' = shadow: the layer runs, records a verdict, and changes
+  // nothing. That is not enforcement and must never be worded as if it were.
+  const layer = (l: { enabled: boolean; mode: 'shadow' | 'enforce' | null }) =>
+    !l.enabled ? 'off' : l.mode === 'enforce' ? 'on' : 'watching only'
+  const meaning = layer(s.semantic)
+  const review = layer(s.adjudication)
+  const n = s.patterns.blocking_rules
+  const rules = `${n} blocking rule${n === 1 ? '' : 's'}`
+
+  if (n === 0) {
+    return {
+      value: 'Nothing to enforce',
+      sub: 'No blocking rule is switched on',
+      explain: `Word and phrase checking runs on every answer, but this workspace has no active blocking rule for it to check against. Meaning check: ${meaning}. AI second opinion: ${review}.`,
+      tone: 'warn',
+    }
+  }
+  const meaningEnforcing = s.semantic.enabled && s.semantic.mode === 'enforce'
+  return {
+    value: meaningEnforcing ? 'Words + meaning' : 'Words only',
+    sub: `${rules} · meaning check ${meaning}`,
+    explain: `Word and phrase checking is live and withholds answers now (${rules}). `
+      + `Meaning check — catches a rephrased breach the patterns miss: ${meaning}. `
+      + `AI second opinion — can release an answer the patterns flagged by mistake: ${review}. `
+      + `"Watching only" means the layer runs and records what it would have done, and changes nothing.`,
+    tone: meaningEnforcing ? 'ok' : 'info',
+  }
+}
+
 function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
   // guardrail_rules is owner/admin in RLS; this page is MANAGE, so a
   // manager could add a rule, toggle one, or install the starter set and
@@ -61,6 +120,21 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
+  // The composer serves both jobs — null means "adding", a rule means "editing
+  // that rule". updateGuardrailRule has always accepted rule/pattern/threshold/
+  // severity; nothing on this page ever offered them.
+  const [editing, setEditing] = useState<GuardrailRule | null>(null)
+  // The retired shelf. Loaded only when someone asks for it — the point of
+  // retiring is that these stay out of the way while staying recoverable.
+  const [retired, setRetired] = useState<GuardrailRule[]>([])
+  const [showRetired, setShowRetired] = useState(false)
+  const [confirmRetire, setConfirmRetire] = useState<GuardrailRule | null>(null)
+  const [retireReason, setRetireReason] = useState('')
+  // What is actually switched on, read from config rather than asserted.
+  // `checked` separates "not back yet" from "came back empty", which is the
+  // difference between a spinner and a claim.
+  const [enforcement, setEnforcement] = useState<EnforcementStatus | null>(null)
+  const [enforcementChecked, setEnforcementChecked] = useState(false)
   // Central-cockpit focus: 'all' | 'workspace' | 'de:<id>' | 'dept:<name>'.
   const [focus, setFocus] = useState('all')
   const [des, setDes] = useState<DigitalEmployee[]>([])
@@ -79,14 +153,20 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
     setLoading(true)
     setError(null)
     try {
-      const [r, d, b] = await Promise.all([
+      const [r, d, b, e] = await Promise.all([
         listGuardrailRules(),
         listDigitalEmployees().catch(() => []),
         getGuardrailBlockCounts().catch(() => ({})),
+        // Never allowed to take the page down, and never allowed to invent an
+        // answer: it resolves to null when it could not be established, and the
+        // tile renders that as "Unknown".
+        getEnforcementStatus(),
       ])
       setRules(r)
       setDes(d)
       setBlocks(b)
+      setEnforcement(e)
+      setEnforcementChecked(true)
       setMissingTables(false)
     } catch (err) {
       if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true)
@@ -113,20 +193,69 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
     finally { setBusy(false) }
   }
 
-  const submitAdd = () => run(async () => {
+  const loadRetired = async () => {
+    try { setRetired(await listRetiredGuardrailRules()) }
+    catch { setRetired([]) }
+  }
+
+  const closeComposer = () => {
+    setShowAdd(false)
+    setEditing(null)
+    setForm({ rule: '', rule_type: 'blocked_phrase', pattern: '', threshold: '', severity: 'blocking', scope: 'workspace', scope_ref: '' })
+  }
+
+  // Open the composer on an existing rule. Type and scope are shown but not
+  // editable: updateGuardrailRule accepts rule | pattern | threshold |
+  // applies_to | severity | active, and offering a control that silently does
+  // nothing is the failure this page is being fixed for.
+  const openEdit = (r: GuardrailRule) => {
+    setEditing(r)
+    setForm({
+      rule: r.rule,
+      rule_type: r.rule_type,
+      pattern: r.pattern ?? '',
+      // The money rule is stored in cents and typed in dollars, exactly as the
+      // add path converts it — the reverse here, or an edit silently divides
+      // the threshold by 100 every time it is saved.
+      threshold: r.threshold == null ? ''
+        : r.rule_type === 'require_approval_over_cents' ? String(r.threshold / 100)
+        : String(r.threshold),
+      severity: r.severity,
+      scope: r.scope === 'department' || r.scope === 'employee' ? r.scope : 'workspace',
+      scope_ref: r.scope_ref ?? '',
+    })
+    setShowAdd(true)
+  }
+
+  const submitRule = () => run(async () => {
     const isMoney = form.rule_type === 'require_approval_over_cents'
     const isPct = form.rule_type === 'max_discount_pct'
-    await addGuardrailRule({
-      rule: form.rule.trim(),
-      rule_type: form.rule_type,
-      pattern: (!isMoney && !isPct && form.pattern.trim()) ? form.pattern.trim() : null,
-      threshold: isMoney ? Math.round(Number(form.threshold) * 100) || null : isPct ? Math.round(Number(form.threshold)) || null : null,
-      severity: form.severity,
-      scope: form.scope,
-      scope_ref: form.scope === 'workspace' ? null : (form.scope_ref || null),
-    })
-    setShowAdd(false)
-    setForm({ rule: '', rule_type: 'blocked_phrase', pattern: '', threshold: '', severity: 'blocking', scope: 'workspace', scope_ref: '' })
+    const pattern = (!isMoney && !isPct && form.pattern.trim()) ? form.pattern.trim() : null
+    const threshold = isMoney ? Math.round(Number(form.threshold) * 100) || null
+      : isPct ? Math.round(Number(form.threshold)) || null : null
+    if (editing) {
+      await updateGuardrailRule(editing, {
+        rule: form.rule.trim(), pattern, threshold, severity: form.severity,
+      })
+    } else {
+      await addGuardrailRule({
+        rule: form.rule.trim(),
+        rule_type: form.rule_type,
+        pattern,
+        threshold,
+        severity: form.severity,
+        scope: form.scope,
+        scope_ref: form.scope === 'workspace' ? null : (form.scope_ref || null),
+      })
+    }
+    closeComposer()
+  })
+
+  const submitRetire = (r: GuardrailRule, reason: string) => run(async () => {
+    await retireGuardrailRule(r, reason)
+    setConfirmRetire(null)
+    setRetireReason('')
+    await loadRetired()
   })
 
   // A non-workspace rule needs a target chosen before it can be saved.
@@ -175,6 +304,8 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
     return `${p.action[0].toUpperCase()}${p.action.slice(1)} an existing rule`
   }
 
+  const enf = describeEnforcement(enforcement, enforcementChecked)
+
   return (
     <div className="p-6">
       <PageHeader
@@ -195,21 +326,19 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
           primaryLabel={busy ? 'Installing…' : 'Install starter guardrails'}
           onPrimary={() => { if (!busy && canEditGuardrails) void run(() => installStarterGuardrails()) }}
           secondaryLabel="Add a custom rule"
-          onSecondary={() => setShowAdd(true)}
+          onSecondary={() => { setEditing(null); setShowAdd(true) }}
         />
       ) : (
         <>
-          <div className="grid grid-cols-3 gap-3 mb-6">
-            {[
-              { label: 'Active rules', value: String(active.length), color: 'text-white' },
-              { label: 'Blocking', value: String(active.filter(r => r.severity === 'blocking').length), color: 'text-red-300' },
-              { label: 'Enforcement', value: 'Live', color: 'text-emerald-300' },
-            ].map(s => (
-              <div key={s.label} className="bg-dt-card border border-dt-border rounded-xl p-4">
-                <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{s.label}</p>
-                <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
-              </div>
-            ))}
+          {/* StatTile, not three hand-rolled boxes — the design system's own
+              schema, and it is what gives the Enforcement tile a second line to
+              be honest on. */}
+          <div className="grid grid-cols-dt-kpis gap-3 mb-6">
+            <StatTile label="Active rules" value={String(active.length)} />
+            <StatTile label="Blocking" tone="danger"
+              value={String(active.filter(r => r.severity === 'blocking').length)} />
+            <StatTile label="Enforcement" value={enf.value} tone={enf.tone}
+              sub={<span title={enf.explain}>{enf.sub}</span>} />
           </div>
 
           {/* GI-10: the human grant + the receipt, next to the rules they govern. */}
@@ -225,7 +354,10 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                 className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/30 border border-indigo-700/50 transition-colors">
                 {showGovAI ? 'Close assistant' : '✨ Set up with AI'}
               </button>
-              <button disabled={!canEditGuardrails} onClick={() => setShowAdd(v => !v)}
+              {/* Clears `editing` on the way in — otherwise "+ Add rule"
+                  after an edit reopens the composer still bound to that rule. */}
+              <button disabled={!canEditGuardrails}
+                onClick={() => { if (showAdd) closeComposer(); else { setEditing(null); setShowAdd(true) } }}
                 className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">
                 + Add rule
               </button>
@@ -330,8 +462,25 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                         <Toggle enabled={r.active} disabled={busy || !canEditGuardrails}
                           onChange={(v) => void run(() => updateGuardrailRule(r, { active: v }))} />
                       </td>
-                      <td className={`${td} text-right`}>
-                        <span className="text-[10px] text-dt-faint">{new Date(r.updated_at).toLocaleDateString()}</span>
+                      {/* Edit and Retire. Both were missing entirely: the row
+                          had one mutation (the toggle) even though the API
+                          behind it has always accepted the rule text, pattern,
+                          threshold and severity. */}
+                      <td className={`${td} text-right whitespace-nowrap`}>
+                        <span className="text-[10px] text-dt-faint mr-2">{new Date(r.updated_at).toLocaleDateString()}</span>
+                        {canEditGuardrails && (
+                          <>
+                            <Button kind="ghost" size="sm" disabled={busy} onClick={() => openEdit(r)}
+                              title="Change the wording, pattern, amount or severity">Edit</Button>
+                            <Button kind="ghost" size="sm" disabled={busy || !!r.compliance_pack_key}
+                              onClick={() => { setRetireReason(''); setConfirmRetire(r) }}
+                              title={r.compliance_pack_key
+                                ? `This rule comes from the "${r.compliance_pack_key}" compliance pack — detach the whole pack instead of removing one of its rules`
+                                : 'Take this rule out of the list. It stops applying; the record of what it blocked is kept.'}>
+                              Retire
+                            </Button>
+                          </>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -342,13 +491,81 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
               The approval-threshold rule replaces the built-in $10K gate on renewal invoices. Blocked phrases/topics are checked against every DE answer before it reaches the user (simple pattern matching, v1) — matches are withheld, escalated to Human Tasks, and recorded as a guardrail block in the{' '}
               <button onClick={() => setPage('gov_audit')} className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">audit trail</button>.
             </p>
+
+            {/* ── The retired shelf ──────────────────────────────────────────
+                Retiring is not deleting: the row survives so a block recorded
+                months ago still has something to point at, and so the decision
+                is reversible. This is where it goes, and where it comes back
+                from. */}
+            <div className="mt-5 pt-4 border-t border-dt-border">
+              <Button kind="ghost" size="sm"
+                onClick={() => { const next = !showRetired; setShowRetired(next); if (next) void loadRetired() }}>
+                {showRetired ? 'Hide retired rules' : 'Retired rules'}
+                {showRetired && retired.length > 0 ? ` (${retired.length})` : ''}
+              </Button>
+              {showRetired && (
+                retired.length === 0 ? (
+                  <p className="mt-3 text-[11px] text-dt-muted">
+                    Nothing retired. A retired rule stops applying but is kept, so the audit trail can still explain a block it caused.
+                  </p>
+                ) : (
+                  <div className="mt-3 overflow-x-auto rounded-xl border border-dt-border">
+                    <table className="w-full text-sm border-collapse">
+                      <thead>
+                        <tr className="border-b border-dt-border text-left">
+                          {['Rule', 'Did it ever stop anything?', 'Type', 'Scope', 'Retired', ''].map(h => (
+                            <th key={h} className={th}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {retired.map(r => (
+                          <tr key={r.id} className="border-b border-dt-border last:border-b-0">
+                            <td className={`${td} text-dt-body text-xs`}>{r.rule}</td>
+                            {/* The reason the row was kept rather than deleted:
+                                these counts still resolve. */}
+                            <td className={td}>
+                              {blocks[r.id]
+                                ? <span className="text-xs text-dt-warn" title={`Last stopped ${new Date(blocks[r.id].last_at).toLocaleString()}`}>
+                                    Stopped {blocks[r.id].count} {blocks[r.id].count === 1 ? 'time' : 'times'}
+                                  </span>
+                                : <span className="text-xs text-dt-muted">Never did</span>}
+                            </td>
+                            <td className={td}>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support">{ruleTypeMeta(r.rule_type).label}</span>
+                            </td>
+                            <td className={td}>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support">{scopeLabel(r)}</span>
+                            </td>
+                            <td className={`${td} text-[11px] text-dt-muted`}>
+                              {r.retired_at ? new Date(r.retired_at).toLocaleDateString() : '—'}
+                            </td>
+                            <td className={`${td} text-right whitespace-nowrap`}>
+                              {canEditGuardrails && (
+                                <Button kind="ghost" size="sm" disabled={busy}
+                                  title="Put it back in the list. It returns switched off — turning it back on is a separate decision."
+                                  onClick={() => void run(async () => { await restoreGuardrailRule(r); await loadRetired() })}>
+                                  Restore
+                                </Button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              )}
+            </div>
           </div>
         </>
       )}
 
-      {/* Add rule form */}
+      {/* Add / edit rule form — ONE composer. An edit screen that is a second
+          copy of the add screen is two places for the money conversion and the
+          pattern rules to drift apart. */}
       {showAdd && (
-        <Modal size="md" onClose={() => setShowAdd(false)} title="Add guardrail rule">
+        <Modal size="md" onClose={closeComposer} title={editing ? 'Edit guardrail rule' : 'Add guardrail rule'}>
             <div className="space-y-3 text-xs">
               <div>
                 <label className="block text-dt-support mb-1">Rule (plain English)</label>
@@ -359,12 +576,24 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-dt-support mb-1">Type</label>
+                  {editing ? (
+                    // ⚠ NOT A DISABLED SELECT. What a rule IS cannot be changed
+                    // in place — updateGuardrailRule does not accept rule_type,
+                    // and changing it would leave a pattern or a threshold
+                    // meaning something else. A control that looks operable and
+                    // is not is exactly what this page is being fixed for, so
+                    // the fact is stated instead of mimed.
+                    <p className="px-3 py-2 rounded-lg bg-dt-inset border border-dt-border text-dt-support">
+                      {ruleTypeMeta(editing.rule_type).label}
+                    </p>
+                  ) : (
                   <select value={form.rule_type} onChange={e => setForm(f => ({ ...f, rule_type: e.target.value as GuardrailRuleType }))}
                     className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body focus:outline-none focus:border-indigo-500">
                     {(Object.keys(RULE_TYPE_META) as GuardrailRuleType[]).map(t => (
                       <option key={t} value={t}>{RULE_TYPE_META[t].label}</option>
                     ))}
                   </select>
+                  )}
                 </div>
                 <div>
                   <label className="block text-dt-support mb-1">Severity</label>
@@ -375,6 +604,15 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                   </select>
                 </div>
               </div>
+              {editing ? (
+                <div>
+                  <label className="block text-dt-support mb-1">Applies to</label>
+                  <p className="px-3 py-2 rounded-lg bg-dt-inset border border-dt-border text-dt-support">
+                    {scopeLabel(editing)}
+                    <span className="text-dt-muted"> — who a rule covers is fixed once it exists. To move it, retire this one and add it where you want it.</span>
+                  </p>
+                </div>
+              ) : (
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-dt-support mb-1">Applies to</label>
@@ -409,7 +647,8 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                   </div>
                 )}
               </div>
-              {form.scope === 'department' && departments.length === 0 && (
+              )}
+              {!editing && form.scope === 'department' && departments.length === 0 && (
                 <p className="text-[11px] text-amber-400/80">No departments found on your roster yet — set a department on a Digital Employee's profile first, or scope to a specific employee.</p>
               )}
               {(form.rule_type === 'blocked_phrase' || form.rule_type === 'blocked_topic' || form.rule_type === 'frustration_signal') ? (
@@ -432,13 +671,47 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
               <p className="text-[11px] text-dt-muted">{ruleTypeMeta(form.rule_type).hint}.</p>
             </div>
             <div className="flex justify-end gap-2 mt-5">
-              <button onClick={() => setShowAdd(false)}
-                className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors">Cancel</button>
-              <button onClick={submitAdd} disabled={busy || !canEditGuardrails || !form.rule.trim() || scopeIncomplete}
-                className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white transition-colors">
-                {busy ? 'Saving…' : 'Add rule'}
-              </button>
+              <Button kind="secondary" size="sm" onClick={closeComposer}>Cancel</Button>
+              <Button kind="primary" size="sm" onClick={submitRule}
+                disabled={busy || !canEditGuardrails || !form.rule.trim() || (!editing && scopeIncomplete)}>
+                {busy ? 'Saving…' : editing ? 'Save changes' : 'Add rule'}
+              </Button>
             </div>
+        </Modal>
+      )}
+
+      {/* Retire, confirmed. Deliberately NOT the shared ConfirmDeleteModal —
+          this is not a delete, and a dialog that says "Delete" about something
+          that survives would be the same class of untrue label the Enforcement
+          tile just stopped being. */}
+      {confirmRetire && (
+        <Modal size="md" onClose={() => setConfirmRetire(null)} title="Retire this guardrail?">
+          <div className="space-y-3">
+            <p className="text-sm text-dt-body leading-relaxed">
+              &ldquo;{confirmRetire.rule}&rdquo; will stop applying and leave this list.
+            </p>
+            <p className="text-xs text-dt-support leading-relaxed">
+              The rule is kept, not deleted — that is what lets the audit trail still explain a block it
+              caused months ago. You can restore it from &ldquo;Retired rules&rdquo; at any time; it comes
+              back switched off.
+            </p>
+            <div className="text-xs">
+              <label className="block text-dt-support mb-1">Why (optional — recorded in the audit trail)</label>
+              <input value={retireReason} onChange={e => setRetireReason(e.target.value)}
+                placeholder="e.g. replaced by the new pricing rule" className={INPUT_CLS} />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-5">
+            <Button kind="secondary" size="sm" onClick={() => setConfirmRetire(null)}>Cancel</Button>
+            {/* The gate is repeated here on purpose. The dialog is only
+                reachable from an already-gated row button, and "you can only
+                get here through a gate" is exactly the reasoning that has let
+                ungated confirm buttons ship on this codebase before. */}
+            <Button kind="danger" size="sm" disabled={busy || !canEditGuardrails}
+              onClick={() => void submitRetire(confirmRetire, retireReason)}>
+              {busy ? 'Retiring…' : 'Retire rule'}
+            </Button>
+          </div>
         </Modal>
       )}
     </div>
