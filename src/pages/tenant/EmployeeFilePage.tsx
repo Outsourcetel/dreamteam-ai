@@ -36,7 +36,7 @@ import {
   type DeProfileSectionKey,
 } from './EmployeeFileSections';
 import {
-  Button, Chip, PanelCard, StatTile, EmptyState, TabBar, Banner, TimelineStep, type Tone,
+  Button, Chip, PanelCard, StatTile, EmptyState, TabBar, Banner, TimelineStep, FilterBar, SELECT_CLS, type Tone,
 } from '../../design/primitives';
 import { say, DE_STATUS } from '../../design/statusVocabulary';
 import {
@@ -63,6 +63,24 @@ const WORK_TONE: Record<string, { tone: Tone; pulse?: boolean }> = {
   running: { tone: 'info', pulse: true }, queued: { tone: 'neutral' }, waiting_human: { tone: 'warn' },
   done: { tone: 'ok' }, failed: { tone: 'danger' }, cancelled: { tone: 'neutral' },
 };
+/** ONE time-window vocabulary for the whole file. Both the Performance tab and
+ *  the Work tab's decision feed offer a window; two arrays saying the same
+ *  thing is how six pages ended up with six disagreeing STATUS_METAs. */
+const RANGES: { label: string; days: number | null }[] = [
+  { label: '7 days', days: 7 }, { label: '30 days', days: 30 }, { label: '90 days', days: 90 }, { label: 'All time', days: null },
+];
+/** How far back the decision feed reads. Was a hard 10 with no scroll, no
+ *  pagination and no way to see the eleventh. The busiest employee on the
+ *  platform has 26 runs, so 50 clears real history with room; the list scrolls
+ *  rather than growing the page, and says so when it hits the cap. */
+const ACTIVITY_LIMIT = 50;
+/** Label for `evidence_run_decisions.source_category`.
+ *  ⚠ This is the SYSTEM a decision touched, never a topic — evidence_runs
+ *  carries no topic column at all. 'support' is not a connector category, so it
+ *  falls through CATEGORY_SHORT and is humanised here rather than shown raw. */
+const systemLabel = (c: string): string =>
+  CATEGORY_SHORT[c as SystemCategory] ?? c.replace(/_/g, ' ').replace(/^./, m => m.toUpperCase());
+
 const DECISION_CHIP: Record<InquiryDecisionKind, { label: string; tone: Tone }> = {
   would_auto_send: { label: 'Would auto-send', tone: 'ok' },
   needs_review: { label: 'Needs review', tone: 'warn' },
@@ -215,15 +233,21 @@ function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => v
   // Progressive disclosure: the check-in log answers "why is it stuck" exactly
   // where the flag is shown, without making every row taller.
   const [wakesOpen, setWakesOpen] = useState<Record<string, boolean>>({});
+  // Decision-feed filters. The default is ALL TIME on purpose: the two busiest
+  // employees on the platform (26 and 15 runs) have nothing inside 30 days, so
+  // a 30-day default would open this panel empty for exactly the employees with
+  // the most to show. Narrowing is the reader's choice, never the page's.
+  const [activityDays, setActivityDays] = useState<number | null>(null);
+  const [activitySystem, setActivitySystem] = useState('');
+  const [activityLoading, setActivityLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([getDeWorkItems(de.id), getDeObjectives(de.id), listDEActivity(10, de.id)])
-      .then(([w, o, a]) => {
+    Promise.all([getDeWorkItems(de.id), getDeObjectives(de.id)])
+      .then(([w, o]) => {
         if (cancelled) return;
         setWork(w);
         setObjectives(o.filter(x => ['open', 'in_progress', 'blocked'].includes(x.status)));
-        setActivity(a);
       })
       .catch(e => { if (!cancelled) { setError((e as Error).message); setWork([]); } });
     // The same board read the whole-workforce view uses, scoped to this DE —
@@ -239,6 +263,26 @@ function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => v
       .catch(() => { if (!cancelled) setMissionCount(0); });
     return () => { cancelled = true; };
   }, [de.id]);
+
+  // Own effect, because the date window is a QUERY parameter — see
+  // listDEActivity: filtering a fetched page client-side would report an empty
+  // week whenever the newest rows are older than the window.
+  useEffect(() => {
+    let cancelled = false;
+    setActivityLoading(true);
+    listDEActivity(ACTIVITY_LIMIT, de.id, activityDays)
+      .then(a => {
+        if (cancelled) return;
+        setActivity(a);
+        // A system chosen in a wider window may not exist in a narrower one.
+        // Left set, it would strand the panel on an empty list behind a select
+        // showing a value that is no longer one of its options.
+        setActivitySystem(s => (s && !a.some(r => r.decision?.source_category === s) ? '' : s));
+      })
+      .catch(e => { if (!cancelled) setError((e as Error).message); })
+      .finally(() => { if (!cancelled) setActivityLoading(false); });
+    return () => { cancelled = true; };
+  }, [de.id, activityDays]);
 
   const refreshObjectives = async () =>
     setObjectives((await getDeObjectives(de.id)).filter(x => ['open', 'in_progress', 'blocked'].includes(x.status)));
@@ -283,16 +327,47 @@ function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => v
   const waitedFor = waitDays >= 1 ? `${waitDays} day${waitDays === 1 ? '' : 's'}`
     : waitHours >= 1 ? `${waitHours} hour${waitHours === 1 ? '' : 's'}` : 'under an hour';
 
+  // ⚠ A SECOND, DIFFERENT source of "waiting on you": board.waiting_on_you is
+  // pending `human_tasks`, while awaitingYou above is de_work_items parked at
+  // waiting_human. They are not the same rows and mostly do not overlap — of
+  // the 17 live employees with a pending human task, ELEVEN have no
+  // waiting_human work item at all (verified 2026-08-12). Dropping this count
+  // when the "Next up" card stopped rendering it would have deleted the only
+  // per-employee sighting of the approvals queue from this tab, so the banner
+  // that already owns "you are the bottleneck" carries it instead.
+  const pendingDecisions = board?.waiting_on_you ?? 0;
+
+  // Feed filters are client-side ONLY for the system facet (it lives on the
+  // decision, not the run); the date window is applied in the query.
+  const activitySystems = [...new Set(
+    activity.map(r => r.decision?.source_category).filter((c): c is string => !!c),
+  )].sort();
+  const shownActivity = activitySystem
+    ? activity.filter(r => r.decision?.source_category === activitySystem)
+    : activity;
+  const activityFiltered = activityDays !== null || !!activitySystem;
+
   return (
     <div className="space-y-5">
       {error && <Banner tone="danger">{error}</Banner>}
 
-      {awaitingYou.length > 0 && (
+      {(awaitingYou.length > 0 || pendingDecisions > 0) && (
         <Banner tone="warn">
           <span className="font-semibold">{name} is waiting on you.</span>{' '}
-          {awaitingYou.length} task{awaitingYou.length === 1 ? '' : 's'} need{awaitingYou.length === 1 ? 's' : ''} a person
-          {blockedBehind.length > 0 && <> — and {blockedBehind.length} more {blockedBehind.length === 1 ? 'is' : 'are'} queued behind {blockedBehind.length === 1 ? 'it' : 'them'}</>}
-          . Longest wait: {waitedFor}.{' '}
+          {awaitingYou.length > 0 && (
+            <>
+              {awaitingYou.length} queued task{awaitingYou.length === 1 ? '' : 's'} need{awaitingYou.length === 1 ? 's' : ''} a person
+              {blockedBehind.length > 0 && <> — and {blockedBehind.length} more {blockedBehind.length === 1 ? 'is' : 'are'} queued behind {blockedBehind.length === 1 ? 'it' : 'them'}</>}
+              . Longest wait: {waitedFor}.{' '}
+            </>
+          )}
+          {/* Counted separately and worded separately, because it IS separate:
+              escalations, action approvals, inquiry reviews and checklists, not
+              queue items. Saying "tasks" for both would merge two numbers that
+              never had the same denominator. */}
+          {pendingDecisions > 0 && (
+            <>{pendingDecisions} item{pendingDecisions === 1 ? '' : 's'} {pendingDecisions === 1 ? 'is' : 'are'} waiting for your decision in the approvals queue.{' '}</>
+          )}
           {canOpenApprovals && <button onClick={() => setPage('ops_human_tasks' as Page)} className="underline hover:text-white">Review approvals →</button>}
         </Banner>
       )}
@@ -306,25 +381,27 @@ function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => v
         </button>
       )}
 
-      {board && (board.next_up.length > 0 || board.listens_live || board.waiting_on_you > 0) && (
-        <PanelCard title="Next up — in order"
-          badge={board.waiting_on_you > 0 ? <Chip tone="warn">{board.waiting_on_you} wait{board.waiting_on_you === 1 ? 's' : ''} on you</Chip> : undefined}>
-          {board.next_up.length === 0 ? (
-            <p className="text-sm text-dt-muted">Nothing on the schedule.</p>
-          ) : (
-            <div className="divide-y divide-dt-border">
-              {board.next_up.map((n, i) => (
-                <div key={i} className="flex items-center gap-3 py-2">
-                  <span className="text-sm">{({ work_item: '📋', case_wait: '⏸', watcher: '👁', objective_wake: '🔁' } as Record<string, string>)[n.kind] ?? '•'}</span>
-                  <p className="text-sm text-dt-body flex-1 truncate">{n.title}</p>
-                  <span className="text-xs text-dt-muted whitespace-nowrap">{fmtWhen(n.when)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          {board.listens_live && (
-            <p className="text-xs text-dt-support mt-2">Plus continuous: listening to the live support inbox in real time.</p>
-          )}
+      {/* ⚠ Gated on next_up ALONE. It used to render for listens_live or
+          waiting_on_you too, which produced a card headed "Next up" whose body
+          read "Nothing on the schedule" — 11 of 107 live employees saw exactly
+          that, every one of them triggered by a pending human task rather than
+          by anything scheduled. Both of those facts now render where they are
+          true: the approvals count in the banner above, the live-inbox line in
+          "Working right now" below.
+          "by when", not "in order": next_up is a union over work items, case
+          waits, watcher fire times and objective wakes ORDERED BY TIME. It is a
+          schedule. "In order" reads as a priority ranking, which it never was. */}
+      {board && board.next_up.length > 0 && (
+        <PanelCard title="Next up — by when">
+          <div className="divide-y divide-dt-border">
+            {board.next_up.map((n, i) => (
+              <div key={i} className="flex items-center gap-3 py-2">
+                <span className="text-sm">{({ work_item: '📋', case_wait: '⏸', watcher: '👁', objective_wake: '🔁' } as Record<string, string>)[n.kind] ?? '•'}</span>
+                <p className="text-sm text-dt-body flex-1 truncate">{n.title}</p>
+                <span className="text-xs text-dt-muted whitespace-nowrap">{fmtWhen(n.when)}</span>
+              </div>
+            ))}
+          </div>
         </PanelCard>
       )}
 
@@ -350,6 +427,13 @@ function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => v
               );
             })}
           </div>
+        )}
+        {/* Moved out of "Next up" (it has no scheduled time, so it never
+            belonged on a schedule): an active inbox watcher IS work happening
+            right now, and it is the honest answer to an otherwise empty panel
+            for an employee that only ever listens. */}
+        {board?.listens_live && (
+          <p className="text-xs text-dt-support mt-3">Plus continuous: listening to the live support inbox in real time.</p>
         )}
       </PanelCard>
 
@@ -428,23 +512,78 @@ function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => v
         title="Recent decisions & answers"
         actions={canOpenActivity ? <Button kind="ghost" size="sm" onClick={() => setPage('ops_de_activity')}>Open the At Work cockpit →</Button> : undefined}
       >
-        {activity.length === 0 ? (
-          <EmptyState icon="🗒️" headline="No recorded decisions yet">
-            Every answer and action {name} takes lands here with its evidence trail — knowledge used, systems consulted, and the decision that came out.
-          </EmptyState>
+        {/* The bar appears once there is anything to narrow, and STAYS while a
+            filter is on — otherwise a filter that empties the list takes its own
+            Clear button away with it. */}
+        {(activity.length > 0 || activityFiltered) && (
+          <FilterBar
+            className="mb-3"
+            presets={<>
+              {RANGES.map(r => (
+                <button key={r.label} onClick={() => setActivityDays(r.days)} aria-pressed={activityDays === r.days}>
+                  <Chip tone={activityDays === r.days ? 'accent' : 'neutral'}>{r.label}</Chip>
+                </button>
+              ))}
+            </>}
+            /* ⚠ "System", never "Topic". evidence_runs has no topic column;
+               source_category records WHICH SYSTEM the decision touched (CRM,
+               ERP, the support desk). Labelling it a topic would invent a
+               meaning the data has never carried. Options come from the values
+               PRESENT in these rows, so the facet self-enables. */
+            facets={activitySystems.length > 1 ? (
+              <select value={activitySystem} aria-label="Filter by the system the decision touched"
+                className={SELECT_CLS} onChange={e => setActivitySystem(e.target.value)}>
+                <option value="">Any system</option>
+                {activitySystems.map(c => <option key={c} value={c}>{systemLabel(c)}</option>)}
+              </select>
+            ) : undefined}
+            views={activityFiltered ? (
+              <Button kind="ghost" size="sm" onClick={() => { setActivityDays(null); setActivitySystem(''); }}>Clear</Button>
+            ) : undefined}
+          />
+        )}
+        {activityLoading ? (
+          <p className="text-sm text-dt-muted py-6 text-center">Loading decisions…</p>
+        ) : shownActivity.length === 0 ? (
+          activityFiltered ? (
+            // NOT "no recorded decisions yet" — that would blame the employee
+            // for a window the reader chose.
+            <EmptyState icon="🔍" headline="Nothing recorded inside these filters"
+              action={<Button kind="secondary" size="sm" onClick={() => { setActivityDays(null); setActivitySystem(''); }}>Show all time</Button>}>
+              {name} has no decisions in the selected window{activitySystem ? ` for ${systemLabel(activitySystem)}` : ''}. Widen the range to look further back.
+            </EmptyState>
+          ) : (
+            <EmptyState icon="🗒️" headline="No recorded decisions yet">
+              Every answer and action {name} takes lands here with its evidence trail — knowledge used, systems consulted, and the decision that came out.
+            </EmptyState>
+          )
         ) : (
-          <div className="divide-y divide-dt-border">
-            {activity.map(r => {
-              const d = r.decision ? DECISION_CHIP[r.decision.decision] : null;
-              return (
-                <div key={r.evidence_run.id} className="flex items-center gap-3 py-2.5">
-                  <span className="text-xs text-dt-muted w-28 shrink-0">{fmt(r.evidence_run.created_at)}</span>
-                  <p className="text-sm text-dt-body truncate flex-1">{r.evidence_run.inquiry}</p>
-                  {d ? <Chip tone={d.tone}>{d.label}</Chip> : <Chip tone="neutral">no decision</Chip>}
-                </div>
-              );
-            })}
-          </div>
+          <>
+            {/* Scrolls inside the card instead of stretching the page. Rows are
+                flex, not a table, so only the vertical axis is constrained —
+                nothing here can clip a column. */}
+            <div className="max-h-96 overflow-y-auto divide-y divide-dt-border pr-1">
+              {shownActivity.map(r => {
+                const d = r.decision ? DECISION_CHIP[r.decision.decision] : null;
+                const cat = r.decision?.source_category;
+                return (
+                  <div key={r.evidence_run.id} className="flex items-center gap-3 py-2.5">
+                    <span className="text-xs text-dt-muted w-28 shrink-0">{fmt(r.evidence_run.created_at)}</span>
+                    <p className="text-sm text-dt-body truncate flex-1">{r.evidence_run.inquiry}</p>
+                    {cat && <span className="text-[11px] text-dt-muted shrink-0">{systemLabel(cat)}</span>}
+                    {d ? <Chip tone={d.tone}>{d.label}</Chip> : <Chip tone="neutral">no decision</Chip>}
+                  </div>
+                );
+              })}
+            </div>
+            {/* Say what is on screen and what is not. A capped list that stays
+                silent about its cap reads as the whole history. */}
+            <p className="text-[11px] text-dt-muted mt-2">
+              {activitySystem ? `${shownActivity.length} of ${activity.length} shown` : `${shownActivity.length} shown`}
+              {activityDays === null ? ', all time' : `, last ${activityDays} days`}
+              {activity.length >= ACTIVITY_LIMIT && ` — the newest ${ACTIVITY_LIMIT} only; narrow the window or open the cockpit to see further back`}.
+            </p>
+          </>
         )}
       </PanelCard>
 
@@ -476,10 +615,8 @@ function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => v
 }
 
 // ── Performance — the Performance tab's numbers, for ONE employee ─
-
-const RANGES: { label: string; days: number | null }[] = [
-  { label: '7 days', days: 7 }, { label: '30 days', days: 30 }, { label: '90 days', days: 90 }, { label: 'All time', days: null },
-];
+// (RANGES — the shared time-window vocabulary — is declared at the top of the
+// file: the Work tab's decision feed offers the same four windows.)
 
 function PerformanceTab({ de, tenantId }: { de: DigitalEmployee; tenantId: string }) {
   const [range, setRange] = useState<number | null>(30);

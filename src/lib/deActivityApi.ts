@@ -126,12 +126,21 @@ export interface DEActivityRow {
 // tenant-wide limit — on a busy tenant a DE outside the newest N rows showed
 // a false "no decisions yet". Decisions are fetched for exactly the returned
 // runs, not by their own tenant-wide limit.
-export async function listDEActivity(limit = 30, deId?: string | null): Promise<DEActivityRow[]> {
+//
+// `sinceDays` is here for the same reason and must never move back to the
+// caller: filtering an already-limited window client-side reports "nothing in
+// the last 7 days" whenever the newest `limit` rows all happen to be older
+// than that — the identical false-negative the deId fix above removed.
+// null/undefined means no date bound at all (all time).
+export async function listDEActivity(limit = 30, deId?: string | null, sinceDays?: number | null): Promise<DEActivityRow[]> {
   const tid = await requireTenantId();
   // 682 (G-B): the founder-facing feeds show WORK. Exam-origin runs (marked by
   // the migration's backfill + de-answer's stamp) stay in the Proving Ground.
   let runsQ = supabase.from('evidence_runs').select('*').eq('tenant_id', tid).neq('origin', 'exercise');
   if (deId) runsQ = runsQ.eq('de_id', deId);
+  if (sinceDays != null) {
+    runsQ = runsQ.gte('created_at', new Date(Date.now() - sinceDays * 86_400_000).toISOString());
+  }
   const [{ data: runs, error: runErr }, { data: des }] = await Promise.all([
     runsQ.order('created_at', { ascending: false }).limit(limit),
     // One lookup over every employee. The retired specialists are ordinary

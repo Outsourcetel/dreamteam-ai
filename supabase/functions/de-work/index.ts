@@ -184,9 +184,25 @@ async function compileSopToWorkItems(
   admin: SupabaseClient,
   obj: { id: string; tenant_id: string; de_id: string; title: string; description: string },
 ): Promise<number> {
+  // The ORDER BY is load-bearing, not tidiness. Without it Postgres may return
+  // these rows in any order — and it can change on a VACUUM, an index choice or
+  // a plan flip — so WHICH of an employee's procedures compiled into real work
+  // was genuinely undefined, and could differ between two identical objectives.
+  //
+  // `updated_at desc` is chosen to agree with the sibling selector in
+  // get_de_briefing (mig 250), so the procedure an employee is BRIEFED on and
+  // the procedure it EXECUTES cannot disagree by accident. `id` is a stable
+  // tiebreak for two procedures saved in the same transaction.
+  //
+  // This makes the choice deterministic and explicable; it does not make it
+  // PRIORITISED. Declared rank and match-conditions between procedures are a
+  // separate piece of work (docs/54 item 16) — until then, most-recently-edited
+  // wins, and that is now at least a rule an operator can predict.
   const { data: defs } = await admin.from('playbook_definitions')
     .select('id, status, steps')
     .eq('tenant_id', obj.tenant_id).eq('de_id', obj.de_id).eq('status', 'published')
+    .order('updated_at', { ascending: false })
+    .order('id', { ascending: true })
     .limit(5);
   const rows = (defs ?? []) as Array<{ steps: unknown }>;
   type SopStep = { key?: string; kind?: string; title?: string; detail?: string; tool?: string; work_kind?: string };

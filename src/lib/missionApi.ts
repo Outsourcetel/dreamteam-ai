@@ -106,11 +106,87 @@ export async function listArchetypeTargets(): Promise<{ archetype_key: string; c
   return [...counts.entries()].map(([archetype_key, count]) => ({ archetype_key, count })).sort((a, b) => b.count - a.count);
 }
 
+// ── State changes ────────────────────────────────────────────────────────
+//
+// ⚠ set_de_mission_state is the ONLY thing that can move a mission. Migration
+// 716 revoked every DML grant on de_missions from `authenticated`, and both
+// RLS policies are read-only, so there is no second path to write here.
+//
+// Verified against the live pg_get_functiondef on 2026-08-12, the RPC's CASE
+// permits exactly:
+//     pause  ← approved | running
+//     resume ← paused
+//     cancel ← draft | awaiting_approval | approved | running | paused
+//
+// The panel rendered Cancel for running|paused ONLY, so a mission parked at
+// draft, awaiting_approval or approved had no control that removed it — and
+// `approved` had no control of any kind. That was a pure UI gap: the server
+// had always allowed it. This list is the single copy of that fact; if the
+// RPC's CASE ever changes, change it HERE and nowhere else.
+export const MISSION_CANCELLABLE: readonly MissionStatus[] =
+  ['draft', 'awaiting_approval', 'approved', 'running', 'paused'] as const;
+
+export function canCancelMission(status: MissionStatus): boolean {
+  return MISSION_CANCELLABLE.includes(status);
+}
+
+const STATE_ERR: Record<string, string> = {
+  not_permitted: 'Only owners, admins and managers can change a mission.',
+  not_found: 'That mission is no longer in this workspace.',
+  not_responsible_for_de: 'You don’t look after that employee.',
+  invalid_transition: 'That mission has already moved on — reload to see where it is now.',
+};
+
 export async function setMissionState(missionId: string, action: 'pause' | 'resume' | 'cancel'): Promise<void> {
   const { data, error } = await supabase.rpc('set_de_mission_state', { p_mission_id: missionId, p_action: action });
   if (error) throw new Error(error.message);
   const res = data as { ok?: boolean; error?: string };
-  if (!res?.ok) throw new Error(res?.error ?? `Could not ${action} the mission.`);
+  // ⚠ .rpc() RESOLVES on a governed refusal — the refusal is in the body, not
+  // in `error`. Translate it: `invalid_transition` on a founder's screen is
+  // the row's vocabulary, not an answer.
+  if (!res?.ok) throw new Error(STATE_ERR[res?.error ?? ''] ?? (res?.error ?? `Could not ${action} the mission.`));
+}
+
+// What a cancel would actually unwind, counted rather than guessed. The RPC's
+// cancel path deletes work_watchers for the mission (cascading
+// work_watcher_matches), cancels QUEUED de_work_items under its objectives,
+// and abandons de_objectives still open/in_progress/blocked. A confirm dialog
+// that says "are you sure?" over that is not a warning, it is a shrug.
+export interface MissionUnwind {
+  /** false = at least one probe was refused. DO NOT quote the numbers. */
+  readable: boolean;
+  watchers: number;
+  liveObjectives: number;
+  queuedWorkItems: number;
+}
+
+export async function missionUnwindImpact(missionId: string): Promise<MissionUnwind> {
+  // ⚠ Zero findings from zero comparisons looks exactly like a clean result.
+  // A refused read here would hand the dialog a confident "0 watchers" — a
+  // lie wearing a number — so any probe error makes the WHOLE result
+  // unreadable and the caller falls back to honest general wording.
+  const unreadable: MissionUnwind = { readable: false, watchers: 0, liveObjectives: 0, queuedWorkItems: 0 };
+
+  const [w, o] = await Promise.all([
+    supabase.from('work_watchers').select('id').eq('mission_id', missionId),
+    supabase.from('de_objectives').select('id,status').eq('mission_id', missionId),
+  ]);
+  if (w.error || o.error) return unreadable;
+
+  const objectives = (o.data ?? []) as { id: string; status: string }[];
+  const live = objectives.filter(r => ['open', 'in_progress', 'blocked'].includes(r.status)).length;
+
+  let queuedWorkItems = 0;
+  if (objectives.length > 0) {
+    // de_work_items carries objective_id, not mission_id — the same hop the
+    // RPC makes via its FROM de_objectives join.
+    const { data, error } = await supabase.from('de_work_items').select('id')
+      .in('objective_id', objectives.map(r => r.id)).eq('status', 'queued');
+    if (error) return unreadable;
+    queuedWorkItems = (data ?? []).length;
+  }
+
+  return { readable: true, watchers: (w.data ?? []).length, liveObjectives: live, queuedWorkItems };
 }
 
 async function invoke(body: Record<string, unknown>): Promise<Record<string, unknown>> {

@@ -280,6 +280,15 @@ const SKILL_CATEGORY_LABEL: Record<string, string> = {
   analytical: 'Analytical', integration: 'Integration',
 };
 const PROFICIENCY_NAME = ['', 'Foundational', 'Developing', 'Proficient', 'Advanced', 'Expert'];
+// description and signal_label are NOT NULL on skill_catalog, and
+// upsert_tenant_skill fills them from the name / this fixed string when the
+// caller leaves them blank. Printing that back at a reader is boilerplate
+// dressed as detail, so a fallback value renders as nothing at all.
+const SKILL_SIGNAL_FALLBACK = 'Assessed from work signals';
+// One recipe for the four controls in the add-skill form. Compact, because the
+// form sits inside a panel of 11px copy; focus is the system ring, never a
+// border-colour change (design-system §Borders).
+const SKILL_FIELD_CLS = 'bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 placeholder:text-dt-faint focus:outline-none focus:ring-2 focus:ring-dt-accent focus:border-transparent';
 export function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
   const canManage = useCanManageDe();
   const [skills, setSkills] = useState<SkillRow[] | null>(null);
@@ -290,6 +299,11 @@ export function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState('');
   const [newCat, setNewCat] = useState('domain');
+  // The catalog has always stored a description and a signal label per skill,
+  // and this form collected neither — so a workspace skill reached the screen
+  // as a bare title, exactly the complaint the built-ins drew.
+  const [newDesc, setNewDesc] = useState('');
+  const [newSignal, setNewSignal] = useState('');
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -321,8 +335,12 @@ export function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
     if (!name) return;
     setSaving(true); setError(null);
     try {
-      await createTenantSkill({ skillKey: slugifyKey(name), name, category: newCat });
-      setAdding(false); setNewName('');
+      await createTenantSkill({
+        skillKey: slugifyKey(name), name, category: newCat,
+        description: newDesc.trim() || undefined,
+        signalLabel: newSignal.trim() || undefined,
+      });
+      setAdding(false); setNewName(''); setNewDesc(''); setNewSignal('');
       await load();
     } catch (e) { setError((e as Error).message); }
     setSaving(false);
@@ -366,6 +384,8 @@ export function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
       <p className="text-[11px] text-dt-muted mb-3">
         Proficiency is measured from real 30-day evidence, never self-reported. Level 5 (Expert) is
         awarded by a person, not the assessment — so it tops out at Advanced automatically.
+        What a skill <em>says</em> is documentation for whoever reads this file: nothing routes work
+        by it, prompts with it, or gates the employee on it.
       </p>
       {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
       {skills === null ? (
@@ -377,6 +397,12 @@ export function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
           {skills.map(s => {
             const cat = s.category ?? '';
             const assessed = s.proficiency != null;
+            // list_de_skills has returned both of these since mig 206 and the
+            // row printed neither, so the explanation was fetched over the wire
+            // and thrown away before paint. Fallback values render as nothing.
+            const about = s.description && s.description !== s.name ? s.description : null;
+            const signal = s.signal_label && s.signal_label !== s.name
+              && s.signal_label !== SKILL_SIGNAL_FALLBACK ? s.signal_label : null;
             return (
               <div key={s.skill_key} className="rounded-xl border border-dt-border bg-dt-page p-3">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -404,6 +430,15 @@ export function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
                         : l === 5 ? 'bg-dt-panel border border-dashed border-dt-border-strong' : 'bg-dt-panel'}`} />
                     ))}
                   </div>
+                )}
+                {about && <p className="text-xs text-dt-support mt-2 leading-relaxed">{about}</p>}
+                {signal && (
+                  <p className="text-[11px] text-dt-muted mt-1.5">
+                    <span className="text-[10px] uppercase tracking-wide text-dt-faint mr-1.5">
+                      {s.is_custom ? 'Judged by' : 'Measured by'}
+                    </span>
+                    {signal}
+                  </p>
                 )}
                 <p className="text-[11px] text-dt-muted mt-1.5">{s.detail}</p>
                 {/* Built-in proficiency stays evidence-only and is never
@@ -440,21 +475,40 @@ export function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
             so you rate it yourself — it will be labelled &ldquo;rated by a person&rdquo; wherever it appears,
             to keep it distinct from the evidence-assessed ones above.
           </p>
-          <div className="flex items-center gap-2 flex-wrap">
-            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Telecom provisioning"
-              className="flex-1 min-w-[180px] bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
-            <select value={newCat} onChange={e => setNewCat(e.target.value)}
-              className="bg-dt-card border border-dt-border-strong text-dt-support text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
-              {(categories.length ? categories : Object.keys(SKILL_CATEGORY_LABEL).map(k => ({ key: k, label: SKILL_CATEGORY_LABEL[k], sort_order: 0, is_custom: false })))
-                .map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
-            </select>
+          <div>
+            <label className="block text-[10px] uppercase tracking-wide text-dt-muted mb-1">Name and category</label>
+            <div className="flex items-center gap-2 flex-wrap">
+              <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Telecom provisioning"
+                className={`flex-1 min-w-[180px] ${SKILL_FIELD_CLS}`} />
+              <select value={newCat} onChange={e => setNewCat(e.target.value)}
+                className={SKILL_FIELD_CLS}>
+                {(categories.length ? categories : Object.keys(SKILL_CATEGORY_LABEL).map(k => ({ key: k, label: SKILL_CATEGORY_LABEL[k], sort_order: 0, is_custom: false })))
+                  .map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+              </select>
+            </div>
           </div>
+          <div>
+            <label className="block text-[10px] uppercase tracking-wide text-dt-muted mb-1">What it means <span className="normal-case tracking-normal text-dt-faint">(optional)</span></label>
+            <textarea value={newDesc} onChange={e => setNewDesc(e.target.value)} rows={2}
+              placeholder="e.g. Configuring a new circuit end to end without pulling in a network engineer."
+              className={`w-full resize-y leading-relaxed ${SKILL_FIELD_CLS}`} />
+          </div>
+          <div>
+            <label className="block text-[10px] uppercase tracking-wide text-dt-muted mb-1">What you would judge it by <span className="normal-case tracking-normal text-dt-faint">(optional)</span></label>
+            <input value={newSignal} onChange={e => setNewSignal(e.target.value)}
+              placeholder="e.g. Orders provisioned without rework"
+              className={`w-full ${SKILL_FIELD_CLS}`} />
+          </div>
+          <p className="text-[10px] text-dt-muted">
+            Both are written for the people who read this file. Neither is read by the employee or by
+            anything that routes work — the skill stays a record, not a gate.
+          </p>
           <div className="flex gap-2">
             <button onClick={() => void addSkill()} disabled={saving || !canManage || !newName.trim()}
               className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
               {saving ? 'Adding…' : 'Add skill'}
             </button>
-            <button onClick={() => { setAdding(false); setNewName(''); }}
+            <button onClick={() => { setAdding(false); setNewName(''); setNewDesc(''); setNewSignal(''); }}
               className="text-xs text-dt-muted hover:text-dt-support">Cancel</button>
           </div>
         </div>
@@ -1535,6 +1589,12 @@ const MODEL_LABELS: Record<string, string> = {
 // replies. Reads/writes the DE's external_reply_mode (the channel obeys it).
 function DeReplyModePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: DigitalEmployee) => void }) {
   const canManage = useCanManageDe();
+  // Only a customer-facing employee ever answers a customer, so only one gets
+  // this control. `category` is CHECK ('Customer','Internal'), set at hire and
+  // populated on every row; NOTHING at runtime reads it, so gating the panel on
+  // it changes what is shown and nothing about what any employee does.
+  const customerFacing = de.category === 'Customer';
+  const who = de.persona_name || de.name;
   const [mode, setMode] = useState<'draft' | 'auto'>(de.external_reply_mode === 'auto' ? 'auto' : 'draft');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1544,6 +1604,7 @@ function DeReplyModePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
   // silently reassign or no-op the widget with no visible cause.
   const [front, setFront] = useState<{ id: string; name: string } | null>(null);
   useEffect(() => {
+    if (!customerFacing) return;
     let cancelled = false;
     void supabase.from('digital_employees')
       .select('id, name, persona_name, external_reply_mode, lifecycle_status, created_at')
@@ -1555,7 +1616,7 @@ function DeReplyModePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
         setFront(f ? { id: f.id, name: f.persona_name ?? f.name } : null);
       });
     return () => { cancelled = true; };
-  }, [de.id, de.external_reply_mode]);
+  }, [de.id, de.external_reply_mode, customerFacing]);
   useEffect(() => { setMode(de.external_reply_mode === 'auto' ? 'auto' : 'draft'); }, [de.id, de.external_reply_mode]);
 
   const choose = async (next: 'draft' | 'auto') => {
@@ -1571,6 +1632,26 @@ function DeReplyModePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
       setError((err as Error)?.message || 'Failed to save.');
     } finally { setBusy(false); }
   };
+
+  // An internal employee has no customer channel to send into, so the two
+  // send-mode buttons would govern nothing they do. Say that once rather than
+  // leave a live control that does nothing — and rather than hide it silently,
+  // which reads as a missing feature.
+  if (!customerFacing) {
+    return (
+      <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
+        <div className="mb-1 flex items-center gap-2 flex-wrap">
+          <h3 className="text-base font-semibold text-white">Customer replies</h3>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted">not applicable</span>
+        </div>
+        <p className="text-[11px] text-dt-support">
+          {who} was hired as an internal employee, so nothing they write goes out through the customer
+          support chat and there is nothing to set here. Employee type is fixed at hire — no screen
+          changes it today.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">

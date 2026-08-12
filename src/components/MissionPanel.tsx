@@ -3,8 +3,10 @@ import { useIsTenantManager } from '../lib/useRoleGate';
 import type { DigitalEmployee } from '../lib/digitalEmployeesApi';
 import {
   listMissions, createMission, compileMission, approveMission, setMissionState, missionProgress,
-  type MissionRow, type MissionProgress,
+  canCancelMission, missionUnwindImpact,
+  type MissionRow, type MissionProgress, type MissionStatus,
 } from '../lib/missionApi';
+import { useConfirm } from './useDialog';
 import { Banner, Button, Chip, Drawer, EmptyState, Field, INPUT_CLS, PanelCard, type Tone } from '../design/primitives';
 
 // Mission Delegation UI (docs/14): the directive box, the plan-approval
@@ -150,13 +152,30 @@ export function PlanDrawer({ mission, onClose, onApproved }: {
   );
 }
 
+// A `failed` mission whose error starts with `cannot_do:` is a JUDGMENT, not a
+// fault: the compiler read the order and refused it as outside this employee's
+// job (de-mission/index.ts writes that prefix on plan.impossible). Compiling it
+// again asks the same question of the same employee and gets the same answer —
+// so the row must not keep offering a retry that cannot succeed.
+const CANNOT_DO = 'cannot_do:';
+const refusedReason = (m: MissionRow): string | null =>
+  m.status === 'failed' && m.error?.startsWith(CANNOT_DO)
+    ? (m.error.slice(CANNOT_DO.length).trim() || 'no reason given')
+    : null;
+
 export function MissionRowView({ m, onChanged, onReview }: { m: MissionRow; onChanged: () => void; onReview: (m: MissionRow) => void }) {
   // set_de_mission_state is owner/admin/manager; the Employee File is ALL_TENANT.
   const isTenantManager = useIsTenantManager();
+  const { confirm, confirmUI } = useConfirm();
   const [progress, setProgress] = useState<MissionProgress | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const chip = STATUS_CHIP[m.status] ?? { label: m.status, tone: 'neutral' as Tone };
+  const refused = refusedReason(m);
+  // Before approval nothing has been installed, so the honest verb is
+  // "Discard" — but the row still lands in the same `cancelled` status, and
+  // the dialog says so rather than inventing a state the database doesn't have.
+  const preStart = m.status === 'draft' || m.status === 'awaiting_approval';
 
   useEffect(() => {
     if (!['running', 'paused', 'done'].includes(m.status)) return;
@@ -171,26 +190,67 @@ export function MissionRowView({ m, onChanged, onReview }: { m: MissionRow; onCh
     setBusy(false);
   };
 
+  // Cancel is destructive and irreversible — nothing moves a mission OUT of
+  // `cancelled`. Say what is actually unwound, counted where the counts can be
+  // read, general where they can't.
+  const askCancel = async () => {
+    setError(null);
+    const impact = await missionUnwindImpact(m.id);
+    const parts: string[] = [];
+    if (impact.readable) {
+      if (impact.watchers > 0) parts.push(`${impact.watchers} standing watcher${impact.watchers === 1 ? '' : 's'} this mission installed ${impact.watchers === 1 ? 'is' : 'are'} deleted — ${impact.watchers === 1 ? 'it stops' : 'they stop'} opening new cases`);
+      if (impact.queuedWorkItems > 0) parts.push(`${impact.queuedWorkItems} piece${impact.queuedWorkItems === 1 ? '' : 's'} of work still queued ${impact.queuedWorkItems === 1 ? 'is' : 'are'} cancelled`);
+      if (impact.liveObjectives > 0) parts.push(`${impact.liveObjectives} goal${impact.liveObjectives === 1 ? '' : 's'} still open ${impact.liveObjectives === 1 ? 'is' : 'are'} abandoned`);
+    }
+    const message = (
+      <div className="space-y-2">
+        <p>“{m.directive_text}”</p>
+        {!impact.readable ? (
+          <p>
+            Any standing watchers this mission installed are deleted, work still queued is cancelled,
+            and goals still open are abandoned. (We couldn’t read the exact counts just now, so those
+            are the effects rather than the numbers.)
+          </p>
+        ) : parts.length === 0 ? (
+          <p>Nothing has started under it yet — no watchers, no queued work, no open goals — so this only closes it.</p>
+        ) : (
+          <ul className="list-disc pl-5 space-y-0.5">{parts.map((p, i) => <li key={i}>{p}</li>)}</ul>
+        )}
+        <p>Work already finished stays exactly as it is. The mission is marked <span className="text-dt-body">Cancelled</span> and cannot be reopened or restarted — a new order would have to be given from scratch.</p>
+      </div>
+    );
+    const ok = await confirm({
+      title: preStart ? 'Discard this mission?' : 'Cancel this mission?',
+      message,
+      confirmLabel: preStart ? 'Yes, discard it' : 'Yes, cancel it',
+      cancelLabel: 'Keep it',
+      tone: 'danger',
+    });
+    if (ok) await act(() => setMissionState(m.id, 'cancel'));
+  };
+
   return (
     <div className="py-2.5">
       <div className="flex items-center gap-3 flex-wrap">
         <Chip tone={chip.tone} dot pulse={chip.pulse}>{chip.label}</Chip>
         <p className="text-sm text-dt-body flex-1 min-w-[12rem] truncate">{m.directive_text}</p>
         {m.status === 'awaiting_approval' && <Button kind="primary" size="sm" onClick={() => onReview(m)}>Review plan</Button>}
-        {['draft', 'failed'].includes(m.status) && (
+        {(m.status === 'draft' || (m.status === 'failed' && !refused)) && (
           <Button kind="secondary" size="sm" disabled={busy || !isTenantManager} onClick={() => void act(async () => {
             const r = await compileMission(m.id);
             if (!r.ok) throw new Error(r.impossible ? `The employee says it can't: ${r.impossible}` : (r.error ?? 'Compile failed.'));
           })}>{busy ? 'Compiling…' : 'Compile plan'}</Button>
         )}
         {['running', 'paused'].includes(m.status) && (
-          <>
-            <Button kind="ghost" size="sm" disabled={busy || !isTenantManager}
-              onClick={() => void act(() => setMissionState(m.id, m.status === 'paused' ? 'resume' : 'pause'))}>
-              {m.status === 'paused' ? 'Resume' : 'Pause'}
-            </Button>
-            <Button kind="danger" size="sm" disabled={busy || !isTenantManager} onClick={() => void act(() => setMissionState(m.id, 'cancel'))}>Cancel</Button>
-          </>
+          <Button kind="ghost" size="sm" disabled={busy || !isTenantManager}
+            onClick={() => void act(() => setMissionState(m.id, m.status === 'paused' ? 'resume' : 'pause'))}>
+            {m.status === 'paused' ? 'Resume' : 'Pause'}
+          </Button>
+        )}
+        {canCancelMission(m.status) && (
+          <Button kind="danger" size="sm" disabled={busy || !isTenantManager} onClick={() => void askCancel()}>
+            {preStart ? 'Discard' : 'Cancel'}
+          </Button>
         )}
       </div>
       {progress && progress.total > 0 && (
@@ -209,8 +269,19 @@ export function MissionRowView({ m, onChanged, onReview }: { m: MissionRow; onCh
           {(m.report.unrouted?.length ?? 0) > 0 && ` ${m.report.unrouted!.length} left unrouted (no eligible employee).`}
         </p>
       )}
-      {m.error && <p className="text-xs text-dt-danger mt-1 pl-1">{m.error}</p>}
+      {m.error && (
+        <p className="text-xs text-dt-danger mt-1 pl-1">
+          {refused ? `Refused — this falls outside what this employee does: ${refused}` : m.error}
+        </p>
+      )}
+      {refused && (
+        <p className="text-xs text-dt-muted mt-1 pl-1">
+          Compiling it again would return the same refusal, so there is no retry here. Re-word it as a
+          new mission above, or give it to an employee whose job covers it.
+        </p>
+      )}
       {error && <p className="text-xs text-dt-danger mt-1 pl-1">{error}</p>}
+      {confirmUI}
     </div>
   );
 }
@@ -242,6 +313,8 @@ const MISSION_TEMPLATES: Array<{ key: string; label: string; directive: string }
   },
 ];
 
+const CLOSED_STATUSES: MissionStatus[] = ['done', 'cancelled'];
+
 export default function MissionPanel({ de }: { de: DigitalEmployee }) {
   // create_de_mission is owner/admin/manager; this panel sits on the Employee
   // File, which is ALL_TENANT. MissionRowView above already gates Compile and
@@ -255,7 +328,12 @@ export default function MissionPanel({ de }: { de: DigitalEmployee }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [review, setReview] = useState<MissionRow | null>(null);
+  // Closed missions are history, not the desk. `failed` is deliberately NOT
+  // closed — it still wants a decision, and hiding it would hide the problem.
+  const [showClosed, setShowClosed] = useState(false);
   const name = de.persona_name ?? de.name;
+  const closedCount = (missions ?? []).filter(m => CLOSED_STATUSES.includes(m.status)).length;
+  const shown = (missions ?? []).filter(m => showClosed || !CLOSED_STATUSES.includes(m.status));
 
   const load = useCallback(async () => {
     try {
@@ -314,10 +392,23 @@ export default function MissionPanel({ de }: { de: DigitalEmployee }) {
               <EmptyState icon="🎯" headline="No missions yet">
                 Give {name} a one-sentence order above — batches ("run renewals for Q3"), projects ("implement the books for client X"), or recurring cadences.
               </EmptyState>
+            ) : shown.length === 0 ? (
+              // ⚠ NOT the empty state: there ARE missions, they are all closed.
+              // "No missions yet" here would be a lie the toggle below disproves.
+              <p className="text-xs text-dt-muted py-3">
+                Nothing open — every mission {name} has been given is finished or cancelled.
+              </p>
             ) : (
-              missions.map(m => <MissionRowView key={m.id} m={m} onChanged={() => void load()} onReview={setReview} />)
+              shown.map(m => <MissionRowView key={m.id} m={m} onChanged={() => void load()} onReview={setReview} />)
             )}
           </div>
+          {closedCount > 0 && (
+            <div className="mt-1.5">
+              <Button kind="ghost" size="sm" onClick={() => setShowClosed(v => !v)}>
+                {showClosed ? `Hide ${closedCount} closed` : `Show ${closedCount} closed (finished or cancelled)`}
+              </Button>
+            </div>
+          )}
         </>
       )}
       {review && <PlanDrawer mission={review} onClose={() => setReview(null)} onApproved={() => void load()} />}
