@@ -445,9 +445,39 @@ escalation taxonomy and direction · certification purpose.
 
 ---
 
-## 4. Stage A + B — BUILT 2026-08-12, NOT YET APPLIED OR COMMITTED
+## 4. Stage A + B — SHIPPED 2026-08-12
 
-Four migrations written (`723`–`726`), **none applied**. 13 source files changed.
+**Committed** (6 commits, `7d23c1a8`..`c8ae9ce6`) and **migrations 723–726 APPLIED to production
+and verified by re-query**, not by trusting the ledger line:
+
+| Check | Result |
+|---|---|
+| `finance_de`/`account_de` still default_enabled | **0** ✅ |
+| `baseline_incomplete` parity findings | **0** ✅ |
+| `audit_tenant_feature_parity` executable by `authenticated` | **false** ✅ (intended) |
+| `audit_tenant_provisioning` executable by `authenticated` | **true** ✅ (Platform Console preserved) |
+| `list_org_tree_core` uses `coalesce(nullif(persona_name…))` | **true** ✅ |
+| `update_employee_profile` has `full_name` in the allow-list **and** the `SET` clause | **true / true** ✅ |
+| `guardrail_rules.retired_at` exists · resolver filters it | **true / true** ✅ |
+
+Remaining parity findings: **3, all `tenant_action_shadows_platform` on Acme Telecom, all already
+in `tenant_parity_exemptions`** — pre-existing, class (d), untouched by this work, and the weekly
+cron filters exemptions before alerting, so it stays quiet.
+
+**Hudson & Family cleaned up (founder-approved, that tenant only), using the product's own
+reversible mechanism** — `reconcile_tenant_feature(..., false)` → `deprovision_starter_de_internal`:
+Finance DE and Account Success DE are `status=disabled, lifecycle_status=paused`, their playbook
+charters / event rules / autonomy disabled, an audit event written; both playbooks
+`status='archived'`. Workspace Assistant and Ada untouched. Baseline still complete.
+⚠ **The two paused employees are still visible on the Workforce page** — it filters
+`retired`/`archived` but not `paused`. Making them disappear needs `retire_digital_employee`,
+whose own contract says it is **terminal**; not done without an explicit decision.
+
+---
+
+### Build record (as written, before apply)
+
+Four migrations (`723`–`726`). 13 source files changed.
 `npm run typecheck` exit 0 · `npm run build` ✓ 21.7s · `npm test` **166/166 assertions pass**
 (one suite red in TEARDOWN only — see below, not caused by this work).
 
