@@ -415,6 +415,17 @@ declare
   v_arch_sop     int;
   v_checked      int := 0;
 begin
+  -- A migration IS a service actor, and must say so before touching a path
+  -- that writes the audit chain. playbook_steps_guard (added 2026-08-11 after
+  -- the "Rabeel" prose overwrite) calls append_audit_event on every UPDATE of
+  -- `steps`, and append_audit_event refuses anything that is neither
+  -- service_role nor a tenant member — so the Management API path raises
+  -- "not a member of this tenant". Transaction-local, the same set_config
+  -- pattern resume_playbook_on_task already needs. NOT a workaround for the
+  -- guard: the audit event still gets written, correctly attributed to
+  -- 'Service or automation'.
+  perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
   -- ── A1. The classifier answers BOTH ways ─────────────────────
   if public.playbook_definition_kind('[{"key":"x","kind":"use_tool"}]'::jsonb) <> 'sop' then
     raise exception 'ASSERT FAILED: a use_tool step must classify as sop';
