@@ -19,6 +19,7 @@ import { advisoryBoundarySql } from './advisory-boundary.mjs';
 import { trustProposerBoundarySql } from './trust-proposer-boundary.mjs';
 import { gapGateConductSql, auditedStepsWritesSql, snapshotGateSql, gapEvidenceSql } from './playbook-gap-probes.mjs';
 import { writePerimeterSql, silentNoopWriteSql } from './write-perimeter.mjs';
+import { triggerExecutePerimeterSql, TRIGGER_FN_SOURCE } from './trigger-execute-perimeter.mjs';
 
 // ── Fixtures for no-untyped-literal-appended-to-a-container ────────────────
 // The production catalog is CLEAN of this shape, so the probe returns zero rows
@@ -1314,6 +1315,60 @@ const CASES = [
     name: `playbook-branch-parity --mutate=${mut} (MANUAL, drives the DEPLOYED edge function: a SELECT cannot fake an HTTP run)`,
     manual: `${evidence} Verified 2026-08-12 against playbook-execute v49; exit 0 = caught and named.`,
   })),
+
+  // ── trigger-functions-hold-no-ambient-execute (mig 722) ────────────────
+  // The probe runs against a catalogue that mig 722 just made CLEAN — 0 of 80
+  // breached — so every arm returns zero rows and passes trivially. These are
+  // the only thing proving it can fire at all. Each case UNIONs ONE synthesised
+  // catalogue row into the REAL query and counts ONLY rows naming that fixture,
+  // so a real breach arriving later cannot pass a case on the mutation's behalf.
+  ...(() => {
+    const viol = (sql, like = 'mutant_trigger_fn') => `select 1 from (${sql}) x
+       where x.violation like '%${like}%'`;
+    // Defaults are the CLEAN shape: nothing ambient, owner intact. Each case
+    // flips exactly one field, so `silent` and `fires` differ by the defect
+    // alone — the probe discriminating, not the harness choosing.
+    const row = (o = {}) => {
+      const d = { anon: 'false', authed: 'false', public_x: 'false', owner_x: 'true', ...o };
+      return `select 'mutant_trigger_fn'::text as fn_name, ${d.anon} as anon,
+                     ${d.authed} as authed, ${d.public_x} as public_x, ${d.owner_x} as owner_x`;
+    };
+    const withRow = (o) => triggerExecutePerimeterSql({
+      fnSource: `${TRIGGER_FN_SOURCE} union all ${row(o)}`,
+    });
+    const case_ = (name, mutation) => ({
+      name: `trigger-execute-perimeter (${name})`,
+      fires: viol(withRow(mutation)),
+      silent: viol(withRow({})),
+    });
+    return [
+      // The 44 of 49: never granted to anyone, just never revoked from PUBLIC.
+      // This is the shape a NEW function is still born with, because there is
+      // no default-privileges fix for functions — so it is the one most likely
+      // to arrive again.
+      case_('the built-in PUBLIC grant left in place — the shape 44 of the 49 had',
+            { public_x: 'true' }),
+      // playbook_definitions_set_kind's shape: an explicit grant to both.
+      case_('an explicit grant to anon', { anon: 'true' }),
+      case_('an explicit grant to authenticated — the shape the other 5 had',
+            { authed: 'true' }),
+      // BOTH HALVES. mig 643's mask: the revoke that took too much. Without
+      // this arm the probe would rate a function nobody can attach a trigger to
+      // as perfectly healthy, because it is certainly not reachable by anon.
+      case_('BOTH HALVES: the owner over-revoked, so CREATE TRIGGER would now fail',
+            { owner_x: 'false' }),
+      {
+        // The arm that stops the whole probe being theatre once the catalogue
+        // is clean, which it now is.
+        name: 'trigger-execute-perimeter (an empty catalogue is a VIOLATION, not a clean sweep)',
+        fires: viol(triggerExecutePerimeterSql({
+          fnSource: `select null::text as fn_name, null::boolean as anon, null::boolean as authed,
+                            null::boolean as public_x, null::boolean as owner_x where false`,
+        }), 'no-comparisons'),
+        silent: viol(triggerExecutePerimeterSql(), 'no-comparisons'),
+      },
+    ];
+  })(),
 ];
 
 // Optional substring filter, so one probe's cases can be re-run on their own

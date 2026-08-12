@@ -1,6 +1,6 @@
 {
-  "pinned_at": "2026-08-12T02:20:15.483Z",
-  "note": "The EXECUTE surface for anon/authenticated. certify fails on ANY diff. Re-pin only after a DELIBERATE perimeter change.",
+  "pinned_at": "2026-08-12T14:13:05.724Z",
+  "note": "The EXECUTE surface for anon/authenticated. certify fails on ANY diff. Re-pin only after a DELIBERATE perimeter change. mig 722 removed 48 trigger-returning functions from this surface by REVOKE, and those entries were pruned BY HAND (scripts/certify.mjs --pin-allowlist was deliberately NOT used: it rewrites from live state and would bless any unrelated breach that landed in the same window — the near miss recorded in certify.mjs's header). Trigger functions are additionally held by the NON-PINNABLE probe trigger-functions-hold-no-ambient-execute, so re-pinning cannot put one back on this surface unnoticed.",
   "routines": [
     {
       "sig": "_assert_caller_tenant(p_tenant_id uuid)",
@@ -55,11 +55,6 @@
     {
       "sig": "ai_undo_change(p_change_id uuid)",
       "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "alert_cert_regression()",
-      "anon": true,
       "authed": true
     },
     {
@@ -198,16 +193,6 @@
       "authed": true
     },
     {
-      "sig": "assert_kpi_metric_known()",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "assert_org_unit_same_tenant()",
-      "anon": true,
-      "authed": true
-    },
-    {
       "sig": "assert_own_tenant(p_tenant_id uuid)",
       "anon": false,
       "authed": true
@@ -238,16 +223,6 @@
       "authed": true
     },
     {
-      "sig": "audit_de_config_changes()",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "audit_events_immutable()",
-      "anon": true,
-      "authed": true
-    },
-    {
       "sig": "audit_tenant_provisioning()",
       "anon": false,
       "authed": true
@@ -260,11 +235,6 @@
     {
       "sig": "auth_tenant_id()",
       "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "auto_provision_new_tenant()",
-      "anon": true,
       "authed": true
     },
     {
@@ -385,11 +355,6 @@
     {
       "sig": "clear_tenant_llm_key(p_tenant_id uuid, p_provider_key text)",
       "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "close_escalations_for_finished_goal()",
-      "anon": true,
       "authed": true
     },
     {
@@ -658,11 +623,6 @@
       "authed": true
     },
     {
-      "sig": "dunning_rung_order_guard()",
-      "anon": true,
-      "authed": true
-    },
-    {
       "sig": "edit_outbound_draft(p_draft_id uuid, p_body text)",
       "anon": false,
       "authed": true
@@ -680,11 +640,6 @@
     {
       "sig": "enqueue_conflict_backlog(p_tenant_id uuid, p_limit integer, p_after_chunk_id uuid)",
       "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "enqueue_conflict_probe()",
-      "anon": true,
       "authed": true
     },
     {
@@ -710,11 +665,6 @@
     {
       "sig": "forget_de_memory(p_memory_id uuid)",
       "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "gate_de_certification()",
-      "anon": true,
       "authed": true
     },
     {
@@ -1078,31 +1028,6 @@
       "authed": true
     },
     {
-      "sig": "guard_against_demo_tenant_assignment()",
-      "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "guard_compliance_guardrails()",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "guard_computer_use_transition()",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "guard_human_task_decision()",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "guardrail_adjudications_immutable()",
-      "anon": true,
-      "authed": true
-    },
-    {
       "sig": "halfvec(halfvec, integer, boolean)",
       "anon": true,
       "authed": true
@@ -1238,11 +1163,6 @@
       "authed": true
     },
     {
-      "sig": "handle_new_user()",
-      "anon": false,
-      "authed": true
-    },
-    {
       "sig": "handoff_back_to_de(p_conversation_id uuid, p_note text)",
       "anon": false,
       "authed": true
@@ -1319,11 +1239,6 @@
     },
     {
       "sig": "instantiate_role_archetype(p_tenant_id uuid, p_archetype_key text, p_de_name text, p_persona_name text)",
-      "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "invalidate_answer_cache()",
       "anon": false,
       "authed": true
     },
@@ -1489,11 +1404,6 @@
     },
     {
       "sig": "l2_normalize(vector)",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "link_new_account_to_agreements()",
       "anon": true,
       "authed": true
     },
@@ -1678,11 +1588,6 @@
       "authed": true
     },
     {
-      "sig": "maintain_doc_chunk_counts()",
-      "anon": true,
-      "authed": true
-    },
-    {
       "sig": "mark_doc_verified(p_doc_id uuid)",
       "anon": false,
       "authed": true
@@ -1718,16 +1623,6 @@
       "authed": true
     },
     {
-      "sig": "net_dispatch_log_trg()",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "normalise_de_state()",
-      "anon": true,
-      "authed": true
-    },
-    {
       "sig": "normalize_email_domain(p_input text)",
       "anon": false,
       "authed": true
@@ -1743,22 +1638,7 @@
       "authed": true
     },
     {
-      "sig": "onboarding_progress_recalc()",
-      "anon": true,
-      "authed": true
-    },
-    {
       "sig": "operate_domain_of(p_system de_connected_systems)",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "opportunities_stage_guard()",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "org_units_check_parent()",
       "anon": true,
       "authed": true
     },
@@ -1794,16 +1674,6 @@
     },
     {
       "sig": "playbook_next_fire_at(p_cadence text, p_run_at_hour integer, p_weekly_day integer, p_monthly_day integer, p_from timestamp with time zone)",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "playbook_schedules_compute_next()",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "posting_draft_gate()",
       "anon": true,
       "authed": true
     },
@@ -2578,16 +2448,6 @@
       "authed": true
     },
     {
-      "sig": "stamp_gap_cluster_on_apply()",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "stamp_objective_mission_from_watcher()",
-      "anon": true,
-      "authed": true
-    },
-    {
       "sig": "start_platform_remote_access(p_tenant_id uuid)",
       "anon": false,
       "authed": true
@@ -2613,63 +2473,8 @@
       "authed": true
     },
     {
-      "sig": "sync_amendment_decision()",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "sync_computer_use_approval()",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "sync_de_department()",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "sync_de_task_from_objective()",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "sync_de_work_escalation()",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "sync_entity_amendment_decision()",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "sync_improvement_decision()",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "sync_outbound_draft_status()",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "sync_primary_unit_membership()",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "sync_profile_department()",
-      "anon": true,
-      "authed": true
-    },
-    {
       "sig": "tenant_ancestors(p_tenant_id uuid)",
       "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "tenant_deletion_receipts_immutable()",
-      "anon": true,
       "authed": true
     },
     {
@@ -2699,41 +2504,6 @@
     },
     {
       "sig": "transfer_tenant_ownership(p_new_owner_user_id uuid)",
-      "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "trg_assign_human_task()",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "trg_provision_onboarding_architect()",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "trg_recompute_trust_badge()",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "trg_support_sentiment()",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "trg_triage_support_conversation()",
-      "anon": true,
-      "authed": true
-    },
-    {
-      "sig": "trust_check_eval_regression()",
-      "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "trust_check_guardrail_block()",
       "anon": false,
       "authed": true
     },
@@ -2818,11 +2588,6 @@
       "authed": true
     },
     {
-      "sig": "update_updated_at()",
-      "anon": true,
-      "authed": true
-    },
-    {
       "sig": "upsert_action_definition(p_id uuid, p_scope text, p_tenant_id uuid, p_category text, p_action_key text, p_label text, p_description text, p_provider text, p_template_id uuid, p_param_schema jsonb, p_risk jsonb, p_execution jsonb)",
       "anon": false,
       "authed": true
@@ -2865,11 +2630,6 @@
     {
       "sig": "validate_watcher_config(p_kind text, p_config jsonb, p_tenant_id uuid, p_de_id uuid)",
       "anon": false,
-      "authed": true
-    },
-    {
-      "sig": "validate_work_watcher()",
-      "anon": true,
       "authed": true
     },
     {

@@ -38,6 +38,7 @@ import { advisoryBoundarySql } from './advisory-boundary.mjs';
 import { trustProposerBoundarySql } from './trust-proposer-boundary.mjs';
 import { gapGateConductSql, auditedStepsWritesSql, snapshotGateSql, gapEvidenceSql } from './playbook-gap-probes.mjs';
 import { writePerimeterSql, silentNoopWriteSql, WRITE_PERIMETER_SQL } from './write-perimeter.mjs';
+import { triggerExecutePerimeterSql } from './trigger-execute-perimeter.mjs';
 
 const FAST = process.argv.includes('--fast');
 const PIN = process.argv.includes('--pin-allowlist');
@@ -215,6 +216,11 @@ const PROBES = [
     name: 'playbook-gaps-hold-their-evidence',
     why: 'answered ≠ resolved is the spine of the typed-gaps design: a gap resolves only on verified evidence (a resolved missing_knowledge gap must carry the doc the recompile actually retrieved), and an objection that exists only as study prose is the dead end this build replaces — so studies that raised gaps/validator errors must have gap rows behind them. Denominators printed',
     sql: gapEvidenceSql(),
+  },
+  {
+    name: 'trigger-functions-hold-no-ambient-execute',
+    why: 'migs 610/630 doctrine, the half the ALLOWLIST could never enforce. The EXECUTE allowlist was NOT blind to trigger functions — they are prokind=f like any other and it saw all 80 — but it is RE-PINNABLE, and 48 of the 49 breached ones sat INSIDE the pin, blessed by past --pin-allowlist runs; only the 49th was red because it arrived after the last pin. certify.mjs\'s own header records the near miss where a concurrent session\'s new anon+authenticated function was swept into the pin by a run meant only to record some revokes. This arm has no allowlist and no exemption, so a FIFTIETH sibling cannot be made green by re-pinning — only by the revoke. The rule is absolute rather than a judgement call: a function returning `trigger` is unreachable by anon/authenticated (PostgREST will not expose it, Postgres rejects a direct call) and EXECUTE is checked at CREATE TRIGGER time, NOT at fire time — driven, not assumed, on dev AND prod (mig 722 §3 plus a four-arm rolled-back drive with a no-trigger control that correctly did NOT fire). ⚠ The received reason is wrong and the correction matters: triggers run as the CALLER, not the table owner (a SECURITY INVOKER trigger fired with current_user=authenticated), which is precisely why mig 722 left the 20 non-trigger PUBLIC-EXECUTE helpers alone — a helper CALLED from a trigger body IS privilege-checked at call time. ⚠⚠ THE GENERATOR IS STILL OPEN: a new function created by postgres in public is born with `=X/postgres`, and unlike the table case there is NO default-privileges fix (tested both orderings on dev; the new function still came out PUBLIC-executable), so this gate is the only defence. Denominator printed on every run',
+    sql: triggerExecutePerimeterSql(),
   },
   {
     name: 'rls-on-every-public-table',
