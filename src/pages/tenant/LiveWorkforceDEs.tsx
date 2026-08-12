@@ -318,13 +318,17 @@ function TeamsPanel() {
       supabase.from('workforce_team_members')
         .select('id, team_id, de_id, fallback_rank, digital_employees(name, persona_name, lifecycle_status, status)')
         .order('fallback_rank'),
-      supabase.from('digital_employees').select('id, name, lifecycle_status')
+      supabase.from('digital_employees').select('id, name, persona_name, lifecycle_status')
         .not('lifecycle_status', 'in', '(retired,archived)').order('name'),
     ]);
     if (tErr) { setError(tErr.message); return; }
     setTeams((t ?? []) as TeamRow[]);
     setMembers((m ?? []) as unknown as TeamMemberRow[]);
-    setDes((d ?? []) as typeof des);
+    // Same rule as the member rows below: the name the employee answers to,
+    // falling back to the internal role name. The picker used to show the role
+    // name while the row it added showed the persona.
+    setDes(((d ?? []) as Array<{ id: string; name: string; persona_name: string | null; lifecycle_status: string }>)
+      .map((row) => ({ id: row.id, name: row.persona_name || row.name, lifecycle_status: row.lifecycle_status })));
   }, []);
   useEffect(() => { void load(); }, [load]);
 

@@ -102,12 +102,17 @@ export async function listAccessSubjects(): Promise<AccessSubject[]> {
   // One roster. The specialist split went with the role (migrations 208/211
   // absorbed specialists into digital_employees; the retired rows are excluded
   // by the same lifecycle filter as any other retired employee).
-  const des = await supabase.from('digital_employees').select('id, name, category, status')
+  // One employee, one name. `persona_name` is the name the employee answers to
+  // and `name` is the internal role name; showing the role name here while the
+  // Workforce page showed the persona made the same DE look like two different
+  // subjects on the two screens people compare most.
+  const des = await supabase.from('digital_employees').select('id, name, persona_name, category, status')
     .eq('tenant_id', tid)
     .not('lifecycle_status', 'in', '("retired","archived")').order('created_at');
   if (des.error) raise('listAccessSubjects.des', des.error);
   return (des.data ?? []).map((d) => ({
-    kind: 'de' as const, id: d.id as string, name: d.name as string,
+    kind: 'de' as const, id: d.id as string,
+    name: (d.persona_name as string | null) || (d.name as string),
     detail: `Digital Employee · ${d.category}`,
   }));
 }

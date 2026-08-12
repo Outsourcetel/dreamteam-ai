@@ -185,14 +185,17 @@ export async function listPlaceableDigitalEmployees(): Promise<OrgDigitalEmploye
   const tid = await requireTenantId();
   const { data, error } = await supabase
     .from('digital_employees')
-    .select('id, name, display_title, trust_level, status, org_unit_id, lifecycle_status')
+    .select('id, name, persona_name, display_title, trust_level, status, org_unit_id, lifecycle_status')
     .eq('tenant_id', tid)
     .not('lifecycle_status', 'in', '("retired","archived")')
     .order('name', { ascending: true });
   if (error) raise('listPlaceableDigitalEmployees', error);
   return ((data ?? []) as Record<string, unknown>[]).map((d) => ({
     de_id: d.id as string,
-    name: d.name as string,
+    // The name the employee answers to, falling back to the internal role name —
+    // the same rule `list_org_tree_core` applies to the placed employees this
+    // list sits beside, so the roster and the chart never disagree.
+    name: (d.persona_name as string | null) || (d.name as string),
     title: (d.display_title as string | null) ?? null,
     trust_level: (d.trust_level as string | null) ?? null,
     status: d.status as string,

@@ -145,9 +145,10 @@ export async function decideBrowserTask(
 export async function listDEsLite(): Promise<DeLite[]> {
   const tid = await requireTenantId();
   const { data, error } = await supabase.from('digital_employees')
-    .select('id, name').eq('tenant_id', tid).eq('status', 'active').order('name');
+    .select('id, name, persona_name').eq('tenant_id', tid).eq('status', 'active').order('name');
   if (error) throw new Error(error.message);
-  return (data ?? []) as DeLite[];
+  // The name the employee answers to, falling back to the internal role name.
+  return (data ?? []).map((d) => ({ id: d.id as string, name: (d.persona_name as string | null) || (d.name as string) }));
 }
 
 // ── Operate config (mig 244): which connected apps a DE may drive via web UI ──

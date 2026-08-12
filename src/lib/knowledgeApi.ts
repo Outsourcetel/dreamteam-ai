@@ -433,9 +433,10 @@ export interface ScopeSubject {
 export async function listScopeSubjects(): Promise<ScopeSubject[]> {
   const tid = await requireTenantId();
   const des = await supabase.from('digital_employees')
-    .select('id, name').eq('tenant_id', tid).eq('status', 'active').order('created_at');
+    .select('id, name, persona_name').eq('tenant_id', tid).eq('status', 'active').order('created_at');
   if (des.error) raise('listScopeSubjects', des.error);
-  return (des.data ?? []).map(d => ({ kind: 'de' as const, id: d.id, name: d.name }));
+  // The name the employee answers to, falling back to the internal role name.
+  return (des.data ?? []).map(d => ({ kind: 'de' as const, id: d.id, name: d.persona_name || d.name }));
 }
 
 /** Current scopes per doc, keyed by doc_id. Docs with no entry are tenant-wide. */
