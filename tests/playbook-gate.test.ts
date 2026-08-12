@@ -31,23 +31,47 @@ function env(key: string): string | null {
   return null;
 }
 
-const SERVICE_KEY = env('SUPABASE_SERVICE_ROLE_KEY');
+// ⚠ AUTH, learned the hard way (same wall spec §1.5 hit): the service key in
+// .env.local is a LEGACY credential — the deployed function's platform-
+// injected SUPABASE_SERVICE_ROLE_KEY differs, so a service-key bearer gets
+// the function's own 401. The door that IS ours to use is the dispatch
+// secret (x-dispatch-secret), the same credential pg_cron invokes these
+// functions with. It lives in Vault; the management token (which this repo's
+// entire verification tooling already requires) fetches it at suite start.
+// It is held in memory only and never printed.
+const MGMT_TOKEN = env('SUPABASE_ACCESS_TOKEN');
 const URL_BASE = 'https://rfsvmhcqeiyrxivbmpel.supabase.co';
 // Review Lab — the designated test tenant. validate is read-only there.
 const TENANT = '6c30af2b-a63b-4751-9876-8ce488f729d5';
 
-if (!SERVICE_KEY) {
+if (!MGMT_TOKEN) {
   throw new Error(
-    'playbook-gate.test.ts needs SUPABASE_SERVICE_ROLE_KEY in .env.local. ' +
+    'playbook-gate.test.ts needs SUPABASE_ACCESS_TOKEN in .env.local (the token scripts/db-query.mjs uses). ' +
     'Failing loudly rather than skipping — a gate pin that silently does not run is theatre.',
   );
 }
 
+let dispatchSecret: string | null = null;
+async function getDispatchSecret(): Promise<string> {
+  if (dispatchSecret) return dispatchSecret;
+  const res = await fetch('https://api.supabase.com/v1/projects/rfsvmhcqeiyrxivbmpel/database/query', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${MGMT_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: "select decrypted_secret as s from vault.decrypted_secrets where name = 'playbook_dispatch_secret'" }),
+  });
+  if (!res.ok) throw new Error(`vault read failed: HTTP ${res.status}`);
+  const rows = await res.json() as Array<{ s: string }>;
+  if (!rows[0]?.s) throw new Error('playbook_dispatch_secret not found in vault');
+  dispatchSecret = rows[0].s;
+  return dispatchSecret;
+}
+
 type VErr = { index: number; code: string; message: string };
 async function validate(steps: unknown): Promise<{ valid: boolean; errors: VErr[] }> {
+  const secret = await getDispatchSecret();
   const res = await fetch(`${URL_BASE}/functions/v1/playbook-execute`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SERVICE_KEY}`, apikey: SERVICE_KEY! },
+    headers: { 'Content-Type': 'application/json', 'x-dispatch-secret': secret },
     body: JSON.stringify({ action: 'validate', steps, tenant_id: TENANT }),
   });
   const body = await res.json();

@@ -319,10 +319,17 @@ async function reconcileGaps(
       const query = String((ex.ask ?? {}).query ?? ex.title ?? '');
       if (docId && query) {
         try {
-          const emb = await embedText(query.slice(0, 800));
+          // ⚠ LEXICAL-ONLY, deliberately (p_query_embedding null — the RPC
+          // degrades to term-rank). Proven live on Review Lab 2026-08-12:
+          // with an embedding, the semantic half of the fusion ranks even an
+          // UNRELATED doc into the top-5 of a near-empty KB — the cold-start
+          // tenant this feature exists for — and a wrong answer "resolved".
+          // Term overlap between the gap's own query and the doc's chunks is
+          // the deterministic evidence bar; failing it leaves the gap
+          // 'answered', which is the safe direction (still blocks).
           const { data: hits } = await admin.rpc('hybrid_match_knowledge', {
             p_tenant_id: tenantId, p_query_text: query.slice(0, 800), p_account_id: null,
-            p_query_embedding: emb, p_match_count: 5,
+            p_query_embedding: null, p_match_count: 5,
             p_subject_kind: deId ? 'de' : null, p_subject_id: deId,
           });
           verified = (Array.isArray(hits) ? hits as Array<Record<string, unknown>> : [])
@@ -387,7 +394,7 @@ serve(async (req) => {
     if (applyStructureGapId) {
       if (!targetDef) return json({ error: 'definition_id required to apply a structure fix' }, 400);
       const { data: gap } = await admin.from('playbook_gaps')
-        .select('id, gap_key, kind, status, ask, title')
+        .select('id, gap_key, kind, status, ask, title, step_index')
         .eq('id', applyStructureGapId).eq('tenant_id', tenantId).eq('definition_id', targetDef.id as string)
         .maybeSingle();
       if (!gap) return json({ error: 'gap_not_found' }, 404);
@@ -406,8 +413,13 @@ serve(async (req) => {
       });
       const vOut = await vRes.json().catch(() => ({ valid: false, errors: [{ index: -1, code: 'validator_unreachable', message: 'validator unreachable' }] }));
       const originCode = String((gap.ask ?? {}).code ?? '');
+      // Match the SPECIFIC error this gap carries — code AND index for a
+      // step-scoped gap. A code-only check refuses a correct patch whenever a
+      // SIBLING step still raises the same code (e.g. six unknown_primitive
+      // steps: fixing step 0 must count as fixing step 0).
       const originStillThere = (Array.isArray(vOut.errors) ? vOut.errors as VErr[] : [])
-        .some((e) => e.code === originCode);
+        .some((e) => e.code === originCode
+          && (gap.step_index === null || e.index === gap.step_index));
       if (originStillThere) {
         return json({ applied: false, error: 'patch_did_not_clear_the_error', validation: { valid: vOut.valid === true, errors: vOut.errors ?? [] } }, 422);
       }

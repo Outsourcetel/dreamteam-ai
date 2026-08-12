@@ -1,5 +1,5 @@
 {
-  "pinned_at": "2026-08-11T21:18:46.206Z",
+  "pinned_at": "2026-08-12T02:20:15.483Z",
   "note": "The EXECUTE surface for anon/authenticated. certify fails on ANY diff. Re-pin only after a DELIBERATE perimeter change.",
   "routines": [
     {
@@ -64,6 +64,11 @@
     },
     {
       "sig": "analytics_de_workload(p_tenant_id uuid, p_de_id uuid)",
+      "anon": false,
+      "authed": true
+    },
+    {
+      "sig": "answer_playbook_gap(p_gap_id uuid, p_answer jsonb)",
       "anon": false,
       "authed": true
     },
@@ -614,6 +619,11 @@
     },
     {
       "sig": "detect_exceptions(p_tenant_id uuid, p_workspace_id uuid)",
+      "anon": false,
+      "authed": true
+    },
+    {
+      "sig": "dismiss_playbook_gap(p_gap_id uuid, p_note text)",
       "anon": false,
       "authed": true
     },
