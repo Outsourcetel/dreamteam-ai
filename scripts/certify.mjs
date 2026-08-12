@@ -26,6 +26,13 @@
 // ============================================================
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+// Same reason scripts/gen-provider-seed.mjs already carries this: plain node
+// cannot `import` src/lib/connectorApi.ts (it drags in '../supabase' with no
+// extension, then env.ts touches import.meta.env, a Vite-only global). Used
+// by the provider-catalog section below to read PROVIDERS/TOP_PROVIDERS out
+// of the source text instead — already a devDependency, already the compiler
+// this repo builds with.
+import ts from 'typescript';
 // mig 679's ratchet. The pin list, its reasons and the probe SQL live in ONE
 // file, imported by BOTH this gate and certify-mutation-test.mjs — so the
 // mutation test exercises the real query, not a paraphrase of it.
@@ -622,6 +629,60 @@ async function netExposureFailures() {
   return [];
 }
 
+// ── PROVIDERS / TOP_PROVIDERS, read from connectorApi.ts's SOURCE TEXT ─────
+// The same wall scripts/gen-provider-seed.mjs hit first: a plain `import
+// '../src/lib/connectorApi.ts'` fails under node (it pulls in '../supabase'
+// with no extension) and fails again under tsx (env.ts touches
+// import.meta.env, a Vite-only global). So this walks the parsed AST with the
+// TypeScript compiler instead — it can only read the literal PROVIDERS and
+// TOP_PROVIDERS are actually written as; a spread, a computed key or a
+// function call throws rather than silently guessing. It never executes
+// connectorApi.ts, so it cannot trip either failure above, and the values
+// below are DERIVED from the file every run, never hand-copied.
+function evalConnectorLiteral(node) {
+  if (ts.isObjectLiteralExpression(node)) {
+    const obj = {};
+    for (const prop of node.properties) {
+      if (!ts.isPropertyAssignment(prop)) {
+        throw new Error(`provider-catalog: unsupported object member kind: ${ts.SyntaxKind[prop.kind]}`);
+      }
+      let key;
+      if (ts.isIdentifier(prop.name) || ts.isStringLiteralLike(prop.name)) key = prop.name.text;
+      else throw new Error(`provider-catalog: unsupported property key kind: ${ts.SyntaxKind[prop.name.kind]}`);
+      obj[key] = evalConnectorLiteral(prop.initializer);
+    }
+    return obj;
+  }
+  if (ts.isArrayLiteralExpression(node)) return node.elements.map(evalConnectorLiteral);
+  if (ts.isStringLiteralLike(node)) return node.text;
+  if (ts.isNumericLiteral(node)) return Number(node.text);
+  if (node.kind === ts.SyntaxKind.TrueKeyword) return true;
+  if (node.kind === ts.SyntaxKind.FalseKeyword) return false;
+  throw new Error(`provider-catalog: unsupported literal kind: ${ts.SyntaxKind[node.kind]} (${node.getText()})`);
+}
+function readConnectorConstants() {
+  const SRC = 'src/lib/connectorApi.ts';
+  const source = ts.createSourceFile(
+    SRC, readFileSync(SRC, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS,
+  );
+  const found = {};
+  source.forEachChild((node) => {
+    if (!ts.isVariableStatement(node)) return;
+    for (const decl of node.declarationList.declarations) {
+      if (!ts.isIdentifier(decl.name) || !decl.initializer) continue;
+      if (decl.name.text === 'PROVIDERS' || decl.name.text === 'TOP_PROVIDERS') {
+        found[decl.name.text] = decl.initializer;
+      }
+    }
+  });
+  if (!found.PROVIDERS) throw new Error(`could not find "export const PROVIDERS = ..." in ${SRC}`);
+  if (!found.TOP_PROVIDERS) throw new Error(`could not find "export const TOP_PROVIDERS = ..." in ${SRC}`);
+  return {
+    PROVIDERS: evalConnectorLiteral(found.PROVIDERS),
+    TOP_PROVIDERS: evalConnectorLiteral(found.TOP_PROVIDERS),
+  };
+}
+
 // ── Section runner ─────────────────────────────────────────────────────────
 const results = [];
 function section(name, fn) { return { name, fn }; }
@@ -750,6 +811,54 @@ const sections = [
       return { ok: true, detail: `no longer duplicated — drop from KNOWN_DUPLICATES: ${stale.join(', ')}` };
     }
     return { ok: true, detail: '' };
+  }),
+  // ── The provider catalog cannot silently drift ─────────────────────────
+  // The systems we claim to support lived in a TypeScript constant hand-synced
+  // against a CHECK constraint — two lists, one truth, nobody watching. The
+  // discovery interview reads the DB copy, so a drift means we prepare the
+  // wrong connector, or fail to recognise a system the customer named.
+  section('provider-catalog', async () => {
+    const failures = [];
+    const { PROVIDERS, TOP_PROVIDERS } = readConnectorConstants();
+
+    const rows = await q(`select provider_key, aliases from public.connector_providers where active`);
+    const inDb = new Set(rows.map((r) => r.provider_key));
+    const inTs = Object.keys(PROVIDERS);
+
+    // BOTH directions. Asserting only one half passes a catalog that is empty.
+    for (const k of inTs) if (!inDb.has(k)) failures.push(`catalog missing provider: ${k}`);
+    for (const k of inDb) if (!inTs.includes(k)) failures.push(`catalog has unknown provider: ${k}`);
+
+    const seen = new Map();
+    for (const r of rows) {
+      for (const a of r.aliases ?? []) {
+        if (seen.has(a)) failures.push(`alias "${a}" resolves to both ${seen.get(a)} and ${r.provider_key}`);
+        else seen.set(a, r.provider_key);
+      }
+    }
+
+    const cats = await q(`select distinct unnest(required_connector_categories) as cat
+                            from public.role_archetypes
+                           where required_connector_categories is not null`);
+    for (const { cat } of cats) {
+      if (!TOP_PROVIDERS[cat]?.length) failures.push(`no provider suggested for category: ${cat}`);
+    }
+
+    // Structural, not behavioral: certify runs against PRODUCTION and a real
+    // DELETE probe is not safe there, so this reads the grant rather than
+    // attempting the write it forbids.
+    const [priv] = await q(`select has_table_privilege('authenticated','public.connector_providers','select') as can_read,
+                                   has_table_privilege('authenticated','public.connector_providers','delete') as can_delete`);
+    if (!priv.can_read) failures.push('authenticated cannot read the catalog');
+    if (priv.can_delete) failures.push('authenticated can DELETE from the catalog');
+
+    // Count the comparisons, not just the findings. Zero findings from zero
+    // comparisons looks exactly like a clean result.
+    const detail = failures.length
+      ? failures.join('\n')
+      : `compared ${inTs.length} providers, ${seen.size} aliases, ${cats.length} required categories`;
+    if (!failures.length) console.log(`        provider-catalog: ${detail}`);
+    return { ok: failures.length === 0, detail };
   }),
   section('edge-typecheck', () => {
     const { counts, total, unattributed, fns } = edgeErrorCounts();
