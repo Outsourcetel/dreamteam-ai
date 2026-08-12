@@ -247,6 +247,55 @@ output read.
   typing, but the general question — what to do with snapshots that have
   diverged from their definitions — is not addressed here.
 
+## 6a. What actually happened (appended 2026-08-12, after building it)
+
+Recorded here rather than by editing the predictions above, so the difference
+between what was designed and what was true stays visible.
+
+**Three things this design got wrong, found by building the checks:**
+
+1. **The situational briefing is `get_de_briefing_for_objective`**, not
+   `get_de_situational_briefing`. That name does not exist.
+2. **"Assert the briefing byte-identical" was a checker that could not fail.**
+   Measuring the baseline showed `get_de_briefing` renders
+   `coalesce(label,'step')` while use_tool steps carry `title` — so Accounting
+   DE's entire SOP briefing read `1. step  2. step  3. step  4. step`, and
+   `render_playbook_structure` gave only the bare key. Asserting that unchanged
+   would have certified it correct. Both renderers were fixed in mig 715 and
+   `get_de_briefing` now calls the shared one instead of carrying a second copy.
+3. **A migration cannot UPDATE `playbook_definitions.steps` unannounced.**
+   `playbook_steps_guard` (added 2026-08-11) calls `append_audit_event`, which
+   refuses a caller that is neither `service_role` nor a tenant member. Both
+   migrations assert the service-role claim transaction-locally first.
+
+**Two blockers that were not in the design:**
+
+4. **Front Desk and IT Helpdesk cannot be activated.** `gate_de_certification()`
+   refuses any advance to `lifecycle_status='active'` without a
+   `role_certifications` row with `status='passed'` and a matching
+   `config_fingerprint`. That is a real governance gate and was not routed
+   around. Note `status='active'` is a *separate* column that the gate does not
+   guard while de-work's filter does read it — setting that alone would have
+   walked past certification through the door it does not watch. Deliberately
+   not done.
+5. **The new watchers cannot produce work within a session.** They register and
+   set a first fire time: Business Development ~24h, Marketing ~7 days (its
+   archetype interval is weekly). Intake is wired and will fire; no work item
+   has been observed.
+
+**Delivered and proven:** the typed row (8 sop / 7 procedure in Outsourcetel at
+the time, 0 disagreements across all 105 definitions globally), the derive
+trigger proven un-lieable in both directions inside a rolled-back
+subtransaction, the briefing fix verified live, the three executor doors
+present in the deployed bytes, and every previously-compiling DE still
+resolving its SOP under the new predicate.
+
+**Delivered, not yet proven:** the executor's 409 was not exercised end-to-end
+— server-to-server auth into playbook-execute needs a credential this session
+does not hold (its `SUPABASE_SERVICE_ROLE_KEY` is a custom secret whose value
+the API returns only as a digest). No post-deploy `compile_sop` has run either;
+the driving watcher is on a 24-hour cycle.
+
 ## 7. Order of work
 
 1. Migration: `kind` column, constraint, global backfill, `install_role_kit`
