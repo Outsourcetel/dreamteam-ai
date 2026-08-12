@@ -2157,8 +2157,22 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
               onDecided={() => void refresh()}
             />
 
-            {/* Run controls */}
-            {selectedDef.status === 'published' ? (
+            {/* Run controls.
+                mig 715: an SOP is not runnable HERE and never was — the
+                executor refuses it at the kind door (409). It is not broken;
+                a different engine owns it. Saying so is the whole point of
+                typing the row: before this, the builder offered Run on ten
+                definitions that could only ever return an error. */}
+            {selectedDef.kind === 'sop' ? (
+              <div className="rounded-lg border border-dt-border bg-dt-inset px-3 py-2.5">
+                <p className="text-xs text-dt-body font-medium">This is a standard operating procedure, not a playbook run.</p>
+                <p className="text-[11px] text-dt-muted mt-1">
+                  {selectedDef.intended_de_name ? `${selectedDef.intended_de_name} follows` : 'The assigned employee follows'} these
+                  steps as its own work — they are compiled into its work queue, one item per step, in this order. It also reads them
+                  in its briefing. There is no run to start from here.
+                </p>
+              </div>
+            ) : selectedDef.status === 'published' ? (
               <div className="flex items-center gap-2 flex-wrap">
                 <select className={selectCls + ' !w-64'} value={runAccountId} onChange={e => setRunAccountId(e.target.value)}>
                   <option value="">Pick an account…</option>
@@ -2245,8 +2259,17 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
                   const sched = schedules.filter(s => s.definition_id === d.id && s.active);
                   const evts = eventRules.filter(r => r.definition_id === d.id && r.active);
                   const runCount = runs.filter(r => r.definition_id === d.id).length;
-                  const deadSteps = d.steps.filter(s => !PRIMITIVE_REGISTRY.some(p => p.key === s.key)).length;
-                  const when = sched.length ? `Runs ${describeSchedule(sched[0])}`
+                  // mig 715: "dead step" means a primitive THIS executor has no
+                  // case for. An SOP's steps are not primitives and are not
+                  // meant to be — they compile into the employee's work queue.
+                  // Measuring them against the executor's registry declared
+                  // every SOP "None of these steps can run", which was the
+                  // false alarm, not the finding.
+                  const isSop = d.kind === 'sop';
+                  const deadSteps = isSop ? 0 : d.steps.filter(s => !PRIMITIVE_REGISTRY.some(p => p.key === s.key)).length;
+                  const when = isSop
+                    ? (d.intended_de_name ? `${d.intended_de_name} follows it as work` : 'Followed as work by the assigned employee')
+                    : sched.length ? `Runs ${describeSchedule(sched[0])}`
                     : evts.length ? `Runs ${describeEventRule(evts[0])}`
                     : d.status === 'published' ? 'Runs when someone starts it'
                     : 'Nobody is following it yet';
@@ -2258,7 +2281,19 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
                             <button onClick={() => setSelectedDefId(d.id)}
                               className="text-sm font-semibold text-dt-title hover:underline text-left">{d.name}</button>
                             {statusChip(d.status)}
-                            {d.status === 'published' && <span className="text-xs font-mono text-dt-muted">v{d.version}</span>}
+                            {/* mig 715 — which engine owns this row. Two kinds
+                                of object shared one table and one status flag;
+                                the founder saw fourteen "published playbooks"
+                                of which four could actually run. */}
+                            <span className={'text-[10px] px-1.5 py-0.5 rounded ' + (isSop
+                              ? 'bg-dt-accent-soft text-dt-accent-text'
+                              : 'bg-dt-neutral-soft text-dt-muted')}
+                              title={isSop
+                                ? 'A standard operating procedure: compiled into the employee’s work queue, one item per step. Not run by the playbook engine.'
+                                : 'A playbook: run step-by-step by the playbook engine.'}>
+                              {isSop ? 'SOP · followed as work' : 'Playbook · runnable'}
+                            </span>
+                            {d.status === 'published' && !isSop && <span className="text-xs font-mono text-dt-muted">v{d.version}</span>}
                             {(gapCounts[d.id] ?? 0) > 0 && (
                               <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300"
                                 title="Open the playbook to answer them — blocked steps never execute">
@@ -2289,7 +2324,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
                               action:'publish') and returns its refusals, so this
                               cannot ship a playbook the Builder would have
                               blocked — the button just saves the detour. */}
-                          {d.status === 'draft' && canEditPlaybooks && (
+                          {d.status === 'draft' && canEditPlaybooks && !isSop && (
                             <Button kind="primary" size="sm" disabled={publishingId === d.id}
                               onClick={() => void publishFromCard(d.id, d.name)}>
                               {publishingId === d.id ? 'Publishing…' : 'Publish it'}

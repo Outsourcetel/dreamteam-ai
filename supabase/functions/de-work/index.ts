@@ -184,6 +184,18 @@ async function compileSopToWorkItems(
   admin: SupabaseClient,
   obj: { id: string; tenant_id: string; de_id: string; title: string; description: string },
 ): Promise<number> {
+  // WHICH rows are candidates, and THEN which of them wins. Two independent
+  // fixes that landed in parallel; both are load-bearing and neither replaces
+  // the other.
+  //
+  // kind='sop' (mig 715) is the CANDIDATE filter. `kind` is derived from the
+  // steps by trigger, so it cannot drift from what the row actually holds. The
+  // use_tool sniff below stays as a SHAPE guard (a row must still contain
+  // compilable steps), but it is no longer what decides which engine owns the
+  // object. This also shrinks the set the ORDER BY has to disambiguate — the
+  // tenant's Finance DE went from three candidates to two, because its real
+  // runnable procedure stopped being a candidate at all.
+  //
   // The ORDER BY is load-bearing, not tidiness. Without it Postgres may return
   // these rows in any order — and it can change on a VACUUM, an index choice or
   // a plan flip — so WHICH of an employee's procedures compiled into real work
@@ -201,6 +213,7 @@ async function compileSopToWorkItems(
   const { data: defs } = await admin.from('playbook_definitions')
     .select('id, status, steps')
     .eq('tenant_id', obj.tenant_id).eq('de_id', obj.de_id).eq('status', 'published')
+    .eq('kind', 'sop')
     .order('updated_at', { ascending: false })
     .order('id', { ascending: true })
     .limit(5);
