@@ -40,6 +40,14 @@ import { writePerimeterSql, WRITE_PERIMETER_SQL } from './write-perimeter.mjs';
 
 const FAST = process.argv.includes('--fast');
 const PIN = process.argv.includes('--pin-allowlist');
+// The write allowlist pins independently of the EXECUTE one. Not a convenience:
+// re-pinning both together means a deliberate table-perimeter change silently
+// absorbs whatever new EXECUTE grant happened to land in the same window. That
+// happened while migs 714-719 were being applied — a concurrent session's new
+// function, granted to anon AND authenticated, was swept into the EXECUTE pin
+// by a --pin-allowlist run meant only to record the revokes, and had to be
+// reverted by hand. Two surfaces, two decisions.
+const PIN_WRITE = process.argv.includes('--pin-write') || PIN;
 const PIN_EDGE = process.argv.includes('--pin-edge');
 const OFFLINE = process.argv.includes('--offline');
 const PROD_REF = 'rfsvmhcqeiyrxivbmpel';
@@ -130,7 +138,7 @@ async function perimeterCheck() {
 // side, because REVOKE reports nothing either way. Here it is a red run.
 async function writePerimeterCheck() {
   const live = await q(WRITE_PERIMETER_SQL);
-  if (PIN) {
+  if (PIN_WRITE) {
     writeFileSync(WRITE_ALLOWLIST_FILE, JSON.stringify({
       pinned_at: new Date().toISOString(),
       note: 'The INSERT/UPDATE/DELETE/TRUNCATE surface of `authenticated` on public BASE TABLES. certify fails on ANY diff, in either direction. Re-pin only after a DELIBERATE perimeter change (migs 714/716/717/718/719) — never to make a red run green.',
