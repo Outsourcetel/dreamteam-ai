@@ -141,7 +141,7 @@ async function writePerimeterCheck() {
   if (PIN_WRITE) {
     writeFileSync(WRITE_ALLOWLIST_FILE, JSON.stringify({
       pinned_at: new Date().toISOString(),
-      note: 'The INSERT/UPDATE/DELETE/TRUNCATE surface of `authenticated` on public BASE TABLES. certify fails on ANY diff, in either direction. Re-pin only after a DELIBERATE perimeter change (migs 714/716/717/718/719) — never to make a red run green.',
+      note: 'The INSERT/UPDATE/DELETE/TRUNCATE surface of `authenticated` on public BASE TABLES. certify fails on ANY diff, in either direction. Re-pin only after a DELIBERATE perimeter change (migs 714/716/717/718/719/720) — never to make a red run green. It is now exactly docs/52 KEEP: 81 pairs, every one with a proven src/ caller AND a PERMISSIVE policy — write-grants-can-actually-write is the arm that holds the second half.',
       grants: live,
     }, null, 2) + '\n');
     console.log(`  pinned ${live.length} table grants to ${WRITE_ALLOWLIST_FILE}`);
