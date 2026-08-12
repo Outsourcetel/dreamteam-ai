@@ -41,6 +41,15 @@ run('the platform_admin connector is baseline plumbing', () => {
     const rows = await runQuery<{ slug: string }>(`
       select t.slug from tenants t
        where t.status='active'
+         -- Provisioning deliberately skips the demo tenant — both
+         -- provision_onboarding_architect (v_demo) and
+         -- provision_tenant_baseline_internal (v_demo_tenant_id) refuse to
+         -- provision it by id. It genuinely has an assistant and genuinely
+         -- lacks the connector, but the system never promised it one, so
+         -- asserting coverage here would assert a promise nobody made. Same
+         -- exclusion audit_tenant_feature_parity and audit_tenant_provisioning
+         -- use (migration 723) — match the house convention, not a new one.
+         and t.id <> 'a0000000-0000-0000-0000-000000000001'
          and exists (select 1 from digital_employees d
                       where d.tenant_id=t.id and coalesce(d.is_workforce_assistant,false))
          and not exists (select 1 from connectors c
