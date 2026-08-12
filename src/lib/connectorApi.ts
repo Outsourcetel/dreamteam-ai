@@ -1926,3 +1926,40 @@ export async function setLearnedActionStatus(
         : (r?.error ?? 'Could not update that action.'), false);
   }
 }
+
+// ── Discovery interview: resolve plain English to known providers ────
+
+export type ProviderCatalogRow = {
+  provider_key: string; label: string; category: string; aliases: string[];
+};
+export type ProviderMatch = {
+  provider_key: string; matched_on: string; confidence: 'exact' | 'alias' | 'partial';
+};
+
+/** Resolve free text ("we do our books in zero") to known providers.
+ *
+ *  Deliberately conservative: it matches on WORD BOUNDARIES only, and returns
+ *  an empty array rather than a best guess. The discovery interview acts on
+ *  what this returns — preparing a connector row and binding an employee's
+ *  access to it — so a false positive is worse than a miss. A miss just means
+ *  we ask one more question. */
+export function matchProvider(text: string, catalog: ProviderCatalogRow[]): ProviderMatch[] {
+  const haystack = ` ${text.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ')} `;
+  const hits = new Map<string, ProviderMatch>();
+
+  for (const row of catalog) {
+    for (const alias of row.aliases) {
+      const needle = ` ${alias.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ')} `;
+      if (needle.trim() === '') continue;
+      if (!haystack.includes(needle)) continue;
+      const confidence: ProviderMatch['confidence'] =
+        alias.toLowerCase() === row.label.toLowerCase() ? 'exact'
+        : alias === row.provider_key ? 'exact' : 'alias';
+      const existing = hits.get(row.provider_key);
+      if (!existing || (existing.confidence !== 'exact' && confidence === 'exact')) {
+        hits.set(row.provider_key, { provider_key: row.provider_key, matched_on: alias, confidence });
+      }
+    }
+  }
+  return [...hits.values()];
+}

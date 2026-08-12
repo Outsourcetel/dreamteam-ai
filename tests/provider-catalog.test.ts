@@ -12,7 +12,7 @@
 // ============================================================
 import { describe, it, expect } from 'vitest';
 import { runQuery, adminTokenAvailable } from './helpers/adminQuery';
-import { PROVIDERS } from '../src/lib/connectorApi';
+import { PROVIDERS, matchProvider } from '../src/lib/connectorApi';
 
 const run = adminTokenAvailable() ? describe : describe.skip;
 
@@ -64,5 +64,35 @@ run('a connector can be prepared before it is authenticated', () => {
     expect(def).toContain('connected');
     expect(def).toContain('disconnected');
     expect(def).toContain('error');
+  });
+});
+
+describe('matchProvider', () => {
+  const catalog = [
+    { provider_key: 'xero', label: 'Xero', category: 'erp_financials', aliases: ['xero', 'zero', 'books'] },
+    { provider_key: 'hubspot', label: 'HubSpot', category: 'crm', aliases: ['hubspot', 'hub spot'] },
+  ];
+
+  it('finds a provider named exactly', () => {
+    expect(matchProvider('we use HubSpot', catalog).map((m) => m.provider_key)).toEqual(['hubspot']);
+  });
+
+  it('finds a provider named by a synonym', () => {
+    expect(matchProvider('we do our books in zero', catalog).map((m) => m.provider_key)).toEqual(['xero']);
+  });
+
+  it('finds more than one system in one sentence', () => {
+    const keys = matchProvider('HubSpot for sales and Xero for books', catalog).map((m) => m.provider_key);
+    expect(keys.sort()).toEqual(['hubspot', 'xero']);
+  });
+
+  it('returns nothing rather than guessing', () => {
+    // The pairing rule. A matcher that always finds something is worse than
+    // none: the interview would silently prepare the wrong connector.
+    expect(matchProvider('we mostly use spreadsheets and email', catalog)).toEqual([]);
+  });
+
+  it('does not match a word that merely contains an alias', () => {
+    expect(matchProvider('our zeroth priority is hiring', catalog)).toEqual([]);
   });
 });
