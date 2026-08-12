@@ -1028,6 +1028,11 @@
       "authed": true
     },
     {
+      "sig": "guardrail_enforcement_status(p_tenant_id uuid)",
+      "anon": false,
+      "authed": true
+    },
+    {
       "sig": "halfvec(halfvec, integer, boolean)",
       "anon": true,
       "authed": true
@@ -1933,6 +1938,11 @@
       "authed": true
     },
     {
+      "sig": "restore_guardrail_rule(p_rule_id uuid)",
+      "anon": false,
+      "authed": true
+    },
+    {
       "sig": "resume_digital_employee(p_de_id uuid, p_note text)",
       "anon": false,
       "authed": true
@@ -1949,6 +1959,11 @@
     },
     {
       "sig": "retire_digital_employee(p_de_id uuid, p_reason text)",
+      "anon": false,
+      "authed": true
+    },
+    {
+      "sig": "retire_guardrail_rule(p_rule_id uuid, p_reason text)",
       "anon": false,
       "authed": true
     },
