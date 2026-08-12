@@ -174,6 +174,12 @@ const PRIMITIVES = [
   'instruction', 'decision', 'checklist', 'wait', 'sub_playbook', 'agentic_step',
   'custom_step',
   'start_onboarding', 'emit_event', 'check_knowledge', 'read_reference', 'complete',
+  // Typed-gaps build (mig 712): a PAUSING placeholder for a step whose
+  // evidence gap is still open. Snapshotted in by partial publish only —
+  // the builder palette never offers it. At runtime it can ONLY pause
+  // (skip-for-this-run or cancel); the blocked behaviour exists in the
+  // snapshot solely as a frozen, non-executable copy in params.original_step.
+  'gap_gate',
 ] as const;
 
 const PRIMITIVE_LABELS: Record<string, string> = {
@@ -196,6 +202,7 @@ const PRIMITIVE_LABELS: Record<string, string> = {
   check_knowledge: 'Check knowledge',
   read_reference: 'Read reference',
   complete: 'Complete',
+  gap_gate: 'Gap gate',
 };
 
 // Steps that the SQL resume path (resume_playbook_on_task) can advance.
@@ -205,7 +212,7 @@ const SQL_RESUMABLE = new Set(['guardrail_check', 'update_record', 'log_activity
 const POST_GATE_ALLOWED = new Set([
   ...SQL_RESUMABLE, 'connector_action', 'instruction', 'decision', 'checklist',
   'wait', 'sub_playbook', 'agentic_step', 'custom_step', 'start_onboarding',
-  'emit_event', 'check_knowledge', 'read_reference',
+  'emit_event', 'check_knowledge', 'read_reference', 'gap_gate',
 ]);
 // Steps allowed INSIDE a decision's then/else branch — ONE level of
 // nesting only (a decision cannot appear inside a branch in v1).
@@ -477,6 +484,18 @@ function validateSteps(steps: unknown): ValidationError[] {
         const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         if (typeof p.template_version_id !== 'string' || !UUID_RE.test(p.template_version_id)) {
           errs.push({ index: i, code: 'bad_params', message: 'Pick which onboarding template version this step should create a project from.' });
+        }
+        break;
+      }
+      case 'gap_gate': {
+        // Minted only by partial publish; validated so a hand-forged one
+        // cannot smuggle in a runnable payload. original_step is a frozen
+        // copy for display — the executor has NO case that runs it.
+        if (typeof p.gap_id !== 'string' || !p.gap_id.trim()) {
+          errs.push({ index: i, code: 'bad_params', message: 'A gap gate must reference the open gap that blocks this step (gap_id).' });
+        }
+        if (p.original_step !== undefined && (typeof p.original_step !== 'object' || p.original_step === null || Array.isArray(p.original_step))) {
+          errs.push({ index: i, code: 'bad_params', message: 'A gap gate\'s original_step must be the frozen step object it replaced.' });
         }
         break;
       }
@@ -1250,6 +1269,53 @@ async function executeDefinitionSteps(
           await admin.from('activity_events').insert({
             tenant_id: tenantId, actor: 'Playbook DE', actor_type: 'de', event_type: 'escalated',
             text: `Playbook "${run.playbook_key}" paused for approval — ${title}`,
+          });
+          return { status: 'waiting_approval', task_id: task.id };
+        }
+
+        // ────────────────────────────────────────────────
+        // Typed-gaps build: a step whose evidence gap is still open. It can
+        // ONLY pause. The human decision offers exactly two outcomes — skip
+        // this step for THIS run (approve; recorded as a waiver, gap stays
+        // open) or cancel the run (reject). "Execute anyway" does not exist:
+        // the blocked behaviour is not in the snapshot in executable form,
+        // and answering the gap later unblocks the NEXT published version,
+        // never a paused run retroactively.
+        case 'gap_gate': {
+          const reason = String(params.reason ?? '').trim()
+            || 'This step is blocked by an open gap — the platform is missing the knowledge, decision or data it needs.';
+          if (run.preview) {
+            step.status = 'skipped'; step.at = now();
+            step.detail = `PREVIEW — gap gate: ${reason} A real run pauses here for a human.`;
+            break;
+          }
+          const gapIdRaw = String(params.gap_id ?? '');
+          const gapId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(gapIdRaw) ? gapIdRaw : null;
+          // Mirror de-work refusal-5's shape: name the gap AND its answer
+          // path, so the person landing on this task knows what actually
+          // fixes it (answer the gap, republish) vs what deciding here does.
+          const { data: task, error: taskErr } = await admin
+            .from('human_tasks')
+            .insert({
+              tenant_id: tenantId, type: 'approval_gate', source: 'system',
+              title: `Playbook paused at a gap — ${step.label || 'blocked step'}`,
+              detail: `${reason}\n\nAnswer it on the playbook's gap panel (Playbooks → open this playbook). `
+                + `Approving here SKIPS this step for THIS run only — the gap stays open and the step stays blocked in future runs. `
+                + `Declining cancels the run. The blocked step cannot execute until the gap is answered, verified, and the playbook republished.`,
+              related_table: gapId ? 'playbook_gaps' : null,
+              related_id: gapId,
+            })
+            .select().single();
+          if (taskErr || !task) throw new Error(taskErr?.message ?? 'gap gate task insert failed');
+          step.status = 'waiting';
+          step.detail = `Paused — ${reason}`;
+          run.status = 'waiting_approval';
+          run.waiting_task_id = task.id;
+          await saveRun(admin, run);
+          await stepAudit(i, { task_id: task.id, gap_id: gapId });
+          await admin.from('activity_events').insert({
+            tenant_id: tenantId, actor: 'Playbook DE', actor_type: 'de', event_type: 'escalated',
+            text: `Playbook "${run.playbook_key}" paused at a gap gate — ${step.label || 'blocked step'}: ${reason.slice(0, 140)}`,
           });
           return { status: 'waiting_approval', task_id: task.id };
         }
@@ -2601,6 +2667,73 @@ serve(async (req) => {
         .select('*').eq('id', defId).eq('tenant_id', tenantId).maybeSingle();
       if (!def) return json({ error: 'definition_not_found' }, 404);
       if (def.status === 'archived') return json({ error: 'definition_archived' }, 400);
+
+      // ── Typed-gaps build: PARTIAL publish (explicit, per-playbook opt-in,
+      // DEFAULT OFF — founder question pending). Steps carrying open
+      // knowledge/authority/data gaps snapshot as gap_gate placeholders; the
+      // substituted snapshot must pass the SAME validateSteps, unmodified.
+      // Default (full) publish below is byte-for-byte the pre-existing path.
+      if (body?.mode === 'partial') {
+        if (def.partial_publish_enabled !== true) {
+          return json({
+            published: false, error: 'partial_publish_not_enabled',
+            detail: 'Partial publish is switched off for this playbook. A human enables it per playbook — nothing publishes gapped by default.',
+          }, 422);
+        }
+        const { data: gapRows } = await admin.from('playbook_gaps')
+          .select('id, step_index, kind, status, title, detail')
+          .eq('tenant_id', tenantId).eq('definition_id', defId)
+          .in('status', ['open', 'answered']);
+        const blocking = (gapRows ?? []) as Array<{ id: string; step_index: number | null; kind: string; status: string; title: string; detail: string }>;
+        // Precondition: structural validity is non-negotiable. An answered-
+        // but-unverified structure gap still blocks — evidence, not say-so.
+        const structural = blocking.filter((g) => g.kind === 'fixable_by_structure');
+        if (structural.length > 0) {
+          return json({
+            published: false, error: 'structural_gaps_open',
+            errors: structural.map((g) => ({ index: g.step_index ?? -1, code: 'structural_gap_open', message: `Structural gap "${g.title}" must be fixed (not gated) before any publish: ${g.detail}` })),
+          }, 422);
+        }
+        const steps = (def.steps as DefStep[]).map((s, i) => {
+          const g = blocking.find((x) => x.step_index === i);
+          if (!g || s.key === 'complete' || s.key === 'gap_gate') return s;
+          return {
+            key: 'gap_gate',
+            label: `Blocked by a gap — ${String(g.title || s.label || s.key).slice(0, 50)}`,
+            params: {
+              gap_id: g.id,
+              reason: `${g.title}${g.detail ? ` — ${g.detail}` : ''}`.slice(0, 400),
+              original_step: s,
+            },
+          } as DefStep;
+        });
+        const gappedCount = steps.filter((s) => s.key === 'gap_gate').length
+          - (def.steps as DefStep[]).filter((s) => s.key === 'gap_gate').length;
+        const unattached = blocking.filter((g) => g.step_index === null).length;
+        const errors = validateSteps(steps);
+        const subErrors = await validateSubPlaybookRefs(admin, tenantId, defId, steps);
+        if (errors.length > 0 || subErrors.length > 0) {
+          return json({ published: false, valid: false, errors: [...errors, ...subErrors] }, 422);
+        }
+        const { data: latest } = await admin.from('playbook_versions')
+          .select('version').eq('definition_id', defId)
+          .order('version', { ascending: false }).limit(1).maybeSingle();
+        const nextVersion = (latest?.version ?? 0) + 1;
+        const { error: snapErr } = await admin.from('playbook_versions').insert({
+          definition_id: defId, version: nextVersion, steps, published_by: userId,
+        });
+        if (snapErr) return json({ error: snapErr.message }, 500);
+        const { error: updErr } = await admin.from('playbook_definitions')
+          .update({ version: nextVersion, status: 'published' }).eq('id', defId);
+        if (updErr) return json({ error: updErr.message }, 500);
+        await audit(admin, tenantId,
+          `Playbook definition PARTIALLY published — "${def.name}" (${def.key}) v${nextVersion}: ${gappedCount} step(s) blocked by open gaps pause at runtime`,
+          'config_change',
+          { kind: 'playbook_definition', definition_id: defId, key: def.key, version: nextVersion, mode: 'partial', step_count: steps.length, gapped_steps: gappedCount, unattached_open_gaps: unattached },
+          'Playbook DE');
+        await syncPlaybookKnowledge(admin, tenantId, { id: defId, name: def.name, de_id: def.de_id }, steps);
+        return json({ published: true, version: nextVersion, mode: 'partial', gapped_steps: gappedCount, unattached_open_gaps: unattached });
+      }
 
       const errors = validateSteps(def.steps);
       const subErrors = await validateSubPlaybookRefs(admin, tenantId, defId, def.steps as DefStep[]);

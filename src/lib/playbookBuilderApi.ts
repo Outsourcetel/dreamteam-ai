@@ -402,6 +402,9 @@ export interface PlaybookDefinition {
    *  all published bound SOPs into the DE's working brief). */
   de_id: string | null;
   intended_de_name: string | null;
+  /** mig 712 — partial publish is an explicit per-playbook opt-in, DEFAULT
+   *  OFF (founder question pending). Nothing publishes gapped by default. */
+  partial_publish_enabled?: boolean;
 }
 
 import { raise, requireTenantId, listTenantRows } from './liveShared';
@@ -460,14 +463,21 @@ export async function updateDefinition(
     .from('playbook_definitions').update(updates).eq('id', id).select().single();
   if (error) raise('updateDefinition', error);
   const def = data as PlaybookDefinition;
-  const { appendAuditEvent } = await import('./guardrailApi');
-  await appendAuditEvent({
-    actor: 'You', actor_type: 'human', category: 'config_change',
-    action: updates.status === 'archived'
-      ? `Playbook definition archived — "${def.name}" (${def.key})`
-      : `Playbook definition edited — "${def.name}" (${def.key}), ${def.steps.length} steps`,
-    detail: { kind: 'playbook_definition', definition_id: id, key: def.key, status: def.status },
-  });
+  // Steps changes are audited SERVER-SIDE by the mig 712 trigger (in the same
+  // statement as the write — the path the 22:31 un-audited overwrite proved
+  // was open). Writing a client event too would double-log the one chain a
+  // governance buyer's diligence reads; the client event stays only for
+  // metadata-only edits the trigger does not see.
+  if (updates.steps === undefined) {
+    const { appendAuditEvent } = await import('./guardrailApi');
+    await appendAuditEvent({
+      actor: 'You', actor_type: 'human', category: 'config_change',
+      action: updates.status === 'archived'
+        ? `Playbook definition archived — "${def.name}" (${def.key})`
+        : `Playbook definition edited — "${def.name}" (${def.key}), ${def.steps.length} steps`,
+      detail: { kind: 'playbook_definition', definition_id: id, key: def.key, status: def.status },
+    });
+  }
   notify();
   return def;
 }
@@ -815,11 +825,19 @@ export interface PlaybookStudyReport {
   scenarios?: Array<{ question: string; expected_fragments: string[]; category: string }>;
   bindings?: Array<{ step_index: number; doc_id: string; title?: string }>;
   risk?: Array<{ step_index: number; grade: 'rail' | 'judgment'; why: string }>;
+  /** typed-gaps build: the study's objections, typed (also persisted as
+   *  playbook_gaps rows — the panel reads the ROWS, this is the snapshot) */
+  gaps?: Array<{ kind: string; step_index: number | null; gap_key: string; title: string; detail: string; ask: Record<string, unknown> }>;
+  /** the draft-time engine validation errors — used to be returned and
+   *  dropped by the UI (spec §1.2b); now persisted and rendered */
+  validation_errors?: ValidationError[];
 }
 export interface DraftResult {
   playbook_id: string; key: string; name: string;
   steps: DefinitionStep[]; study: PlaybookStudyReport;
   validation: { valid: boolean; errors: ValidationError[]; repair_attempts: number };
+  /** recompile honesty report — which gap keys closed / stayed open / are new */
+  gaps?: { closed: string[]; still_open: string[]; new: string[] };
 }
 
 export async function draftPlaybookFromSop(input: { sopText: string; deId?: string | null }): Promise<DraftResult> {
@@ -908,6 +926,167 @@ export async function getPlaybookStudy(definitionId: string): Promise<{ sop_text
     .maybeSingle();
   if (error || !data) return null;
   return { sop_text: data.sop_text as string, report: (data.report ?? {}) as PlaybookStudyReport };
+}
+
+// ============================================================
+// Typed gaps (mig 712) — the validator's and Deep Study's objections as
+// ANSWERABLE rows. answered ≠ resolved: resolution is evidence-verified at
+// recompile (a knowledge answer must actually be retrieved by the gap's
+// query; a structure patch must make its validator error disappear).
+// ============================================================
+
+export type PlaybookGapKind = 'missing_knowledge' | 'missing_authority' | 'missing_data' | 'fixable_by_structure';
+export type PlaybookGapStatus = 'open' | 'answered' | 'resolved' | 'dismissed';
+
+export interface PlaybookGap {
+  id: string;
+  tenant_id: string;
+  definition_id: string;
+  step_index: number | null;
+  kind: PlaybookGapKind;
+  gap_key: string;
+  title: string;
+  detail: string;
+  source: 'validator' | 'study' | 'author';
+  ask: Record<string, unknown>;
+  status: PlaybookGapStatus;
+  answer: Record<string, unknown> | null;
+  answered_at: string | null;
+  resolved_at: string | null;
+  created_at: string;
+}
+
+/** Open/answered (i.e. still-blocking) gap counts per definition — one query
+ *  for the library cards, so a gapped draft is visibly gapped in the list. */
+export async function listBlockingGapCounts(): Promise<Record<string, number>> {
+  const { data, error } = await supabase
+    .from('playbook_gaps')
+    .select('definition_id, status')
+    .in('status', ['open', 'answered']);
+  if (error) return {}; // missing table (pre-712 env) or transient: no counts, never a crash
+  const out: Record<string, number> = {};
+  for (const r of (data ?? []) as Array<{ definition_id: string }>) {
+    out[r.definition_id] = (out[r.definition_id] ?? 0) + 1;
+  }
+  return out;
+}
+
+export async function listPlaybookGaps(definitionId: string): Promise<PlaybookGap[]> {
+  const { data, error } = await supabase
+    .from('playbook_gaps')
+    .select('*')
+    .eq('definition_id', definitionId)
+    .order('created_at', { ascending: true });
+  if (error) {
+    if (isMissingTableError(error)) return [];
+    raise('listPlaybookGaps', error);
+  }
+  return (data ?? []) as PlaybookGap[];
+}
+
+/** Record an answer. Role-checked server-side: missing_authority needs
+ *  owner/admin; other kinds need the manager tier. Sets `answered`, never
+ *  `resolved` — the recompile verifies. */
+export async function answerPlaybookGap(gapId: string, answer: Record<string, unknown>): Promise<void> {
+  const { data, error } = await supabase.rpc('answer_playbook_gap', { p_gap_id: gapId, p_answer: answer });
+  if (error) raise('answerPlaybookGap', error);
+  if (!(data as { ok?: boolean })?.ok) raise('answerPlaybookGap', { message: 'answer was not recorded' });
+  notify();
+}
+
+/** Dismiss a gap (owner/admin only, audited with the note). */
+export async function dismissPlaybookGap(gapId: string, note: string): Promise<void> {
+  const { data, error } = await supabase.rpc('dismiss_playbook_gap', { p_gap_id: gapId, p_note: note });
+  if (error) raise('dismissPlaybookGap', error);
+  if (!(data as { ok?: boolean })?.ok) raise('dismissPlaybookGap', { message: 'dismissal was not recorded' });
+  notify();
+}
+
+/** Recompile the draft from its stored SOP with every answered gap merged in
+ *  as grounding. Budget-gated exactly like the first draft. Returns the same
+ *  DraftResult shape plus the closed/still-open/new gap report. */
+export async function recompilePlaybook(definitionId: string): Promise<DraftResult> {
+  const tid = await getSessionTenantId();
+  const { data, error } = await invokeEdge('playbook-draft', {
+    body: { definition_id: definitionId, ...(tid ? { tenant_id: tid } : {}) },
+  });
+  if (error) raise('recompilePlaybook', { message: error.message });
+  if ((data as { error?: string })?.error) raise('recompilePlaybook', { message: (data as { error: string }).error });
+  notify();
+  return data as DraftResult;
+}
+
+export interface ApplyStructureGapResult {
+  applied: boolean;
+  gap_key?: string;
+  steps?: DefinitionStep[];
+  validation?: { valid: boolean; errors: ValidationError[] };
+  error?: string;
+  detail?: string;
+}
+
+/** One-click structural fix: applies the gap's mechanical patch to the draft
+ *  steps and revalidates against the real engine. No LLM, no budget spend.
+ *  The gap resolves ONLY if its originating validator error is gone. */
+export async function applyStructureGap(definitionId: string, gapId: string): Promise<ApplyStructureGapResult> {
+  const tid = await getSessionTenantId();
+  const { data, error } = await invokeEdge('playbook-draft', {
+    body: { definition_id: definitionId, apply_structure_gap: gapId, ...(tid ? { tenant_id: tid } : {}) },
+  });
+  if (error) {
+    if (error.body) return error.body as unknown as ApplyStructureGapResult;
+    raise('applyStructureGap', { message: error.message });
+  }
+  notify();
+  return data as ApplyStructureGapResult;
+}
+
+/** Per-playbook opt-in for partial publish (DEFAULT OFF — founder question
+ *  pending). Audited client-side like the other definition toggles. */
+export async function setPartialPublishEnabled(definitionId: string, enabled: boolean): Promise<void> {
+  const { data, error } = await supabase
+    .from('playbook_definitions')
+    .update({ partial_publish_enabled: enabled })
+    .eq('id', definitionId)
+    .select('name, key').single();
+  if (error) raise('setPartialPublishEnabled', error);
+  const { appendAuditEvent } = await import('./guardrailApi');
+  await appendAuditEvent({
+    actor: 'You', actor_type: 'human', category: 'config_change',
+    action: `Partial publish ${enabled ? 'ENABLED' : 'disabled'} for playbook "${(data as { name: string }).name}"`,
+    detail: { kind: 'playbook_partial_publish_toggle', definition_id: definitionId, enabled },
+  });
+  notify();
+}
+
+export interface PartialPublishResult {
+  published: boolean;
+  version?: number;
+  mode?: 'partial';
+  gapped_steps?: number;
+  unattached_open_gaps?: number;
+  errors?: ValidationError[];
+  error?: string;
+  detail?: string;
+}
+
+/** Partial publish: gapped steps snapshot as gap_gate placeholders that can
+ *  ONLY pause at runtime (skip-for-this-run or cancel — "execute anyway"
+ *  does not exist). Requires the per-playbook opt-in; refuses while any
+ *  structural gap is open. */
+export async function publishDefinitionPartial(definitionId: string): Promise<PartialPublishResult> {
+  const tid = await getSessionTenantId();
+  const { data, error } = await invokeEdge('playbook-execute', {
+    body: tid
+      ? { action: 'publish', mode: 'partial', definition_id: definitionId, tenant_id: tid }
+      : { action: 'publish', mode: 'partial', definition_id: definitionId },
+  });
+  if (error) {
+    if (error.body) return error.body as unknown as PartialPublishResult;
+    raise('publishDefinitionPartial', { message: error.message });
+  }
+  notify();
+  return data as PartialPublishResult;
 }
 
 // ============================================================

@@ -35,6 +35,7 @@ import { bareContainerLiteralSql } from './bare-container-literal.mjs';
 import { unexecutableApprovalSql } from './unexecutable-approval.mjs';
 import { advisoryBoundarySql } from './advisory-boundary.mjs';
 import { trustProposerBoundarySql } from './trust-proposer-boundary.mjs';
+import { gapGateConductSql, auditedStepsWritesSql, snapshotGateSql, gapEvidenceSql } from './playbook-gap-probes.mjs';
 
 const FAST = process.argv.includes('--fast');
 const PIN = process.argv.includes('--pin-allowlist');
@@ -147,6 +148,26 @@ const PROBES = [
     name: 'trust-proposer-cannot-decide',
     why: 'mig 710 built the Gap-2 seam: repeated identical landed human approvals become ONE trust_promotion proposal on the existing queue. Two proofs, held by privilege and by the ledger, never by promise. PRIVILEGE: the writer runs as the NOLOGIN role trust_pattern_proposer, which holds no EXECUTE on decide_human_task/apply_trust_promotion/trust_apply_level/trust_demote/set_de_autonomy, no UPDATE/DELETE on human_tasks, no write on de_autonomy (the dial) or approval_authority (the limits), and UPDATE on trust_policies only for the four request-bookkeeping columns — plus a reachable-decider sweep (the two-paths trap) and a cannot-file liveness arm (a proposer that silently lost INSERT is the mig-625 built-but-unfed breaker with a privilege cause). EVIDENCE: every OPEN system-raised proposal must cite >= 3 decisions the ledger RE-CONFIRMS at probe time as approved + production-origin + landed (a stored citation is a stored marker, mig 642); suspended workspaces must hold none; a pending proposal no policy points at is unactionable and flagged. The denominator prints on every run; zero open proposals is legal and says so',
     sql: trustProposerBoundarySql(),
+  },
+  {
+    name: 'gap-gate-can-only-pause',
+    why: 'the typed-gaps build (mig 712) publishes gapped steps as gap_gate placeholders whose whole contract is that the blocked behaviour CANNOT run — a human may skip the step for one run or cancel, and "execute anyway" does not exist. A gap_gate step recorded done means some code path executed through it. Denominator printed; zero gap_gate steps is legal while partial publish (opt-in, default OFF) is unused',
+    sql: gapGateConductSql(),
+  },
+  {
+    name: 'playbook-steps-writes-are-audited',
+    why: 'proven live (spec §1.4): on 2026-08-11 22:31 the incident draft\'s 7 compiled steps became 8 prose sections named "Rabeel" through a write path that audits NOTHING. mig 712\'s trigger validates step shape and appends the audit event IN THE SAME STATEMENT, so an un-audited steps update is impossible while it stands — this pins the trigger as a DRIVING pg_trigger row (present, enabled, wired) plus a data arm matching every steps-update since the pin date to its audit event',
+    sql: auditedStepsWritesSql(),
+  },
+  {
+    name: 'published-snapshots-respect-the-gate',
+    why: 'the typed-gaps invariant: THE GATE DOES NOT GET LOOSER. Instead of trusting that validateSteps ran, this asserts what it guards on every snapshot the executor can be handed (pinned key vocabulary, trailing complete, max one approval/invoice, gap_gate must name its gap) — the first loosened publish lands here as a named row. Scoped after 2026-08-12: 14 legacy snapshots (07-21..08-10) end in instruction and are named debt from a pre-pin bypass, reported in the denominator, never silently passed',
+    sql: snapshotGateSql(),
+  },
+  {
+    name: 'playbook-gaps-hold-their-evidence',
+    why: 'answered ≠ resolved is the spine of the typed-gaps design: a gap resolves only on verified evidence (a resolved missing_knowledge gap must carry the doc the recompile actually retrieved), and an objection that exists only as study prose is the dead end this build replaces — so studies that raised gaps/validator errors must have gap rows behind them. Denominators printed',
+    sql: gapEvidenceSql(),
   },
   {
     name: 'rls-on-every-public-table',

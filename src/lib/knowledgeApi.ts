@@ -565,7 +565,18 @@ export interface DEAnswerResult {
    * experience than the flat message this replaced. If you drop this field,
    * change that copy in the same commit.
    */
-  recovery?: { kind: 'import_site'; cta?: string; prompt?: string };
+  recovery?: {
+    kind: 'import_site';
+    cta?: string;
+    prompt?: string;
+    /** The server's second offer on the same reply ("Or send me a document
+     *  instead"). It was ALWAYS sent by de-answer and this client type
+     *  silently dropped it — the DE's prose asked for a document while no
+     *  control rendered (funnel census #3). Same load-bearing rule as
+     *  `recovery` itself: if you drop this field, change the server copy in
+     *  the same commit. */
+    fallback?: { kind: 'upload_document'; prompt?: string };
+  };
   /** answer served from the semantic answer cache (no LLM call) */
   cached?: boolean;
   /** the answer was withheld by a tenant guardrail rule (P3) */
@@ -659,6 +670,12 @@ export async function askDE(
               ? (data.recovery as { cta: string }).cta : undefined,
             prompt: typeof (data.recovery as { prompt?: unknown }).prompt === 'string'
               ? (data.recovery as { prompt: string }).prompt : undefined,
+            fallback: (() => {
+              const fb = (data.recovery as { fallback?: { kind?: string; prompt?: unknown } }).fallback;
+              return fb && fb.kind === 'upload_document'
+                ? { kind: 'upload_document' as const, prompt: typeof fb.prompt === 'string' ? fb.prompt : undefined }
+                : undefined;
+            })(),
           }
         : undefined,
     cached: !!data.cached,

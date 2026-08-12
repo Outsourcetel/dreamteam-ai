@@ -169,9 +169,21 @@ export default function OnboardingArchitectPage({ setPage }: { setPage?: (p: Pag
                   Ada got busy and couldn't finish this pass. Please try again in a minute.
                 </div>
               ) : result.proposals.length === 0 ? (
-                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-[13.5px] text-dt-support">
-                  Ada didn't propose anything this time. Try describing your needs with a bit more detail.
-                </div>
+                // Funnel fix (typed-gaps build): only a COMPLETED run that
+                // proposed nothing may talk about the brief. A failed run is
+                // the platform's fault, and telling the customer to rewrite
+                // their description for it is the exact misdirect that lost
+                // real signups. (llm/budget failures are typed server-side
+                // and land in the red `fatal` box above, not here.)
+                result.status === 'completed' ? (
+                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-[13.5px] text-dt-support">
+                    Ada read your brief but didn't propose anything this time. Try describing your needs with a bit more detail — what you do, and what you want handled.
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-[13.5px] text-amber-200/90">
+                    Ada's run didn't finish on our side ({result.status ?? 'failed'}) — this is a platform hiccup, not a problem with your description. Please try again; if it keeps happening, your workspace admin should check the AI engine status.
+                  </div>
+                )
               ) : (
                 <>
                   {result.summary && (

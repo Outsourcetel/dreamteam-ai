@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useCanOpenPage } from '../lib/useRoleGate';
 import type { Page } from '../types';
 import type { CompanyId } from '../data/companies';
-import { askDE, DEAnswerError } from '../lib/knowledgeApi';
+import { askDE, DEAnswerError, createKnowledgeDoc, extractPdf, ingestDocChunks } from '../lib/knowledgeApi';
 import { listDigitalEmployees, type DigitalEmployee } from '../lib/digitalEmployeesApi';
 import ImportSiteModal from './ImportSiteModal';
 
@@ -91,7 +91,12 @@ interface ChatMsg {
    * chat, nothing is learned, and the next reply says "nothing changes until
    * knowledge lands" — worse than the flat message it replaced.
    */
-  recovery?: { kind: 'import_site'; cta?: string; prompt?: string };
+  recovery?: {
+    kind: 'import_site'; cta?: string; prompt?: string;
+    /** the server's second offer on the same reply — a document instead of a
+     *  site. Dropping it re-opens funnel census #3; render a control. */
+    fallback?: { kind: 'upload_document'; prompt?: string };
+  };
 }
 
 // ── LIVE mode (real tenant): the dock fronts the de-answer edge
@@ -395,6 +400,43 @@ export default function DEChatDock() {
     void sendLive(text);
   };
 
+  // The upload_document fallback control (funnel census #3): the employee
+  // asked for a document — this reads it, files it as knowledge through the
+  // SAME create+ingest path the library uses, and closes the loop in the
+  // thread, mirroring the site-import beat below.
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const uploadDocIntoThread = async (file: File) => {
+    setUploadingDoc(true);
+    try {
+      let title = file.name;
+      let text = '';
+      if (/\.pdf$/i.test(file.name)) {
+        const ex = await extractPdf(file);
+        title = ex.title || file.name; text = ex.text;
+      } else if (/\.(txt|md|markdown)$/i.test(file.name)) {
+        text = await file.text();
+      } else {
+        setMessages(prev => [...prev, { id: uid(), role: 'system', text: 'I can read text, markdown and PDF files — that format would land as unreadable garbage, so I did not save it.', time: nowTime() }]);
+        return;
+      }
+      if (!text.trim()) {
+        setMessages(prev => [...prev, { id: uid(), role: 'system', text: 'Nothing readable in that file — try a different one, or paste your website address instead.', time: nowTime() }]);
+        return;
+      }
+      const doc = await createKnowledgeDoc({ title, content: text, source: 'upload', tags: [] });
+      await ingestDocChunks(doc.id);
+      setMessages(prev => [...prev, {
+        id: uid(), role: 'system',
+        text: `Read “${title}” and added it to my knowledge. Ask me again and I'll answer from it.`,
+        time: nowTime(),
+      }]);
+    } catch (err) {
+      setMessages(prev => [...prev, { id: uid(), role: 'system', text: `I couldn't read that document (${(err as Error).message}). Try again, or paste your website address instead.`, time: nowTime() }]);
+    } finally {
+      setUploadingDoc(false);
+    }
+  };
+
   const openFromNudge = () => {
     setNudge(false);
     setOpen(true);
@@ -569,6 +611,22 @@ export default function DEChatDock() {
                       >
                         {msg.recovery.cta || 'Read my website'}
                       </button>
+                    )}
+                    {msg.recovery?.fallback?.kind === 'upload_document' && (
+                      // The server has ALWAYS sent this second offer with the
+                      // reply — the client dropped it and the DE's own prose
+                      // asked for a document nobody could hand over (funnel
+                      // census #3). This is the control that honours it.
+                      <label className="mt-1.5 block w-full cursor-pointer rounded-lg border border-dt-border-strong bg-dt-panel px-3 py-2 text-center text-[11px] font-medium text-dt-support transition-colors hover:text-dt-body hover:border-indigo-500/40">
+                        {uploadingDoc ? 'Reading your document…' : (msg.recovery.fallback.prompt || 'Or send me a document instead')}
+                        <input
+                          type="file"
+                          accept=".txt,.md,.markdown,.pdf"
+                          className="hidden"
+                          disabled={uploadingDoc}
+                          onChange={e => { const f = e.target.files?.[0]; if (f) void uploadDocIntoThread(f); e.target.value = ''; }}
+                        />
+                      </label>
                     )}
                     {msg.blocked && (
                       <div className="mt-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 px-2 py-1.5 text-[11px] text-amber-300">

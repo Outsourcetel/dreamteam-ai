@@ -24,14 +24,16 @@ import {
   listEventDefinitions, upsertEventDefinition, emitEvent,
   draftPlaybookFromSop, getPlaybookStudy,
   listPlaybookAmendments, decidePlaybookAmendment, getPlaybookEconomics,
+  listPlaybookGaps, answerPlaybookGap, dismissPlaybookGap, recompilePlaybook,
+  applyStructureGap, setPartialPublishEnabled, publishDefinitionPartial, listBlockingGapCounts,
 } from '../../../lib/playbookBuilderApi';
-import type { PlaybookStudyReport, DraftResult, PlaybookAmendment, PlaybookEconomics } from '../../../lib/playbookBuilderApi';
+import type { PlaybookStudyReport, DraftResult, PlaybookAmendment, PlaybookEconomics, PlaybookGap } from '../../../lib/playbookBuilderApi';
 import type {
   PlaybookDefinition, DefinitionStep, PrimitiveKey, ValidationError, StepMedia, StepReference,
   PlaybookSchedule, PlaybookEventRule, PlaybookTriggerFire, ScheduleCadence, EventKey,
   PreviewResult, PreviewRunStep, ActionDefinition, EventDefinition,
 } from '../../../lib/playbookBuilderApi';
-import { listKnowledgeDocs } from '../../../lib/knowledgeApi';
+import { listKnowledgeDocs, createKnowledgeDoc, extractPdf, extractUrl, ingestDocChunks } from '../../../lib/knowledgeApi';
 import type { KnowledgeDoc } from '../../../lib/knowledgeApi';
 import { SUPABASE_URL } from '../../../lib/env';
 import { useVocabulary } from '../../../lib/vocabulary';
@@ -1424,26 +1426,339 @@ function DraftWithAiModal({ onClose, onDrafted }: { onClose: () => void; onDraft
   );
 }
 
-/** The Deep Study panel — shown on a definition that was AI-drafted. */
-function StudyPanel({ definitionId }: { definitionId: string }) {
-  const [study, setStudy] = useState<PlaybookStudyReport | null>(null);
-  const [loaded, setLoaded] = useState(false);
+// ============================================================
+// Typed gaps (mig 712) — the Deep Study's read-only lists became a GAP
+// PANEL: every objection is an answerable card with a per-kind affordance
+// in the same window. answered ≠ resolved — resolution is verified at
+// recompile, and the panel says so.
+// ============================================================
+
+const GAP_KIND_META: Record<string, { label: string; icon: string; cls: string }> = {
+  missing_knowledge: { label: 'Missing knowledge', icon: '📄', cls: 'bg-sky-500/10 text-sky-300 border-sky-700/40' },
+  missing_authority: { label: 'Needs a decision', icon: '⚖️', cls: 'bg-amber-500/10 text-amber-300 border-amber-700/40' },
+  missing_data: { label: 'Missing data', icon: '🔢', cls: 'bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-700/40' },
+  fixable_by_structure: { label: 'Structural fix', icon: '🔧', cls: 'bg-indigo-500/10 text-indigo-300 border-indigo-700/40' },
+};
+const GAP_STATUS_CHIP: Record<string, string> = {
+  open: 'bg-amber-500/15 text-amber-300',
+  answered: 'bg-sky-500/15 text-sky-300',
+  resolved: 'bg-emerald-500/15 text-emerald-300',
+  dismissed: 'bg-dt-panel text-dt-muted',
+};
+
+/** The three ways to answer a missing_knowledge gap — all existing
+ *  machinery: pick a doc, link a page (extract-document), upload a file. */
+function KnowledgeGapAnswer({ gap, onAnswered, onError }: {
+  gap: PlaybookGap; onAnswered: () => void; onError: (m: string) => void;
+}) {
+  const [mode, setMode] = useState<'pick' | 'link' | 'upload' | null>(null);
+  const [docs, setDocs] = useState<KnowledgeDoc[]>([]);
+  const [pickId, setPickId] = useState('');
+  const [url, setUrl] = useState('');
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
-    let alive = true;
-    setLoaded(false);
-    void getPlaybookStudy(definitionId).then(r => { if (alive) { setStudy(r?.report ?? null); setLoaded(true); } });
-    return () => { alive = false; };
-  }, [definitionId]);
-  if (!loaded || !study) return null;
-  const contra = study.contradictions ?? [];
-  const questions = study.questions ?? [];
-  const scenarios = study.scenarios ?? [];
-  const bindings = study.bindings ?? [];
-  const risk = study.risk ?? [];
-  if (!contra.length && !questions.length && !scenarios.length && !bindings.length) return null;
+    if (mode === 'pick' && docs.length === 0) void listKnowledgeDocs().then(setDocs).catch(() => setDocs([]));
+  }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const finish = async (docId: string, via: string) => {
+    await answerPlaybookGap(gap.id, { doc_id: docId, via });
+    onAnswered();
+  };
+  const linkPage = async () => {
+    if (!/^https?:\/\//i.test(url.trim())) { onError('A page link needs a full http(s) address.'); return; }
+    setBusy(true);
+    try {
+      const ex = await extractUrl(url.trim());
+      const doc = await createKnowledgeDoc({ title: ex.title || url.trim(), content: ex.text, source: 'upload', tags: [] });
+      await ingestDocChunks(doc.id);
+      await finish(doc.id, 'link');
+    } catch (e) { onError((e as Error).message || 'Could not read that page.'); }
+    finally { setBusy(false); }
+  };
+  const uploadFile = async (file: File) => {
+    setBusy(true);
+    try {
+      let title = file.name;
+      let text = '';
+      if (/\.pdf$/i.test(file.name)) {
+        const ex = await extractPdf(file);
+        title = ex.title || file.name; text = ex.text;
+      } else if (/\.(txt|md|markdown)$/i.test(file.name)) {
+        text = await file.text();
+      } else {
+        onError('Text, markdown or PDF only — other formats would land as unreadable garbage.');
+        setBusy(false); return;
+      }
+      if (!text.trim()) { onError('Nothing readable in that file.'); setBusy(false); return; }
+      const doc = await createKnowledgeDoc({ title, content: text, source: 'upload', tags: [] });
+      await ingestDocChunks(doc.id);
+      await finish(doc.id, 'upload');
+    } catch (e) { onError((e as Error).message || 'Upload failed.'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="mt-2">
+      <div className="flex gap-1.5 flex-wrap">
+        {(['upload', 'link', 'pick'] as const).map(m => (
+          <button key={m} onClick={() => setMode(mode === m ? null : m)}
+            className={`text-[11px] px-2 py-1 rounded-lg border transition-colors ${mode === m ? 'border-indigo-500/60 bg-indigo-500/10 text-indigo-200' : 'border-dt-border text-dt-support hover:text-dt-body'}`}>
+            {m === 'upload' ? '⬆ Upload a document' : m === 'link' ? '🔗 Link a page' : '📚 Pick an existing doc'}
+          </button>
+        ))}
+      </div>
+      {mode === 'upload' && (
+        <label className="mt-2 block text-[11px] text-dt-support">
+          <input type="file" accept=".txt,.md,.markdown,.pdf" disabled={busy} className="text-[11px]"
+            onChange={e => { const f = e.target.files?.[0]; if (f) void uploadFile(f); }} />
+          {busy && <span className="ml-2 text-dt-muted">reading &amp; indexing…</span>}
+        </label>
+      )}
+      {mode === 'link' && (
+        <div className="mt-2 flex gap-2">
+          <input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://…"
+            className="flex-1 text-[11px] bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1 text-dt-body placeholder:text-dt-faint" />
+          <Button kind="secondary" size="sm" disabled={busy} onClick={() => void linkPage()}>{busy ? 'Reading…' : 'Read it'}</Button>
+        </div>
+      )}
+      {mode === 'pick' && (
+        <div className="mt-2 flex gap-2">
+          <select value={pickId} onChange={e => setPickId(e.target.value)}
+            className="flex-1 text-[11px] bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1 text-dt-body">
+            <option value="">Pick a document…</option>
+            {docs.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
+          </select>
+          <Button kind="secondary" size="sm" disabled={busy || !pickId}
+            onClick={() => { setBusy(true); void finish(pickId, 'pick').catch(e => onError((e as Error).message)).finally(() => setBusy(false)); }}>
+            Use this doc
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AuthorityGapAnswer({ gap, isAdmin, onAnswered, onError }: {
+  gap: PlaybookGap; isAdmin: boolean; onAnswered: () => void; onError: (m: string) => void;
+}) {
+  const ask = gap.ask as { decision?: string; options?: string[]; recommended?: string };
+  const options = Array.isArray(ask.options) && ask.options.length > 0 ? ask.options.map(String) : [];
+  const [choice, setChoice] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const record = async () => {
+    const decided = choice || note.trim();
+    if (!decided) { onError('Pick an option or write the decision.'); return; }
+    setBusy(true);
+    try { await answerPlaybookGap(gap.id, { decision: decided, note: note.trim() || undefined }); onAnswered(); }
+    catch (e) { onError((e as Error).message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="mt-2 space-y-1.5">
+      {ask.decision && <p className="text-[11px] text-dt-support">{ask.decision}</p>}
+      {options.map(o => (
+        <label key={o} className="flex items-start gap-2 text-[11px] text-dt-body cursor-pointer">
+          <input type="radio" name={`gap-${gap.id}`} checked={choice === o} onChange={() => setChoice(o)} className="mt-0.5" />
+          <span>{o}{ask.recommended === o && <span className="text-dt-muted"> (suggested)</span>}</span>
+        </label>
+      ))}
+      <div className="flex gap-2">
+        <input value={note} onChange={e => setNote(e.target.value)} placeholder={options.length ? 'Optional note…' : 'Write the decision…'}
+          className="flex-1 text-[11px] bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1 text-dt-body placeholder:text-dt-faint" />
+        <Button kind="secondary" size="sm" disabled={busy || !isAdmin} onClick={() => void record()}
+          title={isAdmin ? undefined : 'Only an owner or admin can decide this'}>
+          {busy ? 'Recording…' : 'Record decision'}
+        </Button>
+      </div>
+      {!isAdmin && <p className="text-[10px] text-dt-muted">Decisions like this one need an owner or admin — the recorded decision is audited.</p>}
+    </div>
+  );
+}
+
+function DataGapAnswer({ gap, onAnswered, onError }: {
+  gap: PlaybookGap; onAnswered: () => void; onError: (m: string) => void;
+}) {
+  const ask = gap.ask as { entity?: string; field?: string; help?: string };
+  const [value, setValue] = useState('');
+  const [busy, setBusy] = useState(false);
+  const record = async () => {
+    if (!value.trim()) { onError('Enter the value first.'); return; }
+    setBusy(true);
+    try { await answerPlaybookGap(gap.id, { entity: ask.entity ?? 'org', field: ask.field ?? gap.gap_key, value: value.trim() }); onAnswered(); }
+    catch (e) { onError((e as Error).message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="mt-2">
+      {ask.help && <p className="text-[11px] text-dt-support mb-1">{ask.help}</p>}
+      <div className="flex gap-2">
+        <input value={value} onChange={e => setValue(e.target.value)}
+          placeholder={ask.field ? `${ask.entity === 'account' ? 'Account field' : 'Workspace value'}: ${ask.field}` : 'Value…'}
+          className="flex-1 text-[11px] bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1 text-dt-body placeholder:text-dt-faint" />
+        <Button kind="secondary" size="sm" disabled={busy} onClick={() => void record()}>{busy ? 'Saving…' : 'Save answer'}</Button>
+      </div>
+    </div>
+  );
+}
+
+function StructureGapAnswer({ gap, definitionId, onApplied, onError }: {
+  gap: PlaybookGap; definitionId: string; onApplied: (msg: string) => void; onError: (m: string) => void;
+}) {
+  const ask = gap.ask as { patch?: unknown[]; preview?: string };
+  const [busy, setBusy] = useState(false);
+  const apply = async () => {
+    setBusy(true);
+    try {
+      const r = await applyStructureGap(definitionId, gap.id);
+      if (r.applied) onApplied(`Fix applied — "${gap.title.slice(0, 60)}" resolved (validated against the engine).`);
+      else onError(r.detail ?? r.error ?? 'The patch did not clear the error — nothing was changed.');
+    } catch (e) { onError((e as Error).message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="mt-2 flex items-center gap-2 flex-wrap">
+      {ask.preview && <span className="text-[11px] text-dt-support">{ask.preview}</span>}
+      {Array.isArray(ask.patch) && ask.patch.length > 0
+        ? <Button kind="secondary" size="sm" disabled={busy} onClick={() => void apply()}>{busy ? 'Applying…' : '🔧 Apply fix'}</Button>
+        : <span className="text-[10px] text-dt-muted">Fix it in the step editor (Edit draft) — this one has no one-click patch.</span>}
+    </div>
+  );
+}
+
+/** The gap panel — replaces the read-only Deep Study lists. */
+function GapPanel({ def, isAdmin, canManage, onChanged, onToast }: {
+  def: PlaybookDefinition; isAdmin: boolean; canManage: boolean;
+  onChanged: () => void; onToast: (m: string) => void;
+}) {
+  const [study, setStudy] = useState<PlaybookStudyReport | null>(null);
+  const [gaps, setGaps] = useState<PlaybookGap[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [recompiling, setRecompiling] = useState(false);
+  const [publishingPartial, setPublishingPartial] = useState(false);
+  const [togglingOptIn, setTogglingOptIn] = useState(false);
+
+  const reload = async () => {
+    const [s, g] = await Promise.all([
+      getPlaybookStudy(def.id).catch(() => null),
+      listPlaybookGaps(def.id).catch(() => [] as PlaybookGap[]),
+    ]);
+    setStudy(s?.report ?? null);
+    setGaps(g);
+    setLoaded(true);
+  };
+  useEffect(() => { setLoaded(false); setErr(null); void reload(); }, [def.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!loaded) return null;
+  const contra = study?.contradictions ?? [];
+  const scenarios = study?.scenarios ?? [];
+  const bindings = study?.bindings ?? [];
+  const risk = study?.risk ?? [];
+  const valErrors = study?.validation_errors ?? [];
+  if (!gaps.length && !contra.length && !scenarios.length && !bindings.length && !valErrors.length) return null;
+
+  const live = gaps.filter(g => g.status !== 'dismissed');
+  const openCount = live.filter(g => g.status === 'open').length;
+  const answeredCount = live.filter(g => g.status === 'answered').length;
+  const resolvedCount = live.filter(g => g.status === 'resolved').length;
+  const structuralOpen = live.filter(g => g.kind === 'fixable_by_structure' && g.status !== 'resolved').length;
+  const blockingCount = openCount + answeredCount;
+
+  const answered = () => { void reload(); onToast('Answer recorded — it counts as resolved only once the recompile verifies it.'); };
+
+  const recompile = async () => {
+    setRecompiling(true); setErr(null);
+    try {
+      const r = await recompilePlaybook(def.id);
+      const g = r.gaps;
+      onToast(g
+        ? `Recompiled “${r.name}” — ${g.closed.length} gap(s) closed, ${g.still_open.length} still open, ${g.new.length} new.`
+        : `Recompiled “${r.name}”.`);
+      await reload();
+      onChanged();
+    } catch (e) { setErr((e as Error).message); }
+    finally { setRecompiling(false); }
+  };
+
+  const publishPartial = async () => {
+    setPublishingPartial(true); setErr(null);
+    try {
+      const r = await publishDefinitionPartial(def.id);
+      if (r.published) {
+        onToast(`Partially published v${r.version} — ${r.gapped_steps ?? 0} step(s) will pause at their gap until it is answered and republished.`);
+        onChanged();
+      } else if (r.errors?.length) setErr(r.errors.map(e => e.message).join('; '));
+      else setErr(r.detail ?? r.error ?? 'Partial publish refused.');
+    } catch (e) { setErr((e as Error).message); }
+    finally { setPublishingPartial(false); }
+  };
+
+  const toggleOptIn = async (enabled: boolean) => {
+    setTogglingOptIn(true); setErr(null);
+    try { await setPartialPublishEnabled(def.id, enabled); onChanged(); }
+    catch (e) { setErr((e as Error).message); }
+    finally { setTogglingOptIn(false); }
+  };
+
   return (
     <div className="rounded-2xl border border-indigo-800/40 bg-indigo-500/5 p-4 mb-4">
-      <h3 className="text-xs font-semibold text-indigo-300 mb-2">🔎 Deep Study — what the Copilot found before you go live</h3>
+      <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+        <h3 className="text-xs font-semibold text-indigo-300">🔎 Deep Study — gaps to close before this runs whole</h3>
+        {live.length > 0 && (
+          <span className="text-[11px] text-dt-support">
+            {resolvedCount} of {live.length} resolved · {answeredCount} answered awaiting verification · {openCount} open
+          </span>
+        )}
+      </div>
+      {err && <div className="mb-2 rounded-lg border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-300">{err}</div>}
+
+      {/* The typed gaps — each an answerable card */}
+      {live.length > 0 && (
+        <ul className="space-y-2 mb-3">
+          {live.map(g => {
+            const meta = GAP_KIND_META[g.kind] ?? GAP_KIND_META.missing_knowledge;
+            return (
+              <li key={g.id} className="rounded-xl border border-dt-border bg-dt-card px-3 py-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded border ${meta.cls}`}>{meta.icon} {meta.label}</span>
+                  <span className={`text-[9px] px-1.5 py-0.5 rounded ${GAP_STATUS_CHIP[g.status]}`}>{g.status}</span>
+                  {g.step_index !== null && <span className="text-[10px] text-dt-muted">step {g.step_index + 1}</span>}
+                  {canManage && isAdmin && g.status !== 'resolved' && (
+                    <button onClick={() => { void dismissPlaybookGap(g.id, 'Dismissed from the gap panel').then(() => void reload()).catch(e => setErr((e as Error).message)); }}
+                      className="ml-auto text-[10px] text-dt-muted hover:text-rose-300" title="Dismiss (owner/admin; audited)">dismiss</button>
+                  )}
+                </div>
+                <p className="text-[12px] text-dt-body mt-1">{g.title}</p>
+                {g.detail && g.detail !== g.title && <p className="text-[11px] text-dt-support mt-0.5">{g.detail}</p>}
+                {g.status === 'answered' && (
+                  <p className="text-[10px] text-sky-300/80 mt-1">Answered — recompile to verify the evidence and close it.</p>
+                )}
+                {g.status === 'open' && canManage && (
+                  g.kind === 'missing_knowledge' ? <KnowledgeGapAnswer gap={g} onAnswered={answered} onError={setErr} />
+                  : g.kind === 'missing_authority' ? <AuthorityGapAnswer gap={g} isAdmin={isAdmin} onAnswered={answered} onError={setErr} />
+                  : g.kind === 'missing_data' ? <DataGapAnswer gap={g} onAnswered={answered} onError={setErr} />
+                  : <StructureGapAnswer gap={g} definitionId={def.id} onApplied={(m) => { onToast(m); void reload(); onChanged(); }} onError={setErr} />
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {/* Draft-time validation errors — persisted now, rendered beside the
+          steps they index instead of being dropped (spec §1.2b) */}
+      {valErrors.length > 0 && (
+        <div className="mb-3">
+          <div className="text-[11px] font-semibold text-rose-300 mb-1">Engine validation ({valErrors.length})</div>
+          <ul className="space-y-0.5 text-[11px] text-dt-support">
+            {valErrors.map((e, i) => (
+              <li key={i}>{e.index >= 0 ? `Step ${e.index + 1}: ` : ''}{e.message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="grid md:grid-cols-2 gap-3">
         {contra.length > 0 && (
           <div>
@@ -1455,14 +1770,6 @@ function StudyPanel({ definitionId }: { definitionId: string }) {
                   <span className="text-dt-support">Knowledge{c.source_title ? ` (${c.source_title})` : ''}:</span> {c.kb_says}
                 </li>
               ))}
-            </ul>
-          </div>
-        )}
-        {questions.length > 0 && (
-          <div>
-            <div className="text-[11px] font-semibold text-amber-300 mb-1">❓ Questions to answer ({questions.length})</div>
-            <ul className="list-disc list-inside space-y-1 text-[11px] text-dt-support leading-snug">
-              {questions.map((q, i) => <li key={i}>{q}</li>)}
             </ul>
           </div>
         )}
@@ -1486,6 +1793,31 @@ function StudyPanel({ definitionId }: { definitionId: string }) {
       </div>
       {risk.length > 0 && (
         <p className="text-[10px] text-dt-muted mt-2">Steps graded: {risk.filter(r => r.grade === 'rail').length} rail (deterministic) · {risk.filter(r => r.grade === 'judgment').length} judgment (the employee reasons).</p>
+      )}
+
+      {/* Loop controls: recompile + (opt-in) partial publish */}
+      {canManage && live.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-dt-border flex items-center gap-2 flex-wrap">
+          <Button kind="primary" size="sm" disabled={recompiling} onClick={() => void recompile()}>
+            {recompiling ? 'Recompiling…' : '↻ Recompile with answers'}
+          </Button>
+          <span className="text-[10px] text-dt-muted">Re-runs the compile + study with your answers as grounding; a gap closes only when its evidence verifies.</span>
+          {blockingCount > 0 && def.status !== 'published' && (
+            <span className="flex items-center gap-2 ml-auto">
+              <label className="flex items-center gap-1.5 text-[11px] text-dt-support cursor-pointer" title="Off by default. Blocked steps pause loudly at runtime and can only be skipped for a run or the run cancelled — never executed.">
+                <input type="checkbox" checked={def.partial_publish_enabled === true} disabled={togglingOptIn}
+                  onChange={e => void toggleOptIn(e.target.checked)} />
+                Allow partial publish
+              </label>
+              {def.partial_publish_enabled === true && (
+                <Button kind="secondary" size="sm" disabled={publishingPartial || structuralOpen > 0} onClick={() => void publishPartial()}
+                  title={structuralOpen > 0 ? 'Structural gaps must be fixed (not gated) first' : 'Publish the runnable steps; gapped steps pause at runtime'}>
+                  {publishingPartial ? 'Publishing…' : `Publish runnable part (${blockingCount} gap${blockingCount === 1 ? '' : 's'} gated)`}
+                </Button>
+              )}
+            </span>
+          )}
+        </div>
       )}
     </div>
   );
@@ -1529,11 +1861,17 @@ function LivingDocument({ definitionId, steps, runs, publishedDefs, onDecided }:
   const [amendments, setAmendments] = useState<PlaybookAmendment[]>([]);
   const [econ, setEcon] = useState<PlaybookEconomics | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [stepGaps, setStepGaps] = useState<PlaybookGap[]>([]);
   const health = useMemo(() => computeStepHealth(runs, steps.length), [runs, steps.length]);
   useEffect(() => {
     let alive = true;
     void listPlaybookAmendments(definitionId).then(a => { if (alive) setAmendments(a); });
     void getPlaybookEconomics(definitionId).then(e => { if (alive) setEcon(e); });
+    // mig 712: gapped steps render visibly blocked WITH their reason — the
+    // onboarding "unmet requirement" presentation, never hidden.
+    void listPlaybookGaps(definitionId)
+      .then(g => { if (alive) setStepGaps(g.filter(x => ['open', 'answered'].includes(x.status) && x.step_index !== null)); })
+      .catch(() => { if (alive) setStepGaps([]); });
     return () => { alive = false; };
   }, [definitionId, runs.length]);
 
@@ -1606,6 +1944,11 @@ function LivingDocument({ definitionId, steps, runs, publishedDefs, onDecided }:
                 )}
               </div>
               {h?.lastException && <p className="text-[10px] text-rose-400/80 mt-1 ml-6">last exception: {h.lastException}</p>}
+              {stepGaps.filter(g => g.step_index === i).map(g => (
+                <p key={g.id} className="text-[10px] text-amber-300/90 mt-1 ml-6">
+                  ⛔ blocked by a gap — {g.title}{g.status === 'answered' ? ' (answered; recompile to verify)' : ''}. A partial publish pauses here; it never executes.
+                </p>
+              ))}
             </li>
           );
         })}
@@ -1620,6 +1963,9 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
   // admin gate this file already uses elsewhere, so Archive gets its own
   // hook rather than borrowing that one and quietly narrowing it.
   const canEditPlaybooks = useIsTenantManager();
+  // Gap panel: answering a missing_authority gap and dismissing any gap are
+  // owner/admin-only (server-enforced by the mig 712 RPCs; this is the UI half).
+  const isTenantAdmin = useIsTenantAdmin();
   const [defs, setDefs] = useState<PlaybookDefinition[]>([]);
   const [runs, setRuns] = useState<PlaybookRun[]>([]);
   const [accounts, setAccounts] = useState<CustomerAccount[]>([]);
@@ -1641,15 +1987,18 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
   const [eventRules, setEventRules] = useState<PlaybookEventRule[]>([]);
   const [fires, setFires] = useState<PlaybookTriggerFire[]>([]);
   const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [gapCounts, setGapCounts] = useState<Record<string, number>>({});
 
   const refresh = async () => {
     try {
-      const [d, r, a, s, er, f] = await Promise.all([
+      const [d, r, a, s, er, f, gc] = await Promise.all([
         listDefinitions(), listPlaybookRuns(), listAccounts(),
         listSchedules(), listEventRules(), listTriggerFires(),
+        listBlockingGapCounts(),
       ]);
       setDefs(d); setRuns(r); setAccounts(a);
       setSchedules(s); setEventRules(er); setFires(f);
+      setGapCounts(gc);
       setMissingTables(false); setError(null);
     } catch (err) {
       if (err instanceof CustomerApiError && err.missingTables) setMissingTables(true);
@@ -1714,10 +2063,13 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
     setShowDraftAi(false);
     await refresh();
     setSelectedDefId(r.playbook_id);
-    const q = (r.study.questions?.length ?? 0);
+    // Typed gaps (mig 712): the draft is SAVED either way, and every
+    // objection is now an answerable card — say so, instead of the old
+    // "with validation notes" shrug that dropped the errors on the floor.
+    const gapCount = (r.gaps?.new.length ?? 0) + (r.gaps?.still_open.length ?? 0);
     setToast(r.validation.valid
-      ? `Drafted “${r.name}” — ${r.steps.length} steps${q ? `, ${q} questions to review` : ''}. Review the study, then edit or publish.`
-      : `Drafted “${r.name}” with validation notes — review before publishing.`);
+      ? `Drafted “${r.name}” — ${r.steps.length} steps${gapCount ? `, ${gapCount} gap${gapCount === 1 ? '' : 's'} to answer below` : ''}. Your draft is saved.`
+      : `Drafted “${r.name}” and saved it — ${gapCount || 'some'} gap${gapCount === 1 ? '' : 's'} to answer below. Nothing publishes until the gate passes.`);
   };
 
   return (
@@ -1784,8 +2136,16 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
               </Modal>
             )}
 
-            {/* PB3 Deep Study — shown for AI-drafted playbooks */}
-            <StudyPanel definitionId={selectedDef.id} />
+            {/* PB3 Deep Study → typed-gap panel (mig 712): every objection is
+                an answerable card; recompile verifies evidence and closes
+                gaps honestly */}
+            <GapPanel
+              def={selectedDef}
+              isAdmin={isTenantAdmin}
+              canManage={canEditPlaybooks}
+              onChanged={() => void refresh()}
+              onToast={setToast}
+            />
 
             {/* PB3 W4 — the Living Document: rail/judgment badges, live
                 per-step health, and any AI-proposed amendment as a redline */}
@@ -1899,6 +2259,12 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
                               className="text-sm font-semibold text-dt-title hover:underline text-left">{d.name}</button>
                             {statusChip(d.status)}
                             {d.status === 'published' && <span className="text-xs font-mono text-dt-muted">v{d.version}</span>}
+                            {(gapCounts[d.id] ?? 0) > 0 && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300"
+                                title="Open the playbook to answer them — blocked steps never execute">
+                                ⛔ {gapCounts[d.id]} gap{gapCounts[d.id] === 1 ? '' : 's'} to answer
+                              </span>
+                            )}
                           </div>
                           {d.description && <p className="text-xs text-dt-support mt-1 max-w-2xl">{d.description}</p>}
                           <p className="text-xs text-dt-muted mt-0.5">

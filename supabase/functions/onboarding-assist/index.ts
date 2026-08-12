@@ -95,6 +95,33 @@ serve(async (req) => {
     });
     const runOut = await runRes.json().catch(() => ({ status: 'failed' }));
     const status = String(runOut.status ?? (runOut.error ? 'failed' : 'unknown'));
+    const runError = typeof runOut.error === 'string' ? runOut.error : null;
+
+    // ── Funnel fix (typed-gaps build, spec §6.2): an infra state is OURS to
+    // own. This used to flatten llm_not_configured / budget_exceeded into
+    // `ok:true, proposals:[]`, and the page then told the customer to
+    // "describe your needs with a bit more detail" — blaming their writing
+    // for a platform state no retry could fix. Step 1 of the only first-run
+    // checklist must never do that. Each infra failure is now typed, with a
+    // detail string that says whose problem it is.
+    if (runError === 'llm_not_configured' || status === 'blocked_llm') {
+      return json({
+        ok: false, error: 'llm_not_configured',
+        detail: 'The platform\'s AI engine is not configured for this workspace yet — that is on our side, not your description. An administrator needs to finish AI setup; your brief will work fine once that is done.',
+      }, 503);
+    }
+    if (status === 'budget_exceeded') {
+      return json({
+        ok: false, error: 'ai_budget_exceeded',
+        detail: 'This workspace\'s AI budget is used up — a platform limit, not a problem with your description. Retrying will not help until the budget resets or an administrator raises it.',
+      }, 429);
+    }
+    if (runError === 'disabled_by_tenant_policy') {
+      return json({
+        ok: false, error: 'agentic_disabled',
+        detail: 'Autonomous runs are switched off for this workspace by policy. Quick Start needs them on — an administrator can re-enable them under AI settings.',
+      }, 409);
+    }
 
     // The proposals this run created — gated executions + their approval tasks.
     const { data: proposals } = await admin

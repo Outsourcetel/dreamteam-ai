@@ -17,6 +17,7 @@ import { bareContainerLiteralSql } from './bare-container-literal.mjs';
 import { unexecutableApprovalSql } from './unexecutable-approval.mjs';
 import { advisoryBoundarySql } from './advisory-boundary.mjs';
 import { trustProposerBoundarySql } from './trust-proposer-boundary.mjs';
+import { gapGateConductSql, auditedStepsWritesSql, snapshotGateSql, gapEvidenceSql } from './playbook-gap-probes.mjs';
 
 // ── Fixtures for no-untyped-literal-appended-to-a-container ────────────────
 // The production catalog is CLEAN of this shape, so the probe returns zero rows
@@ -992,6 +993,111 @@ const CASES = [
     // showed the mismatch) and GREEN after. Marked MANUAL-VERIFIED.
     manual: 'certify was red with the 6 stale grants, green after --pin-allowlist. Directly observed this session.',
   },
+  // ── mig 712 typed gaps: the four new probes, each driven through the REAL
+  // SQL builders over synthesised rows. `fires` filters on the violation TEXT
+  // naming the injected break (strict scoring); `silent` runs the same query
+  // over the clean twin and must return zero VIOLATION rows (note/denominator
+  // rows are excluded by the violation-is-not-null filter).
+  ...(() => {
+    const viol = (sql, like) => `select 1 from (${sql}) x
+       where x.violation is not null${like ? ` and x.violation like '%${like}%'` : ''}`;
+    const FXD = '00000000-0000-4000-8000-000000000712';   // fixture definition id
+    const FXT = '00000000-0000-4000-8000-000000000042';   // fixture tenant id
+    // a def row that never qualifies for the data arm (insert-stamped) — used
+    // where a case needs the OTHER arm isolated, because an empty VALUES list
+    // is a syntax error, not an empty fixture.
+    const benignDef = { id: FXD, tenant_id: FXT, name: 'fx', key: 'fx', created_at: '2026-08-13T10:00:00Z', steps_updated_at: '2026-08-13T10:00:00Z' };
+    const gapBase = { id: FXD, definition_id: FXD, kind: 'missing_knowledge', gap_key: 'knowledge:fx', source: 'study' };
+    return [
+      {
+        name: 'gap-gate-can-only-pause (a gap_gate recorded done IS the forbidden execute-anyway; waiting/skipped stay silent)',
+        fires: viol(gapGateConductSql([{ id: 'fx-run', steps: [{ key: 'gap_gate', status: 'done' }, { key: 'complete', status: 'pending' }] }]),
+          `gap_gate step ended ''done''`),
+        silent: viol(gapGateConductSql([{ id: 'fx-run', steps: [{ key: 'gap_gate', status: 'waiting' }, { key: 'gap_gate', status: 'skipped' }, { key: 'gap_gate', status: 'cancelled' }, { key: 'complete', status: 'pending' }] }])),
+      },
+      {
+        name: 'playbook-steps-writes-are-audited (DRIVING ARM: the probe pointed at a trigger name that does not exist reports the guard missing)',
+        fires: viol(auditedStepsWritesSql({ triggerName: 'zz_no_such_trigger_712', defs: [benignDef], events: [].concat([{ tenant_id: FXT, definition_id: FXD, kind: 'playbook_steps_updated', created_at: '2026-08-13T10:00:00Z' }]) }),
+          'MISSING or DISABLED'),
+        silent: viol(auditedStepsWritesSql({ defs: [benignDef], events: [{ tenant_id: FXT, definition_id: FXD, kind: 'playbook_steps_updated', created_at: '2026-08-13T10:00:00Z' }] })),
+      },
+      {
+        name: 'playbook-steps-writes-are-audited (DATA ARM: a steps update with no audit event within 5 minutes fires; the same update with its event is silent)',
+        fires: viol(auditedStepsWritesSql({
+          defs: [{ id: FXD, tenant_id: FXT, name: 'fx', key: 'fx', created_at: '2026-08-13T10:00:00Z', steps_updated_at: '2026-08-13T11:00:00Z' }],
+          events: [{ tenant_id: FXT, definition_id: FXD, kind: 'playbook_steps_updated', created_at: '2026-08-13T18:00:00Z' }],
+        }), 'NO playbook_steps_updated audit event'),
+        silent: viol(auditedStepsWritesSql({
+          defs: [{ id: FXD, tenant_id: FXT, name: 'fx', key: 'fx', created_at: '2026-08-13T10:00:00Z', steps_updated_at: '2026-08-13T11:00:00Z' }],
+          events: [{ tenant_id: FXT, definition_id: FXD, kind: 'playbook_steps_updated', created_at: '2026-08-13T11:00:30Z' }],
+        })),
+      },
+      {
+        name: 'published-snapshots-respect-the-gate (a snapshot smuggling an unpinned primitive is named; the pinned vocabulary is silent)',
+        fires: viol(snapshotGateSql([{ id: 'fx-v', published_at: '2026-08-13T00:00:00Z', steps: [{ key: 'teleport_money' }, { key: 'complete' }] }]),
+          'outside the pinned snapshot vocabulary'),
+        silent: viol(snapshotGateSql([{ id: 'fx-v', published_at: '2026-08-13T00:00:00Z', steps: [{ key: 'instruction' }, { key: 'gap_gate', params: { gap_id: FXD } }, { key: 'complete' }] }])),
+      },
+      {
+        name: 'published-snapshots-respect-the-gate (last_step + double-approval relaxations land as named rows)',
+        fires: viol(snapshotGateSql([{ id: 'fx-v', published_at: '2026-08-13T00:00:00Z', steps: [{ key: 'generate_invoice' }, { key: 'human_approval' }, { key: 'human_approval' }, { key: 'instruction' }] }]),
+          'not complete'),
+        silent: viol(snapshotGateSql([{ id: 'fx-v', published_at: '2026-08-13T00:00:00Z', steps: [{ key: 'generate_invoice' }, { key: 'human_approval' }, { key: 'complete' }] }])),
+      },
+      {
+        name: 'published-snapshots-respect-the-gate (a gap_gate that cannot name its gap fires; pin-date scoping keeps the 14 legacy snapshots as reported debt, not findings)',
+        fires: viol(snapshotGateSql([{ id: 'fx-v', published_at: '2026-08-13T00:00:00Z', steps: [{ key: 'gap_gate', params: {} }, { key: 'complete' }] }]),
+          'no gap_id'),
+        // the SAME violating shape dated before the pin is scoped out — this is
+        // the half that proves the date scope works and cannot silently widen
+        silent: viol(snapshotGateSql([{ id: 'fx-v', published_at: '2026-07-01T00:00:00Z', steps: [{ key: 'gap_gate', params: {} }, { key: 'instruction' }] }])),
+      },
+      {
+        name: 'playbook-gaps-hold-their-evidence (a RESOLVED knowledge gap with no retrieved doc in its answer is a say-so closure and fires)',
+        fires: viol(gapEvidenceSql({
+          gaps: [{ ...gapBase, status: 'resolved', answer: { note: 'trust me' }, answered_at: '2026-08-13T10:00:00Z', resolved_at: '2026-08-13T10:00:00Z' }],
+          studies: [{ definition_id: FXD, updated_at: '2026-08-13T10:00:00Z', n_gaps: 1, n_validation_errors: 0 }],
+        }), 'no doc evidence'),
+        silent: viol(gapEvidenceSql({
+          gaps: [{ ...gapBase, status: 'resolved', answer: { doc_id: FXD }, answered_at: '2026-08-13T10:00:00Z', resolved_at: '2026-08-13T10:00:00Z' }],
+          studies: [{ definition_id: FXD, updated_at: '2026-08-13T10:00:00Z', n_gaps: 1, n_validation_errors: 0 }],
+        })),
+      },
+      {
+        name: 'playbook-gaps-hold-their-evidence (resolved-without-timestamp and answered-without-answer are stored markers and fire)',
+        fires: viol(gapEvidenceSql({
+          gaps: [{ ...gapBase, status: 'resolved', answer: { doc_id: FXD }, answered_at: '2026-08-13T10:00:00Z' }],
+          studies: [{ definition_id: FXD, updated_at: '2026-08-13T10:00:00Z', n_gaps: 1, n_validation_errors: 0 }],
+        }), 'resolved_at is NULL'),
+        silent: viol(gapEvidenceSql({
+          gaps: [{ ...gapBase, status: 'answered', answer: { doc_id: FXD }, answered_at: '2026-08-13T10:00:00Z' }],
+          studies: [{ definition_id: FXD, updated_at: '2026-08-13T10:00:00Z', n_gaps: 1, n_validation_errors: 0 }],
+        })),
+      },
+      {
+        name: 'playbook-gaps-hold-their-evidence (COVERAGE: a study that raised gaps with zero rows behind it means objections are prose again)',
+        fires: viol(gapEvidenceSql({
+          gaps: [{ ...gapBase, definition_id: '00000000-0000-4000-8000-00000000dead', status: 'open' }],
+          studies: [{ definition_id: FXD, updated_at: '2026-08-13T10:00:00Z', n_gaps: 3, n_validation_errors: 0 }],
+        }), 'ZERO playbook_gaps rows'),
+        silent: viol(gapEvidenceSql({
+          gaps: [{ ...gapBase, status: 'open' }],
+          studies: [{ definition_id: FXD, updated_at: '2026-08-13T10:00:00Z', n_gaps: 3, n_validation_errors: 0 }],
+        })),
+      },
+      {
+        name: 'playbook-gaps-hold-their-evidence (COVERAGE: validator errors recorded with no validator-sourced gaps = errors dropped again, spec §1.2b)',
+        fires: viol(gapEvidenceSql({
+          gaps: [{ ...gapBase, status: 'open', source: 'study' }],
+          studies: [{ definition_id: FXD, updated_at: '2026-08-13T10:00:00Z', n_gaps: 1, n_validation_errors: 2 }],
+        }), 'dropped again'),
+        silent: viol(gapEvidenceSql({
+          gaps: [{ ...gapBase, status: 'open', source: 'validator' }],
+          studies: [{ definition_id: FXD, updated_at: '2026-08-13T10:00:00Z', n_gaps: 1, n_validation_errors: 2 }],
+        })),
+      },
+    ];
+  })(),
 ];
 
 // Optional substring filter, so one probe's cases can be re-run on their own
