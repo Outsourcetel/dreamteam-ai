@@ -690,6 +690,43 @@ export const DECISION_REASON_CODES = [
 ] as const;
 export type DecisionReasonCode = typeof DECISION_REASON_CODES[number]['code'];
 
+/** What an approval ACTUALLY caused — read back out of the database, never
+ *  inferred from "the await did not throw".
+ *
+ *  ⚠ F-6 (docs/50, docs/53 B-1). The phone shell said "Approved and sent."
+ *  the instant this function resolved. Three separate ways that was a lie:
+ *    1. decide_human_task returns a NULL composite when the task was already
+ *       decided (or when a first-of-two approval was merely RECORDED). This
+ *       function returns the row instead of throwing, so a caller that
+ *       ignores the return says "sent" for a task still pending.
+ *    2. The de_messages draft behind an escalation had no applier at all.
+ *       Migration 721 gives it one server-side; a swallowed trigger warning
+ *       still leaves the row saying draft_pending, which is the truth.
+ *    3. The email-delivery hook below CATCHES its own failure by design, and
+ *       updateInvoice is a bare .update() — RLS-filtered to zero rows is a
+ *       PostgREST SUCCESS.
+ *  So every consequence this function can have is verified against the row
+ *  afterwards, in ONE place, and handed to the caller. No screen has to know
+ *  how a send works, and no screen gets to guess. */
+export type DecisionConsequence =
+  | 'none'                 // nothing was owed to anyone outside the workspace
+  | 'conversation_draft'   // a gated reply sitting on a support thread
+  | 'outbound_email'       // an outbound_drafts row delivered by send-outbound
+  | 'renewal_invoice';     // an invoice that approval flips to 'sent'
+
+export interface DecisionOutcome {
+  /** false = the task did NOT transition. Nothing ran; nothing was sent. */
+  decided: boolean;
+  consequence: DecisionConsequence;
+  /** true ONLY when the consequence was re-read and confirmed landed. */
+  delivered: boolean;
+  /** Specific and quotable when `delivered` is false. Screens show this
+   *  verbatim rather than composing a cheerful sentence of their own. */
+  detail?: string;
+}
+
+export type DecidedHumanTask = DBHumanTask & { decision_outcome: DecisionOutcome };
+
 export interface DecisionCapture {
   /** Required on rejection (server enforces). Optional on approval — use it
    *  when the approver had to CORRECT something before approving. */
@@ -702,12 +739,75 @@ export interface DecisionCapture {
   edit?: { before: unknown; after: unknown };
 }
 
+/** Which outward-facing consequence, if any, this task's approval carries.
+ *  Kept next to decideHumanTask so the list cannot drift from the hooks. */
+export function decisionConsequenceOf(task: DBHumanTask): DecisionConsequence {
+  if (task.related_table === 'de_conversations' && task.related_id) return 'conversation_draft';
+  if (task.related_table === 'outbound_drafts' && task.related_id) return 'outbound_email';
+  if (task.related_table === 'renewal_invoices' && task.related_id) return 'renewal_invoice';
+  return 'none';
+}
+
+/** The gated reply waiting on a support thread, if there is one. Oldest first
+ *  — the same one migration 721's trigger will send, so the id captured here
+ *  is the id re-read afterwards. A separate read is unavoidable: `delivery`
+ *  is overwritten in place, so after the decision there is nothing left to
+ *  tell "it sent" from "there was never a draft". */
+export interface PendingConversationDraft {
+  id: string;
+  content: string;
+  channel: string;
+  /** true = approving this task will actually deliver it. Screens use this to
+   *  decide whether their button may say "and send it". */
+  deliverable: boolean;
+}
+
+export async function getPendingConversationDraft(
+  conversationId: string,
+): Promise<PendingConversationDraft | null> {
+  const { data: conv } = await supabase
+    .from('de_conversations').select('channel').eq('id', conversationId).maybeSingle();
+  if (!conv) return null;
+  const { data } = await supabase
+    .from('de_messages')
+    .select('id, content')
+    .eq('conversation_id', conversationId)
+    .eq('delivery', 'draft_pending')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (!data) return null;
+  const channel = (conv as { channel: string }).channel;
+  return {
+    id: data.id as string,
+    content: (data.content as string) ?? '',
+    channel,
+    deliverable: SELF_DELIVERING_CHANNELS.includes(channel),
+  };
+}
+
+/** Channels where the customer reads de_messages directly, so flipping the
+ *  row IS the delivery. MUST stay identical to migration 721's allow-list —
+ *  a screen that promises a send the trigger will decline is F-6 again. */
+const SELF_DELIVERING_CHANNELS = ['widget', 'hosted', 'portal', 'dock', 'exam'];
+
 export async function decideHumanTask(
   task: DBHumanTask,
   decision: 'approved' | 'rejected',
   capture?: DecisionCapture,
-): Promise<DBHumanTask> {
+): Promise<DecidedHumanTask> {
   const tid = await requireTenantId();
+  // ── Before anything: what does approving this OWE, and to whom? ──────────
+  const consequence = decisionConsequenceOf(task);
+  let draftBefore: { id: string; channel: string } | null = null;
+  if (consequence === 'conversation_draft' && decision === 'approved') {
+    try {
+      const d = await getPendingConversationDraft(task.related_id!);
+      draftBefore = d ? { id: d.id, channel: d.channel } : null;
+    } catch { /* the verification read below reports what it can */ }
+  }
+  const withOutcome = (row: DBHumanTask, outcome: DecisionOutcome): DecidedHumanTask =>
+    ({ ...row, decision_outcome: outcome });
   // Migration 455: routed through an RPC rather than a direct UPDATE. Three
   // reasons, in order of importance:
   //   1. The direct UPDATE is exactly why this path escaped all 48 wave-2
@@ -758,7 +858,19 @@ export async function decideHumanTask(
   // live rows before changing anything.
   if (!data || (data as { id?: string | null }).id == null) {
     const { data: current } = await supabase.from('human_tasks').select('*').eq('id', task.id).eq('tenant_id', tid).maybeSingle();
-    return (current ?? task) as DBHumanTask;
+    const row = (current ?? task) as DBHumanTask;
+    // ⚠ THIS IS A NO-OP AND THE CALLER MUST BE TOLD. Two different reasons
+    // land here and they mean opposite things to the person who just tapped
+    // Approve, so they get different words.
+    const awaitingSecond = row.status === 'pending' && !!row.first_approver_id;
+    return withOutcome(row, {
+      decided: false,
+      consequence,
+      delivered: false,
+      detail: awaitingSecond
+        ? 'Your approval is recorded. This one needs a second person to approve before anything is sent.'
+        : 'This had already been decided — nothing changed and nothing was sent.',
+    });
   }
 
   if (
@@ -907,7 +1019,83 @@ export async function decideHumanTask(
       throw err;
     }
   }
-  return data as DBHumanTask;
+  return withOutcome(data as DBHumanTask, await verifyConsequence(task, decision, consequence, draftBefore));
+}
+
+/** Re-read what the decision was supposed to cause. The ONLY source of the
+ *  word "sent" anywhere above the API layer.
+ *
+ *  ⚠ A read that cannot report failure is theatre. Every branch here has a
+ *  reachable `delivered: false` with a reason a person can act on — proven by
+ *  the production row this was written for: task b6cd7764 approved, message
+ *  27f98c5a still draft_pending. */
+async function verifyConsequence(
+  task: DBHumanTask,
+  decision: 'approved' | 'rejected',
+  consequence: DecisionConsequence,
+  draftBefore: { id: string; channel: string } | null,
+): Promise<DecisionOutcome> {
+  // Declining is a complete outcome in itself: the point is that nothing goes out.
+  if (decision !== 'approved') return { decided: true, consequence: 'none', delivered: false };
+  if (consequence === 'none') return { decided: true, consequence: 'none', delivered: false };
+
+  try {
+    if (consequence === 'conversation_draft') {
+      // Nothing was drafted — a guardrail block, or an escalation with no
+      // proposed answer. Approving it closes the task and owes no send.
+      if (!draftBefore) return { decided: true, consequence: 'none', delivered: false };
+      if (!SELF_DELIVERING_CHANNELS.includes(draftBefore.channel)) {
+        return {
+          decided: true, consequence, delivered: false,
+          // "this <channel>", not "a <channel>" — the article was wrong for
+          // every vowel-initial channel and read as a typo in the one message
+          // whose whole job is to be believed ("a email conversation…").
+          detail: `Approved. The reply was NOT sent here — this ${draftBefore.channel} conversation is delivered by the outbound queue, so open it in the Support inbox to send it.`,
+        };
+      }
+      const { data } = await supabase.from('de_messages')
+        .select('delivery').eq('id', draftBefore.id).maybeSingle();
+      const delivery = (data as { delivery?: string } | null)?.delivery;
+      if (delivery === 'sent') return { decided: true, consequence, delivered: true };
+      return {
+        decided: true, consequence, delivered: false,
+        detail: `Approved, but the reply did NOT go out — it is still ${delivery ?? 'unreadable'} on the conversation. Open it in the Support inbox and send it there.`,
+      };
+    }
+
+    if (consequence === 'outbound_email') {
+      // The hook above swallows delivery failures on purpose (a stuck send
+      // must not roll back a human's decision) — so the DRAFT ROW is the
+      // truth, not the absence of a thrown error.
+      const { data } = await supabase.from('outbound_drafts')
+        .select('delivery_status, delivery_error').eq('id', task.related_id!).maybeSingle();
+      const row = data as { delivery_status?: string | null; delivery_error?: string | null } | null;
+      if (row?.delivery_status === 'sent') return { decided: true, consequence, delivered: true };
+      return {
+        decided: true, consequence, delivered: false,
+        detail: row?.delivery_status === 'blocked_no_provider'
+          ? 'Approved, but the email was NOT sent — email sending is not connected yet (Settings → Communications). It is saved and can be re-sent from the Support inbox.'
+          : `Approved, but the email was NOT sent — ${row?.delivery_error || `delivery is ${row?.delivery_status ?? 'not recorded'}`}.`,
+      };
+    }
+
+    // renewal_invoice — updateInvoice is a bare .update(); RLS filtering it to
+    // zero rows is a PostgREST SUCCESS, so the status is re-read.
+    const { data } = await supabase.from('renewal_invoices')
+      .select('status').eq('id', task.related_id!).maybeSingle();
+    const status = (data as { status?: string } | null)?.status;
+    if (status === 'sent') return { decided: true, consequence, delivered: true };
+    return {
+      decided: true, consequence, delivered: false,
+      detail: `Approved, but the invoice was NOT sent — it is still ${status ?? 'unreadable'}.`,
+    };
+  } catch (err) {
+    // Could not read the truth. Say that, rather than assuming either way.
+    return {
+      decided: true, consequence, delivered: false,
+      detail: `Approved, but we could not confirm it went out (${err instanceof Error ? err.message : 'read failed'}) — check it before relying on this.`,
+    };
+  }
 }
 
 // ── Activity ──────────────────────────────────────────────────────

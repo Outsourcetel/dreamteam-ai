@@ -6,8 +6,8 @@ import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { loadChatEscalations, setChatEscalationStatus, chatEscalationAge } from '../../../lib/chatEscalations';
 import type { GatedExecutionPreview } from '../../../lib/connectorApi';
-import { listHumanTasks, decideHumanTask, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, getImprovementProposal, getImprovementReviewSignals, DECISION_REASON_CODES, getBlockedWorkForTask, rerouteEscalation, retryAnswerableBlockers } from '../../../lib/customerApi';
-import type { BlockedWork } from '../../../lib/customerApi';
+import { listHumanTasks, decideHumanTask, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, getImprovementProposal, getImprovementReviewSignals, DECISION_REASON_CODES, getBlockedWorkForTask, rerouteEscalation, retryAnswerableBlockers, getPendingConversationDraft } from '../../../lib/customerApi';
+import type { BlockedWork, PendingConversationDraft } from '../../../lib/customerApi';
 import type { DecisionCapture, DecisionReasonCode } from '../../../lib/customerApi';
 import type { DBHumanTask, StalenessEscalation } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
@@ -284,6 +284,14 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const [loading, setLoading] = useState(true);
   const [missingTables, setMissingTables] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // ⚠ WHAT THE DECISION ACTUALLY CAUSED (F-6). Approving a gated reply now
+  // genuinely sends it (mig 721), so this page must be able to say when it
+  // did NOT. `ok` false renders the same amber a refusal does — a send that
+  // silently failed is not a quieter kind of success.
+  const [outcome, setOutcome] = useState<{ text: string; ok: boolean } | null>(null);
+  // The gated reply waiting on the selected task's conversation, so the
+  // button can promise a send only when there is one to send.
+  const [replyDraft, setReplyDraft] = useState<PendingConversationDraft | null | undefined>(null);
   const [filter, setFilter] = useState<TaskType | 'all'>('all');
   // Opens on work, per N4. Chat is one click away, never hidden.
   const [scope, setScope] = useState<Scope>('work');
@@ -475,6 +483,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
 
   const decide = async (task: DBHumanTask, decision: 'approved' | 'rejected', capture?: DecisionCapture) => {
     setDeciding(true);
+    setOutcome(null);
     try {
       // Set the publish scope BEFORE approval (apply_improvement reads it).
       if (task.related_table === 'de_improvements' && decision === 'approved' && impScope === 'role' && task.related_id) {
@@ -488,7 +497,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
       // fallback serves the improvement editor, which commits through this
       // main path.
       const corrected = proposal !== null && editText.trim() !== proposal.content.trim();
-      await decideHumanTask(task, decision, capture ?? (decision === 'rejected'
+      const { decision_outcome: o } = await decideHumanTask(task, decision, capture ?? (decision === 'rejected'
         // A rejection on a BLOCKER cancels the work and its dependants
         // (mig 483), so the reason is not just a label — it is the record of
         // why that work stopped. Carry the typed note either way.
@@ -501,6 +510,16 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
           : instruction.trim()
             ? { note: instruction.trim() }
             : undefined));
+      // ⚠ QUOTE THE ROW, NEVER THE ABSENCE OF AN ERROR (F-6). Silence was this
+      // page's only success message, which is honest when the approval carried
+      // no outward consequence — but "approved and NOT sent" has to be said
+      // out loud, and so does an approval that did not transition at all.
+      if (!o.decided) setOutcome({ text: o.detail ?? 'Nothing changed.', ok: false });
+      else if (decision === 'approved' && o.consequence !== 'none') {
+        setOutcome(o.delivered
+          ? { text: 'Approved — and it has gone out.', ok: true }
+          : { text: o.detail ?? 'Approved, but nothing was sent.', ok: false });
+      }
       setRejecting(false); setReasonCode(''); setReasonNote(''); setInstruction('');
       setEditing(false);
       setDraftEditing(false); setDraftEditText(''); setDraftReasonCode(''); setDraftNote('');
@@ -590,6 +609,22 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
       .catch(() => { /* additive panel — never block a decision on it */ });
     return () => { live = false; };
   }, [selectedId, selected]);
+
+  // The gated reply this approval will actually deliver (mig 721). Loaded so
+  // the button can promise a send only when there is one — F-6 was a button
+  // that promised one on every task in the queue.
+  const selectedConvId = selected?.related_table === 'de_conversations' && selected.status === 'pending'
+    ? selected.related_id : null;
+  useEffect(() => {
+    if (!selectedConvId) { setReplyDraft(null); return; }
+    let live = true;
+    setReplyDraft(undefined);
+    void getPendingConversationDraft(selectedConvId)
+      .then(d => { if (live) setReplyDraft(d); })
+      .catch(() => { if (live) setReplyDraft(null); });
+    return () => { live = false; };
+  }, [selectedConvId]);
+
   const selectedStale = selected ? staleness.get(selected.id) ?? null : null;
   // Same precedence as the Full-draft display below — the text the approver
   // sees is exactly the text their edit replaces.
@@ -603,6 +638,18 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
       />
 
       {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+
+      {/* What the last decision actually caused, read back out of the database.
+          Amber whenever the consequence did not land — a send that silently
+          failed is not a quieter kind of success (F-6). */}
+      {outcome && (
+        <div className={`mb-4 rounded-xl border px-4 py-3 text-xs ${
+          outcome.ok
+            ? 'border-emerald-800/50 bg-emerald-500/10 text-emerald-300'
+            : 'border-amber-700/50 bg-amber-500/10 text-amber-200'}`}>
+          {outcome.text}
+        </div>
+      )}
 
       {loading ? (
         <LiveLoadingSkeleton rows={4} />
@@ -830,6 +877,25 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                   {selectedStale && stalledBadge(selectedStale.tier)}
                 </div>
                 {selected.detail && <p className="text-xs text-dt-support mb-3">{selected.detail}</p>}
+                {/* ⚠ READ IT BEFORE YOU SEND IT. `detail` carries the draft cut
+                    to 240 characters; approving now delivers the WHOLE thing,
+                    so the whole thing is what the approver sees. */}
+                {replyDraft && (
+                  <div className="mb-3 rounded-lg border border-dt-border bg-dt-page px-3 py-2.5">
+                    <p className="text-[10px] uppercase tracking-wide text-dt-faint mb-1.5">
+                      {replyDraft.deliverable
+                        ? 'The reply that will be sent to the customer'
+                        : `The reply waiting on this ${replyDraft.channel} conversation — approving will NOT send it`}
+                    </p>
+                    <p className="text-xs text-dt-body whitespace-pre-wrap">{replyDraft.content}</p>
+                    {!replyDraft.deliverable && (
+                      <p className="mt-2 text-[11px] text-amber-300">
+                        This {replyDraft.channel} conversation is delivered by the outbound
+                        queue. Send it from the Support inbox.
+                      </p>
+                    )}
+                  </div>
+                )}
                 {selectedStale && (
                   <div className={`mb-3 rounded-lg px-3 py-2 text-[11px] ${selectedStale.tier === 'breach' ? 'bg-red-500/10 border border-red-500/30 text-red-200' : 'bg-orange-500/10 border border-orange-500/30 text-orange-200'}`}>
                     Raised automatically by the staleness watchdog — nothing happened on this for too long, so a human is being asked to look at it.
@@ -1156,6 +1222,10 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                         : selected.type === 'checklist' ? 'Mark complete'
                         : selected.type === 'action_approval' && gatedExec?.destructive ? 'Approve & send'
                         : selected.type === 'action_approval' ? 'Approve & execute'
+                        // A gated reply now really goes to the customer on
+                        // approve (mig 721), so the button says so — and only
+                        // when there is one, on a channel that can carry it.
+                        : replyDraft?.deliverable ? 'Approve & send the reply'
                         // Say what the button will actually publish. An approver
                         // who corrected the text should not have to trust that
                         // the edit was picked up.

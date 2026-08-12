@@ -19,9 +19,11 @@ import { LiveLoadingSkeleton, LiveErrorNotice } from '../../../components/LiveDa
 import { useAuth } from '../../../context/AuthContext';
 import {
   listHumanTasks, decideHumanTask, listActivity, DECISION_REASON_CODES,
+  getPendingConversationDraft,
 } from '../../../lib/customerApi';
 import type {
   DBHumanTask, HumanTaskType, ActivityEvent, DecisionReasonCode,
+  PendingConversationDraft,
 } from '../../../lib/customerApi';
 import { listConnectors, connectorHealth, connectorErrorLabel } from '../../../lib/connectorApi';
 import type { Connector } from '../../../lib/connectorApi';
@@ -63,14 +65,20 @@ export default function MobileShell({ setPage }: { setPage: (p: Page) => void })
   const [sayNo, setSayNo] = useState<DBHumanTask | null>(null);
   const [reasonCode, setReasonCode] = useState<DecisionReasonCode | ''>('');
   const [note, setNote] = useState('');
-  const [toast, setToast] = useState<string | null>(null);
+  // ⚠ A TOAST CARRIES A TONE, because this one used to carry a lie. "Approved
+  // and sent." was set from nothing but "the await did not throw" (F-6). Every
+  // word below now comes from decision_outcome, which is read back out of the
+  // database — and `ok` is false whenever the send did not actually happen, so
+  // the message cannot be mistaken for good news at a glance.
+  const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null);
+  const say = (text: string, ok = false) => setToast({ text, ok });
   // Push pings (spec 2026-08-10). null = still detecting; 'busy' = mid-toggle.
   const [push, setPush] = useState<PushState | 'busy' | null>(null);
   useEffect(() => { void getPushState().then(setPush).catch(() => setPush('unsupported')); }, []);
   const togglePush = async () => {
     setPush('busy');
     try { setPush(push === 'on' ? await disablePush() : await enablePush()); }
-    catch (e) { setToast(e instanceof Error ? e.message : 'Could not change notifications.'); setPush(await getPushState().catch(() => 'unsupported' as const)); }
+    catch (e) { say(e instanceof Error ? e.message : 'Could not change notifications.'); setPush(await getPushState().catch(() => 'unsupported' as const)); }
   };
 
   const load = useCallback(async () => {
@@ -94,18 +102,42 @@ export default function MobileShell({ setPage }: { setPage: (p: Page) => void })
   });
   const open = openIdx !== null ? pending[openIdx] : undefined;
 
+  // ⚠ READ IT BEFORE YOU SEND IT. Approving a gated reply now genuinely
+  // delivers it (mig 721), so the person must see the words that will reach
+  // the customer — not the 240-character summary the task title carries.
+  // `undefined` = still looking; `null` = this task drafts nothing.
+  const [draft, setDraft] = useState<PendingConversationDraft | null | undefined>(null);
+  const openConvId = open?.related_table === 'de_conversations' ? open.related_id : null;
+  useEffect(() => {
+    if (!openConvId) { setDraft(null); return; }
+    let alive = true;
+    setDraft(undefined);
+    void getPendingConversationDraft(openConvId)
+      .then(d => { if (alive) setDraft(d); })
+      .catch(() => { if (alive) setDraft(null); });
+    return () => { alive = false; };
+  }, [openConvId]);
+
   const decide = async (task: DBHumanTask, decision: 'approved' | 'rejected',
                         capture?: { reasonCode?: DecisionReasonCode; note?: string }) => {
     setBusy(true);
     try {
-      await decideHumanTask(task, decision, capture);
-      setToast(decision === 'approved' ? 'Approved and sent.' : 'Declined — the employee has been told why.');
+      const { decision_outcome: o } = await decideHumanTask(task, decision, capture);
+      // ⚠ EVERY WORD HERE IS QUOTED FROM THE ROW. This is the F-6 fix's client
+      // half: the RPC resolving proves only that it was called. `decided` is
+      // false when nothing transitioned; `delivered` is true only when the
+      // consequence was re-read and confirmed.
+      if (!o.decided) say(o.detail ?? 'Nothing changed.');
+      else if (decision === 'rejected') say('Declined — the employee has been told why. Nothing was sent.', true);
+      else if (o.consequence === 'none') say('Approved.', true);
+      else if (o.delivered) say('Approved and sent.', true);
+      else say(o.detail ?? 'Approved, but nothing was sent.');
       setOpenIdx(null); setSayNo(null); setReasonCode(''); setNote('');
       await load();
     } catch (e) {
       // ⚠ SAY WHAT FAILED. A silent catch here means a person taps Approve on
       // a $15,600 invoice, sees the sheet close, and believes it went out.
-      setToast(e instanceof Error ? e.message : 'That did not go through — nothing was decided.');
+      say(e instanceof Error ? e.message : 'That did not go through — nothing was decided.');
     } finally { setBusy(false); }
   };
 
@@ -156,12 +188,37 @@ export default function MobileShell({ setPage }: { setPage: (p: Page) => void })
               </div>
             ))}
           </div>
-          {toast && <p className="text-[15px] text-dt-warn">{toast}</p>}
+          {draft && (
+            <div>
+              <p className="text-[14px] text-dt-muted mb-1">
+                {draft.deliverable
+                  ? 'What will be sent to the customer'
+                  : 'The reply that is waiting — approving here will NOT send it'}
+              </p>
+              <p className="text-[16px] text-dt-body leading-relaxed whitespace-pre-wrap rounded-xl border border-dt-border bg-dt-card p-4">
+                {draft.content}
+              </p>
+              {!draft.deliverable && (
+                <p className="text-[14px] text-dt-warn mt-2 leading-relaxed">
+                  This {draft.channel} conversation goes out through the
+                  outbound queue. Approving records your decision; sending it
+                  needs the Support inbox at a desk.
+                </p>
+              )}
+            </div>
+          )}
+          {toast && <p className={`text-[15px] ${toast.ok ? 'text-dt-support' : 'text-dt-warn'}`}>{toast.text}</p>}
         </div>
         <div className="sticky bottom-0 p-4 pb-[34px] space-y-2 border-t border-dt-border bg-dt-panel">
-          <Button kind="primary" size="touch" className="w-full justify-center" disabled={busy}
+          {/* ⚠ THE BUTTON SAYS WHAT IT DOES. It read "Approve and send it" on
+              every task in the queue, including the ones that send nothing —
+              which is how F-6 read as normal behaviour for a day. */}
+          <Button kind="primary" size="touch" className="w-full justify-center" disabled={busy || draft === undefined}
             onClick={() => void decide(open, 'approved')}>
-            {busy ? 'Sending…' : 'Approve and send it'}
+            {busy ? 'Sending…'
+              : draft === undefined ? 'Checking…'
+              : draft?.deliverable ? 'Approve and send it'
+              : 'Approve'}
           </Button>
           <div className="flex gap-2">
             <Button size="touch" className="flex-1 justify-center" disabled={busy}
@@ -237,7 +294,11 @@ export default function MobileShell({ setPage }: { setPage: (p: Page) => void })
         </div>
       )}
 
-      {toast && <p className="text-[15px] text-dt-warn">{toast}</p>}
+      {toast && (
+        <p className={`text-[15px] leading-relaxed ${toast.ok ? 'text-dt-support' : 'text-dt-warn'}`}>
+          {toast.text}
+        </p>
+      )}
 
       {/* Push pings — one honest state per platform reality, never a button
           that cannot work (iOS Safari without install has no Push API). */}
