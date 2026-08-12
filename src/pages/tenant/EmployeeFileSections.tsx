@@ -60,6 +60,7 @@ import {
 } from '../../lib/deHealthApi';
 import type { DEDevelopmentItem, DEDevelopmentAttempt, DEImprovementOutcome } from '../../lib/deHealthApi';
 import { listDocScopes } from '../../lib/knowledgeApi';
+import { promoteDeploymentStage } from '../../lib/workforceApi';
 import { useCanManageDe } from './LiveWorkforceDEs';
 
 // ============================================================
@@ -2349,6 +2350,200 @@ function DeLifecyclePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
   );
 }
 
+// ── Deployment stage — the SUPERVISION ladder (migration 720) ───────────
+//
+// The SECOND axis, and it is not the one above. `digital_employees.
+// lifecycle_status` (the Lifecycle panel) is the governance gate: whether this
+// employee may do proactive work at all. `de_deployment_stages.stage` is how
+// closely a human is standing over it while it does — shadow → co-pilot →
+// live → retired. They move independently, which is why this is its own card
+// and not another row in the ladder above.
+//
+// ⚠ WHY THIS CARD EXISTS AT ALL. Until mig 720 the only promotion code in the
+// repo did a direct PostgREST UPDATE on a table whose single RLS policy is
+// SELECT. Postgres matched zero rows, PostgREST answered SUCCESS with an empty
+// body, and the client reported the promotion had happened. The write grant is
+// now revoked and `promote_de_deployment_stage` is the only path: tenancy
+// derived from the session, owner/admin only, ladder validated, reason
+// required, audit event in the same statement, and EVERY refusal raises.
+//
+// ⚠ THE UI GATE IS NOT THE BOUNDARY. `useCanManageDe` matches the RPC's
+// owner/admin check so a manager is not offered a button that will be refused,
+// but the refusal is what actually holds — the same rule the rest of this file
+// works to (useRoleGate: "never let them be the only gate"). Everything below
+// therefore reports what the SERVER said, and re-reads the row afterwards
+// rather than trusting its own optimism. A tooltip is not a gate.
+const DEPLOYMENT_LADDER = ['shadow', 'co-pilot', 'live', 'retired'] as const;
+const DEPLOYMENT_LABELS: Record<string, string> = {
+  shadow: 'Shadow', 'co-pilot': 'Co-pilot', live: 'Live', retired: 'Retired',
+};
+const DEPLOYMENT_MEANS: Record<string, string> = {
+  shadow: 'Drafts everything and ships nothing — a human decides every time.',
+  'co-pilot': 'Works with a supervisor beside it, correcting as it goes.',
+  live: 'Works on its own, inside its guardrails and dials.',
+  retired: 'Off the supervision ladder — it is no longer working.',
+};
+type DeploymentStageRow = { stage: string; stage_promoted_at: string | null; promotion_reason: string | null };
+
+function DeDeploymentStagePanel({ de }: { de: DigitalEmployee }) {
+  const canPromote = useCanManageDe();
+  const [row, setRow] = useState<DeploymentStageRow | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [reason, setReason] = useState('');
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    // maybeSingle, not single: most employees have no row on this ladder, and
+    // "no row" is a fact about the employee, not a failed read.
+    const { data, error: err } = await supabase
+      .from('de_deployment_stages')
+      .select('stage, stage_promoted_at, promotion_reason')
+      .eq('de_id', de.id)
+      .maybeSingle();
+    if (err) { setError(err.message); setRow(null); setLoaded(true); return; }
+    setRow((data as DeploymentStageRow | null) ?? null);
+    setLoaded(true);
+  }, [de.id]);
+  useEffect(() => { void load(); }, [load]);
+
+  const stage = row?.stage ?? null;
+  const idx = stage ? (DEPLOYMENT_LADDER as readonly string[]).indexOf(stage) : -1;
+  const next = idx >= 0 && idx < DEPLOYMENT_LADDER.length - 1 ? DEPLOYMENT_LADDER[idx + 1] : null;
+  const closed = de.lifecycle_status === 'retired' || de.lifecycle_status === 'archived';
+  const trimmed = reason.trim();
+
+  const promote = async () => {
+    setBusy(true); setError(null); setDone(null);
+    const res = await promoteDeploymentStage(de.id, trimmed);
+    setConfirming(false);
+    if (!res.success) {
+      // The entire point of this control. `.rpc()` RESOLVES on a Postgres
+      // error, so a refusal arrives here as data — it must be SHOWN, in the
+      // server's own words, and the ladder re-read so it never displays a move
+      // that did not happen.
+      setError(res.error ?? 'The promotion did not go through, and nothing was changed.');
+    } else {
+      setDone(`Now ${DEPLOYMENT_LABELS[res.new_stage ?? ''] ?? res.new_stage}. Recorded in the audit trail.`);
+      setReason('');
+    }
+    await load();
+    setBusy(false);
+  };
+
+  // An employee that was never put on this ladder has no supervision stage to
+  // show or move — say nothing rather than invent a rung for it.
+  if (!loaded || (!row && !error)) return null;
+
+  return (
+    <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
+      <div className="mb-1 flex items-center gap-2 flex-wrap">
+        <h3 className="text-base font-semibold text-white">Supervision stage</h3>
+        {stage && (
+          <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+            stage === 'live' ? 'bg-emerald-500/15 text-emerald-300'
+            : stage === 'retired' ? 'bg-dt-panel text-dt-muted'
+            : 'bg-amber-500/15 text-amber-300'}`}>
+            {DEPLOYMENT_LABELS[stage] ?? stage}
+          </span>
+        )}
+      </div>
+      <p className="text-[11px] text-dt-muted mb-3">
+        How closely a human stands over this employee while it works — separate from Lifecycle
+        above, which decides whether it may work at all. Promotion is one rung at a time, needs a
+        reason, and is written to the audit trail.
+      </p>
+
+      {error && <p className="text-xs text-rose-300 mb-2" data-testid="stage-promotion-error">{error}</p>}
+      {done && <p className="text-xs text-emerald-300 mb-2" data-testid="stage-promotion-done">{done}</p>}
+
+      {/* Stage ladder */}
+      <div className="flex flex-wrap items-center gap-1 mb-3">
+        {DEPLOYMENT_LADDER.map((s, i) => (
+          <span key={s} className="flex items-center gap-1">
+            <span className={`text-[10px] px-2 py-1 rounded-lg border ${
+              s === stage ? 'border-indigo-500 bg-indigo-500/15 text-indigo-200 font-semibold'
+              : idx >= 0 && i < idx ? 'border-dt-border bg-dt-page text-emerald-400'
+              : 'border-dt-border bg-dt-page text-dt-faint'}`}>
+              {idx >= 0 && i < idx ? '✓ ' : ''}{DEPLOYMENT_LABELS[s]}
+            </span>
+            {i < DEPLOYMENT_LADDER.length - 1 && <span className="text-dt-faint text-[10px]">→</span>}
+          </span>
+        ))}
+      </div>
+      {stage && DEPLOYMENT_MEANS[stage] && (
+        <p className="text-[11px] text-dt-support mb-3">{DEPLOYMENT_MEANS[stage]}</p>
+      )}
+      {row?.stage_promoted_at && (
+        <p className="text-[11px] text-dt-muted mb-3">
+          Last moved {new Date(row.stage_promoted_at).toLocaleDateString()}
+          {row.promotion_reason ? ` — “${row.promotion_reason.slice(0, 140)}”` : ''}
+        </p>
+      )}
+
+      {/* Promotion. The reason is not decoration: promotion_reason is the only
+          record of who reduced supervision and why, and the RPC refuses
+          without it — so an empty one cannot be submitted from here either. */}
+      {stage && next && !closed && (
+        confirming ? (
+          <div className="rounded-xl border border-amber-600/40 bg-amber-500/10 px-4 py-3">
+            <p className="text-xs text-amber-200 font-medium">
+              Move {de.name} from {DEPLOYMENT_LABELS[stage]} to {DEPLOYMENT_LABELS[next]}?
+            </p>
+            <p className="text-[11px] text-amber-200/80 mt-1">{DEPLOYMENT_MEANS[next]}</p>
+            <p className="text-[11px] text-dt-support mt-2">Reason on the record: “{trimmed}”</p>
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => void promote()}
+                disabled={busy || !canPromote || !trimmed}
+                className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
+                {busy ? 'Working…' : `Confirm — move to ${DEPLOYMENT_LABELS[next]}`}
+              </button>
+              <button
+                onClick={() => setConfirming(false)}
+                disabled={busy}
+                className="text-xs px-3 py-1.5 rounded-lg border border-dt-border text-dt-support hover:text-dt-body disabled:opacity-40">
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              type="text" value={reason} disabled={busy || !canPromote}
+              onChange={e => { setReason(e.target.value); setDone(null); }}
+              placeholder={`Why is ${de.name} ready for ${DEPLOYMENT_LABELS[next]}? (required)`}
+              className="flex-1 min-w-[220px] bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+            />
+            <button
+              onClick={() => { setError(null); setDone(null); setConfirming(true); }}
+              disabled={busy || !canPromote || !trimmed}
+              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
+              Promote to {DEPLOYMENT_LABELS[next]}…
+            </button>
+            {!canPromote && (
+              <span className="text-[11px] text-dt-muted">
+                Only an owner or admin can change how closely this employee is supervised.
+              </span>
+            )}
+            {canPromote && !trimmed && (
+              <span className="text-[10px] text-dt-faint">A reason is required — it is the record of why supervision changed.</span>
+            )}
+          </div>
+        )
+      )}
+      {stage && !next && (
+        <p className="text-[11px] text-dt-faint">Retired is the last rung — there is nothing further to promote to.</p>
+      )}
+      {stage && next && closed && (
+        <p className="text-[11px] text-dt-faint">This employee is retired, so its supervision stage is closed.</p>
+      )}
+    </div>
+  );
+}
+
 // ── Escalation rules panel — per-employee with workspace fallback ──
 // Frustration threshold + always-escalate topics (migration 124).
 // The same cascade as the trust dial: this employee's own rules win,
@@ -3582,6 +3777,13 @@ export function DeTrustAutonomySection({ de, setPage, onUpdated }: {
 
       {/* Lifecycle — the governance gate (DE-B4) */}
       <DeLifecyclePanel de={de} onUpdated={onUpdated} />
+
+      {/* Supervision stage — the second axis (mig 720). Directly under
+          Lifecycle because the two are read together and confused apart, and
+          on the Governance tab because moving it IS a governance act: it is
+          the decision to stand further back from an employee's work. Renders
+          nothing for an employee that was never put on this ladder. */}
+      <DeDeploymentStagePanel de={de} />
 
       {/* What this employee may do on its own, one dial per system it can
           actually reach (migs 618/619). Sits above the earned-trust ladder
