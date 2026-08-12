@@ -135,7 +135,7 @@ begin
 
   v_len := jsonb_array_length(p_steps);
   if v_len > 20 then
-    v_errs := v_errs || 'too_many_steps';
+    v_errs := v_errs || 'too_many_steps'::text;
   end if;
 
   for i in 0 .. v_len - 1 loop
@@ -161,22 +161,22 @@ begin
     end if;
   end loop;
 
-  if v_bad_step then v_errs := v_errs || 'bad_step'; end if;
-  if v_unknown  then v_errs := v_errs || 'unknown_primitive'; end if;
+  if v_bad_step then v_errs := v_errs || 'bad_step'::text; end if;
+  if v_unknown  then v_errs := v_errs || 'unknown_primitive'::text; end if;
 
   -- THE RULE THIS WHOLE MIGRATION EXISTS FOR (index.ts:529-531).
   if (p_steps->(v_len - 1))->>'key' is distinct from 'complete' then
-    v_errs := v_errs || 'last_step';
+    v_errs := v_errs || 'last_step'::text;
   end if;
 
-  if v_complete > 1 then v_errs := v_errs || 'multiple_complete'; end if;
-  if v_invoice  > 1 then v_errs := v_errs || 'multiple_invoice';  end if;
-  if v_approval > 1 then v_errs := v_errs || 'multiple_approval'; end if;
+  if v_complete > 1 then v_errs := v_errs || 'multiple_complete'::text; end if;
+  if v_invoice  > 1 then v_errs := v_errs || 'multiple_invoice'::text;  end if;
+  if v_approval > 1 then v_errs := v_errs || 'multiple_approval'::text; end if;
 
   -- human_approval gates an invoice, so an invoice must precede it
   -- (index.ts:548-550).
   if v_approval_idx <> -1 and (v_invoice_idx = -1 or v_invoice_idx > v_approval_idx) then
-    v_errs := v_errs || 'approval_without_invoice';
+    v_errs := v_errs || 'approval_without_invoice'::text;
   end if;
 
   -- Post-gate steps stay within the resumable set (index.ts:551-560).
@@ -184,7 +184,7 @@ begin
     for i in v_approval_idx + 1 .. v_len - 1 loop
       v_key := (p_steps->i)->>'key';
       if v_key is not null and not (v_key = any(v_post)) then
-        v_errs := v_errs || 'post_gate_primitive';
+        v_errs := v_errs || 'post_gate_primitive'::text;
         exit;
       end if;
     end loop;
