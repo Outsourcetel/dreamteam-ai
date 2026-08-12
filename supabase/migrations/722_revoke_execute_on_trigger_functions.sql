@@ -151,6 +151,29 @@
 
 begin;
 
+-- ── 0. Snapshot the BEFORE state ─────────────────────────────────────────
+-- The assert in step 2 compares AFTER against THIS, not against an assumption
+-- about what the shape "should" be. That distinction is the whole of the
+-- mig-643 lesson and it earned its keep on the first dev run of this file:
+-- production holds an explicit `service_role=X` on all 80 trigger functions,
+-- but DEV held it on only 2 of 49 — on the other 47, service_role's EXECUTE
+-- was riding on the PUBLIC grant this migration removes. A hardcoded "of
+-- course service_role keeps it" would have shipped a silent over-revoke to
+-- every environment that is not production. Step 1 restores it explicitly.
+create temp table _mig722_before on commit drop as
+  select p.oid                                                    as fn_oid,
+         p.proname                                                as fn_name,
+         has_function_privilege('service_role', p.oid, 'EXECUTE') as had_service_role,
+         has_function_privilege('postgres',     p.oid, 'EXECUTE') as had_postgres,
+         (has_function_privilege('anon',          p.oid, 'EXECUTE')
+       or has_function_privilege('authenticated', p.oid, 'EXECUTE')) as was_breached
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    join pg_type t      on t.oid = p.prorettype
+   where n.nspname = 'public'
+     and p.prokind = 'f'
+     and t.typname = 'trigger';
+
 -- ── 1. The revoke, written as the RULE rather than a snapshot ─────────────
 -- A list of 49 names is correct only until the fiftieth trigger function
 -- lands, and this repo has concurrent sessions and an unmerged branch that
@@ -161,28 +184,33 @@ declare
   r          record;
   v_examined int    := 0;
   v_revoked  int    := 0;
+  v_restored int    := 0;
   v_names    text[] := '{}';
 begin
-  for r in
-    select p.oid, p.proname
-      from pg_proc p
-      join pg_namespace n on n.oid = p.pronamespace
-      join pg_type t      on t.oid = p.prorettype
-     where n.nspname = 'public'
-       and p.prokind = 'f'
-       and t.typname = 'trigger'
-     order by p.proname
-  loop
+  for r in select * from _mig722_before order by fn_name loop
     v_examined := v_examined + 1;
-    if has_function_privilege('anon', r.oid, 'EXECUTE')
-       or has_function_privilege('authenticated', r.oid, 'EXECUTE') then
+
+    if r.was_breached then
       -- regprocedure, not %I() — the signature comes from the catalog, so this
       -- stays correct if a trigger function ever takes CREATE TRIGGER args.
       execute format(
         'revoke execute on function %s from public, anon, authenticated',
-        r.oid::regprocedure);
+        r.fn_oid::regprocedure);
       v_revoked := v_revoked + 1;
-      v_names   := array_append(v_names, r.proname);
+      v_names   := array_append(v_names, r.fn_name);
+    end if;
+
+    -- BOTH HALVES, in the same loop: if service_role held EXECUTE only through
+    -- the PUBLIC grant just removed, give it back EXPLICITLY. That is the
+    -- doctrine's second clause — "granted explicitly to the role that needs
+    -- it" — and it converges every environment on production's shape
+    -- (postgres=X | service_role=X), which is exactly what mig 721's clean
+    -- sync_conversation_draft_decision already looks like. Nothing here grants
+    -- a privilege that was not held a statement earlier.
+    if r.had_service_role
+       and not has_function_privilege('service_role', r.fn_oid, 'EXECUTE') then
+      execute format('grant execute on function %s to service_role', r.fn_oid::regprocedure);
+      v_restored := v_restored + 1;
     end if;
   end loop;
 
@@ -197,11 +225,12 @@ begin
   end if;
 
   raise notice
-    'mig 722: enumerated % trigger function(s) in public; revoked PUBLIC/anon/authenticated EXECUTE on % of them: %',
-    v_examined, v_revoked, coalesce(array_to_string(v_names, ', '), '(none — already clean)');
+    'mig 722: enumerated % trigger function(s) in public; revoked PUBLIC/anon/authenticated EXECUTE on %; re-granted service_role explicitly on % that had been riding on the PUBLIC grant. Revoked: %',
+    v_examined, v_revoked, v_restored,
+    coalesce(array_to_string(v_names, ', '), '(none — already clean)');
 end $$;
 
--- ── 2. Assert the RESULT, both directions ────────────────────────────────
+-- ── 2. Assert the RESULT, both directions, against the BEFORE snapshot ───
 -- The doctrine's actual teeth. A REVOKE that silently did nothing and a REVOKE
 -- that took too much are both invisible from the statement itself.
 do $$
@@ -211,34 +240,32 @@ declare
   v_bad     text[] := '{}';
 begin
   for r in
-    select p.oid, p.proname, p.proacl
-      from pg_proc p
-      join pg_namespace n on n.oid = p.pronamespace
-      join pg_type t      on t.oid = p.prorettype
-     where n.nspname = 'public'
-       and p.prokind = 'f'
-       and t.typname = 'trigger'
+    select b.fn_oid, b.fn_name, b.had_service_role, b.had_postgres, p.proacl
+      from _mig722_before b
+      join pg_proc p on p.oid = b.fn_oid
   loop
     v_checked := v_checked + 1;
 
     -- half one: the ambient roles must hold nothing
-    if has_function_privilege('anon', r.oid, 'EXECUTE') then
-      v_bad := array_append(v_bad, format('%s: anon STILL holds EXECUTE', r.proname));
+    if has_function_privilege('anon', r.fn_oid, 'EXECUTE') then
+      v_bad := array_append(v_bad, format('%s: anon STILL holds EXECUTE', r.fn_name));
     end if;
-    if has_function_privilege('authenticated', r.oid, 'EXECUTE') then
-      v_bad := array_append(v_bad, format('%s: authenticated STILL holds EXECUTE', r.proname));
+    if has_function_privilege('authenticated', r.fn_oid, 'EXECUTE') then
+      v_bad := array_append(v_bad, format('%s: authenticated STILL holds EXECUTE', r.fn_name));
     end if;
     -- a null proacl means the built-in default is in force, i.e. PUBLIC has it
     if r.proacl is null or '=X/postgres' = any(r.proacl::text[]) then
-      v_bad := array_append(v_bad, format('%s: PUBLIC STILL holds EXECUTE', r.proname));
+      v_bad := array_append(v_bad, format('%s: PUBLIC STILL holds EXECUTE', r.fn_name));
     end if;
 
-    -- half two, the mig-643 mask: the roles that DO need it must keep it
-    if not has_function_privilege('service_role', r.oid, 'EXECUTE') then
-      v_bad := array_append(v_bad, format('%s: service_role LOST EXECUTE — over-revoked', r.proname));
+    -- half two, the mig-643 mask: nothing that HELD it may have lost it
+    if r.had_service_role
+       and not has_function_privilege('service_role', r.fn_oid, 'EXECUTE') then
+      v_bad := array_append(v_bad, format('%s: service_role LOST EXECUTE — over-revoked', r.fn_name));
     end if;
-    if not has_function_privilege('postgres', r.oid, 'EXECUTE') then
-      v_bad := array_append(v_bad, format('%s: postgres LOST EXECUTE — over-revoked', r.proname));
+    if r.had_postgres
+       and not has_function_privilege('postgres', r.fn_oid, 'EXECUTE') then
+      v_bad := array_append(v_bad, format('%s: postgres LOST EXECUTE — over-revoked', r.fn_name));
     end if;
   end loop;
 
@@ -252,8 +279,8 @@ begin
   end if;
 
   raise notice
-    'mig 722: has_function_privilege re-checked on % trigger function(s) — PUBLIC/anon/authenticated hold EXECUTE on none of them; service_role and postgres retain it on all %.',
-    v_checked, v_checked;
+    'mig 722: has_function_privilege re-checked on % trigger function(s) — PUBLIC/anon/authenticated hold EXECUTE on none of them; every role that held EXECUTE before still holds it.',
+    v_checked;
 end $$;
 
 -- ── 3. DRIVE it: the trigger must still FIRE for a role with no EXECUTE ───
