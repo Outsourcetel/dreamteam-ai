@@ -45,3 +45,24 @@ run('connector_providers mirrors PROVIDERS', () => {
     console.log(`compared ${n} catalog rows against ${Object.keys(PROVIDERS).length} PROVIDERS entries`);
   });
 });
+
+run('a connector can be prepared before it is authenticated', () => {
+  it('accepts pending_credentials as a status', async () => {
+    const [{ def }] = await runQuery<{ def: string }>(`
+      select pg_get_constraintdef(oid) as def from pg_constraint
+       where conrelid = 'public.connectors'::regclass and conname = 'connectors_status_check'`);
+    expect(def).toContain('pending_credentials');
+  });
+
+  it('still rejects a status we never defined', async () => {
+    // The pairing rule: widening a CHECK is only safe if it did not become a
+    // free-for-all. Assert the fence still exists on the other side.
+    const [{ def }] = await runQuery<{ def: string }>(`
+      select pg_get_constraintdef(oid) as def from pg_constraint
+       where conrelid = 'public.connectors'::regclass and conname = 'connectors_status_check'`);
+    expect(def).not.toContain('anything');
+    expect(def).toContain('connected');
+    expect(def).toContain('disconnected');
+    expect(def).toContain('error');
+  });
+});
