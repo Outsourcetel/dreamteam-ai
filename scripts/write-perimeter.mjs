@@ -154,6 +154,146 @@ select case when c.n_tables = 0
 `;
 }
 
+// ============================================================================
+// A SEPARATE PROBE, A SEPARATE CLASS: write-grants-can-actually-write.
+//
+// The three arms above ask "does authenticated hold a privilege it should not?"
+// This one asks the opposite question about the SAME surface: "of the write
+// privileges authenticated still holds — the ones migs 716-719 deliberately
+// kept because a real `src/` caller uses them — is there any that RLS can only
+// ever refuse?"
+//
+// THE CLASS. A table with RLS enabled and NO PERMISSIVE policy for a command
+// refuses that command before the grant is ever consulted. Postgres does not
+// error: the statement matches zero rows and PostgREST returns 204/200 with an
+// empty body. supabase-js reports `error === null`. Every client written the
+// obvious way then reports SUCCESS for a write that did nothing. This repo has
+// already paid for that shape twice — `project_role_gated_ui_audit` recorded
+// it as "RLS-denied write = PostgREST SUCCESS, 0 rows", and four writes against
+// `tenants` in src/lib/api.ts were removed as silent no-ops (their comments are
+// still at api.ts:97/297/675/734).
+//
+// docs/52 §5 measured the population and found exactly ONE live instance —
+// `de_deployment_stages` UPDATE, driving promoteDeploymentStage — out of 82
+// kept command-grants. Mig 720 closed it by routing promotion through
+// promote_de_deployment_stage() and revoking the grant. That measurement is a
+// point in time; this is what makes instance #2 impossible to ship quietly.
+//
+// WHY IT IS NOT A DUPLICATE OF ARM 1. Arm 1 pins the grant surface and fails on
+// any diff, so it catches a grant ARRIVING. It cannot tell a useful grant from
+// a useless one, and re-pinning is one flag away — a future migration that adds
+// `grant insert on <t> to authenticated` and re-pins would be green on arm 1
+// and lying to the first client that calls it. This arm reads the POLICIES, not
+// the pin, so a re-pin cannot silence it.
+//
+// ⚠ WHAT IT CANNOT SEE. A table whose PERMISSIVE policy exists but whose USING
+// clause matches zero rows for the caller in practice looks identical to a
+// working one from the catalogue — docs/52 §9 says so in its own words. This
+// probe closes the structural half (no policy at all), which is the half that
+// is decidable without executing as a user.
+// ============================================================================
+
+/**
+ * @param {object} [opts]
+ * @param {string} [opts.grantSource]  (tbl, sch, grantee, priv)
+ * @param {string} [opts.policySource] (tbl, cmd, permissive, roles text[])
+ * @param {string} [opts.rlsSource]    (tbl, rls_enabled)
+ */
+export function silentNoopWriteSql(opts = {}) {
+  const {
+    grantSource = `
+      select g.table_name::text     as tbl,
+             g.table_schema::text   as sch,
+             g.grantee::text        as grantee,
+             g.privilege_type::text as priv
+        from information_schema.role_table_grants g
+       where exists (select 1 from pg_class c
+                      where c.relname = g.table_name
+                        and c.relnamespace = 'public'::regnamespace
+                        and c.relkind = 'r')`,
+    policySource = `
+      select p.tablename::text   as tbl,
+             p.cmd::text         as cmd,
+             p.permissive::text  as permissive,
+             p.roles::text[]     as roles
+        from pg_policies p
+       where p.schemaname = 'public'`,
+    rlsSource = `
+      select c.relname::text as tbl, c.relrowsecurity as rls_enabled
+        from pg_class c
+       where c.relnamespace = 'public'::regnamespace and c.relkind = 'r'`,
+  } = opts;
+
+  return `
+with grants as (${grantSource}),
+pols as (${policySource}),
+rls as (${rlsSource}),
+pairs as (
+  select g.tbl, g.priv
+    from grants g
+   where g.sch = 'public' and g.grantee = 'authenticated'
+     and g.priv in ('INSERT','UPDATE','DELETE')
+),
+-- The set actually COMPARED. A pair on a table with RLS off cannot silently
+-- no-op (no policy is consulted at all), so it is out of scope here and
+-- rls-on-every-public-table owns it instead.
+compared as (
+  select p.tbl, p.priv
+    from pairs p
+    left join rls r on r.tbl = p.tbl
+   where coalesce(r.rls_enabled, false)
+),
+counted as (
+  select (select count(*) from pairs) as n_pairs,
+         (select count(*) from compared) as n_compared
+)
+
+select c.tbl || '.' || c.priv || ': authenticated holds this write grant, but '
+       || c.tbl || ' has RLS enabled and NO PERMISSIVE ' || c.priv || ' policy '
+       || 'for authenticated or public. Postgres refuses the command before the '
+       || 'grant is read — it matches zero rows and PostgREST returns SUCCESS '
+       || 'WITH NO ERROR, so every client reports a write that never happened '
+       || '(project_role_gated_ui_audit; mig 720). Either add the policy that '
+       || 'makes the write real, or route it through a SECURITY DEFINER RPC and '
+       || 'revoke the grant. Do NOT leave it: a grant RLS can only refuse is a '
+       || 'lie waiting for its first caller.' as violation,
+       null::text as note
+  from compared c
+ where not exists (
+   select 1 from pols p
+    where p.tbl = c.tbl
+      and p.permissive = 'PERMISSIVE'          -- RESTRICTIVE only ever subtracts
+      and p.cmd in ('ALL', c.priv)
+      and p.roles && array['authenticated','public']::text[]
+ )
+
+union all
+
+-- THE DENOMINATOR. Zero findings from zero comparisons is indistinguishable
+-- from a clean result, and this probe is one falsified predicate away from it.
+select case when c.n_compared = 0
+            then 'no-comparisons: write-grants-can-actually-write compared 0 '
+                 || 'grant/command pairs. It read nothing, and a probe that '
+                 || 'examined nothing looks exactly like a clean one.'
+       end as violation,
+       case when c.n_compared > 0
+            then 'write-grants-can-actually-write: examined ' || c.n_pairs
+                 || ' authenticated INSERT/UPDATE/DELETE grant(s) on public base '
+                 || 'tables, ' || c.n_compared || ' of them on RLS-enabled tables; '
+                 || 'any pair without a PERMISSIVE policy for its command is '
+                 || 'listed above, and there are ' || (
+                      select count(*) from compared cc
+                       where not exists (
+                         select 1 from pols p
+                          where p.tbl = cc.tbl and p.permissive = 'PERMISSIVE'
+                            and p.cmd in ('ALL', cc.priv)
+                            and p.roles && array['authenticated','public']::text[]))
+                 || ' of them.'
+       end as note
+  from counted c
+`;
+}
+
 /**
  * ARM 1's query — the surface that gets pinned to
  * supabase/baseline/write-allowlist.json and diffed symmetrically in

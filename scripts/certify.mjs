@@ -36,7 +36,7 @@ import { unexecutableApprovalSql } from './unexecutable-approval.mjs';
 import { advisoryBoundarySql } from './advisory-boundary.mjs';
 import { trustProposerBoundarySql } from './trust-proposer-boundary.mjs';
 import { gapGateConductSql, auditedStepsWritesSql, snapshotGateSql, gapEvidenceSql } from './playbook-gap-probes.mjs';
-import { writePerimeterSql, WRITE_PERIMETER_SQL } from './write-perimeter.mjs';
+import { writePerimeterSql, silentNoopWriteSql, WRITE_PERIMETER_SQL } from './write-perimeter.mjs';
 
 const FAST = process.argv.includes('--fast');
 const PIN = process.argv.includes('--pin-allowlist');
@@ -491,6 +491,11 @@ const PROBES = [
     name: 'authenticated-write-perimeter',
     why: 'docs/52: `authenticated` — the role every logged-in browser session runs as — held TRUNCATE on 245 of 294 public base tables, and RLS DOES NOT APPLY TO TRUNCATE. One statement would have destroyed every tenant\'s playbook_versions without a policy ever being consulted. Migs 714/715 closed it and stopped it regrowing; this arm is the hard rule that keeps it closed, with no allowlist and no exemption, plus the default-privilege row that feeds it',
     sql: writePerimeterSql(),
+  },
+  {
+    name: 'write-grants-can-actually-write',
+    why: 'the OPPOSITE question about the same surface, and a different class: of the write grants authenticated still holds, is any one of them a write RLS can only ever refuse? A table with RLS on and no PERMISSIVE policy for that command matches zero rows and PostgREST returns SUCCESS WITH NO ERROR — supabase-js sees error === null and the client reports a write that never happened. This repo has paid for that shape twice (project_role_gated_ui_audit; the four removed `tenants` writes whose comments still sit at src/lib/api.ts:97/297/675/734). docs/52 §5 measured exactly ONE live instance out of 82 kept command-grants — de_deployment_stages UPDATE, driving promoteDeploymentStage — and mig 720 closed it with a governed RPC. This is what stops instance #2. It is NOT arm 1 restated: arm 1 pins the grant surface and can be silenced by a re-pin, whereas this reads the POLICIES, so a migration that adds a grant, forgets the policy and re-pins is green there and red here. It cannot see a policy whose USING clause matches nothing in practice (docs/52 §9) — that half is not decidable from the catalogue',
+    sql: silentNoopWriteSql(),
   },
 ];
 

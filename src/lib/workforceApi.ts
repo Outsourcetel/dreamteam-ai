@@ -265,44 +265,52 @@ export async function getDeploymentStage(deId: string): Promise<string | null> {
 }
 
 /**
- * Promote DE to next stage (shadow → co-pilot → live → retired)
+ * Promote DE to next stage (shadow → co-pilot → live → retired).
+ *
+ * ⚠ THIS USED TO LIE, and the shape of the lie is worth keeping in view.
+ * Until mig 720 this function did `.from('de_deployment_stages').update(...)`
+ * directly. `de_deployment_stages` has RLS on and exactly one policy — SELECT.
+ * With no PERMISSIVE UPDATE policy, Postgres matched zero rows, PostgREST
+ * returned success with an empty body, `error` was null, and this function
+ * returned `{ success: true, new_stage }` for a write that never happened.
+ * (project_role_gated_ui_audit: "RLS-denied write = PostgREST SUCCESS, 0 rows".)
+ *
+ * It now calls `promote_de_deployment_stage`, a SECURITY DEFINER RPC that
+ * derives the workspace from the session, admits only owners/admins, walks the
+ * one authoritative ladder, requires a reason and writes an audit event. Every
+ * refusal there RAISES, so it arrives here as a real `error`.
+ *
+ * TWO RULES THIS BODY MUST KEEP:
+ *  1. `.rpc()` RESOLVES on a Postgres error — it does not throw. The `error`
+ *     branch is not optional (project_rpc_error_sweep).
+ *  2. Success is asserted, never assumed. A non-error with no `ok:true`
+ *     payload is reported as a failure, because "no error" was exactly the
+ *     evidence that produced the original false success.
  */
 export async function promoteDeploymentStage(
   deId: string,
-  reason?: string
+  reason: string
 ): Promise<{ success: boolean; new_stage?: string; error?: string }> {
-  // Get current stage
-  const currentStage = await getDeploymentStage(deId);
-  if (!currentStage) {
-    return { success: false, error: 'Current stage not found' };
-  }
-
-  const stageProgression: Record<string, string> = {
-    shadow: 'co-pilot',
-    'co-pilot': 'live',
-    live: 'retired',
-  };
-
-  const newStage = stageProgression[currentStage];
-  if (!newStage) {
-    return { success: false, error: 'Cannot promote from this stage' };
-  }
-
-  const { error } = await supabase
-    .from('de_deployment_stages')
-    .update({
-      stage: newStage,
-      stage_promoted_at: new Date().toISOString(),
-      promotion_reason: reason,
-    })
-    .eq('de_id', deId);
+  const { data, error } = await supabase.rpc('promote_de_deployment_stage', {
+    p_de_id: deId,
+    p_reason: reason,
+  });
 
   if (error) {
     console.error('Failed to promote stage:', error);
     return { success: false, error: error.message };
   }
 
-  return { success: true, new_stage: newStage };
+  const result = data as { ok?: boolean; from?: string; to?: string } | null;
+  if (!result?.ok || !result.to) {
+    // Not a defensive nicety — this is the branch the old code did not have.
+    return {
+      success: false,
+      error: 'The database did not confirm the promotion, so nothing was changed.',
+    };
+  }
+
+  return { success: true, new_stage: result.to };
 }
 
 /**

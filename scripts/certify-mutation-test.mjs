@@ -18,7 +18,7 @@ import { unexecutableApprovalSql } from './unexecutable-approval.mjs';
 import { advisoryBoundarySql } from './advisory-boundary.mjs';
 import { trustProposerBoundarySql } from './trust-proposer-boundary.mjs';
 import { gapGateConductSql, auditedStepsWritesSql, snapshotGateSql, gapEvidenceSql } from './playbook-gap-probes.mjs';
-import { writePerimeterSql } from './write-perimeter.mjs';
+import { writePerimeterSql, silentNoopWriteSql } from './write-perimeter.mjs';
 
 // ── Fixtures for no-untyped-literal-appended-to-a-container ────────────────
 // The production catalog is CLEAN of this shape, so the probe returns zero rows
@@ -1205,6 +1205,85 @@ const CASES = [
         // the table that came out of the database is.
         name: 'authenticated-write-perimeter ratchet (MANUAL, DDL-in-rollback: a NEW table was born truncatable before mig 715 and is not after)',
         manual: 'RUN against production this session. Before 715: a freshly created public table granted authenticated DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE. After 715: REFERENCES,SELECT,TRIGGER only. Both runs rolled back; pg_class confirmed no stray table and the live TRUNCATE count stayed 0. Regrowth OBSERVED, ratchet OBSERVED to hold.',
+      },
+    ];
+  })(),
+
+  // ── mig 720: write-grants-can-actually-write ─────────────────────────────
+  // The class: a write grant on an RLS-enabled table with NO PERMISSIVE policy
+  // for that command. Postgres refuses it before the grant is read, PostgREST
+  // returns SUCCESS WITH NO ERROR, and the client reports a write that never
+  // happened. The predicate has FIVE conjuncts — grantee, privilege, RLS on,
+  // PERMISSIVE, and a role the caller is in — and one case per conjunct is the
+  // point: a probe that fired on every grant in the database would pass a
+  // single-conjunct test and be worse than nothing.
+  //
+  // Every case carries a CONTROL pair (ctrl_tbl.UPDATE, RLS on, policy present)
+  // so that a `silent` run is silent because the PREDICATE cleared it, never
+  // because the denominator arm had nothing left to compare. Without the
+  // control, the RLS-off case would "pass" by tripping no-comparisons instead.
+  ...(() => {
+    const viol = (sql, like) => `select 1 from (${sql}) x
+       where x.violation is not null${like ? ` and x.violation like '%${like}%'` : ''}`;
+    const rows = (...rs) => rs.join(' union all ');
+    const g = (grantee, priv, tbl = 'mutant_tbl', sch = 'public') =>
+      `select '${tbl}'::text as tbl, '${sch}'::text as sch, '${grantee}'::text as grantee, '${priv}'::text as priv`;
+    const pol = (cmd, permissive, roles, tbl = 'mutant_tbl') =>
+      `select '${tbl}'::text as tbl, '${cmd}'::text as cmd, '${permissive}'::text as permissive, ` +
+      `array[${roles.map((r) => `'${r}'`).join(',')}]::text[] as roles`;
+    const rls = (on, tbl = 'mutant_tbl') => `select '${tbl}'::text as tbl, ${on} as rls_enabled`;
+    // The control: a kept grant that is genuinely usable. Present in every case.
+    const CG = g('authenticated', 'UPDATE', 'ctrl_tbl');
+    const CP = pol('UPDATE', 'PERMISSIVE', ['authenticated'], 'ctrl_tbl');
+    const CR = rls(true, 'ctrl_tbl');
+    const NO_GRANTS = `select null::text as tbl, null::text as sch, null::text as grantee, null::text as priv where false`;
+    const MUT = 'mutant_tbl.UPDATE: authenticated holds this write grant';
+    return [
+      {
+        name: 'write-grants-can-actually-write (a kept grant with NO policy for its command is caught, and the violation names table.PRIVILEGE — the exact de_deployment_stages/UPDATE shape mig 720 closed)',
+        fires: viol(silentNoopWriteSql({ grantSource: rows(CG, g('authenticated', 'UPDATE')), policySource: CP, rlsSource: rows(CR, rls(true)) }), MUT),
+        silent: viol(silentNoopWriteSql({ grantSource: rows(CG, g('authenticated', 'UPDATE')), policySource: rows(CP, pol('UPDATE', 'PERMISSIVE', ['authenticated'])), rlsSource: rows(CR, rls(true)) })),
+      },
+      {
+        name: 'write-grants-can-actually-write (the COMMAND conjunct is not vacuous — a SELECT policy does not cover UPDATE; a cmd=ALL policy does)',
+        fires: viol(silentNoopWriteSql({ grantSource: rows(CG, g('authenticated', 'UPDATE')), policySource: rows(CP, pol('SELECT', 'PERMISSIVE', ['authenticated'])), rlsSource: rows(CR, rls(true)) }), MUT),
+        silent: viol(silentNoopWriteSql({ grantSource: rows(CG, g('authenticated', 'UPDATE')), policySource: rows(CP, pol('ALL', 'PERMISSIVE', ['authenticated'])), rlsSource: rows(CR, rls(true)) })),
+      },
+      {
+        name: 'write-grants-can-actually-write (a RESTRICTIVE policy is NOT coverage — docs/52 §1 made exactly this mistake and mis-classified 7 tables as live)',
+        fires: viol(silentNoopWriteSql({ grantSource: rows(CG, g('authenticated', 'UPDATE')), policySource: rows(CP, pol('UPDATE', 'RESTRICTIVE', ['authenticated'])), rlsSource: rows(CR, rls(true)) }), MUT),
+        silent: viol(silentNoopWriteSql({ grantSource: rows(CG, g('authenticated', 'UPDATE')), policySource: rows(CP, pol('UPDATE', 'PERMISSIVE', ['authenticated'])), rlsSource: rows(CR, rls(true)) })),
+      },
+      {
+        name: 'write-grants-can-actually-write (the ROLE conjunct is not vacuous — a policy naming only service_role leaves authenticated refused; {public} covers it)',
+        fires: viol(silentNoopWriteSql({ grantSource: rows(CG, g('authenticated', 'UPDATE')), policySource: rows(CP, pol('UPDATE', 'PERMISSIVE', ['service_role'])), rlsSource: rows(CR, rls(true)) }), MUT),
+        silent: viol(silentNoopWriteSql({ grantSource: rows(CG, g('authenticated', 'UPDATE')), policySource: rows(CP, pol('UPDATE', 'PERMISSIVE', ['public'])), rlsSource: rows(CR, rls(true)) })),
+      },
+      {
+        name: 'write-grants-can-actually-write (the RLS conjunct is not vacuous — with RLS OFF the grant works and there is nothing to report; the control keeps the denominator non-zero)',
+        fires: viol(silentNoopWriteSql({ grantSource: rows(CG, g('authenticated', 'UPDATE')), policySource: CP, rlsSource: rows(CR, rls(true)) }), MUT),
+        silent: viol(silentNoopWriteSql({ grantSource: rows(CG, g('authenticated', 'UPDATE')), policySource: CP, rlsSource: rows(CR, rls(false)) })),
+      },
+      {
+        name: 'write-grants-can-actually-write (the PRIVILEGE conjunct is not vacuous — SELECT is not a write and is never in scope)',
+        fires: viol(silentNoopWriteSql({ grantSource: rows(CG, g('authenticated', 'UPDATE')), policySource: CP, rlsSource: rows(CR, rls(true)) }), MUT),
+        silent: viol(silentNoopWriteSql({ grantSource: rows(CG, g('authenticated', 'SELECT')), policySource: CP, rlsSource: rows(CR, rls(true)) })),
+      },
+      {
+        name: 'write-grants-can-actually-write (the GRANTEE conjunct is not vacuous — service_role bypasses RLS entirely, so its policy-less grants are legitimate)',
+        fires: viol(silentNoopWriteSql({ grantSource: rows(CG, g('authenticated', 'UPDATE')), policySource: CP, rlsSource: rows(CR, rls(true)) }), MUT),
+        silent: viol(silentNoopWriteSql({ grantSource: rows(CG, g('service_role', 'UPDATE')), policySource: CP, rlsSource: rows(CR, rls(true)) })),
+      },
+      {
+        name: 'write-grants-can-actually-write DENOMINATOR (comparing zero grant/command pairs is a VIOLATION, not a clean result)',
+        fires: viol(silentNoopWriteSql({ grantSource: NO_GRANTS, policySource: CP, rlsSource: CR }), 'no-comparisons'),
+        silent: viol(silentNoopWriteSql({ grantSource: CG, policySource: CP, rlsSource: CR })),
+      },
+      {
+        // The one a SELECT cannot fake: real DDL, a real policy, the real
+        // catalogue. Run on DEV inside a transaction that rolled back.
+        name: 'write-grants-can-actually-write (MANUAL, live DDL-in-rollback on dev: a real granted-but-unpolicied table is caught by the REAL probe, and adding the policy clears it)',
+        manual: 'RUN on dev (nmuntxrcdksyhsdywpan) this session, twice, inside begin/rollback: (1) create table public._mutant_noop_write(id int); alter table enable row level security; grant update to authenticated; -- no policy -> the REAL silentNoopWriteSql() returned the violation naming _mutant_noop_write.UPDATE. (2) same, plus `create policy ... for update to authenticated using (true)` -> 0 violations, denominator note printed. Both rolled back; pg_class confirmed no stray table afterwards. See the session report for the exact rows.',
       },
     ];
   })(),
