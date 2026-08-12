@@ -1369,6 +1369,44 @@ const CASES = [
       },
     ];
   })(),
+
+  // ── deferred-register (docs/53) ───────────────────────────────────────
+  // The register probe is a JS evaluation over review/deferred-register.json,
+  // not a SQL query, so a `fires`/`silent` SELECT pair cannot express any of
+  // it. Same situation as branch-parity above: the mutations live inside
+  // scripts/deferred-register.mjs behind --mutate, each run exits 0 ONLY if the
+  // injected break was CAUGHT and NAMED, and they are recorded here so they sit
+  // in this suite's denominator instead of in a commit message nobody re-runs.
+  //
+  // ⚠⚠ BOTH DIRECTIONS ARE PROVEN, and they are genuinely different failures:
+  // the register can be stale-OPEN (a fixed thing still carried as backlog —
+  // docs/45's 28 guards) or stale-CLOSED (a live defect recorded as done, which
+  // is the direction that misleads a person). A probe proving only one of those
+  // would leave the other free to rot, and the second is the dangerous one.
+  //
+  // Re-run any of them with:
+  //   node scripts/deferred-register.mjs --mutate=<case>
+  ...[
+    ['says-open-but-closed',
+      'F1, the stale-OPEN direction. Takes an item the live verification proves CLOSED (B-1, mig 721\'s trigger is present and enabled) and records it as open. CAUGHT — "F1 REGISTER SAYS OPEN, REALITY SAYS CLOSED — B-1 … Its sql verification returned n=0, and the item is open only when n >= 1". This is exactly docs/45\'s residue: a finding that was real, got fixed, and went on being carried.'],
+    ['says-closed-but-open',
+      'F2, the stale-CLOSED direction — the one that misleads. Takes an item the live verification proves OPEN (A-1, anon and authenticated hold TRUNCATE on storage.objects) and records it closed with a fabricated closed_by. CAUGHT — "F2 REGISTER SAYS CLOSED, REALITY SAYS OPEN — A-1 … Something recorded as fixed is answering back". ⚠ Neither direction-case names its item in the source: both pick off the live verdicts of the unmutated pass, so the harness cannot choose an item that makes itself pass.'],
+    ['broken-verification',
+      'F3. Replaces a real item\'s SQL with `select this_column_does_not_exist from nowhere_at_all`. CAUGHT — "F3 VERIFICATION ERROR — A-1 (sql) could not be evaluated … relation \\"nowhere_at_all\\" does not exist". ⚠ THIS CASE WAS INCONCLUSIVE ON ITS FIRST RUN AND IS RECORDED AS FIXED, NOT AS A PASS: the probe was firing ~25 concurrent Management-API calls, the API answered 429, the resulting F3 carried the same item id, and the case "passed" off a throttle rather than the injected break. Two changes: the SQL verifications now go over as ONE batched statement (1 call, not 25), and this case requires the failure line to contain BOTH the item id AND the string `nowhere_at_all`, so a transport error can never satisfy it.'],
+    ['duplicate-id',
+      'F4 (schema). Pushes a copy of an existing item. CAUGHT — "F4 schema — duplicate id A-1: two items sharing an id means one of them can never be addressed, closed or cited".'],
+    ['closed-without-evidence',
+      'F4 (uncited closure). Marks an item closed and deletes closed_by. CAUGHT — "F4 schema — B-1 is recorded closed with no `closed_by` — closing an item is a claim, and a claim with no citation is what this register replaces". Without this arm, the cheapest way to shrink the backlog would be to type "closed".'],
+    ['no-comparisons',
+      'F5. Strips every verification, leaving 47 items and nothing to check. CAUGHT — "F5 NO-COMPARISONS — 47 item(s) in the register and ZERO runnable verifications". Every other arm is vacuously quiet in that state, so the section would print PASS having compared nothing.'],
+    ['unsupported-claim',
+      'F6. Re-anchors an unverifiable item to a sentence that appears in no document. CAUGHT — "F6 UNSUPPORTED CLAIM — A-6 is carried on docs/53-deferred-work-census.md, but the anchor text … is no longer in that file". This is what keeps "unverifiable" from degrading into "unfalsifiable".'],
+    ['unverifiable-over-ceiling',
+      'F7. Converts one checkable item into a claim-carried one without raising the ceiling. CAUGHT — "F7 UNVERIFIABLE CEILING EXCEEDED — 10 item(s) carry no mechanical verification, ceiling is 9". The ratchet is what stops the register quietly reverting to prose one item at a time.'],
+  ].map(([mut, evidence]) => ({
+    name: `deferred-register --mutate=${mut} (MANUAL, a JS evaluation over a JSON register: a SELECT cannot fake it)`,
+    manual: `${evidence} Verified 2026-08-12 against the live register (47 items, 38 verified); exit 0 = caught and named.`,
+  })),
 ];
 
 // Optional substring filter, so one probe's cases can be re-run on their own

@@ -4,6 +4,13 @@
 workstreams land evidence. States: `proven-live` / `built-unproven` / `inferred` / `dead` /
 `—` (not yet examined). Update in place; never delete a row.
 
+> ⚠ **The FIX BACKLOG and the carried-forward findings below are HISTORY. Open state lives in
+> `review/deferred-register.json`**, re-verified against live production by `certify` ›
+> `deferred-register` on every run. docs/53 found this document's own carried-forward r5 list
+> naming two findings that were already closed or refuted — a backlog nobody re-measures stops
+> being evidence. F-1…F-8 and W-1 are now register items `B-2`…`B-8` and `D-9`. Add items with
+> `npm run defer`.
+
 ## Review Lab tenant (provisioned 2026-08-12, Workstream B fixture)
 
 Created via the **real path** — admin-API auth user → `signInWithPassword` → `rpc complete_signup`
@@ -138,12 +145,19 @@ rather than repeating the audit.
 | #46 "cross-tenant isolation behaviourally proven on 1 table of 242" | r5/i5 | Workstream C proved **9 tables + 2 write paths + 10 SECDEF RPCs** under live attack | **materially improved** (still not all 292 — breadth remains) |
 | #74 dev is a divergent environment | r3 | **Confirmed and worse than stated** — see F-4/F-8 | **UPGRADED** |
 
-**Still-standing r5 findings (not yet re-checked, carried forward):** #0 playbook branch executor
-runs 6 of the 9 step types its own validator accepts (a playbook can report COMPLETED having done
-neither of two requested actions — the one debt item that can produce a wrong *business* outcome) ·
-#35 zero component tests over 73,790 lines of UI · #47 the action gate is untested · #57 edge
-functions have no lockfile + 68 floating imports · #70 no automated backups (**feeds E**) ·
-#73 the JWT gate for 59 edge functions exists only inside Supabase.
+**Carried-forward r5 findings — RE-CHECKED 2026-08-12.** The line below used to read
+"not yet re-checked, carried forward", and two of its six had already been closed or refuted when
+it was written. That is the drift docs/53 §4 names, so each is now given its verdict and its
+evidence rather than being deleted:
+
+| r5 finding | Verdict today | Evidence (re-runnable) |
+|---|---|---|
+| **#0** playbook branch executor runs 6 of the 9 step types its own validator accepts — a playbook can report COMPLETED having done neither requested action | **CLOSED** | `BRANCH_ALLOWED` is now 8 keys with 8 matching `case` arms in `runBranchStep` (`supabase/functions/playbook-execute/index.ts`), `wait` REFUSED rather than silently skipped, and `scripts/playbook-branch-parity.mjs` (5 arms, 3 of them driving the deployed function) is wired into `certify`. Register `B-9`. |
+| **#35** zero component tests over 73,790 lines of UI | **STANDS** | 20 test files under `tests/`; `grep -l @testing-library tests/*.ts` → **0**. Register `D-7`. |
+| **#47** the action gate is untested | **CLOSED — was already closed when this line was written** | `tests/action-gate.test.ts` holds **18** top-level cases (`grep -cE "^\s*(it\|test)\(" tests/action-gate.test.ts`), landed in `da9ef788`. |
+| **#57** edge functions have no lockfile + 68 floating imports | **HALF REFUTED, HALF STANDS** | `deno.lock` **is tracked** (`git ls-files deno.lock`) — the lockfile half was never true. The floating-import half stands and the count moved: **71 of 133** remote imports carry no `@x.y.z` pin (re-counted 2026-08-12). Register `D-12`. |
+| **#70** no automated backups (**feeds E**) | **REFUTED** | Management API `/v1/projects/rfsvmhcqeiyrxivbmpel/database/backups` 2026-08-12: `walg_enabled: true`, **7 daily physical backups, all COMPLETED** (most recent 2026-08-12T03:30Z). ⚠ Separately true and NOT refuted: `pitr_enabled: false`. |
+| **#73** the JWT gate for the edge functions exists only inside Supabase | **STANDS** | `supabase/config.toml` does not exist and no `.toml` under `supabase/` mentions `verify_jwt`, across **64** function directories. Register `D-8`. |
 
 ## B priority queue (next sessions)
 

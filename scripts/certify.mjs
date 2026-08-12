@@ -38,6 +38,13 @@ import { advisoryBoundarySql } from './advisory-boundary.mjs';
 import { trustProposerBoundarySql } from './trust-proposer-boundary.mjs';
 import { gapGateConductSql, auditedStepsWritesSql, snapshotGateSql, gapEvidenceSql } from './playbook-gap-probes.mjs';
 import { writePerimeterSql, silentNoopWriteSql, WRITE_PERIMETER_SQL } from './write-perimeter.mjs';
+// docs/53's finding, turned into a standing check: 11 of the 14 deferred items
+// genuinely walked past in a week were named in a DOCUMENT rather than a commit,
+// and the registers holding them had themselves gone stale. The register is now
+// a tracked JSON file and this re-verifies it against live production and the
+// repo on every run. It fails when the REGISTER IS WRONG ABOUT ITSELF, never
+// merely because work is outstanding — see the module header for the argument.
+import { deferredRegisterSection } from './deferred-register.mjs';
 import { triggerExecutePerimeterSql } from './trigger-execute-perimeter.mjs';
 
 const FAST = process.argv.includes('--fast');
@@ -53,6 +60,9 @@ const PIN_WRITE = process.argv.includes('--pin-write') || PIN;
 const PIN_EDGE = process.argv.includes('--pin-edge');
 const OFFLINE = process.argv.includes('--offline');
 const PROD_REF = 'rfsvmhcqeiyrxivbmpel';
+// Read ONLY by the deferred register's dev-ledger-lag verification (item B-6).
+// Nothing in certify writes to either project.
+const DEV_REF = 'nmuntxrcdksyhsdywpan';
 const ALLOWLIST_FILE = 'supabase/baseline/execute-allowlist.json';
 const WRITE_ALLOWLIST_FILE = 'supabase/baseline/write-allowlist.json';
 
@@ -72,8 +82,13 @@ function token() {
 const TOKEN = OFFLINE ? null : token();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function q(sql, attempt = 0) {
-  const res = await fetch(`https://api.supabase.com/v1/projects/${PROD_REF}/database/query`, {
+// Every Ring-0 probe reads PRODUCTION. The one exception is the deferred
+// register's dev-ledger-lag verification, which by definition has to ask the
+// OTHER project — so the ref is a parameter there and hardcoded everywhere
+// else, the same split db-query.mjs and dev-query.mjs already keep.
+const qProject = (ref, sql) => q(sql, 0, ref);
+async function q(sql, attempt = 0, ref = PROD_REF) {
+  const res = await fetch(`https://api.supabase.com/v1/projects/${ref}/database/query`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ query: sql }),
@@ -84,7 +99,9 @@ async function q(sql, attempt = 0) {
     // probe — retrying it would be retrying a broken invariant into a timeout.
     if ((res.status === 429 || res.status >= 500 || res.status === 0) && attempt < 3) {
       await sleep(1500 * (attempt + 1));
-      return q(sql, attempt + 1);
+      // ⚠ `ref` MUST be carried through the retry. Dropping it would silently
+      // re-aim a retried DEV query at PRODUCTION and report the answer as dev's.
+      return q(sql, attempt + 1, ref);
     }
     throw new Error(`Management API ${res.status}: ${text.slice(0, 250)}`);
   }
@@ -659,6 +676,22 @@ const sections = [
     }
     return { ok: failures.length === 0, detail: failures.join('\n') };
   }),
+  // ── The deferred-work register re-verifies itself ──────────────────────
+  // Same band as ring0-probes — read-only against production, runs in --fast,
+  // violations-only — but it is a SECTION rather than a PROBES entry because
+  // its verifications span three sources (production SQL, the repo on disk,
+  // and the dev project's ledger) and cannot be one query.
+  //
+  // ⚠ IT DOES NOT FAIL BECAUSE WORK IS OUTSTANDING. 44 items are open today
+  // and that is data, printed with denominators. It fails when the register is
+  // WRONG ABOUT ITSELF — an item recorded open that verification proves closed,
+  // or recorded closed that verification proves open — because a backlog nobody
+  // re-measures stops being evidence, which is precisely how docs/45 came to
+  // carry 28 fail-open guards against a live catalogue holding one.
+  section('deferred-register', () => deferredRegisterSection({
+    runSql: q,
+    runSqlDev: (sql) => qProject(DEV_REF, sql),
+  })),
   shell('migration-ledger', 'npm', ['run', '-s', 'migrate:status']),
   // ── No NEW duplicate migration numbers ─────────────────────────────────
   // Two agents computing `ls | tail -1` both pick the same number. It has

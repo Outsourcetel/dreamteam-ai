@@ -7,6 +7,15 @@ written to the database; the only repo write is this document.
 **Prior art:** docs/37 (organs lie), docs/38 (severed nerves), migs 491/500/571/
 682/692 (honesty repairs). This audit asks: **what is true TODAY?**
 
+> ⚠ **The ranked fixes below are HISTORY. Live state lives in
+> `review/deferred-register.json`**, where `certify` › `deferred-register`
+> re-derives it every run. Ranked fixes 1–5 landed within hours (migs 706–709,
+> 720); 6, 7 and 8 did not, and nothing distinguished them except where the
+> session ended — they are now register items `C-1`, `C-2`, `C-3`, `C-4`, `C-5`
+> and `C-6`. §7's voice-turn line below was already stale when this document was
+> written, which is the second reason the register exists. Add items with
+> `npm run defer`.
+
 The two failure classes hunted, per the brief:
 1. **A metric that measures the TEST** — exam traffic counted as production.
 2. **A stored marker read as truth** — a row that says "done"/"100%" with nothing behind it.
@@ -164,7 +173,20 @@ Also verified, smaller: `list_de_health` (204) composes exam-filtered organs —
 - Edge-function *internal* metrics (otel spans) — out of scope, no verdict.
 - Whether the next certification exam actually stamps `de_token_usage.origin='exercise'` — built (682 writer), will only be proven by the next exam run.
 - `get_de_guardrail_activity` (096) origin behavior — its trust-relevant twin inside `trust_evidence_for` is filtered; the display copy was not re-read.
-- Voice-turn's exercise flag (682's named follow-up) — still open per 682's own header.
+- ~~Voice-turn's exercise flag (682's named follow-up) — still open per 682's own header.~~
+  **STALE WHEN WRITTEN — CLOSED, with proof.** This line trusted migration 682's
+  header instead of reading the deployed function, and the flag had already
+  landed. Evidence, 2026-08-12: `supabase/functions/voice-turn/index.ts:339`
+  reads `const isExercise = url.searchParams.get('exercise') === '1'`, and both
+  guardrail-block writers stamp it — `origin: isExercise ? 'exercise' :
+  'production'` at lines 272 and 446. `git log -S isExercise -- supabase/
+  functions/voice-turn/index.ts` names exactly one commit, `67d32cce`
+  ("feat(trust): voice tests self-mark …", mig 692). ⚠ **The lesson is the
+  reason this correction is written out rather than deleted:** this audit's own
+  method line says every claim was verified against the live system, and this
+  one was not — it was carried from a migration header, which is precisely the
+  "stored marker read as truth" class §1 hunts. Caught by docs/53's census the
+  same day.
 - The three legitimate certify REDs — deliberately untouched per brief.
 - The "ops-visibility score" (42/100) is not a live organ — it was a one-time
   13-agent audit grade (2026-07-26). Its live descendants (ops_alerts channel,

@@ -5,6 +5,14 @@ re-runs on demand. A report is a photograph and rots (the DR doc said "no
 backups" for weeks after backups existed); this re-derives its verdict from the
 live system every time `npm run certify` runs.
 
+> ⚠ **Open items live in `review/deferred-register.json`, not here.** This
+> document records how each invariant was *measured*; the register records what
+> is still *outstanding*, and `certify` › `deferred-register` re-derives every
+> entry's state from live production on each run. That split exists because
+> this file drifted: its R0.8 residue named 28 fail-open guards for four days
+> while the live catalogue held one (re-measured below, 2026-08-12). A backlog
+> nobody re-measures stops being evidence. Add items with `npm run defer`.
+
 - **Baseline:** tag `review-baseline-20260809` @ `bc86388`, census in
   `supabase/baseline/review-baseline.json`. Diff against it to see what moved.
 - **Run:** `npm run certify` (full, ~3 min) · `npm run certify:fast` (~60 s) ·
@@ -33,7 +41,7 @@ money/reputation) → **Ring 2** (costs correctness) → **Ring 3** (polish).
 | R0.5 | The approvals guard (`app.allow_task_decision`) has no new setter | **PROVEN** | `certify` › guard-bypass-setters-pinned |
 | R0.6 | The audit hash-chain is intact for outsourcetel-hq | **PROVEN** | `certify` › audit-chain-verifies-hq |
 | R0.7 | The `anon`/`authenticated` EXECUTE surface equals the pinned allowlist | **PROVEN** | `certify` › execute-perimeter |
-| R0.8 | Tenant isolation on READ, probed with real ids across all RPCs | **FALSIFIED — every found instance closed; class NARROWED, residue named** | migs 662 (27 revoked) + 663 (`can_access_de`, read *and* write) + 664 (4 more); `certify` › secdef-caller-tenant-ratchet. Residue: 28 fail-open-on-NULL guards, reachable today only by a tenantless account |
+| R0.8 | Tenant isolation on READ, probed with real ids across all RPCs | **FALSIFIED — every found instance closed; class NARROWED, residue RE-MEASURED 2026-08-12 (see below — the "28" does not reproduce)** | migs 662 (27 revoked) + 663 (`can_access_de`, read *and* write) + 664 (4 more); `certify` › secdef-caller-tenant-ratchet. Live residue today: **1** function carries the guard shape, **0** carry the fail-open conjunction. The tenantless account remains — register item `A-5` |
 | R0.9 | No employee is offered an action its role may not use | **PROVEN** | `certify` › role-restricted-actions-stay-restricted |
 | R0.10 | …and the role that *may* use them can actually reach them | **PROVEN** | `certify` › workspace-admin-has-an-owner |
 
@@ -370,14 +378,40 @@ retroactively is a curve you can talk yourself into. `npm run benchmark:history`
 
   #### ⚠ What is still open, stated plainly
 
-  - **28 functions guard with `if auth_tenant_id() is not null and …`**, which
-    *skips* the check rather than failing it. Three siblings use the correct
-    idiom (naming `service_role` explicitly). None is `anon`-reachable, so today
-    the only caller who benefits is the tenantless account above — which makes
-    **deactivating that profile the cheapest mitigation**, and fixing the 28 the
-    durable one. `resolve_action_execution_for_task` is the same seam spelled
-    differently: `x NOT IN (subquery)` yields NULL, not TRUE, when the subquery
-    returns a NULL.
+  - ~~**28 functions guard with `if auth_tenant_id() is not null and …`**~~ —
+    **THE COUNT DOES NOT REPRODUCE. Re-measured against the live catalogue on
+    2026-08-12** (docs/53 first spotted the drift; this is the re-run):
+
+    ```sql
+    -- 928 functions in public; 209 reference auth_tenant_id
+    select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.prosrc ~* 'auth_tenant_id\(\)\s*is not null';
+    -- → 1   (can_access_de, and only can_access_de)
+
+    select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.prosrc ~* 'is not null and[^;]{0,120}<>\s*auth_tenant_id\(\)';
+    -- → 0   (nothing carries the full fail-open shape)
+    ```
+
+    **Stated as what it is, not as a win.** One function carries the guard
+    idiom; none carries the fail-open conjunction this bullet described. Whether
+    the other 27 were fixed without a commit that says so, or whether "28" was
+    never a live-catalogue count in the first place, is **not determinable from
+    here** — so this is recorded as *unreproducible*, not as *closed*. The
+    finding as written can no longer be acted on; anyone re-opening it must
+    re-measure first.
+
+    **What is still open from this bullet is the mitigation, and it is
+    untouched**: the tenantless account still exists (3 profiles with
+    `tenant_id` NULL, one of them a `tenant_owner`, re-verified 2026-08-12), and
+    "deactivate that profile" was the cheapest fix named at the time and was
+    never done. That is now **register item `A-5`**, re-verified on every
+    certify run — not a bullet in a document.
+
+    `resolve_action_execution_for_task` is the same seam spelled differently:
+    `x NOT IN (subquery)` yields NULL, not TRUE, when the subquery returns a
+    NULL. That half is unaffected by the re-measurement above.
   - ~~**`eval_gate`** is a view readable by `anon`~~ — **CLOSED, mig 665.** It
     was not theoretical: fetched from the open internet with nothing but the
     public anon key, it returned three tenants' UUIDs and their exam records
