@@ -1,0 +1,2974 @@
+{
+  "pinned_at": "2026-08-12T10:42:50.775Z",
+  "note": "The INSERT/UPDATE/DELETE/TRUNCATE surface of `authenticated` on public BASE TABLES. certify fails on ANY diff, in either direction. Re-pin only after a DELIBERATE perimeter change (migs 714/716/717/718/719) — never to make a red run green.",
+  "grants": [
+    {
+      "tbl": "account_activities",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "account_activities",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "account_activities",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "account_writeback_requests",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "account_writeback_requests",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "account_writeback_requests",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "action_definitions",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "action_definitions",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "action_definitions",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "action_executions",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "action_executions",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "action_executions",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "activity_events",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "activity_events",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "activity_events",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "adapter_templates",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "adapter_templates",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "adapter_templates",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "agent_actions",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "agent_actions",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "agent_actions",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "agentic_step_policies",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "agentic_step_policies",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "agentic_step_policies",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "agreement_lines",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "agreement_lines",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "agreement_lines",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "ai_change_log",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "ai_change_log",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "ai_change_log",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "ai_model_pricing",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "ai_model_pricing",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "ai_model_pricing",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "ai_session_messages",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "ai_session_messages",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "ai_session_messages",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "ai_sessions",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "ai_sessions",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "ai_sessions",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "ai_usage_events",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "ai_usage_events",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "ai_usage_events",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "amendment_metrics",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "analytics_query_defs",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "analytics_query_defs",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "analytics_query_defs",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "answer_cache",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "answer_cache",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "answer_cache",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "approval_authority",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "approval_authority",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "approval_authority",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "audit_evidence",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "audit_evidence",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "audit_evidence",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "audit_logs",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "audit_logs",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "audit_logs",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "bank_transactions",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "bank_transactions",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "bank_transactions",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "billable_outcomes",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "billable_outcomes",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "billable_outcomes",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "bills",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "bills",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "bills",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "capabilities",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "capabilities",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "capabilities",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "certification_types",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "certification_types",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "certification_types",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "close_tasks",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "close_tasks",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "close_tasks",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "close_workspaces",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "close_workspaces",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "close_workspaces",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "commercial_agreements",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "commercial_agreements",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "commercial_agreements",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "commercial_catalog_items",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "commercial_catalog_items",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "commercial_catalog_items",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "compliance_pack_rules",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "compliance_pack_rules",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "compliance_pack_rules",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "compliance_packs",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "compliance_packs",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "compliance_packs",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "computer_use_runtimes",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "computer_use_runtimes",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "computer_use_runtimes",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "computer_use_tasks",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "computer_use_tasks",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "computer_use_tasks",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "config_schema_instances",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "config_schema_templates",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "config_schema_templates",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "config_schema_templates",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "connector_actions",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "connector_actions",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "connector_actions",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "connector_ingest_candidates",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "connector_ingest_candidates",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "connector_ingest_candidates",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "connector_objects",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "connector_objects",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "connector_objects",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "connector_secrets",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "connector_secrets",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "connector_secrets",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "connector_sync_cursors",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "connector_sync_cursors",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "connector_sync_cursors",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "connectors",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "connectors",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "connectors",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "continuity_case_events",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "continuity_case_events",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "continuity_case_events",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "continuity_cases",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "continuity_cases",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "continuity_cases",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "continuity_stage_config",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "continuity_stage_config",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "continuity_stage_config",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "continuity_writeback_requests",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "continuity_writeback_requests",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "continuity_writeback_requests",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "conversation_facts",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "conversation_facts",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "conversation_facts",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "conversations",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "conversations",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "conversations",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "customer_account_contacts",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "customer_account_contacts",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "customer_account_contacts",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "customer_accounts",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "customer_accounts",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "customer_accounts",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "customers",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "customers",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "customers",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "data_access_grants",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "data_access_grants",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "data_access_grants",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_assignments",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_assignments",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_assignments",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_autonomy",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_autonomy",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_autonomy",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_budget_policies",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_budget_policies",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_budget_policies",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_case_events",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_case_events",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_case_events",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_certifications",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_certifications",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_certifications",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_channels",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_channels",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_channels",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_connected_systems",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_connected_systems",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_connected_systems",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_consultation_grants",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_consultation_grants",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_consultation_grants",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_conversations",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_conversations",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_conversations",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_decision_trace",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_decision_trace",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_decision_trace",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_delegation_tokens",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_delegation_tokens",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_delegation_tokens",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_deliverables",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_deliverables",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_deliverables",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_deployment_stages",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_deployment_stages",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_deployment_stages",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_development_items",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_development_items",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_development_items",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_escalation_rules",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_escalation_rules",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_escalation_rules",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_exceptions",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_exceptions",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_exceptions",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_experience",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_experience",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_experience",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_improvements",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_improvements",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_improvements",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_incidents",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_incidents",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_incidents",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_kpi_readings",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_kpi_readings",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_kpi_readings",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_kpis",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_kpis",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_kpis",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_learning_policies",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_learning_policies",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_learning_policies",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_lifecycle_events",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_lifecycle_events",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_lifecycle_events",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_memory",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_memory",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_memory",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_messages",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_messages",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_messages",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_missions",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_missions",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_missions",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_model_routes",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_model_routes",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_model_routes",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_objectives",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_objectives",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_objectives",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_performance_reviews",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_performance_reviews",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_performance_reviews",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_playbook_assignments",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_playbook_assignments",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_playbook_assignments",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_playbook_charter",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_playbook_charter",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_playbook_charter",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_product_knowledge",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_product_knowledge",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_product_knowledge",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_profile_fields",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_profile_fields",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_profile_fields",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_role_assignments",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_role_assignments",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_role_assignments",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_skills",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_skills",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_skills",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_spend_ledger",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_spend_ledger",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_spend_ledger",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_system_verifications",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_system_verifications",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_system_verifications",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_task_requests",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_task_requests",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_task_requests",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_token_usage",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_token_usage",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_token_usage",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_training_feedback",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_training_feedback",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_training_feedback",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_training_modules",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_training_modules",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_training_modules",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_training_progress",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_training_progress",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_training_progress",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "de_work_items",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "de_work_items",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "de_work_items",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "definition_of_done_log",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "definition_of_done_log",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "definition_of_done_log",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "departments",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "departments",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "departments",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "digital_employees",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "digital_employees",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "digital_employees",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "dunning_ladders",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "dunning_ladders",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "dunning_ladders",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "dunning_rungs",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "dunning_rungs",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "dunning_rungs",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "end_user_sessions",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "end_user_sessions",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "end_user_sessions",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "escalation_signals",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "escalation_signals",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "escalation_signals",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "escalations",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "escalations",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "escalations",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "eval_batch_items",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "eval_batch_items",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "eval_batch_items",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "eval_batch_jobs",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "eval_batch_jobs",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "eval_batch_jobs",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "eval_judgments",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "eval_judgments",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "eval_judgments",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "eval_runs",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "eval_runs",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "eval_runs",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "event_definitions",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "event_definitions",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "event_definitions",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "evidence_feedback",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "evidence_feedback",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "evidence_feedback",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "evidence_run_decisions",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "evidence_run_decisions",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "evidence_run_decisions",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "evidence_runs",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "evidence_runs",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "evidence_runs",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "exceptions",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "exceptions",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "exceptions",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "extraction_results",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "extraction_results",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "extraction_results",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "extraction_templates",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "extraction_templates",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "extraction_templates",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "feature_registry",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "feature_registry",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "feature_registry",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "fin_accounts",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "fin_accounts",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "fin_accounts",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "fin_documents",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "fin_documents",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "fin_documents",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "golden_qa",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "golden_qa",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "golden_qa",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "governance_proposals",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "governance_proposals",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "governance_proposals",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "grounded_confidence_shadow_log",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "grounded_confidence_shadow_log",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "grounded_confidence_shadow_log",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "grounded_confidence_validation",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "grounded_confidence_validation",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "grounded_confidence_validation",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "guardrail_adjudication_cache",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "guardrail_adjudication_cache",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "guardrail_adjudication_cache",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "guardrail_adjudications",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "guardrail_adjudications",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "guardrail_adjudications",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "guardrail_rules",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "guardrail_rules",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "guardrail_rules",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "health_score_config",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "health_score_config",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "health_score_config",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "human_tasks",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "human_tasks",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "human_tasks",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "invoice_activities",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "invoice_activities",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "invoice_activities",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "invoice_payments",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "invoice_payments",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "invoice_payments",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "invoice_writeback_requests",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "invoice_writeback_requests",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "invoice_writeback_requests",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "invoices",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "invoices",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "invoices",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "journal_entries",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "journal_entries",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "journal_entries",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "knowledge_access_grants",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "knowledge_access_grants",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "knowledge_access_grants",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "knowledge_articles",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "knowledge_articles",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "knowledge_articles",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "knowledge_chunks",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "knowledge_chunks",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "knowledge_chunks",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "knowledge_collections",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "knowledge_collections",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "knowledge_collections",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "knowledge_conflict_probe_queue",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "knowledge_conflict_probe_queue",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "knowledge_conflict_probe_queue",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "knowledge_conflicts",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "knowledge_conflicts",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "knowledge_conflicts",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "knowledge_doc_access_paths",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "knowledge_doc_access_paths",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "knowledge_doc_access_paths",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "knowledge_doc_chunks",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "knowledge_doc_chunks",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "knowledge_doc_chunks",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "knowledge_doc_collections",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "knowledge_doc_collections",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "knowledge_doc_collections",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "knowledge_doc_scopes",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "knowledge_doc_scopes",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "knowledge_doc_scopes",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "knowledge_doc_usage_daily",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "knowledge_doc_usage_daily",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "knowledge_doc_usage_daily",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "knowledge_docs",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "knowledge_docs",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "knowledge_docs",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "knowledge_gap_policies",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "knowledge_gap_policies",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "knowledge_gap_policies",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "knowledge_ingestion_items",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "knowledge_ingestion_items",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "knowledge_ingestion_items",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "knowledge_ingestion_jobs",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "knowledge_ingestion_jobs",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "knowledge_ingestion_jobs",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "knowledge_principal_group_members",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "knowledge_principal_group_members",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "knowledge_principal_group_members",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "knowledge_principal_groups",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "knowledge_principal_groups",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "knowledge_principal_groups",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "knowledge_revision_requests",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "knowledge_revision_requests",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "knowledge_revision_requests",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "knowledge_tags",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "knowledge_tags",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "knowledge_tags",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "kpi_metric_catalog",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "kpi_metric_catalog",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "kpi_metric_catalog",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "learned_tool_specs",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "learned_tool_specs",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "learned_tool_specs",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "mcp_server_allowlist",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "mcp_server_allowlist",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "mcp_server_allowlist",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "media_assets",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "media_assets",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "media_assets",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "messages",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "messages",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "messages",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "notifications",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "notifications",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "notifications",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "oauth_connect_states",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "oauth_connect_states",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "oauth_connect_states",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "onboarding_projects",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "onboarding_projects",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "onboarding_projects",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "onboarding_template_versions",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "onboarding_template_versions",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "onboarding_template_versions",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "onboarding_templates",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "onboarding_templates",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "onboarding_templates",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "opportunities",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "opportunities",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "opportunities",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "opportunity_activities",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "opportunity_activities",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "opportunity_activities",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "opportunity_writeback_requests",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "opportunity_writeback_requests",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "opportunity_writeback_requests",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "ops_alerts",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "ops_alerts",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "ops_alerts",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "org_unit_members",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "org_unit_members",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "org_unit_members",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "org_units",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "org_units",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "org_units",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "otel_spans",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "otel_spans",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "otel_spans",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "outbound_drafts",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "outbound_drafts",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "outbound_drafts",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "payment_promises",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "payment_promises",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "payment_promises",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "payments",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "payments",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "payments",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "platform_runtime_config",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "platform_runtime_config",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "platform_runtime_config",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "playbook_amendments",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "playbook_amendments",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "playbook_amendments",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "playbook_definitions",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "playbook_definitions",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "playbook_definitions",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "playbook_event_rules",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "playbook_event_rules",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "playbook_event_rules",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "playbook_gaps",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "playbook_gaps",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "playbook_gaps",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "playbook_runs",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "playbook_runs",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "playbook_runs",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "playbook_schedules",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "playbook_schedules",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "playbook_schedules",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "playbook_studies",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "playbook_studies",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "playbook_studies",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "playbook_trigger_fires",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "playbook_trigger_fires",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "playbook_trigger_fires",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "playbook_versions",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "playbook_versions",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "playbook_versions",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "playbooks",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "playbooks",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "playbooks",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "posting_draft_lines",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "posting_draft_lines",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "posting_draft_lines",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "posting_drafts",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "posting_drafts",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "posting_drafts",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "profile_compensation",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "profile_compensation",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "profile_compensation",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "profile_private",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "profile_private",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "profile_private",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "profiles",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "profiles",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "push_subscriptions",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "push_subscriptions",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "push_subscriptions",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "rate_limit_counters",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "rate_limit_counters",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "rate_limit_counters",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "renewal_invoices",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "renewal_invoices",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "renewal_invoices",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "role_archetypes",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "role_archetypes",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "role_archetypes",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "role_certifications",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "role_certifications",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "role_certifications",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "schema_migrations",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "schema_migrations",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "schema_migrations",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "scim_tokens",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "scim_tokens",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "scim_tokens",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "scim_user_links",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "scim_user_links",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "scim_user_links",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "semantic_guardrail_cache",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "semantic_guardrail_cache",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "semantic_guardrail_cache",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "semantic_guardrail_shadow_log",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "semantic_guardrail_shadow_log",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "semantic_guardrail_shadow_log",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "sim_runs",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "sim_runs",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "sim_runs",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "skill_catalog",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "skill_catalog",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "skill_catalog",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "skill_categories",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "skill_categories",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "skill_categories",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "specialist_source_secrets",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "specialist_source_secrets",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "specialist_source_secrets",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "sso_attribute_role_map",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "sso_attribute_role_map",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "sso_attribute_role_map",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "staleness_escalations",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "staleness_escalations",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "staleness_escalations",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "staleness_policies",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "staleness_policies",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "staleness_policies",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "support_tickets",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "support_tickets",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "support_tickets",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "support_triage_rules",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "support_triage_rules",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "support_triage_rules",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "system_categories",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "system_categories",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "system_categories",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "tenant_ai_usage",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "tenant_ai_usage",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "tenant_ai_usage",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "tenant_api_keys",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "tenant_api_keys",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "tenant_api_keys",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "tenant_billing_config",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "tenant_billing_config",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "tenant_billing_config",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "tenant_brand_identity",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "tenant_brand_identity",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "tenant_brand_identity",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "tenant_branding",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "tenant_branding",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "tenant_branding",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "tenant_comms_settings",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "tenant_comms_settings",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "tenant_comms_settings",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "tenant_compliance_packs",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "tenant_compliance_packs",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "tenant_compliance_packs",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "tenant_cost_tracking",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "tenant_cost_tracking",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "tenant_cost_tracking",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "tenant_deletion_receipts",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "tenant_deletion_receipts",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "tenant_deletion_receipts",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "tenant_deletion_requests",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "tenant_deletion_requests",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "tenant_deletion_requests",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "tenant_entity_fields",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "tenant_entity_fields",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "tenant_entity_fields",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "tenant_feature_overrides",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "tenant_feature_overrides",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "tenant_feature_overrides",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "tenant_feature_toggles",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "tenant_feature_toggles",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "tenant_feature_toggles",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "tenant_ip_allowlist_entries",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "tenant_ip_allowlist_entries",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "tenant_ip_allowlist_entries",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "tenant_ip_allowlists",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "tenant_ip_allowlists",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "tenant_ip_allowlists",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "tenant_outcome_pricing",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "tenant_outcome_pricing",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "tenant_outcome_pricing",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "tenant_pipeline_stages",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "tenant_pipeline_stages",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "tenant_pipeline_stages",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "tenant_provisioning_requests",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "tenant_provisioning_requests",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "tenant_provisioning_requests",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "tenant_session_policies",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "tenant_session_policies",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "tenant_session_policies",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "tenant_sso_policy",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "tenant_sso_policy",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "tenant_sso_policy",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "tenant_usage_metrics",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "tenant_usage_metrics",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "tenant_usage_metrics",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "tenants",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "tenants",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "tenants",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "trust_policies",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "trust_policies",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "trust_policies",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "unguarded_secdef_writers",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "unguarded_secdef_writers",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "unguarded_secdef_writers",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "unit_tripwires",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "unit_tripwires",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "unit_tripwires",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "usage_metrics",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "usage_metrics",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "usage_metrics",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "vendors",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "vendors",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "vendors",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "watch_source_catalog",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "watch_source_catalog",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "watch_source_catalog",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "watch_source_fields",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "watch_source_fields",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "watch_source_fields",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "widget_key_secrets",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "widget_key_secrets",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "widget_key_secrets",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "widget_keys",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "widget_keys",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "widget_keys",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "work_assignment_rules",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "work_assignment_rules",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "work_assignment_rules",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "work_item_framing",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "work_item_framing",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "work_item_framing",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "work_watcher_matches",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "work_watcher_matches",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "work_watcher_matches",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "work_watchers",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "work_watchers",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "work_watchers",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "workforce_actions",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "workforce_actions",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "workforce_actions",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "workforce_baselines",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "workforce_baselines",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "workforce_baselines",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "workforce_conversations",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "workforce_conversations",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "workforce_conversations",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "workforce_entity_amendments",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "workforce_entity_amendments",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "workforce_entity_amendments",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "workforce_entity_studies",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "workforce_entity_studies",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "workforce_entity_studies",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "workforce_team_members",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "workforce_team_members",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "workforce_team_members",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "workforce_teams",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "workforce_teams",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "workforce_teams",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "workforce_trust_posture",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "workforce_trust_posture",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "workforce_trust_posture",
+      "priv": "UPDATE"
+    },
+    {
+      "tbl": "workspaces",
+      "priv": "DELETE"
+    },
+    {
+      "tbl": "workspaces",
+      "priv": "INSERT"
+    },
+    {
+      "tbl": "workspaces",
+      "priv": "UPDATE"
+    }
+  ]
+}

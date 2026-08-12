@@ -36,6 +36,7 @@ import { unexecutableApprovalSql } from './unexecutable-approval.mjs';
 import { advisoryBoundarySql } from './advisory-boundary.mjs';
 import { trustProposerBoundarySql } from './trust-proposer-boundary.mjs';
 import { gapGateConductSql, auditedStepsWritesSql, snapshotGateSql, gapEvidenceSql } from './playbook-gap-probes.mjs';
+import { writePerimeterSql, WRITE_PERIMETER_SQL } from './write-perimeter.mjs';
 
 const FAST = process.argv.includes('--fast');
 const PIN = process.argv.includes('--pin-allowlist');
@@ -43,6 +44,7 @@ const PIN_EDGE = process.argv.includes('--pin-edge');
 const OFFLINE = process.argv.includes('--offline');
 const PROD_REF = 'rfsvmhcqeiyrxivbmpel';
 const ALLOWLIST_FILE = 'supabase/baseline/execute-allowlist.json';
+const WRITE_ALLOWLIST_FILE = 'supabase/baseline/write-allowlist.json';
 
 function token() {
   const fromEnv = process.env.SUPABASE_ACCESS_TOKEN?.trim();
@@ -114,6 +116,37 @@ async function perimeterCheck() {
   const out = [];
   for (const r of live) if (!pset.has(key(r))) out.push({ violation: `NEW/CHANGED grant not in allowlist: ${key(r)}` });
   for (const r of pinned) if (!lset.has(key(r))) out.push({ violation: `allowlisted grant VANISHED (revoked or fn dropped): ${key(r)}` });
+  return out;
+}
+
+// ── The WRITE perimeter — ARM 1 (pinned, symmetric) ────────────────────────
+// The table analogue of the EXECUTE allowlist above, and the half of docs/52's
+// probe that is deliberately RE-PINNABLE. Arm 2 (the hard TRUNCATE rule, no
+// allowlist) lives in write-perimeter.mjs and runs with the other PROBES.
+//
+// The VANISHED direction is the point. A revoke that removes more than intended
+// is the same class of defect as mig 643's near-miss — 11 of 12 workspaces
+// nearly left administrable by nobody — and it is invisible from the revoking
+// side, because REVOKE reports nothing either way. Here it is a red run.
+async function writePerimeterCheck() {
+  const live = await q(WRITE_PERIMETER_SQL);
+  if (PIN) {
+    writeFileSync(WRITE_ALLOWLIST_FILE, JSON.stringify({
+      pinned_at: new Date().toISOString(),
+      note: 'The INSERT/UPDATE/DELETE/TRUNCATE surface of `authenticated` on public BASE TABLES. certify fails on ANY diff, in either direction. Re-pin only after a DELIBERATE perimeter change (migs 714/716/717/718/719) — never to make a red run green.',
+      grants: live,
+    }, null, 2) + '\n');
+    console.log(`  pinned ${live.length} table grants to ${WRITE_ALLOWLIST_FILE}`);
+    return [];
+  }
+  let pinned;
+  try { pinned = JSON.parse(readFileSync(WRITE_ALLOWLIST_FILE, 'utf8')).grants; }
+  catch { return [{ violation: `write-allowlist file missing — run --pin-allowlist once, deliberately` }]; }
+  const key = (r) => `${r.tbl}.${r.priv}`;
+  const pset = new Set(pinned.map(key)), lset = new Set(live.map(key));
+  const out = [];
+  for (const r of live) if (!pset.has(key(r))) out.push({ violation: `NEW grant not in write-allowlist: ${key(r)} — authenticated gained a write privilege nobody pinned` });
+  for (const r of pinned) if (!lset.has(key(r))) out.push({ violation: `allowlisted grant VANISHED (over-revoked?): ${key(r)} — a legitimate writer may now be getting 42501` });
   return out;
 }
 
@@ -446,6 +479,11 @@ const PROBES = [
            where checksum is null and recorded_at > '2026-08-01'
           having count(*) > 0`,
   },
+  {
+    name: 'authenticated-write-perimeter',
+    why: 'docs/52: `authenticated` — the role every logged-in browser session runs as — held TRUNCATE on 245 of 294 public base tables, and RLS DOES NOT APPLY TO TRUNCATE. One statement would have destroyed every tenant\'s playbook_versions without a policy ever being consulted. Migs 714/715 closed it and stopped it regrowing; this arm is the hard rule that keeps it closed, with no allowlist and no exemption, plus the default-privilege row that feeds it',
+    sql: writePerimeterSql(),
+  },
 ];
 
 // ── Edge functions: a per-function type-error ratchet ──────────────────────
@@ -565,6 +603,10 @@ const sections = [
     const failures = [];
     const perim = await perimeterCheck();
     for (const v of perim) failures.push(`execute-perimeter: ${v.violation}`);
+    // The TABLE analogue. Same pin mechanism, same symmetric diff, and it had
+    // never existed: docs/52 found authenticated holding TRUNCATE on 245 of
+    // 294 base tables with nothing in this gate able to notice.
+    for (const v of await writePerimeterCheck()) failures.push(`write-perimeter: ${v.violation}`);
     // The outbound-pipe exposure check — REST, not SQL, because the gate it
     // guards is config, not a grant. A `note` is surfaced but does not fail.
     for (const r of await netExposureFailures()) {

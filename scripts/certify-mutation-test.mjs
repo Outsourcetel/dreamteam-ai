@@ -18,6 +18,7 @@ import { unexecutableApprovalSql } from './unexecutable-approval.mjs';
 import { advisoryBoundarySql } from './advisory-boundary.mjs';
 import { trustProposerBoundarySql } from './trust-proposer-boundary.mjs';
 import { gapGateConductSql, auditedStepsWritesSql, snapshotGateSql, gapEvidenceSql } from './playbook-gap-probes.mjs';
+import { writePerimeterSql } from './write-perimeter.mjs';
 
 // ── Fixtures for no-untyped-literal-appended-to-a-container ────────────────
 // The production catalog is CLEAN of this shape, so the probe returns zero rows
@@ -1122,6 +1123,88 @@ const CASES = [
           gaps: [{ ...gapBase, status: 'open', source: 'validator' }],
           studies: [{ definition_id: FXD, updated_at: '2026-08-13T10:00:00Z', n_gaps: 1, n_validation_errors: 2 }],
         })),
+      },
+    ];
+  })(),
+  // ── migs 714/715/716-719: authenticated-write-perimeter ──────────────────
+  // Arms 2 and 3 driven through the REAL builder over synthesised catalogue
+  // rows. Every source is substitutable precisely so these cases exercise the
+  // shipped predicate rather than a paraphrase — and each `fires` filters on
+  // the violation TEXT naming the injected break, so a probe that returned
+  // some OTHER row would score as a miss, not a catch.
+  //
+  // The point of the negative cases: arm 2's predicate has four conjuncts
+  // (schema, grantee, privilege, base-table). A case that only flips TRUNCATE
+  // to SELECT proves one of them. `service_role` and `storage` prove the other
+  // two are not vacuous — a probe that fired on every grant in the database
+  // would pass a single-conjunct test and be useless.
+  ...(() => {
+    const viol = (sql, like) => `select 1 from (${sql}) x
+       where x.violation is not null${like ? ` and x.violation like '%${like}%'` : ''}`;
+    const grant = (grantee, priv, sch = 'public', tbl = 'mutant_tbl') =>
+      `select '${tbl}'::text as tbl, '${sch}'::text as sch, '${grantee}'::text as grantee, '${priv}'::text as priv`;
+    const NO_DEFACL = `select null::text as grantor, null::text as letters where false`;
+    const CLEAN_DEFACL = `select 'postgres'::text as grantor, 'rxtm'::text as letters`;
+    // A grant source that yields nothing, for the arm-3 and denominator cases
+    // that must isolate their own arm. An empty VALUES list is a syntax error,
+    // hence the `where false`.
+    const NO_GRANTS = `select null::text as tbl, null::text as sch, null::text as grantee, null::text as priv where false`;
+    const SOME_TABLES = `select 'fixture_tbl'::text as tbl`;
+    return [
+      {
+        name: 'authenticated-write-perimeter arm 2 (a synthesised TRUNCATE grant to authenticated is caught, and the violation names the table)',
+        fires: viol(writePerimeterSql({ grantSource: grant('authenticated', 'TRUNCATE'), defaclSource: NO_DEFACL }), 'mutant_tbl: TRUNCATE granted to authenticated'),
+        silent: viol(writePerimeterSql({ grantSource: grant('authenticated', 'SELECT'), defaclSource: NO_DEFACL })),
+      },
+      {
+        name: 'authenticated-write-perimeter arm 2 (the GRANTEE conjunct is not vacuous — service_role TRUNCATE is legitimate and must stay silent)',
+        fires: viol(writePerimeterSql({ grantSource: grant('authenticated', 'TRUNCATE'), defaclSource: NO_DEFACL }), 'mutant_tbl'),
+        silent: viol(writePerimeterSql({ grantSource: grant('service_role', 'TRUNCATE'), defaclSource: NO_DEFACL })),
+      },
+      {
+        name: 'authenticated-write-perimeter arm 2 (the SCHEMA conjunct is not vacuous — docs/52 §9 leaves storage out of scope, so a storage grant must stay silent)',
+        fires: viol(writePerimeterSql({ grantSource: grant('authenticated', 'TRUNCATE'), defaclSource: NO_DEFACL }), 'mutant_tbl'),
+        silent: viol(writePerimeterSql({ grantSource: grant('authenticated', 'TRUNCATE', 'storage'), defaclSource: NO_DEFACL })),
+      },
+      {
+        name: 'authenticated-write-perimeter arm 3a (the postgres default-ACL row regrowing write letters is caught; anon\'s rxtm precedent is clean)',
+        fires: viol(writePerimeterSql({ grantSource: NO_GRANTS, defaclSource: `select 'postgres'::text as grantor, 'arwdDxtm'::text as letters` }), 'default privileges REGROWING'),
+        silent: viol(writePerimeterSql({ grantSource: NO_GRANTS, defaclSource: CLEAN_DEFACL })),
+      },
+      {
+        name: 'authenticated-write-perimeter arm 3a (a write letter WITHOUT TRUNCATE still fires — the ratchet revoked all four, not just D)',
+        fires: viol(writePerimeterSql({ grantSource: NO_GRANTS, defaclSource: `select 'postgres'::text as grantor, 'arwxtm'::text as letters` }), 'a write privilege'),
+        silent: viol(writePerimeterSql({ grantSource: NO_GRANTS, defaclSource: CLEAN_DEFACL })),
+      },
+      {
+        name: 'authenticated-write-perimeter DENOMINATOR (examining zero tables is a VIOLATION, not a clean result)',
+        fires: viol(writePerimeterSql({ grantSource: NO_GRANTS, tableSource: `select null::text as tbl where false`, defaclSource: NO_DEFACL }), 'no-comparisons'),
+        silent: viol(writePerimeterSql({ grantSource: NO_GRANTS, tableSource: SOME_TABLES, defaclSource: NO_DEFACL })),
+      },
+      {
+        // THE ONE A SELECT CANNOT FAKE. docs/52 §6b wrote this case and
+        // deliberately did not run it, because it is a DDL write; the applying
+        // agent was asked to. It was run, twice, against PRODUCTION inside an
+        // explicit transaction that rolled back — once before mig 715 and once
+        // after — and the rollback was confirmed to have left no table behind
+        // (`select count(*) from pg_class where relname='_mutant_default_acl_check'` = 0
+        // both times, and the live TRUNCATE count stayed at 0).
+        //
+        //   begin;
+        //     create table public._mutant_default_acl_check (id int);
+        //     select privilege_type from information_schema.role_table_grants
+        //      where table_schema='public' and table_name='_mutant_default_acl_check'
+        //        and grantee='authenticated';
+        //   rollback;
+        //
+        // BEFORE mig 715 → DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE
+        // AFTER  mig 715 → REFERENCES, SELECT, TRIGGER
+        //
+        // This is what turns "pg_default_acl says arwdDxtm" from catalogue
+        // inference into an observed new table. The letters are not the claim;
+        // the table that came out of the database is.
+        name: 'authenticated-write-perimeter ratchet (MANUAL, DDL-in-rollback: a NEW table was born truncatable before mig 715 and is not after)',
+        manual: 'RUN against production this session. Before 715: a freshly created public table granted authenticated DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE. After 715: REFERENCES,SELECT,TRIGGER only. Both runs rolled back; pg_class confirmed no stray table and the live TRUNCATE count stayed 0. Regrowth OBSERVED, ratchet OBSERVED to hold.',
       },
     ];
   })(),
