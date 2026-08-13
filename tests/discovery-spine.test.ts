@@ -218,12 +218,47 @@ run('the spine', () => {
 });
 
 run('the coverage ledger', () => {
-  it('accepts exactly the four states, and no others', async () => {
+  it('accepts the four real states and rejects a wrong value AND a wrong type (behaviour, not text)', async () => {
+    // Round 1 review, finding 1+3: the ORIGINAL version of this test asserted
+    // the CHECK constraint's TEXT contained the four state words. That was
+    // never proof of behaviour, and 738 is the demonstration why: the
+    // deployed constraint's definition contained all four words AND still
+    // accepted {"state":42} and {"state":true} — jsonb_path_exists compares
+    // mismatched JSON types as "unknown", which a `?()` filter excludes
+    // exactly like "false", so a non-string state silently matched nothing
+    // and slipped through. This calls the live validator function directly,
+    // read-only, with adversarial inputs — genuine behaviour of the actual
+    // deployed function, not a copy of its logic and not its source text.
+    const [row] = await runQuery<Record<string, boolean>>(`
+      select
+        public.discovery_coverage_states_valid('{"a":{"state":"heard"}}'::jsonb)       as heard,
+        public.discovery_coverage_states_valid('{"a":{"state":"parked"}}'::jsonb)      as parked,
+        public.discovery_coverage_states_valid('{"a":{"state":"skipped"}}'::jsonb)     as skipped,
+        public.discovery_coverage_states_valid('{"a":{"state":"not_heard"}}'::jsonb)   as not_heard,
+        public.discovery_coverage_states_valid('{"a":{"state":"maybe_later"}}'::jsonb) as wrong_string,
+        public.discovery_coverage_states_valid('{"a":{"state":42}}'::jsonb)            as number_type,
+        public.discovery_coverage_states_valid('{"a":{"state":true}}'::jsonb)          as boolean_type,
+        public.discovery_coverage_states_valid('{"a":{"state":null}}'::jsonb)          as null_type
+    `);
+    expect(row.heard, 'heard must be accepted').toBe(true);
+    expect(row.parked, 'parked must be accepted').toBe(true);
+    expect(row.skipped, 'skipped must be accepted').toBe(true);
+    expect(row.not_heard, 'not_heard must be accepted').toBe(true);
+    expect(row.wrong_string, 'a fifth string state must be refused').toBe(false);
+    expect(row.number_type, 'a numeric state must be refused').toBe(false);
+    expect(row.boolean_type, 'a boolean state must be refused').toBe(false);
+    expect(row.null_type, 'a JSON-null state must be refused').toBe(false);
+  });
+
+  it('the table CHECK is actually wired to the validator function', async () => {
+    // The test above proves the FUNCTION's behaviour is correct. This proves
+    // the TABLE's own constraint really calls it, rather than, say, still
+    // carrying an old inline expression that happens to sit next to it.
     const [{ def }] = await runQuery<{ def: string }>(`
       select pg_get_constraintdef(oid) as def from pg_constraint
        where conrelid = 'public.discovery_sessions'::regclass
          and conname = 'discovery_sessions_coverage_states'`);
-    for (const s of ['heard', 'parked', 'skipped', 'not_heard']) expect(def).toContain(s);
+    expect(def).toContain('discovery_coverage_states_valid');
   });
 
   it('treats parked and skipped as different things', async () => {
