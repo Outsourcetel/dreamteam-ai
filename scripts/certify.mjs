@@ -55,6 +55,12 @@ import { providerCatalogFailures, providerCheckValues, readConnectorConstants } 
 // decides — and scripts/certify-mutation-test.mjs imports the identical
 // function so its fixtures exercise the real gate, not a paraphrase of it.
 import { discoverySpineFailures } from './discovery-spine-check.mjs';
+// Same split again, and this one replaces a probe that could not fail: the
+// ledger-vs-COMMITTED comparison needs git as well as SQL, so it cannot be a
+// PROBES entry. certify-mutation-test.mjs imports committedLedgerFailures too.
+import {
+  readCommittedMigrations, committedLedgerFailures, MIGRATION_DIR,
+} from './migration-committed-check.mjs';
 
 const FAST = process.argv.includes('--fast');
 const PIN = process.argv.includes('--pin-allowlist');
@@ -561,14 +567,13 @@ const PROBES = [
            where t.scope = 'platform' and t.status = 'published'
              and (t.definition->'ops'->k)::text ~ '"(startDate|endDate)":\\s*"\\d{4}-'`,
   },
-  {
-    name: 'migration-files-match-ledger-checksums',
-    why: 'a migration edited after applying no longer describes what ran',
-    sql: `select 'ledger has ' || count(*) || ' entries with NULL checksum recorded after 2026-08-01' as violation
-            from schema_migrations
-           where checksum is null and recorded_at > '2026-08-01'
-          having count(*) > 0`,
-  },
+  // ⚠ `migration-files-match-ledger-checksums` USED TO LIVE HERE, as a probe
+  // asserting `checksum is null and recorded_at > '2026-08-01'`. It never
+  // compared a checksum to any file content and could not detect the drift its
+  // own `why` named — production holds 763 ledger rows and ZERO null checksums,
+  // so it returned zero rows exactly the way a clean scan does. It is now a
+  // SECTION further down, because the comparison needs git as well as SQL and
+  // cannot be one query. See it for the whole argument.
   {
     name: 'authenticated-write-perimeter',
     why: 'docs/52: `authenticated` — the role every logged-in browser session runs as — held TRUNCATE on 245 of 294 public base tables, and RLS DOES NOT APPLY TO TRUNCATE. One statement would have destroyed every tenant\'s playbook_versions without a policy ever being consulted. Migs 714/715 closed it and stopped it regrowing; this arm is the hard rule that keeps it closed, with no allowlist and no exemption, plus the default-privilege row that feeds it',
@@ -746,6 +751,61 @@ const sections = [
     runSqlDev: (sql) => qProject(DEV_REF, sql),
   })),
   shell('migration-ledger', 'npm', ['run', '-s', 'migrate:status']),
+  // ── What RAN must be what is COMMITTED ─────────────────────────────────
+  // CLAUDE.md: "Commit the migration before you apply it. An applied-but-
+  // uncommitted migration is the worst state available: the effect is
+  // permanent, the source is one `rm` from gone, and a rebuilt environment
+  // differs silently."
+  //
+  // This section is the standing proof of that sentence, and it replaces a
+  // probe that could not deliver it. The old
+  // `migration-files-match-ledger-checksums` said "a migration edited after
+  // applying no longer describes what ran" and then asserted only that no
+  // ledger row had a NULL checksum. It compared nothing to nothing: 763 rows,
+  // zero nulls, zero rows returned, green forever.
+  //
+  // It is NOT a duplicate of `migration-ledger` above. That section
+  // (scripts/migration-status.mjs) compares the ledger against DISK, so the
+  // one state this whole thing exists to catch — a migration applied from an
+  // edited working tree and never committed — reads APPLIED there, because
+  // disk agrees with the ledger precisely BECAUSE the wrong thing was applied.
+  // Proven live on 2026-08-13: migration 737 was committed, failed on illegal
+  // SQL, was edited, and the edited text applied from the working tree.
+  // Production ran uncommitted schema for ~25 seconds and every gate was green.
+  // HEAD is the only witness that disagrees, so HEAD is what this reads.
+  //
+  // FETCHES and FORMATS only; migration-committed-check.mjs decides — and
+  // certify-mutation-test.mjs drives that same function over synthesised
+  // ledgers, so the fixtures exercise this gate rather than a copy of it.
+  section('migration-files-match-ledger-checksums', async () => {
+    const ledger = await q('select filename, checksum, provenance from public.schema_migrations');
+    // HEAD, not the index and not disk. A STAGED file is not a committed file:
+    // `git add` leaves the source exactly as recoverable as `rm` makes it.
+    const { content, revSha } = readCommittedMigrations('HEAD');
+    const onDisk = new Set(readdirSync(MIGRATION_DIR).filter((f) => f.endsWith('.sql')));
+    const { failures, compared, comparedByProvenance, orphans, uncommitted } =
+      committedLedgerFailures({ ledger, committed: content, onDisk });
+
+    // Count the comparisons, not just the findings. This section's predecessor
+    // is the reason that rule is written down: zero findings from zero
+    // comparisons looked exactly like a clean result for months.
+    const prov = Object.entries(comparedByProvenance)
+      .sort(([a], [b]) => a.localeCompare(b)).map(([k, n]) => `${n} ${k}`).join(', ');
+    const detail = failures.length
+      ? failures.join('\n')
+      : `compared ${compared} of ${ledger.length} ledger row(s) against HEAD ${revSha.slice(0, 8)} `
+        + `(${prov}); ${content.size} migration file(s) in that commit, ${onDisk.size} on disk`
+        + (orphans.length
+          // Named, never a silent skip — and named as SOMEONE ELSE'S red, so
+          // nobody reads this line as an exemption that closed the question.
+          ? `; ${orphans.length} ledger row(s) have no file in the commit and none on disk, so there is `
+            + `nothing to compare them WITH — that is the migration-ledger section's ORPHANED arm, which `
+            + `is RED for them right now: ${orphans.join(', ')}`
+          : '');
+    if (!failures.length) console.log(`        migration-committed: ${detail}`);
+    if (uncommitted.length) console.log(`        ⚠ ${uncommitted.length} applied migration(s) exist ONLY in this working tree`);
+    return { ok: failures.length === 0, detail };
+  }),
   // ── No NEW duplicate migration numbers ─────────────────────────────────
   // Two agents computing `ls | tail -1` both pick the same number. It has
   // happened 19 times in this repo's history (514, 520, 526, 540-544, 574-577,

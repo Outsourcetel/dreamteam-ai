@@ -32,6 +32,16 @@ import { providerCatalogFailures, providerCheckValues, readConnectorConstants } 
 // any of them can fire is to hand the REAL function a mutated COPY of that
 // state, never a write.
 import { discoverySpineFailures } from './discovery-spine-check.mjs';
+// certify's ACTUAL ledger-vs-COMMITTED comparison. This one is here because
+// its predecessor was the exact thing this file exists to distrust: a probe
+// named migration-files-match-ledger-checksums that asserted only "no ledger
+// row has a NULL checksum", over a ledger with 763 rows and zero nulls. It
+// returned zero rows the way a clean scan does and could not have failed. The
+// cases at the end of CASES synthesise every state it now decides.
+import {
+  readCommittedMigrations, committedLedgerFailures, migrationChecksum, MIGRATION_DIR,
+} from './migration-committed-check.mjs';
+import { readdirSync } from 'node:fs';
 
 // ── Fixtures for no-untyped-literal-appended-to-a-container ────────────────
 // The production catalog is CLEAN of this shape, so the probe returns zero rows
@@ -1854,6 +1864,145 @@ const CASES = [
         // data that turns it red cannot be named AND fired, it is theatre.
         name: 'discovery-spine (an empty produces array fires)',
         firesJs: withState({ dims: dimsPatched(activeKey, { produces: [] }) }),
+        silentJs: clean,
+      },
+    ];
+  })()),
+  // ── migration-files-match-ledger-checksums ───────────────────────────────
+  // Production is clean here — 761 ledger rows match their committed file
+  // byte for byte after line-ending normalisation — so every assertion below
+  // is silent against real state. That is the same situation the OLD probe
+  // was in, and the old probe's silence meant nothing at all, so nothing but
+  // a fired mutation is evidence.
+  //
+  // Live state is fetched ONCE and every case mutates a COPY of it in memory:
+  // the ledger is never written, and the mutations that need a "wrong" file
+  // change the COMMITTED-CONTENT MAP, not any file on disk or in git.
+  ...(await (async () => {
+    const ledger = await q('select filename, checksum, provenance from public.schema_migrations');
+    const { content: committed } = readCommittedMigrations('HEAD');
+    const onDisk = new Set(readdirSync(MIGRATION_DIR).filter((f) => f.endsWith('.sql')));
+    const base = { ledger, committed, onDisk };
+    const clean = () => committedLedgerFailures(base).failures;
+    const withState = (patch) => () => committedLedgerFailures({ ...base, ...patch }).failures;
+
+    // Chosen from live state rather than hardcoded, so a renamed migration
+    // makes these cases ERROR rather than quietly stop testing anything.
+    const target = [...committed.keys()].sort().pop();
+    const targetRow = ledger.find((r) => r.filename === target);
+    if (!targetRow) {
+      throw new Error(`migration-committed fixtures: ${target} is committed but absent from the ledger — `
+        + 'the fixtures below cannot mutate a row that does not exist');
+    }
+    const ledgerPatched = (name, patch) =>
+      ledger.map((r) => (r.filename === name ? { ...r, ...patch } : r));
+    const committedWith = (name, text) => new Map(committed).set(name, text);
+    const committedWithout = (name) => {
+      const m = new Map(committed);
+      m.delete(name);
+      return m;
+    };
+
+    return [
+      {
+        // THE finding. The ledger records what ran; the commit records what is
+        // recoverable. When they disagree, production is running text the
+        // repository does not hold — the state migration 737 was actually in
+        // on 2026-08-13, with every gate green.
+        name: 'migration-committed (committed content that no longer hashes to the ledger checksum fires)',
+        firesJs: withState({
+          committed: committedWith(target, `${committed.get(target)}\n-- edited after it was applied\n`),
+        }),
+        silentJs: clean,
+      },
+      {
+        // The SAME row, mutated the other way round: the ledger claiming a
+        // checksum nothing produces. Both directions, because asserting one
+        // half of a comparison is how a check ends up agreeing with itself.
+        name: 'migration-committed (a ledger checksum that matches no committed content fires)',
+        firesJs: withState({ ledger: ledgerPatched(target, { checksum: 'f'.repeat(64) }) }),
+        silentJs: clean,
+      },
+      {
+        // The hole, exactly. Applied, present on disk, in NO commit —
+        // `npm run migrate:status` calls this APPLIED and is green, because
+        // disk agrees with the ledger precisely BECAUSE the wrong thing ran.
+        name: 'migration-committed (applied + on disk + in no commit fires — the state migrate:status calls APPLIED)',
+        firesJs: withState({ committed: committedWithout(target) }),
+        // The pairing that proves the orphan decision is a DECISION and not a
+        // blanket excuse: the identical "no committed file" row is SILENT here
+        // only because the file is not on disk either — an orphan, which the
+        // migration-ledger section owns and is red for. Remove the disk half
+        // and the case above fires. One bit apart, opposite verdicts.
+        silentJs: () => committedLedgerFailures({
+          ledger, committed: committedWithout(target),
+          onDisk: new Set([...onDisk].filter((f) => f !== target)),
+        }).failures,
+      },
+      {
+        // The pre-existing orphans, by name, asserted to be silent HERE and
+        // therefore asserted to be somebody's else's red rather than nobody's.
+        // If either ever reacquires a file, the case above is what catches a
+        // mismatch in it.
+        name: 'migration-committed (715/717, the known ORPHANS, are silent here — owned by migration-ledger, not exempted)',
+        firesJs: withState({
+          onDisk: new Set([...onDisk, '715_the_definition_says_which_engine_owns_it.sql',
+            '717_four_roles_get_a_procedure_and_intake.sql']),
+        }),
+        silentJs: clean,
+      },
+      {
+        // The ORIGINAL assertion, kept and now reachable. It could never fire
+        // in production (763 rows, zero nulls); it can fire here.
+        name: 'migration-committed (a NULL ledger checksum fires — the old probe\'s only assertion, now provable)',
+        firesJs: withState({ ledger: ledgerPatched(target, { checksum: null }) }),
+        silentJs: clean,
+      },
+      {
+        // ⚠ The case that keeps this gate USABLE. core.autocrlf=true: git
+        // stores LF, Windows checks out CRLF, so raw-byte comparison would be
+        // red on all 761 files forever — worse than the hole. A CRLF-only
+        // difference must be silent while a REAL edit fires, and both halves
+        // are asserted in one case so neither can be dropped.
+        name: 'migration-committed (CRLF-only difference stays silent while a real edit fires — the normalisation)',
+        firesJs: withState({
+          committed: committedWith(target, committed.get(target).replace(/\n/g, '\r\n') + 'select 1;\n'),
+        }),
+        silentJs: withState({
+          committed: committedWith(target, committed.get(target).replace(/\n/g, '\r\n')),
+        }),
+      },
+      {
+        // Liveness. Zero comparisons is the way this section failed for its
+        // whole previous life, so an empty commit and an empty ledger each
+        // have to be a FAILURE and not a reassuring zero.
+        name: 'migration-committed (a commit holding no migration files fires — 0 compared is not 0 findings)',
+        firesJs: withState({ committed: new Map() }),
+        silentJs: clean,
+      },
+      {
+        name: 'migration-committed (an empty ledger fires — 0 compared is not 0 findings)',
+        firesJs: withState({ ledger: [] }),
+        silentJs: clean,
+      },
+      {
+        // Shape, not content: a row with no filename cannot be joined to
+        // anything, and silently skipping it would shrink the denominator
+        // without shrinking the reported count.
+        name: 'migration-committed (a ledger row with no filename fires)',
+        firesJs: withState({ ledger: [...ledger, { filename: null, checksum: 'x', provenance: 'applied_by_runner' }] }),
+        silentJs: clean,
+      },
+      {
+        // Provenance is not a pass. The 369 pre-ledger ASSUMED rows are
+        // compared on exactly the same terms as the 392 the runner recorded —
+        // otherwise half the ledger is decoration.
+        name: 'migration-committed (drift in an ASSUMED pre-ledger row fires too — provenance buys no exemption)',
+        firesJs: (() => {
+          const assumed = ledger.find((r) => r.provenance === 'assumed_pre_ledger' && committed.has(r.filename));
+          if (!assumed) throw new Error('migration-committed fixtures: no assumed_pre_ledger row with a committed file');
+          return withState({ ledger: ledgerPatched(assumed.filename, { checksum: migrationChecksum('-- not this\n') }) });
+        })(),
         silentJs: clean,
       },
     ];
