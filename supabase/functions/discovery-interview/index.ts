@@ -108,6 +108,7 @@
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { hasLLMProvider } from '../_shared/llm.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
@@ -121,6 +122,13 @@ import {
   type DiscoveryCoverageMap,
   type DiscoveryExtraction,
 } from '../_shared/discoveryCoverage.ts';
+import {
+  proposalsFrom,
+  validatePayload,
+  type ArchetypeLike,
+  type ProviderCatalogRow,
+  type ProposalDraft,
+} from '../_shared/discoveryProposals.ts';
 
 // Re-exported so this remains a real, documented export of the deployed
 // function — see the file header for why tests reach it via the _shared
@@ -128,6 +136,7 @@ import {
 export { coverageAfter, stillOwed };
 
 const callModel = makeCallModelText('discovery-interview', 1536, { temperature: 0.4 });
+const callFillModel = makeCallModelText('discovery-interview-fill', 1024, { temperature: 0.2 });
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -141,7 +150,12 @@ const MAX_ANSWER_CHARS = 4000;
 const MAX_TRANSCRIPT_TURNS_STORED = 80;
 const MAX_TRANSCRIPT_TURNS_TO_MODEL = 24;
 
-interface DimensionRow { key: string; ordinal: number; title: string; guidance: string }
+interface DimensionRow {
+  key: string; ordinal: number; title: string; guidance: string;
+  // Read only by emitProposals (Task 1) — everything else in this file only
+  // ever touches key/ordinal/title/guidance.
+  serves_archetypes: string[];
+}
 interface TranscriptTurn { role: 'user' | 'assistant'; text: string; at: string }
 
 function parseJson(t: string): Record<string, unknown> | null {
@@ -222,6 +236,190 @@ function validateExtraction(
   }
 }
 
+// ── Proposal emission — Task 1 of the discovery-proposals-and-creation plan
+// (.superpowers/sdd/2026-08-13-discovery-proposals-and-creation).
+// proposalsFrom/validatePayload (_shared/discoveryProposals.ts) are pure —
+// this is the glue that gives them the live data they need and, for the
+// three kinds a pure function cannot finish (guardrail/procedure/
+// trust_rule — see that module's header), the one model call that fills in
+// the literal §11b says must be on the card before either path is allowed
+// through the SAME validatePayload gate.
+//
+// Writes ONLY to discovery_proposals, state='pending'. Never creates a
+// digital_employees, playbook_definitions, guardrail_rules, connectors or
+// trust_policies row — that is Task 3. Never reads or writes a
+// digital_employees row at all, so is_workforce_assistant is not just
+// respected, it is never in scope.
+// ============================================================================
+
+/** Best-effort model fill for the three kinds proposalsFrom cannot finish on
+ *  its own. Mutates each draft's `payload` in place, merging in whatever the
+ *  model returns — it NEVER marks a draft valid; validatePayload (run by the
+ *  caller, on every draft, pure and model-filled alike) is what decides that.
+ *  A model that returns nothing usable, times out, or the workspace having
+ *  no AI engine configured, all fail the SAME way: the draft's payload stays
+ *  incomplete and validatePayload refuses it downstream. That refusal is
+ *  never treated as an error here — a partially-heard interview producing
+ *  fewer decidable proposals than dimensions it covered is a legitimate
+ *  outcome, not a bug. */
+async function fillProposalLiterals(
+  admin: SupabaseClient,
+  drafts: readonly ProposalDraft[],
+  employeeArchetypeKeys: readonly string[],
+): Promise<void> {
+  if (drafts.length === 0) return;
+
+  const items = drafts.map((d, idx) => ({
+    idx,
+    kind: d.kind,
+    dimension: d.source_dimension,
+    evidence: typeof d.payload.evidence === 'string' && d.payload.evidence
+      ? d.payload.evidence
+      : d.rationale,
+  }));
+
+  const system = [
+    'You are extracting the ONE concrete, enforceable detail a business owner needs before they can approve a draft recommendation — never inventing a fact the evidence does not support.',
+    '',
+    'You are given several DRAFT items. For each, return exactly the fields listed for its "kind":',
+    '',
+    '"guardrail": return "pattern" (a short "|"-separated list of the literal words or phrases the rule matches, lowercase, e.g. "refund|chargeback|free month") OR "threshold" (a bare number) — whichever the evidence actually supports. Never both, never neither if the evidence gives you anything concrete to work with.',
+    '"procedure": return "name" (a short title), "trigger" (the concrete event or schedule that starts it, in the evidence\'s own terms) and "steps" (an ordered array of 2 to 6 short, concrete steps the evidence actually implies).',
+    `"trust_rule": return "de_ref" (the single best match from this session's proposed employees — one of ${JSON.stringify(employeeArchetypeKeys)}, formatted exactly as "archetype:<key>", or "unassigned" if none fit), "action_category" (a short lowercase category for what is being capped, e.g. "erp_financials", "ad_spend", "refunds"), "cap" (the literal number or amount named in the evidence) and "above_cap" (one short sentence: what happens above it).`,
+    '',
+    'If an item\'s evidence genuinely does not support a real value for a required field, OMIT that field rather than guessing — an omitted field means the platform will correctly decline to show that item to the customer, which is the safe outcome, not a failure.',
+    '',
+    'Return ONLY a JSON array, one object per item, each carrying "idx" copied from the input plus only the fields described above for that item\'s kind. Nothing else — no prose, no markdown fences.',
+    FIREWALL_RULES,
+  ].join('\n');
+
+  const userMsg = `DRAFT ITEMS:\n${wrapUntrusted(JSON.stringify(items), 'proposal-fill-items')}`;
+
+  let parsed: unknown[] | null = null;
+  try {
+    const res = await callFillModel(admin, system, [{ role: 'user', content: userMsg }]);
+    if ('error' in res) {
+      console.error(`[discovery-interview] proposal-fill model call failed: ${res.error}`);
+    } else {
+      // parseJson (above) expects a top-level JSON OBJECT; the model is
+      // asked for a bare array here, so match the array directly instead.
+      const m = res.text.match(/\[[\s\S]*\]/);
+      parsed = m ? (JSON.parse(m[0]) as unknown[]) : null;
+    }
+  } catch (e) {
+    console.error(`[discovery-interview] proposal-fill response unusable: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  if (!parsed) return; // every draft stays incomplete -> validatePayload will refuse each, honestly
+
+  const byIdx = new Map<number, Record<string, unknown>>();
+  for (const raw of parsed) {
+    if (raw && typeof raw === 'object' && typeof (raw as Record<string, unknown>).idx === 'number') {
+      byIdx.set((raw as Record<string, unknown>).idx as number, raw as Record<string, unknown>);
+    }
+  }
+
+  for (let i = 0; i < drafts.length; i++) {
+    const fill = byIdx.get(i);
+    if (!fill) continue;
+    for (const [k, v] of Object.entries(fill)) {
+      if (k === 'idx') continue;
+      if (v !== undefined && v !== null) drafts[i].payload[k] = v;
+    }
+  }
+}
+
+/** Fetches the live archetype and provider catalogs, derives every proposal
+ *  draft, fills the three model-dependent kinds, refuses (drops, logs) any
+ *  payload that still fails validatePayload — pure or model-filled alike,
+ *  same gate — and inserts the survivors into discovery_proposals as
+ *  state='pending'. Returns honest counts; never partial-writes a payload
+ *  that failed validation.
+ *
+ *  IDEMPOTENCY, NAMED RATHER THAN HIDDEN: guarded by a check for existing
+ *  proposals on this session before doing any work, not by a DB-level
+ *  constraint (none exists on discovery_proposals(session_id) and adding
+ *  one is a migration, out of scope for this task). This closes the normal
+ *  case (natural completion, then a later 'end' call on the same session)
+ *  but is not airtight against two truly concurrent requests for the same
+ *  session_id racing this check — a real gap, left for Task 2/3 to close
+ *  with a proper constraint if it matters in practice. */
+async function emitProposals(
+  admin: SupabaseClient,
+  tenantId: string,
+  sessionId: string,
+  dimensions: readonly DimensionRow[],
+  coverage: DiscoveryCoverageMap,
+): Promise<{ proposed: number; refused: number; skipped_already_proposed: boolean }> {
+  const { count: existing } = await admin
+    .from('discovery_proposals')
+    .select('id', { count: 'exact', head: true })
+    .eq('session_id', sessionId);
+  if ((existing ?? 0) > 0) {
+    return { proposed: 0, refused: 0, skipped_already_proposed: true };
+  }
+
+  const [archResult, catalogResult] = await Promise.all([
+    admin.from('role_archetypes').select('key, name, domain, required_connector_categories').eq('status', 'active'),
+    admin.from('connector_providers').select('provider_key, label, category, aliases').eq('active', true),
+  ]);
+  if (archResult.error) console.error(`[discovery-interview] role_archetypes fetch failed (proceeding without): ${archResult.error.message}`);
+  if (catalogResult.error) console.error(`[discovery-interview] connector_providers fetch failed (proceeding without): ${catalogResult.error.message}`);
+  const archetypes = (archResult.data ?? []) as ArchetypeLike[];
+  const providerCatalog = (catalogResult.data ?? []) as ProviderCatalogRow[];
+
+  const drafts = proposalsFrom(dimensions, coverage, archetypes, { providerCatalog });
+  if (drafts.length === 0) return { proposed: 0, refused: 0, skipped_already_proposed: false };
+
+  const employeeArchetypeKeys = drafts
+    .filter((d) => d.kind === 'employee')
+    .map((d) => String(d.payload.archetype_key));
+
+  const needsFill = drafts.filter((d) => d.needs_model_fill);
+  if (needsFill.length > 0) {
+    if (!(await hasLLMProvider(admin, tenantId))) {
+      console.error(`[discovery-interview] skipping model-fill for ${needsFill.length} proposal(s): no AI engine configured for this workspace`);
+    } else {
+      const { data: budget, error: budgetErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
+      if (budgetBlocked(budgetErr, budget)) {
+        console.error(`[discovery-interview] skipping model-fill for ${needsFill.length} proposal(s): AI budget exceeded`);
+      } else {
+        await fillProposalLiterals(admin, needsFill, employeeArchetypeKeys);
+      }
+    }
+  }
+
+  const rows: Record<string, unknown>[] = [];
+  let refused = 0;
+  for (const d of drafts) {
+    try {
+      validatePayload(d.kind, d.payload);
+      rows.push({
+        session_id: sessionId,
+        tenant_id: tenantId,
+        kind: d.kind,
+        payload: d.payload,
+        rationale: d.rationale,
+        source_dimension: d.source_dimension,
+        state: 'pending',
+      });
+    } catch (e) {
+      refused++;
+      // Named, not silent: the refusal IS the feature (§11b) — a guardrail
+      // with no pattern, a trust rule with no cap, is unapprovable, and
+      // dropping it here rather than writing it incomplete is correct
+      // behaviour, not a bug to fix by loosening validatePayload.
+      console.error(`[discovery-interview] proposal refused, not persisted (${d.kind}, source_dimension=${d.source_dimension}): ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  if (rows.length > 0) {
+    const { error: insErr } = await admin.from('discovery_proposals').insert(rows);
+    if (insErr) throw new Error(`discovery_proposals insert failed: ${insErr.message}`);
+  }
+
+  return { proposed: rows.length, refused, skipped_already_proposed: false };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return fail('method_not_allowed', 'POST only', 405);
@@ -258,7 +456,7 @@ serve(async (req) => {
 
     const { data: dimRows, error: dimErr } = await admin
       .from('discovery_dimensions')
-      .select('key, ordinal, title, guidance')
+      .select('key, ordinal, title, guidance, serves_archetypes')
       .eq('active', true)
       .order('ordinal', { ascending: true });
     if (dimErr) return fail('dimensions_unavailable', dimErr.message, 500);
@@ -326,6 +524,11 @@ serve(async (req) => {
       if (session.status !== 'running' && session.status !== endStatus) {
         return fail('session_not_running', `this session is '${session.status}', not running — it cannot be ended as '${endStatus}'`, 409);
       }
+      // Captured BEFORE the RPC transitions status, so proposal emission
+      // below only fires on a REAL running->ended transition, never on an
+      // idempotent retry of an already-ended session (which would otherwise
+      // try to propose a second time for the same session).
+      const wasRunning = session.status === 'running';
 
       const result = await rpcOrThrow<Record<string, unknown>>(admin, 'end_discovery_session', {
         p_session_id: sessionId,
@@ -336,6 +539,19 @@ serve(async (req) => {
 
       const endCoverage = coverageAfter(dimensions, (session.coverage ?? {}) as DiscoveryCoverageMap, []);
       const owed = stillOwed(endCoverage);
+
+      // Proposal emission (Task 1: .superpowers/sdd/2026-08-13-discovery-
+      // proposals-and-creation). "Abandonment mid-interview keeps what was
+      // accepted and records the gaps — partial is a legitimate end state,
+      // not an error" (spec §7): whatever WAS heard before the customer
+      // stopped still gets proposed, even though owed_count > 0. Only
+      // 'heard' dimensions ever produce anything — see
+      // discoveryProposals.ts's hard rule — so a mostly-unheard interview
+      // simply proposes little or nothing, honestly.
+      const proposals = wasRunning
+        ? await emitProposals(admin, tenantId, sessionId, dimensions, endCoverage)
+        : { proposed: 0, refused: 0, skipped_already_proposed: true };
+
       return json({
         session_id: sessionId,
         status: endStatus,
@@ -348,6 +564,7 @@ serve(async (req) => {
         // fourteen never asked" are different facts.
         owed,
         owed_count: owed.length,
+        proposals,
         done: true,
       });
     }
@@ -493,10 +710,23 @@ serve(async (req) => {
     const { error: transcriptErr } = await admin.from('discovery_sessions').update({ transcript: newTranscript }).eq('id', sessionId);
     if (transcriptErr) console.error(`[discovery-interview] transcript write failed (best-effort, continuing): ${transcriptErr.message}`);
 
+    // Proposal emission (Task 1: .superpowers/sdd/2026-08-13-discovery-
+    // proposals-and-creation) — natural completion. Reached only the FIRST
+    // turn the spine closes: any LATER 'answer' call on this session hits
+    // the owedDims.length === 0 early-return above and never reaches here,
+    // so this fires exactly once per session on this path (emitProposals'
+    // own existing-rows check is the second, independent guard — see its
+    // header — in case this session is later also ended via the 'end'
+    // action, or this turn is retried after a partial failure).
+    const proposals = done
+      ? await emitProposals(admin, tenantId, sessionId, dimensions, newCoverage)
+      : null;
+
     return json({
       question: questionText,
       coverage: newCoverage,
       done,
+      ...(proposals ? { proposals } : {}),
       usage: { input_tokens: totalIn, output_tokens: totalOut },
     });
   } catch (err) {
