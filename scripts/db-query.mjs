@@ -8,7 +8,13 @@
 //
 // Token is read from .env.local (SUPABASE_ACCESS_TOKEN), BOM-stripped.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
+// THE checksum — shared with certify's migration-files-match-ledger-checksums
+// section and with migrate:status, so the hash this file WRITES into the ledger
+// and the hashes those two COMPARE it against cannot become three definitions
+// of "the same migration". See that file for why the CRLF normalisation is
+// load-bearing on this repo.
+import { migrationChecksum } from './migration-committed-check.mjs';
 
 const PROJECT_REF = 'rfsvmhcqeiyrxivbmpel';
 const ENDPOINT = `https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query`;
@@ -35,7 +41,7 @@ function readSql(argv) {
 const token = readToken();
 const query = readSql(process.argv.slice(2));
 
-// ── Refuse to apply a migration git has never seen ────────────────────────
+// ── Refuse to apply a migration that is not COMMITTED, exactly as it is ───
 // On 2026-08-10 two migrations (667, 668) were applied to PRODUCTION while
 // their files existed in no git tree — not local, not origin. Production was
 // running schema the repository could not reproduce, and nothing said so until
@@ -43,26 +49,137 @@ const query = readSql(process.argv.slice(2));
 // migration is the worst state available: the effect is permanent, the source
 // is one `rm` away from gone, and a rebuilt environment silently differs.
 //
-// The escape hatch is deliberate and narrow. It exists so nobody is BLOCKED —
-// only so that shipping an untracked migration has to be a decision somebody
-// typed, rather than a thing that happens by default.
+// ⚠ The first version of this guard called ONLY `git ls-files --error-unmatch`,
+// which consults the INDEX. That catches a file git has never seen and nothing
+// else — a TRACKED BUT MODIFIED migration applied without a word. Proven live
+// on 2026-08-13: migration 737 was committed, its apply failed on illegal SQL,
+// the file was edited, and the edited version went to production straight from
+// the working tree. Production ran uncommitted schema for ~25 seconds. Nothing
+// objected, because "is it in the index" is not the question. The question is
+// whether the bytes about to run are the bytes anyone else can ever recover,
+// and only HEAD can answer it.
+//
+// The escape hatch is deliberate and narrow, and now covers all three states.
+// It exists so nobody is BLOCKED — only so that shipping schema the repository
+// cannot rebuild has to be a decision somebody typed, and one that says so
+// loudly on the way past.
 {
   const f = process.argv.slice(2).find((a) => !a.startsWith('--'));
-  if (f && /supabase[\\/]migrations[\\/]/.test(f) && !process.argv.includes('--allow-uncommitted')) {
-    const { execSync } = await import('node:child_process');
-    let tracked = false;
-    try {
-      execSync(`git ls-files --error-unmatch "${f}"`, { stdio: 'ignore' });
-      tracked = true;
-    } catch { /* not tracked */ }
-    if (!tracked) {
-      console.error(`REFUSED: ${f} is not committed to git.`);
-      console.error('  Applying it would put schema in production that the repo cannot rebuild');
-      console.error('  — exactly how 667 and 668 became orphans. Commit it first:');
-      console.error(`      git add ${f} && git commit`);
-      console.error('  Or, if you really mean to apply it untracked, say so:');
+  if (f && /supabase[\\/]migrations[\\/]/.test(f)) {
+    const ALLOW = process.argv.includes('--allow-uncommitted');
+    const { spawnSync } = await import('node:child_process');
+    const git = (args, opts = {}) =>
+      spawnSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, ...opts });
+
+    // Context a person hitting this at 2am needs, not a stack trace: WHICH
+    // commit "HEAD" means here. On a detached HEAD or mid-rebase it is not the
+    // branch tip, and the difference is otherwise invisible.
+    const gitDir = git(['rev-parse', '--git-dir']).stdout?.trim();
+    // symbolic-ref, not `rev-parse --abbrev-ref`: the latter prints the literal
+    // string "HEAD" for BOTH a detached HEAD and an unborn branch, so it would
+    // tell someone in a brand-new repo that they had detached — a wrong
+    // diagnosis at the exact moment they are reading for one.
+    const symref = git(['symbolic-ref', '--short', '-q', 'HEAD']);
+    const branch = symref.status === 0 ? symref.stdout.trim() : null;
+    const midOp = gitDir && ['rebase-merge', 'rebase-apply', 'MERGE_HEAD', 'CHERRY_PICK_HEAD']
+      .filter((n) => existsSync(`${gitDir}/${n}`));
+    const whereAmI = () => {
+      const bits = [];
+      const sha = git(['rev-parse', '--short', 'HEAD']);
+      const head = sha.status === 0 ? sha.stdout.trim() : null;
+      if (branch && !head) bits.push(`branch ${branch}, which has NO COMMITS YET`);
+      else if (branch) bits.push(`branch ${branch}`);
+      else bits.push('DETACHED HEAD (not on a branch)');
+      // A rebase or merge in flight means HEAD is not the branch tip, so
+      // "committed" here is a weaker claim than usual. Say so rather than let
+      // someone read a pass as more than it is.
+      if (midOp?.length) bits.push(`mid-${midOp[0].startsWith('rebase') ? 'rebase' : midOp[0] === 'MERGE_HEAD' ? 'merge' : 'cherry-pick'} — HEAD is not the branch tip`);
+      if (head) bits.push(`HEAD ${head}`);
+      return `  (you are on: ${bits.join(', ')})`;
+    };
+    const stop = (headline, lines) => {
+      if (ALLOW) {
+        // LOUD. The whole point of the hatch is that it is a statement, not a
+        // shortcut, so it announces exactly which protection was waived.
+        console.error('');
+        console.error('⚠  --allow-uncommitted: APPLYING SCHEMA THE REPOSITORY CANNOT REBUILD  ⚠');
+        console.error(`   ${headline}`);
+        console.error(whereAmI().trim() || '');
+        console.error('   You have said you mean it. Commit the file, unchanged, the moment this');
+        console.error('   returns — until you do, this migration exists only on this machine.');
+        console.error('');
+        return;
+      }
+      console.error(`REFUSED: ${headline}`);
+      for (const l of lines) console.error(`  ${l}`);
+      const w = whereAmI();
+      if (w) console.error(w);
+      console.error('  Or, if you really mean to apply it uncommitted, say so out loud:');
       console.error(`      node scripts/db-query.mjs ${f} --allow-uncommitted`);
       process.exit(1);
+    };
+
+    // Is git answerable at all? A missing binary, a non-repo directory or an
+    // unborn branch all land here, and none of them is a pass: this guard fails
+    // CLOSED, because "we could not check" and "it is fine" are not the same
+    // sentence and only one of them is safe to act on.
+    const headSha = git(['rev-parse', '--verify', 'HEAD^{commit}']);
+    if (headSha.error || headSha.status !== 0) {
+      stop(`git cannot be consulted about ${f}, so "is it committed?" has no answer.`, [
+        `git said: ${String(headSha.stderr ?? headSha.error).trim().slice(0, 160)}`,
+        'A repository with no commits yet, a directory that is not a repo, or no git on PATH.',
+        'Fix that first — an unverifiable migration must not reach production by default.',
+      ]);
+    }
+
+    // Path as git knows it — --full-name is relative to the repo root, so this
+    // works from any cwd and normalises the Windows backslashes callers use.
+    const lsFiles = git(['ls-files', '--full-name', '--error-unmatch', '--', f]);
+    const repoPath = lsFiles.status === 0 ? lsFiles.stdout.trim().split(/\r?\n/)[0] : null;
+    if (!repoPath) {
+      stop(`${f} is not committed to git — git has never seen this file.`, [
+        'Applying it would put schema in production that the repo cannot rebuild',
+        '— exactly how 667 and 668 became orphans. Commit it first:',
+        `    git add ${f} && git commit`,
+      ]);
+    }
+
+    if (repoPath) {
+      // The committed bytes. `cat-file blob` reads the object database
+      // directly, so no checkout-time CRLF filter runs — which is why both
+      // sides go through migrationChecksum() rather than being compared raw.
+      const blob = git(['cat-file', 'blob', `HEAD:${repoPath}`]);
+      if (blob.status !== 0) {
+        // Tracked, but not present at HEAD: `git add` and no `git commit`. This
+        // is the state that reads as "tracked" to the old guard and as GONE to
+        // everybody else — a staged file is exactly as recoverable as an
+        // untracked one, which is to say one `git reset` from nothing.
+        stop(`${f} is STAGED but NOT COMMITTED — it exists in the index, in no commit.`, [
+          'A staged file is not a shipped file: nothing outside this working tree can',
+          'reproduce this database, and `git reset` would take the source with it.',
+          'Finish the commit first:',
+          '    git commit',
+        ]);
+      } else {
+        const committed = migrationChecksum(blob.stdout);
+        const working = migrationChecksum(readFileSync(f, 'utf8'));
+        if (committed !== working) {
+          // THE HOLE. Tracked, committed once, then edited — and applied.
+          stop(`${f} has UNCOMMITTED CHANGES — the file on disk is not the file at HEAD.`, [
+            'This is the one the old guard missed. `git ls-files` reads the INDEX, so a',
+            'migration that was committed, failed, was edited and re-run applied its EDITED',
+            'text to production while the repository still held the version that failed.',
+            '',
+            `    committed at HEAD   ${committed}`,
+            `    about to be applied ${working}`,
+            '',
+            'What actually runs must be what anyone can recover. See the difference and',
+            'commit it before applying:',
+            `    git diff -- ${repoPath}`,
+            `    git add ${repoPath} && git commit`,
+          ]);
+        }
+      }
     }
   }
 }
@@ -89,12 +206,11 @@ console.log(text);
 const file = process.argv.slice(2).find((a) => !a.startsWith('--'));
 if (file && /supabase[\\/]migrations[\\/]/.test(file)) {
   try {
-    const { createHash } = await import('node:crypto');
     const name = file.split(/[\\/]/).pop();
-    // CRLF-normalised: this repo has a CRLF working tree, and a file differing
-    // only by line ending is not a changed migration.
-    const sum = createHash('sha256')
-      .update(readFileSync(file, 'utf8').replace(/\r\n/g, '\n'), 'utf8').digest('hex');
+    // CRLF-normalised, and normalised by the SHARED function: certify compares
+    // this exact hash against the file as committed at HEAD, so the two must be
+    // the same code and not two copies that agree today.
+    const sum = migrationChecksum(readFileSync(file, 'utf8'));
     const rec = await fetch(ENDPOINT, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },

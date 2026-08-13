@@ -20,7 +20,11 @@
 // ============================================================
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { createHash } from 'node:crypto';
+// The SAME hash db-query.mjs writes into the ledger and certify's
+// migration-files-match-ledger-checksums section compares against HEAD. Three
+// hand-copied definitions of "the same migration" would agree right up until
+// one of them was tidied.
+import { migrationChecksum } from './migration-committed-check.mjs';
 
 const DEV = process.argv.includes('--dev');
 const BACKFILL = process.argv.includes('--backfill');
@@ -46,10 +50,7 @@ async function q(sql) {
   return JSON.parse(text);
 }
 
-export const checksum = (content) =>
-  // Normalise line endings: this repo has a CRLF working tree, and a file that
-  // differs only by line ending is not a changed migration.
-  createHash('sha256').update(content.replace(/\r\n/g, '\n'), 'utf8').digest('hex');
+export const checksum = migrationChecksum;
 
 const files = readdirSync(MIG_DIR).filter((f) => f.endsWith('.sql')).sort();
 const local = new Map(files.map((f) => [f, checksum(readFileSync(join(MIG_DIR, f), 'utf8'))]));
