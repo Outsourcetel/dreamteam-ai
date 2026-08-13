@@ -52,6 +52,7 @@ import {
   proposalsFrom,
   validatePayload,
   matchProvider,
+  applyModelFill,
   type ProposalDraft,
   type DiscoveryDimensionForProposals,
   type ArchetypeLike,
@@ -163,6 +164,231 @@ describe('validatePayload — every kind, both directions', () => {
   it('refuses a conversation type with no owner', () => {
     expect(() => validatePayload('conversation_type', { label: 'Billing question' }))
       .toThrow(/owner/i);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REVIEW ROUND 1 fixes (3 Importants + 2 minors accepted; drift guard
+// widened for the 3rd minor — see task-1-report.md "Fix round 1").
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('REVIEW ROUND 1, Important 1 — a trust rule cannot reach pending naming no real employee', () => {
+  // THE EXACT PAYLOAD THE REVIEW FLAGGED, reproduced verbatim: this used to
+  // pass, and fillProposalLiterals' own prompt told the model to write
+  // exactly "unassigned" when no employee fit. Red if this ever stops
+  // throwing again.
+  it('refuses the exact payload the review flagged: de_ref "unassigned"', () => {
+    expect(() => validatePayload('trust_rule', { de_ref: 'unassigned', action_category: 'refunds', cap: 500 }))
+      .toThrow(/employee|reference|unassigned/i);
+  });
+
+  // Red if: any free-text de_ref ("the accounting team", a name with no
+  // "archetype:" prefix) is accepted as a real reference.
+  it('refuses a de_ref that is prose, not a reference', () => {
+    expect(() => validatePayload('trust_rule', { de_ref: 'the accounting team', action_category: 'erp_financials', cap: 500 }))
+      .toThrow(/reference/i);
+  });
+
+  // Red if: a correctly-shaped de_ref is refused when no membership check
+  // was even requested (options omitted) — the shape check alone must be
+  // enough to let a well-formed reference through.
+  it('accepts a well-shaped de_ref when no membership set was supplied', () => {
+    expect(() => validatePayload('trust_rule', { de_ref: 'archetype:billing_ar', action_category: 'erp_financials', cap: 500 }))
+      .not.toThrow();
+  });
+
+  // The deployed path (discovery-interview/index.ts's emitProposals) always
+  // supplies validDeRefs — the exact "archetype:<key>" set THIS session's own
+  // employee proposals produced. Red if: a de_ref outside that real set
+  // still passes once the set is supplied, or a de_ref inside it is refused.
+  it('refuses a de_ref not among this session\'s real employee proposals', () => {
+    expect(() => validatePayload(
+      'trust_rule',
+      { de_ref: 'archetype:sdr', action_category: 'erp_financials', cap: 500 },
+      { validDeRefs: ['archetype:billing_ar', 'archetype:accounting'] },
+    )).toThrow(/employee|reference/i);
+  });
+  it('accepts a de_ref that IS among this session\'s real employee proposals', () => {
+    expect(() => validatePayload(
+      'trust_rule',
+      { de_ref: 'archetype:billing_ar', action_category: 'erp_financials', cap: 500 },
+      { validDeRefs: ['archetype:billing_ar', 'archetype:accounting'] },
+    )).not.toThrow();
+  });
+});
+
+describe('REVIEW ROUND 1, Important 2 — action_category constrained to the live namespace', () => {
+  const LIVE_NAMESPACE = ['action:erp_financials', 'action_execute', 'answer_dock', 'answer_widget', 'writeback:crm'];
+
+  // THE EXACT DANGER THE REVIEW NAMED: an invented category like 'refunds'
+  // would be written and would enforce NOTHING, because set_trust_ladder
+  // keys enforcement off this exact column against a small real set. Red if
+  // this payload — real employee, real cap, INVENTED category — ever passes
+  // when the real namespace is supplied.
+  it('refuses an invented action_category once the real namespace is known', () => {
+    expect(() => validatePayload(
+      'trust_rule',
+      { de_ref: 'archetype:billing_ar', action_category: 'refunds', cap: 500 },
+      { validActionCategories: LIVE_NAMESPACE },
+    )).toThrow(/action_category|category/i);
+  });
+
+  it('accepts a real, live action_category', () => {
+    expect(() => validatePayload(
+      'trust_rule',
+      { de_ref: 'archetype:billing_ar', action_category: 'action:erp_financials', cap: 500 },
+      { validActionCategories: LIVE_NAMESPACE },
+    )).not.toThrow();
+  });
+
+  // Documented, not silently relied on: when the caller does NOT supply the
+  // real namespace (e.g. a standalone caller with no database access),
+  // validatePayload cannot fabricate one to check against, so an invented
+  // category is not caught by THIS check alone — it still needs a real
+  // de_ref to get this far. The deployed path (discovery-interview/
+  // index.ts's emitProposals) always fetches and supplies the real set —
+  // proven below, against the ACTUAL live public.trust_policies namespace,
+  // not a hardcoded stand-in for it.
+  it('honestly does not check namespace membership when no real set is supplied', () => {
+    expect(() => validatePayload(
+      'trust_rule',
+      { de_ref: 'archetype:billing_ar', action_category: 'refunds', cap: 500 },
+    )).not.toThrow();
+  });
+});
+
+const runLiveNamespace = adminTokenAvailable() ? describe : describe.skip;
+runLiveNamespace('REVIEW ROUND 1, Important 2 — grounded against the REAL live trust_policies namespace', () => {
+  it('refuses an invented category and accepts a real one, both checked against the live database', async () => {
+    const rows = await runQuery<{ action_category: string }>(
+      'select distinct action_category from public.trust_policies where action_category is not null',
+    );
+    const liveCategories = rows.map((r) => r.action_category);
+    // Vacuity guard: red if the live namespace has shrunk to nothing, or if
+    // 'refunds' (the review's own example of an invented category) has
+    // somehow become real — either would make this probe prove nothing.
+    if (liveCategories.length === 0) {
+      throw new Error('vacuity guard: public.trust_policies has no action_category values — cannot prove the namespace check against nothing');
+    }
+    if (liveCategories.includes('refunds')) {
+      throw new Error('vacuity guard: "refunds" is now a real live action_category — pick a different invented example');
+    }
+    console.log(`checked against ${liveCategories.length} real live action_category value(s): ${liveCategories.join(', ')}`);
+
+    expect(() => validatePayload(
+      'trust_rule',
+      { de_ref: 'archetype:billing_ar', action_category: 'refunds', cap: 500 },
+      { validActionCategories: liveCategories },
+    )).toThrow(/action_category|category/i);
+
+    expect(() => validatePayload(
+      'trust_rule',
+      { de_ref: 'archetype:billing_ar', action_category: liveCategories[0], cap: 500 },
+      { validActionCategories: liveCategories },
+    )).not.toThrow();
+  });
+});
+
+describe('REVIEW ROUND 1, Important 3 — applyModelFill whitelists per kind', () => {
+  // THE EXACT DANGER THE REVIEW NAMED: a model response that tries to
+  // overwrite `rule` itself (breaking §11b's "verbatim" requirement) or
+  // inject arbitrary keys. Red if either survives into the merged payload.
+  it('refuses to let a guardrail fill overwrite `rule` or inject unrelated keys', () => {
+    const payload = { rule: 'No refund promises', pattern: null, threshold: null, severity: 'blocking' };
+    const adversarialFill = {
+      rule: 'Actually, refunds are always fine',   // must NOT overwrite the verbatim rule sentence
+      pattern: 'refund|chargeback',                 // whitelisted — must survive
+      severity: 'advisory',                          // NOT whitelisted for guardrail fill — must be dropped
+      level: 5,                                       // NOT whitelisted at all — must be dropped
+    };
+    const merged = applyModelFill('guardrail', payload, adversarialFill);
+    expect(merged.rule).toBe('No refund promises');
+    expect(merged.pattern).toBe('refund|chargeback');
+    expect(merged.severity).toBe('blocking'); // unchanged from the original payload, not the fill's 'advisory'
+    expect(merged.level).toBeUndefined();
+  });
+
+  it('refuses to let a trust_rule fill inject keys outside its whitelist', () => {
+    const payload = { de_ref: null, action_category: null, cap: null, evidence: 'approvals over 10k need sign-off' };
+    const adversarialFill = {
+      de_ref: 'archetype:accounting',
+      action_category: 'action:erp_financials',
+      cap: 10000,
+      above_cap: 'a second approver is required',
+      evidence: 'INJECTED — this should never overwrite the real evidence field',
+      created_object_id: '00000000-0000-0000-0000-000000000000', // NOT whitelisted — must be dropped
+    };
+    const merged = applyModelFill('trust_rule', payload, adversarialFill);
+    expect(merged.de_ref).toBe('archetype:accounting');
+    expect(merged.action_category).toBe('action:erp_financials');
+    expect(merged.cap).toBe(10000);
+    expect(merged.above_cap).toBe('a second approver is required');
+    expect(merged.evidence).toBe('approvals over 10k need sign-off'); // NOT overwritten
+    expect(merged.created_object_id).toBeUndefined();
+  });
+
+  it('writes nothing at all for a pure kind (defensive — not reachable via the real emission path)', () => {
+    const merged = applyModelFill('employee', { name: 'Morgan', systems: ['erp_financials'] }, { name: 'INJECTED', systems: ['anything'] });
+    expect(merged.name).toBe('Morgan');
+    expect(merged.systems).toEqual(['erp_financials']);
+  });
+
+  it('never mutates the original payload or fill objects (pure)', () => {
+    const payload = { rule: 'No refunds', pattern: null };
+    const fill = { pattern: 'refund|chargeback' };
+    const merged = applyModelFill('guardrail', payload, fill);
+    expect(payload.pattern).toBeNull();
+    expect(merged).not.toBe(payload);
+  });
+});
+
+describe('REVIEW ROUND 1, minor 1 — prose no longer passes where a literal is required', () => {
+  // Red if: a threshold or cap that is plainly prose ("as appropriate",
+  // "whatever seems reasonable") is accepted as a literal a person could
+  // predict against.
+  it('refuses a guardrail threshold that is prose, not a number', () => {
+    expect(() => validatePayload('guardrail', { rule: 'Approval required', threshold: 'as appropriate' }))
+      .toThrow(/pattern|threshold/i);
+  });
+  it('refuses a trust_rule cap that is prose, not a number', () => {
+    expect(() => validatePayload('trust_rule', { de_ref: 'archetype:billing_ar', action_category: 'erp_financials', cap: 'whatever seems reasonable' }))
+      .toThrow(/cap|threshold|amount|confidence/i);
+  });
+  it('accepts a numeric-looking string cap ("$10,000") — still a real literal, just formatted as text', () => {
+    expect(() => validatePayload('trust_rule', { de_ref: 'archetype:billing_ar', action_category: 'erp_financials', cap: '$10,000' }))
+      .not.toThrow();
+  });
+
+  // THE EXACT PAYLOAD THE REVIEW FLAGGED, reproduced verbatim: "A pattern
+  // that is a sentence is not a pattern."
+  it('refuses a guardrail pattern that reads as a sentence', () => {
+    expect(() => validatePayload('guardrail', { rule: 'Do not upset customers', pattern: 'anything the customer might find upsetting' }))
+      .toThrow(/pattern|threshold/i);
+  });
+  it('still accepts a short, real, multi-word pattern', () => {
+    expect(() => validatePayload('guardrail', { rule: 'No refund promises', pattern: 'refund|chargeback|free month' }))
+      .not.toThrow();
+  });
+});
+
+describe('REVIEW ROUND 1, minor 2 — array-content predicate no longer fooled either direction', () => {
+  // THE EXACT PAYLOAD THE REVIEW FLAGGED: a bare number is not a real system
+  // name. Red if `systems: [42]` is ever again treated as "employee names a
+  // system it can touch".
+  it('refuses an employee whose systems array holds only a bare number', () => {
+    expect(() => validatePayload('employee', { name: 'Morgan', systems: [42] }))
+      .toThrow(/system|touch|access/i);
+  });
+  // THE EXACT PAYLOAD THE REVIEW FLAGGED: an object-shaped step is not a
+  // string a person can read on a card — it must be refused (not silently
+  // dropped and forgotten), same as zero steps.
+  it('refuses a procedure whose steps array holds only an object, not a string', () => {
+    expect(() => validatePayload('procedure', { name: 'Dunning', trigger: 'invoice overdue', steps: [{ text: 'send a reminder' }] }))
+      .toThrow(/step/i);
+  });
+  it('still accepts a real array of plain-string steps', () => {
+    expect(() => validatePayload('procedure', { name: 'Dunning', trigger: 'invoice overdue', steps: ['send a reminder email', 'escalate to Finance'] }))
+      .not.toThrow();
   });
 });
 
@@ -436,10 +662,50 @@ describe('matchProvider — duplicated on purpose, drift-guarded here', () => {
   it('agrees with src/lib/connectorApi.ts matchProvider on every case', async () => {
     const real = await import('../src/lib/connectorApi');
     for (const text of cases) {
-      const ours = matchProvider(text, catalog).map((m) => `${m.provider_key}:${m.confidence}`).sort();
-      const theirs = real.matchProvider(text, catalog).map((m) => `${m.provider_key}:${m.confidence}`).sort();
+      // REVIEW ROUND 1, minor 3: compare the FULL match object our own
+      // payload actually uses (matched_on too, not just provider_key +
+      // confidence) — red if the two implementations ever disagree on WHICH
+      // alias/label text triggered the match, even if they agree on the
+      // provider and confidence.
+      const ours = matchProvider(text, catalog).map((m) => `${m.provider_key}:${m.confidence}:${m.matched_on}`).sort();
+      const theirs = real.matchProvider(text, catalog).map((m) => `${m.provider_key}:${m.confidence}:${m.matched_on}`).sort();
       expect(ours, `mismatch on "${text}"`).toEqual(theirs);
     }
+  });
+});
+
+// REVIEW ROUND 1, minor 3 (accepted — cheap via the existing runQuery
+// helper): the drift guard above proves the two implementations agree on a
+// 3-row fixture. This widens it to the REAL, live 75-row catalog — the one
+// difference that matters most (AMBIGUOUS_ALIASES filtering, which only
+// bites with the full alias set) is invisible on a 3-row fixture and would
+// not be invisible here.
+runLiveNamespace('matchProvider — duplicated on purpose, drift-guarded against the LIVE 75-row catalog', () => {
+  it('agrees with src/lib/connectorApi.ts matchProvider against the real, live provider_providers catalog', async () => {
+    const real = await import('../src/lib/connectorApi');
+    const liveCatalog = await runQuery<ProviderCatalogRow>(
+      'select provider_key, label, category, aliases from public.connector_providers where active',
+    );
+    if (liveCatalog.length < 50) {
+      throw new Error(`vacuity guard: only ${liveCatalog.length} live catalog row(s) — expected 50+, this probe would not exercise the full alias set`);
+    }
+    const liveCases = [
+      'we use HubSpot',
+      'we invoice out of Xero, net 30',
+      'we close deals on monday and the team meets in front of the box',
+      'tickets go through Zendesk, and we run payroll in Gusto',
+      'we track everything in a spreadsheet, nothing fancier',
+      'We use Stripe for billing and Slack for the team',
+      'we use slack', // lowercase — AMBIGUOUS_ALIASES trades this recall away, on purpose
+    ];
+    let totalMatches = 0;
+    for (const text of liveCases) {
+      const ours = matchProvider(text, liveCatalog).map((m) => `${m.provider_key}:${m.confidence}:${m.matched_on}`).sort();
+      const theirs = real.matchProvider(text, liveCatalog).map((m) => `${m.provider_key}:${m.confidence}:${m.matched_on}`).sort();
+      expect(ours, `mismatch on "${text}" against the live catalog`).toEqual(theirs);
+      totalMatches += ours.length;
+    }
+    console.log(`drift guard: ${liveCases.length} case(s) against ${liveCatalog.length} live catalog row(s), ${totalMatches} total match(es), zero disagreements`);
   });
 });
 

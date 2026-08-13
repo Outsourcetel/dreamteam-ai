@@ -125,6 +125,7 @@ import {
 import {
   proposalsFrom,
   validatePayload,
+  applyModelFill,
   type ArchetypeLike,
   type ProviderCatalogRow,
   type ProposalDraft,
@@ -253,19 +254,24 @@ function validateExtraction(
 // ============================================================================
 
 /** Best-effort model fill for the three kinds proposalsFrom cannot finish on
- *  its own. Mutates each draft's `payload` in place, merging in whatever the
- *  model returns — it NEVER marks a draft valid; validatePayload (run by the
- *  caller, on every draft, pure and model-filled alike) is what decides that.
- *  A model that returns nothing usable, times out, or the workspace having
- *  no AI engine configured, all fail the SAME way: the draft's payload stays
- *  incomplete and validatePayload refuses it downstream. That refusal is
- *  never treated as an error here — a partially-heard interview producing
- *  fewer decidable proposals than dimensions it covered is a legitimate
- *  outcome, not a bug. */
+ *  its own. Replaces each draft's `payload` with `applyModelFill(kind,
+ *  payload, fill)` (_shared/discoveryProposals.ts) — REVIEW ROUND 1,
+ *  Important 3: that function, not this one, owns the per-kind whitelist,
+ *  so the same rule is enforced whether a caller reaches it from here or
+ *  from a test. This function NEVER marks a draft valid; validatePayload
+ *  (run by the caller, on every draft, pure and model-filled alike, with the
+ *  same live-namespace options this function is given) is what decides
+ *  that. A model that returns nothing usable, times out, or the workspace
+ *  having no AI engine configured, all fail the SAME way: the draft's
+ *  payload stays incomplete and validatePayload refuses it downstream. That
+ *  refusal is never treated as an error here — a partially-heard interview
+ *  producing fewer decidable proposals than dimensions it covered is a
+ *  legitimate outcome, not a bug. */
 async function fillProposalLiterals(
   admin: SupabaseClient,
   drafts: readonly ProposalDraft[],
   employeeArchetypeKeys: readonly string[],
+  validActionCategories: readonly string[],
 ): Promise<void> {
   if (drafts.length === 0) return;
 
@@ -278,14 +284,22 @@ async function fillProposalLiterals(
       : d.rationale,
   }));
 
+  // REVIEW ROUND 1, Important 1: no more "unassigned" as an offered answer —
+  // instructing a model to emit a placeholder that the gate then has to
+  // catch was fighting itself. The omission instruction already given for
+  // every other unsupported field now covers de_ref too.
+  // REVIEW ROUND 1, Important 2: action_category is constrained to the REAL,
+  // LIVE namespace (read from public.trust_policies by the caller — see
+  // emitProposals below), not free text — an invented category would
+  // produce a trust rule that enforces nothing.
   const system = [
     'You are extracting the ONE concrete, enforceable detail a business owner needs before they can approve a draft recommendation — never inventing a fact the evidence does not support.',
     '',
     'You are given several DRAFT items. For each, return exactly the fields listed for its "kind":',
     '',
-    '"guardrail": return "pattern" (a short "|"-separated list of the literal words or phrases the rule matches, lowercase, e.g. "refund|chargeback|free month") OR "threshold" (a bare number) — whichever the evidence actually supports. Never both, never neither if the evidence gives you anything concrete to work with.',
+    '"guardrail": return "pattern" (a short "|"-separated list of the literal words or phrases the rule matches, lowercase, e.g. "refund|chargeback|free month" — at most a handful of tokens, never a sentence) OR "threshold" (a bare number, no words) — whichever the evidence actually supports. Never both, never neither if the evidence gives you anything concrete to work with.',
     '"procedure": return "name" (a short title), "trigger" (the concrete event or schedule that starts it, in the evidence\'s own terms) and "steps" (an ordered array of 2 to 6 short, concrete steps the evidence actually implies).',
-    `"trust_rule": return "de_ref" (the single best match from this session's proposed employees — one of ${JSON.stringify(employeeArchetypeKeys)}, formatted exactly as "archetype:<key>", or "unassigned" if none fit), "action_category" (a short lowercase category for what is being capped, e.g. "erp_financials", "ad_spend", "refunds"), "cap" (the literal number or amount named in the evidence) and "above_cap" (one short sentence: what happens above it).`,
+    `"trust_rule": return "de_ref" — the single best match from this session's proposed employees, one of ${JSON.stringify(employeeArchetypeKeys)}, formatted EXACTLY as "archetype:<key>". If none of those employees plausibly owns this approval, OMIT de_ref entirely (and therefore the whole item) — never write "unassigned" or invent a reference. Also return "action_category" chosen EXACTLY from this workspace's real category list: ${JSON.stringify(validActionCategories)} — if none of them fits, OMIT action_category rather than inventing a new one. Also return "cap" (a bare number — the literal amount or threshold named in the evidence, no words) and "above_cap" (one short sentence: what happens above it).`,
     '',
     'If an item\'s evidence genuinely does not support a real value for a required field, OMIT that field rather than guessing — an omitted field means the platform will correctly decline to show that item to the customer, which is the safe outcome, not a failure.',
     '',
@@ -321,10 +335,10 @@ async function fillProposalLiterals(
   for (let i = 0; i < drafts.length; i++) {
     const fill = byIdx.get(i);
     if (!fill) continue;
-    for (const [k, v] of Object.entries(fill)) {
-      if (k === 'idx') continue;
-      if (v !== undefined && v !== null) drafts[i].payload[k] = v;
-    }
+    // REVIEW ROUND 1, Important 3: whitelist, not a blind merge — enforced
+    // by applyModelFill (_shared/discoveryProposals.ts), tested directly
+    // there against an adversarial fill object.
+    drafts[i].payload = applyModelFill(drafts[i].kind, drafts[i].payload, fill);
   }
 }
 
@@ -358,14 +372,37 @@ async function emitProposals(
     return { proposed: 0, refused: 0, skipped_already_proposed: true };
   }
 
-  const [archResult, catalogResult] = await Promise.all([
+  // REVIEW ROUND 1, Important 2: read the REAL, live action_category
+  // namespace once per emission — never hardcoded here. Global (no tenant
+  // filter), same justification as role_archetypes/connector_providers
+  // above: this is a schema-level VOCABULARY (set_trust_ladder keys
+  // enforcement off this exact column), not per-tenant data, and a brand
+  // new tenant undergoing its first discovery interview has ZERO rows of
+  // its own in trust_policies — scoping this to the current tenant would
+  // make the whitelist empty and silently block every trust_rule proposal
+  // for exactly the customers this feature exists for.
+  const [archResult, catalogResult, categoryResult] = await Promise.all([
     admin.from('role_archetypes').select('key, name, domain, required_connector_categories').eq('status', 'active'),
     admin.from('connector_providers').select('provider_key, label, category, aliases').eq('active', true),
+    admin.from('trust_policies').select('action_category').limit(5000),
   ]);
   if (archResult.error) console.error(`[discovery-interview] role_archetypes fetch failed (proceeding without): ${archResult.error.message}`);
   if (catalogResult.error) console.error(`[discovery-interview] connector_providers fetch failed (proceeding without): ${catalogResult.error.message}`);
+  if (categoryResult.error) console.error(`[discovery-interview] trust_policies category fetch failed (proceeding without a namespace check): ${categoryResult.error.message}`);
   const archetypes = (archResult.data ?? []) as ArchetypeLike[];
   const providerCatalog = (catalogResult.data ?? []) as ProviderCatalogRow[];
+  const validActionCategories = new Set(
+    ((categoryResult.data ?? []) as Array<{ action_category: string | null }>)
+      .map((r) => (typeof r.action_category === 'string' ? r.action_category.trim() : ''))
+      .filter((c) => c.length > 0),
+  );
+  // Empty is a real, if rare, platform state (e.g. a freshly bootstrapped
+  // environment with zero trust_policies rows anywhere) — treated as "we
+  // cannot determine the real namespace", not "nothing is valid", the same
+  // fallback validatePayload already takes when this option is omitted
+  // entirely. Enforcing membership against a known-empty set would refuse
+  // every trust_rule outright, which is a worse failure than not checking.
+  const validActionCategoriesOrUndefined = validActionCategories.size > 0 ? validActionCategories : undefined;
 
   const drafts = proposalsFrom(dimensions, coverage, archetypes, { providerCatalog });
   if (drafts.length === 0) return { proposed: 0, refused: 0, skipped_already_proposed: false };
@@ -373,6 +410,12 @@ async function emitProposals(
   const employeeArchetypeKeys = drafts
     .filter((d) => d.kind === 'employee')
     .map((d) => String(d.payload.archetype_key));
+  // REVIEW ROUND 1, Important 1: the exact "archetype:<key>" references a
+  // trust_rule's de_ref is allowed to name THIS session — nothing else
+  // exists yet for it to point at (Task 1 creates no rows besides these
+  // proposals), so an employee not proposed this round is not a real
+  // reference either.
+  const validDeRefs = new Set(employeeArchetypeKeys.map((k) => `archetype:${k}`));
 
   const needsFill = drafts.filter((d) => d.needs_model_fill);
   if (needsFill.length > 0) {
@@ -383,7 +426,7 @@ async function emitProposals(
       if (budgetBlocked(budgetErr, budget)) {
         console.error(`[discovery-interview] skipping model-fill for ${needsFill.length} proposal(s): AI budget exceeded`);
       } else {
-        await fillProposalLiterals(admin, needsFill, employeeArchetypeKeys);
+        await fillProposalLiterals(admin, needsFill, employeeArchetypeKeys, [...validActionCategories]);
       }
     }
   }
@@ -392,7 +435,7 @@ async function emitProposals(
   let refused = 0;
   for (const d of drafts) {
     try {
-      validatePayload(d.kind, d.payload);
+      validatePayload(d.kind, d.payload, { validActionCategories: validActionCategoriesOrUndefined, validDeRefs });
       rows.push({
         session_id: sessionId,
         tenant_id: tenantId,

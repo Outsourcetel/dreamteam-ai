@@ -209,18 +209,84 @@ function str(v: unknown): string {
   return typeof v === 'string' ? v.trim() : '';
 }
 
-function nonEmptyArray(v: unknown): unknown[] {
-  return Array.isArray(v) ? v.filter((x) => str(x).length > 0 || (typeof x === 'number' && Number.isFinite(x))) : [];
+/** REVIEW ROUND 1, minor 2: the prior version counted a bare NUMBER as valid
+ *  array content, so `systems: [42]` (a bare number, not a real system name)
+ *  passed validatePayload's employee check. And it filtered by `str(x)`,
+ *  which silently reads an OBJECT entry as nothing at all — `steps: [{...}]`
+ *  counted as zero steps with no explanation. Every array this module checks
+ *  (reads/writes/steps/systems) is a list of short, human-readable NAMES —
+ *  none of the four kinds ever legitimately holds a bare number or a nested
+ *  object — so this now accepts genuine non-empty strings only. An
+ *  object-shaped "step" is correctly treated the same as an absent one: it
+ *  is not something a person can read on a card, so refusing it (rather than
+ *  silently dropping it and moving on) is the right outcome, not a
+ *  regression. */
+function nonEmptyStringArray(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.trim().length > 0) : [];
 }
 
-/** A "cap"/"threshold" style value: a real number, or a non-empty string
- *  (e.g. "$10,000" typed by a model as prose-adjacent text is still a
- *  literal a human can read and predict against — 0 is deliberately a valid
- *  cap, so this is NOT a truthiness check). */
-function hasCapLikeContent(v: unknown): boolean {
+/** A "cap"/"threshold" style value MUST be a real number (REVIEW ROUND 1,
+ *  minor 1: `threshold: 'as appropriate'` and `cap: 'whatever seems
+ *  reasonable'` both passed the old string-truthiness check — a sentence is
+ *  not a number). A model-typed numeric STRING ("10000", "$10,000") is
+ *  tolerated — that is still a literal a human can read and predict against,
+ *  merely formatted as text — but genuine prose is not. 0 is deliberately a
+ *  valid cap, so this is never a truthiness check. */
+function isNumericLiteral(v: unknown): boolean {
   if (typeof v === 'number') return Number.isFinite(v);
-  if (typeof v === 'string') return v.trim().length > 0;
+  if (typeof v === 'string') {
+    const t = v.trim().replace(/^\$/, '').replace(/,/g, '').replace(/%$/, '');
+    if (!t) return false;
+    return /^-?\d+(\.\d+)?$/.test(t);
+  }
   return false;
+}
+
+/** Words a genuine ENFORCEABLE pattern ("refund|chargeback", "free month")
+ *  does not contain — a rule described in prose ("anything the customer
+ *  might find upsetting") does. Belt-and-braces alongside the length/word-
+ *  count check below, not the sole defence — a short sentence with none of
+ *  these words would still be caught by word count or trailing punctuation. */
+const PATTERN_PROSE_WORDS = /\b(the|and|might|could|should|would|whatever|anything|something|appropriate|reasonable|seems|find|please|kindly|customer|customers)\b/i;
+
+/** REVIEW ROUND 1, minor 1, verbatim: "a pattern that is a sentence is not a
+ *  pattern." The prompt (discovery-interview/index.ts) asks for "a short
+ *  '|'-separated list of literal words/phrases" — this is that bar, checked
+ *  on the OUTPUT side too rather than trusted from the instruction alone:
+ *  short (<=5 whitespace-delimited tokens; "refund|chargeback|free month" is
+ *  2), no trailing sentence punctuation, none of the prose words above. */
+function looksLikeEnforceablePattern(v: string): boolean {
+  const t = v.trim();
+  if (!t || t.length > 120) return false;
+  if (/[.!?]$/.test(t)) return false;
+  if (t.split(/\s+/).filter(Boolean).length > 5) return false;
+  if (PATTERN_PROSE_WORDS.test(t)) return false;
+  return true;
+}
+
+/** Third argument to validatePayload, trust_rule only. Both are LIVE,
+ *  EXTERNAL vocabularies this module has no business hardcoding — see the
+ *  module header addendum below ("REVIEW ROUND 1, Importants 1 and 2") for
+ *  why. Omitted entirely (the default), the corresponding check narrows to
+ *  what CAN be verified with no external data — never widens to "skip the
+ *  check" for de_ref (see the trust_rule case), because "unassigned" is
+ *  refusable on shape alone. */
+export interface ValidatePayloadOptions {
+  /** The real, live set of public.trust_policies.action_category values —
+   *  e.g. "action:erp_financials", "action_execute", "answer_dock",
+   *  "writeback:crm" — READ from the database, never hand-maintained here.
+   *  Omitted: action_category is checked for presence only (a category was
+   *  named), not namespace membership, because there is nothing to check it
+   *  against — see discovery-interview/index.ts's emitProposals, which
+   *  always fetches and passes the real set in the deployed path. */
+  validActionCategories?: Iterable<string>;
+  /** The exact "archetype:<key>" references this SESSION's own employee
+   *  proposals actually produced. Omitted: de_ref is still refused if it is
+   *  the literal "unassigned" or does not match the archetype:<key> SHAPE at
+   *  all — narrower than true membership, but closes the exact defect this
+   *  option exists for even when a caller (e.g. a standalone unit test)
+   *  cannot supply the real set. */
+  validDeRefs?: Iterable<string>;
 }
 
 /**
@@ -235,8 +301,38 @@ function hasCapLikeContent(v: unknown): boolean {
  * (discovery-interview/index.ts). Do not special-case a model-filled payload
  * to skip a check a hand-built one would face — an incomplete card is
  * incomplete regardless of who almost finished it.
+ *
+ * REVIEW ROUND 1, Important 1 — a trust_rule used to reach 'pending' naming
+ * no real employee: `{de_ref: 'unassigned', action_category: 'refunds', cap:
+ * 500}` passed, and fillProposalLiterals' own prompt told the model to write
+ * exactly that literal when no employee fit. §11b calls trust_rule "the one
+ * proposal that removes a human" — one naming nobody is not something a
+ * person can approve. Fixed two ways, both required: the prompt no longer
+ * offers "unassigned" as an answer (it says to OMIT de_ref instead, same as
+ * every other "cannot support a real answer" case already in that prompt),
+ * and validatePayload now independently refuses de_ref unless it is a real
+ * reference — see the trust_rule case below.
+ *
+ * REVIEW ROUND 1, Important 2 — action_category was free text, but
+ * set_trust_ladder enforces confidence-gating keyed EXACTLY off that column
+ * (`v_uses_conf := action_category in ('answer_dock','answer_widget')`), and
+ * the live namespace is a small, specific set
+ * ('action:erp_financials','action_execute','answer_dock','writeback:crm',
+ * ...) — never free text. An invented category like 'refunds' would have
+ * produced a trust rule a customer approves, that gets written, and that
+ * enforces NOTHING — the exact "looks governed and is not" artefact this
+ * whole programme exists to catch. Fixed via `options.validActionCategories`
+ * below: the caller (discovery-interview/index.ts) reads the real, live,
+ * DISTINCT values from public.trust_policies and passes them in — never
+ * hardcoded here, for the same reason connector_providers isn't hardcoded
+ * either (a second copy of a list that already exists in the database is a
+ * drift waiting to happen, per this repo's own TOP_PROVIDERS lesson).
  */
-export function validatePayload(kind: ProposalKind, payload: Record<string, unknown>): void {
+export function validatePayload(
+  kind: ProposalKind,
+  payload: Record<string, unknown>,
+  options: ValidatePayloadOptions = {},
+): void {
   if (!KNOWN_KINDS.has(kind)) {
     throw new Error(`validatePayload: unknown proposal kind "${String(kind)}" — must be one of ${PROPOSAL_KINDS.join(', ')}`);
   }
@@ -264,8 +360,8 @@ export function validatePayload(kind: ProposalKind, payload: Record<string, unkn
       if (!str(payload.provider_key)) {
         throw new Error('validatePayload: connector proposal names no provider');
       }
-      const reads = nonEmptyArray(payload.reads);
-      const writes = nonEmptyArray(payload.writes);
+      const reads = nonEmptyStringArray(payload.reads);
+      const writes = nonEmptyStringArray(payload.writes);
       if (reads.length === 0 && writes.length === 0) {
         throw new Error(
           `validatePayload: connector proposal for "${str(payload.provider_key)}" names nothing it reads or writes — the credential step is the second gate, but what it can touch has to be on the card first`,
@@ -283,7 +379,7 @@ export function validatePayload(kind: ProposalKind, payload: Record<string, unkn
       if (!str(payload.trigger)) {
         throw new Error(`validatePayload: procedure "${name}" has no trigger — when it runs is not decidable without one`);
       }
-      if (nonEmptyArray(payload.steps).length === 0) {
+      if (nonEmptyStringArray(payload.steps).length === 0) {
         throw new Error(`validatePayload: procedure "${name}" has no steps — an empty draft is nothing a person can review, approve or decline`);
       }
       return;
@@ -296,7 +392,7 @@ export function validatePayload(kind: ProposalKind, payload: Record<string, unkn
       if (!name) {
         throw new Error('validatePayload: employee proposal has no name');
       }
-      if (nonEmptyArray(payload.systems).length === 0) {
+      if (nonEmptyStringArray(payload.systems).length === 0) {
         throw new Error(
           `validatePayload: employee "${name}" does not say what systems it can touch — tool reach belongs on the card, not behind a link, and no access at all is not a fact anyone can consent to`,
         );
@@ -307,13 +403,19 @@ export function validatePayload(kind: ProposalKind, payload: Record<string, unkn
     case 'guardrail': {
       // §11b, verbatim: "the rule sentence and its literal pattern or
       // threshold, verbatim ... you cannot consent to a block you cannot
-      // predict."
+      // predict." REVIEW ROUND 1, minor 1: a pattern that reads as a
+      // sentence ("anything the customer might find upsetting") is not an
+      // enforceable literal any more than a missing one is — checked by
+      // looksLikeEnforceablePattern, not just presence. threshold must be a
+      // real number (isNumericLiteral), not prose ("as appropriate").
       const rule = str(payload.rule);
       if (!rule) {
         throw new Error('validatePayload: guardrail proposal has no rule sentence');
       }
-      const pattern = str(payload.pattern);
-      if (!pattern && !hasCapLikeContent(payload.threshold)) {
+      const patternRaw = str(payload.pattern);
+      const pattern = patternRaw && looksLikeEnforceablePattern(patternRaw) ? patternRaw : '';
+      const hasThreshold = isNumericLiteral(payload.threshold);
+      if (!pattern && !hasThreshold) {
         throw new Error(
           `validatePayload: guardrail "${rule}" carries no literal pattern or threshold — you cannot consent to a block you cannot predict`,
         );
@@ -325,20 +427,103 @@ export function validatePayload(kind: ProposalKind, payload: Record<string, unkn
       // §11b: "employee + action category + the dollar/confidence cap + what
       // happens above it ... the only kind where no card is short enough —
       // it is the one proposal that removes a human."
-      if (!str(payload.de_ref)) {
+      const deRef = str(payload.de_ref);
+      if (!deRef) {
         throw new Error('validatePayload: trust_rule proposal names no employee (de_ref)');
       }
-      if (!str(payload.action_category)) {
+      const actionCategory = str(payload.action_category);
+      if (!actionCategory) {
         throw new Error('validatePayload: trust_rule proposal names no action_category');
       }
-      if (!hasCapLikeContent(payload.cap)) {
+      // Cap checked BEFORE the de_ref/action_category namespace checks below
+      // on purpose: a payload missing ONLY a cap must fail on exactly that,
+      // not on an incidental shape issue elsewhere in the same payload —
+      // pinned by tests/discovery-proposals.test.ts's Step-1 contract case
+      // ({de_ref: 'x', action_category: 'crm', level: 2}), which uses a
+      // deliberately informal de_ref and must still fail on the cap.
+      if (!isNumericLiteral(payload.cap)) {
         throw new Error(
-          `validatePayload: trust_rule for "${str(payload.action_category)}" carries no cap — an amount, confidence value or threshold — this is the one proposal that removes a human, and no cap is no decision`,
+          `validatePayload: trust_rule for "${actionCategory}" carries no cap — an amount, confidence value or threshold — this is the one proposal that removes a human, and no cap is no decision`,
         );
+      }
+      // REVIEW ROUND 1, Important 1. Real membership when the caller can
+      // supply it (the deployed path always can — see emitProposals);
+      // otherwise refuse the literal placeholder the old prompt used to
+      // request, and anything not shaped like a real reference at all.
+      if (options.validDeRefs) {
+        const known = options.validDeRefs instanceof Set ? options.validDeRefs : new Set(options.validDeRefs);
+        if (!known.has(deRef)) {
+          throw new Error(
+            `validatePayload: trust_rule de_ref "${deRef}" does not match any employee actually proposed this session — an invented or unresolved reference is not something a person can approve autonomy for`,
+          );
+        }
+      } else if (deRef.toLowerCase() === 'unassigned' || !/^archetype:[a-z0-9_]+$/i.test(deRef)) {
+        throw new Error(
+          `validatePayload: trust_rule de_ref "${deRef}" is not a real employee reference — "unassigned" or free text is not something a person can approve autonomy for`,
+        );
+      }
+      // REVIEW ROUND 1, Important 2. Real namespace membership when the
+      // caller can supply it — see the module header addendum above for why
+      // an invented category ("refunds") is worse than a missing one: it
+      // enforces nothing while looking exactly like something that does.
+      if (options.validActionCategories) {
+        const known = options.validActionCategories instanceof Set
+          ? options.validActionCategories
+          : new Set(options.validActionCategories);
+        if (!known.has(actionCategory)) {
+          throw new Error(
+            `validatePayload: trust_rule action_category "${actionCategory}" is not a real action category in this workspace's live namespace (checked against ${known.size} value(s)) — an invented category is written but enforces nothing`,
+          );
+        }
       }
       return;
     }
   }
+}
+
+// ── applyModelFill — REVIEW ROUND 1, Important 3 ────────────────────────────
+// The old merge (`for (const [k,v] of Object.entries(fill)) payload[k] = v`,
+// in discovery-interview/index.ts) had no per-kind limit, so a model's raw
+// response — derived from customer-authored text, defended by
+// wrapUntrusted/FIREWALL_RULES but not something this module should trust
+// blindly on top of that — could overwrite `rule` itself (breaking §11b's
+// "verbatim" guarantee on the rule sentence) or inject arbitrary keys
+// (`severity`, `level`, anything) into the jsonb Task 3 will build real rows
+// from. Moved here, as a PURE function, specifically so it is testable
+// without a model: tests/discovery-proposals.test.ts feeds it an
+// adversarial `fill` object and asserts the whitelist held.
+
+/** Exactly which keys a model fill is allowed to write, per kind. Everything
+ *  else in a model's response is discarded before it ever touches a draft's
+ *  payload — never widened to "whatever the model sent". */
+export const FILL_WHITELIST: Readonly<Record<'guardrail' | 'procedure' | 'trust_rule', readonly string[]>> = {
+  guardrail: ['pattern', 'threshold'],
+  procedure: ['name', 'trigger', 'steps'],
+  trust_rule: ['de_ref', 'action_category', 'cap', 'above_cap'],
+};
+
+/**
+ * applyModelFill — merge a model's raw fill response into a draft's payload,
+ * keeping ONLY the FILL_WHITELIST-ed keys for that kind. Pure: returns a NEW
+ * object, never mutates `payload` or `fill`. `null`/`undefined` values in
+ * `fill` are treated as "the model had nothing" and are not written (the
+ * same "omit rather than guess" contract the fill prompt is given). A kind
+ * with no whitelist entry (the three pure kinds never reach a model at all)
+ * writes nothing at all — defensive, not reachable via the real emission
+ * path today.
+ */
+export function applyModelFill(
+  kind: ProposalKind,
+  payload: Record<string, unknown>,
+  fill: Record<string, unknown>,
+): Record<string, unknown> {
+  const allowed = kind === 'guardrail' || kind === 'procedure' || kind === 'trust_rule' ? FILL_WHITELIST[kind] : [];
+  const next: Record<string, unknown> = { ...payload };
+  for (const key of allowed) {
+    const v = fill[key];
+    if (v !== undefined && v !== null) next[key] = v;
+  }
+  return next;
 }
 
 // ── proposalsFrom — pure. See the module header for the full split. ────────
@@ -463,7 +648,7 @@ export function proposalsFrom(
       // a partial list) — never invent a role for it.
       if (!arch) continue;
       seenArchetypes.add(archKey);
-      const systems = nonEmptyArray(arch.required_connector_categories).map((s) => String(s));
+      const systems = nonEmptyStringArray(arch.required_connector_categories);
       drafts.push({
         kind: 'employee',
         payload: {
