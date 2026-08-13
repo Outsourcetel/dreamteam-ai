@@ -288,3 +288,62 @@ on the starter employees was *new tenants only*, and the same question applies h
 
 Steps 1–2 are safe to ship before the interview exists. Step 7 is the only irreversible one and
 comes last, after the replacement is proven.
+
+---
+
+## 12. START HERE — handoff for Plan 3 (written 2026-08-13)
+
+Steps 1–2 of §11 are **DONE and live**. This section is what a session with no prior context needs.
+
+### Already shipped
+
+| Plan | Migrations | What it gave you |
+|---|---|---|
+| 1 — systems memory (`docs/superpowers/plans/2026-08-12-systems-memory.md`) | 727, 728, 729 | `connector_providers` (75 rows, seeded FROM the `PROVIDERS` constant by `scripts/gen-provider-seed.mjs`, drift-guarded both ways in certify) · `connectors.status = 'pending_credentials'` · `matchProvider()` in `src/lib/connectorApi.ts` · ads/social/web_analytics gaps closed |
+| 2 — Ada prerequisites (`docs/superpowers/plans/2026-08-13-ada-prerequisites.md`) | 730, 731, 732 | `provision_platform_admin_connector_internal()` called on **all three** tenant-creation paths · EXECUTE grants asserted 12 ways · `workspace-admin-has-an-owner` de-vacuumed, with a denominator and a mutation fixture |
+
+Both plans' full ledgers, with every deferred minor and parked ruling, are in
+`.superpowers/sdd/2026-08-12-systems-memory/progress.md` and
+`.superpowers/sdd/2026-08-13-ada-prerequisites/progress.md`. **Read them before planning** — they
+record five separate instances of the check-that-cannot-fail trap found in three days.
+
+### Recommended scope split for what remains
+
+§11 steps 3–8 are too much for one plan. Split at the irreversible seam:
+
+- **Plan 3 — the interview.** Spine tables + seed · `discovery-interview` edge fn + phase 1 ·
+  proposal screen with accept/decline/park · phase 2 via `setup_questions` · creation through the
+  validated writers. Works end to end when done; nothing is destroyed.
+- **Plan 4 — the retirement.** Retire `CompanySetupPage`, `OnboardingArchitectPage`,
+  `onboarding-assist`, Ada, and `proposeTailoredSetup`; land the certify checks. **Only after
+  Plan 3 is proven.**
+
+### Carried decisions and gotchas — do not rediscover these
+
+- ⚠ **Retiring Ada is a ONE-ROW UPDATE**, not a trigger deletion. `feature_registry` already has
+  `onboarding_architect` (`default_enabled = true`) and `provision_onboarding_architect` reads it,
+  returning `{skipped: flag_off}`. Same reversible mechanism as the starter employees.
+- ⚠ **Three things must ship in the SAME step as that flip**, because they only bite at
+  retirement: `onboarding-assist/index.ts:57` matches Ada by **literal name** and 409s without her;
+  `GettingStartedGuide.tsx:37` excludes her by name and calls her "the hero of step 1";
+  `proposeTailoredSetup` (`hireApi.ts:215`) is regex-not-LLM and the interview supersedes it.
+- ⚠ **`matchProvider` trades lowercase recall.** "We use Slack" resolves; "we use slack" does not,
+  for the 16 providers named after ordinary words. A stop-list plus a case-sensitive exact-label
+  pass was the fix for a Critical where *"we close deals on monday and the team meets in front of
+  the box"* returned four providers, all labelled `confidence: 'exact'`. **Decide this before the
+  interview consumes it.**
+- ⚠ **`dreamteam` is in `connectors_provider_check` but deliberately NOT in the catalog** (17 live
+  rows use it). Catalog membership would force it into `PROVIDERS`, which the customer-facing
+  connector picker renders.
+- `request_subtenant`'s self-serve branch still does **not** run full baseline, so those subtenants
+  get no starter guardrails, approval limits or onboarding template. Pre-existing; named, left.
+- **Test a pure function against the real seeded data, not only its fixture.** Both per-task
+  reviews passed the matcher; only the whole-branch review crossed Task 3's algorithm with Task 1's
+  data and found the Critical.
+
+### Known red, needing owners (none caused by this programme)
+
+`certify` is NOT CERTIFIED on two sections: `ring0-probes` (2 `no-pending-approval`, 1
+`onboarding-bindings`) and `migration-ledger` (**ORPHANED 715/717 — production has applied
+migrations whose files the repo no longer holds**, which is the reverse-direction drift and the
+more serious of the two). Also open: `tests/tenant-isolation.test.ts` fails in teardown only.
