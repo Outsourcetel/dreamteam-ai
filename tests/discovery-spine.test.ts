@@ -285,6 +285,56 @@ run('the coverage ledger', () => {
     expect(def).toContain('discovery_dimensions');
   });
 
+  it('has a way OUT of running, or no interview that parks can ever finish', async () => {
+    // Migration 739. Before it, discovery_sessions.status never left
+    // 'running': `authenticated` has no UPDATE on the table (correct), and
+    // the engine only ever wrote coverage and transcript. Since stillOwed
+    // counts 'parked' as owed — correctly, "ask me later" must come back — a
+    // customer who parked one topic could never reach done:true, and the
+    // engine's own 409 session_not_running guard was unreachable code.
+    //
+    // ⚠ WHAT THIS ARM DOES *NOT* PROVE. Tests here are read-only against
+    // PRODUCTION (runQuery refuses anything but a lone SELECT/WITH), so it
+    // cannot call end_discovery_session and watch a real session move. The
+    // behavioural proof — park and abandon both reached, the coverage jsonb
+    // byte-identical across the call, a re-end into a different state
+    // refused, another tenant's session refused — is migration 739's own
+    // do-block, which ran against this database and would have refused to
+    // commit otherwise. This arm proves the function EXISTS with the exact
+    // signature that engine calls, and that its perimeter is right.
+    const rows = await runQuery<{ args: string }>(`
+      select pg_get_function_identity_arguments(p.oid) as args
+        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'end_discovery_session'`);
+    expect(rows.length, 'end_discovery_session must exist — it is the only caller-stops path').toBe(1);
+    expect(rows[0].args, 'signature must match what discovery-interview calls').toBe('p_session_id uuid, p_tenant_id uuid, p_status text, p_resume_hint text');
+
+    const [priv] = await runQuery<Record<string, boolean>>(`
+      select
+        has_function_privilege('anon','public.end_discovery_session(uuid, uuid, text, text)','execute')          as anon_exec,
+        has_function_privilege('authenticated','public.end_discovery_session(uuid, uuid, text, text)','execute') as auth_exec,
+        has_function_privilege('service_role','public.end_discovery_session(uuid, uuid, text, text)','execute')  as svc_exec,
+        has_table_privilege('authenticated','public.discovery_sessions','update')                                as auth_update`);
+    expect(priv.anon_exec, 'anon must not end interviews').toBe(false);
+    expect(priv.auth_exec, 'authenticated must not end interviews').toBe(false);
+    expect(priv.svc_exec, 'service_role must be able to end an interview, or there is no caller-stops path at all').toBe(true);
+    expect(priv.auth_update, 'authenticated must not UPDATE discovery_sessions — status and coverage move server-side only').toBe(false);
+  });
+
+  it('records where a parked interview stopped', async () => {
+    // Spec §8 listed resume_hint on discovery_sessions and nothing built it
+    // until 739, so a parked interview kept no note of where it left off —
+    // which is the invisible pile §7 refuses ("a park button that drops
+    // things into an invisible pile is that same failure with better
+    // manners"). Red if: the column is dropped, or renamed without the
+    // function and the engine following it.
+    const rows = await runQuery<{ data_type: string }>(`
+      select data_type from information_schema.columns
+       where table_schema = 'public' and table_name = 'discovery_sessions' and column_name = 'resume_hint'`);
+    expect(rows.length, 'discovery_sessions.resume_hint must exist').toBe(1);
+    expect(rows[0].data_type).toBe('text');
+  });
+
   it('keeps proposals out of the human task queue', async () => {
     // Ada's proposals went into action_executions, the same queue as
     // operational approvals, and 19 of 26 are still undecided. Setup approval

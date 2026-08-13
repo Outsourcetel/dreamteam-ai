@@ -1660,7 +1660,10 @@ const CASES = [
         has_table_privilege('authenticated','public.discovery_dimensions','update') as dim_update_authenticated,
         has_table_privilege('authenticated','public.discovery_dimensions','delete') as dim_delete_authenticated,
         has_table_privilege('authenticated','public.discovery_capability_demand','select') as demand_select_authenticated,
-        has_table_privilege('anon','public.discovery_capability_demand','select') as demand_select_anon`);
+        has_table_privilege('anon','public.discovery_capability_demand','select') as demand_select_anon,
+        has_table_privilege('authenticated','public.discovery_sessions','update') as session_update_authenticated,
+        has_function_privilege('authenticated','public.end_discovery_session(uuid, uuid, text, text)','execute') as end_session_authenticated,
+        has_function_privilege('service_role','public.end_discovery_session(uuid, uuid, text, text)','execute') as end_session_service_role`);
 
     const base = {
       dims,
@@ -1673,6 +1676,9 @@ const CASES = [
         dimDeleteAuthenticated: privRow?.dim_delete_authenticated,
         demandSelectAuthenticated: privRow?.demand_select_authenticated,
         demandSelectAnon: privRow?.demand_select_anon,
+        sessionUpdateAuthenticated: privRow?.session_update_authenticated,
+        endSessionAuthenticated: privRow?.end_session_authenticated,
+        endSessionServiceRole: privRow?.end_session_service_role,
       },
     };
     const clean = () => discoverySpineFailures(base).failures;
@@ -1704,6 +1710,26 @@ const CASES = [
         name: 'discovery-spine (guidance thinner than 120 chars fires)',
         firesJs: withState({
           dims: dimsPatched(activeKey, { guidance: 'too short' }),
+        }),
+        silentJs: clean,
+      },
+      {
+        // THE CLOSURE BAR, deleted from a guidance string while the string
+        // stays long enough to clear the >= 120 check. This is the exact
+        // edit that used to pass certify green AND the sidetrack suite
+        // green: 200 characters of plausible, undecidable prose replacing
+        // the one clause that tells a model a dimension is not covered by a
+        // customer who never addressed it. The only other place this clause
+        // was asserted (tests/discovery-spine.test.ts:176) sits inside an
+        // adminTokenAvailable() describe.skip, so on a machine with no token
+        // it reported as skipped rather than failed.
+        name: 'discovery-spine (a guidance string that loses "silence is not coverage" fires, even at full length)',
+        firesJs: withState({
+          dims: dimsPatched(activeKey, {
+            guidance: 'Ask the customer about this area of the business and listen carefully to what they say. '
+              + 'Capture whatever detail they offer, in their own words, and move on when the conversation '
+              + 'feels like it has run its natural course for this topic.',
+          }),
         }),
         silentJs: clean,
       },
@@ -1790,6 +1816,35 @@ const CASES = [
       {
         name: 'discovery-spine (anon gaining SELECT on discovery_capability_demand fires — cross-tenant aggregate)',
         firesJs: withState({ priv: { ...base.priv, demandSelectAnon: true } }),
+        silentJs: clean,
+      },
+      {
+        // The interview's own ledger, writable from the browser. This is the
+        // worst grant on this table: `authenticated` with UPDATE could set
+        // every dimension to 'heard' directly, without a model, a transcript
+        // or a word from the customer — the founder's requirement defeated
+        // one level below the gate that enforces it.
+        name: 'discovery-spine (authenticated gaining UPDATE on discovery_sessions fires — the coverage ledger must not be browser-writable)',
+        firesJs: withState({ priv: { ...base.priv, sessionUpdateAuthenticated: true } }),
+        silentJs: clean,
+      },
+      {
+        // end_discovery_session (migration 739) is the ONLY path out of
+        // 'running'. Reachable from the browser, it would let a tenant end
+        // its own interview from outside the engine, skipping the honest gap
+        // report the edge function returns with it.
+        name: 'discovery-spine (authenticated gaining EXECUTE on end_discovery_session fires)',
+        firesJs: withState({ priv: { ...base.priv, endSessionAuthenticated: true } }),
+        silentJs: clean,
+      },
+      {
+        // The other direction, and the one that actually broke before 739
+        // existed: with no service_role EXECUTE there is NO caller-stops
+        // path, so any interview that parks a dimension is owed something
+        // forever and `done` can never go true. A perimeter check that only
+        // ever tests the too-permissive direction cannot see that.
+        name: 'discovery-spine (service_role LOSING EXECUTE on end_discovery_session fires — no caller-stops path)',
+        firesJs: withState({ priv: { ...base.priv, endSessionServiceRole: false } }),
         silentJs: clean,
       },
       {

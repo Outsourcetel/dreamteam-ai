@@ -870,7 +870,16 @@ const sections = [
         has_table_privilege('authenticated','public.discovery_dimensions','update') as dim_update_authenticated,
         has_table_privilege('authenticated','public.discovery_dimensions','delete') as dim_delete_authenticated,
         has_table_privilege('authenticated','public.discovery_capability_demand','select') as demand_select_authenticated,
-        has_table_privilege('anon','public.discovery_capability_demand','select') as demand_select_anon`);
+        has_table_privilege('anon','public.discovery_capability_demand','select') as demand_select_anon,
+        has_table_privilege('authenticated','public.discovery_sessions','update') as session_update_authenticated,
+        has_function_privilege('authenticated','public.end_discovery_session(uuid, uuid, text, text)','execute') as end_session_authenticated,
+        has_function_privilege('service_role','public.end_discovery_session(uuid, uuid, text, text)','execute') as end_session_service_role`);
+    // ⚠ has_function_privilege on a name Postgres cannot resolve ERRORs
+    // 42883 rather than returning false — deliberate, per this repo's
+    // doctrine: if migration 739's end_discovery_session were dropped or its
+    // signature changed, this section goes LOUD instead of quietly reporting
+    // "authenticated cannot execute it" about a function that no longer
+    // exists.
 
     const { failures, dimensionsExamined, activeDimensionsExamined, sessionsExamined } = discoverySpineFailures({
       dims,
@@ -883,6 +892,9 @@ const sections = [
         dimDeleteAuthenticated: priv?.dim_delete_authenticated,
         demandSelectAuthenticated: priv?.demand_select_authenticated,
         demandSelectAnon: priv?.demand_select_anon,
+        sessionUpdateAuthenticated: priv?.session_update_authenticated,
+        endSessionAuthenticated: priv?.end_session_authenticated,
+        endSessionServiceRole: priv?.end_session_service_role,
       },
     });
 

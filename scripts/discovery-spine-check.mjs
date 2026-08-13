@@ -28,6 +28,30 @@
 // first version of that constraint), or any string outside this set.
 export const COVERAGE_STATES = new Set(['heard', 'parked', 'skipped', 'not_heard']);
 
+/**
+ * THE CLOSURE BAR, as text. Every dimension's guidance must contain this
+ * clause literally, because the whole design rests on it: it is the sentence
+ * that tells the model a dimension is NOT covered by a customer who never
+ * addressed it, and it is what migration 735 shipped across all fourteen
+ * after round 2 found the "for every X discussed, P holds" shape — vacuously
+ * true over an empty set — in seven of them.
+ *
+ * Why it is asserted HERE and not only in tests/discovery-spine.test.ts:176.
+ * That assertion lives inside `run = adminTokenAvailable() ? describe :
+ * describe.skip`, so a machine without SUPABASE_ACCESS_TOKEN reports it as
+ * skipped, not failed. certify, which DOES always run against production,
+ * previously inspected guidance only for `.length >= 120` — so replacing the
+ * clause with 200 characters of undecidable prose passed certify green AND
+ * the sidetrack suite green, and the interview silently lost its closure bar
+ * with nothing anywhere going red. A content invariant that decides interview
+ * depth must not depend on who happens to be holding an admin token.
+ *
+ * Matched case-insensitively against the guidance text, which is how the
+ * vitest arm matches it too — the two must agree, or one of them is a
+ * different check wearing the same name.
+ */
+export const SILENCE_CLAUSE = 'silence is not coverage';
+
 /** One session's coverage jsonb -> the bad `dimension=state` pairs in it. */
 function coverageViolations(coverage) {
   const bad = [];
@@ -117,10 +141,17 @@ export function discoverySpineFailures(s) {
     }
   }
 
-  // ── Guidance >= 120 chars, produces non-empty ────────────────────────────
+  // ── Guidance >= 120 chars, carries the closure bar, produces non-empty ───
+  // Length is not content: 200 characters of plausible prose clears the
+  // length bar and can still leave the model with no rule for when a
+  // dimension may be closed. Both are checked, separately, so a failure says
+  // which one it is.
   for (const d of active) {
-    const len = (d.guidance ?? '').length;
-    if (len < 120) failures.push(`${d.key} guidance is only ${len} char(s) (< 120) — too thin to tell a model when to stop asking`);
+    const guidance = d.guidance ?? '';
+    if (guidance.length < 120) failures.push(`${d.key} guidance is only ${guidance.length} char(s) (< 120) — too thin to tell a model when to stop asking`);
+    if (!guidance.toLowerCase().includes(SILENCE_CLAUSE)) {
+      failures.push(`${d.key} guidance no longer contains "${SILENCE_CLAUSE}" — that clause IS the closure bar (migration 735); without it a dimension the customer never addressed can be marked covered`);
+    }
     if (!(d.produces ?? []).length) failures.push(`${d.key} has an empty produces — nothing tells a later reader what this dimension is FOR`);
   }
 
@@ -146,6 +177,18 @@ export function discoverySpineFailures(s) {
   if (priv.dimInsertAuthenticated) failures.push('authenticated can INSERT discovery_dimensions — the spine is supposed to be service_role-only to write');
   if (priv.dimUpdateAuthenticated) failures.push('authenticated can UPDATE discovery_dimensions — the spine is supposed to be service_role-only to write');
   if (priv.dimDeleteAuthenticated) failures.push('authenticated can DELETE discovery_dimensions — the spine is supposed to be service_role-only to write');
+
+  // ── The interview's status is moved by ONE thing, and it is not the browser ──
+  // Migration 739 added end_discovery_session, the only path out of
+  // 'running'. Two facts make it the only path, and both are checked:
+  // `authenticated` holds no UPDATE on discovery_sessions (so a tenant
+  // session cannot rewrite status — or, far worse, coverage — directly from
+  // the browser), and the RPC itself is service_role-only. A grant in either
+  // direction here would mean the coverage ledger the whole interview is
+  // gated on could be edited by the thing being interviewed.
+  if (priv.sessionUpdateAuthenticated) failures.push('authenticated can UPDATE discovery_sessions — the coverage ledger and the session status must only move server-side, through record_dimension_state and end_discovery_session');
+  if (priv.endSessionAuthenticated) failures.push('authenticated can EXECUTE end_discovery_session — ending an interview is a server-side decision, not a browser one');
+  if (!priv.endSessionServiceRole) failures.push('service_role CANNOT EXECUTE end_discovery_session — the caller-stops path is unreachable, so any interview that parks a dimension can never end');
 
   // ── discovery_capability_demand: service_role only, it aggregates across every tenant ──
   if (priv.demandSelectAuthenticated) failures.push('authenticated can SELECT discovery_capability_demand — this view aggregates DEMAND ACROSS EVERY TENANT and must be service_role-only');
