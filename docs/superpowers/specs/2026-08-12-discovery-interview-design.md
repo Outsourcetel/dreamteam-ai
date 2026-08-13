@@ -137,7 +137,7 @@ accepted proposal goes through the same validated, audited function a human woul
 ```
 First login
   │
-  ├─ PHASE 1 — spine conversation (~6-10 questions, 12 dimensions)
+  ├─ PHASE 1 — spine conversation (~6-10 questions, 14 dimensions)
   │    answer → extract → mark dimensions → pick next question
   │    ends when the spine is covered, or the customer parks/stops
   │
@@ -279,7 +279,7 @@ on the starter employees was *new tenants only*, and the same question applies h
 1. `connector_providers` + `pending_credentials` state (independent, useful alone).
 2. Move `platform_admin` connector creation into baseline provisioning; fix the vacuous certify
    check. **Both before Ada is retired.**
-3. Spine tables + seed the 12 dimensions.
+3. Spine tables + seed the 14 dimensions.
 4. `discovery-interview` edge function + phase 1.
 5. Proposal screen + accept/decline/park.
 6. Phase 2 (`setup_questions` for accepted roles) + creation via validated writers.

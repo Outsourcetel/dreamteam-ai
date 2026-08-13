@@ -45,7 +45,7 @@ These were asked and not answered; each is the safe default and none is hard to 
 
 | File | Responsibility |
 |---|---|
-| `supabase/migrations/<n>_a_spine_of_things_worth_asking.sql` (create) | `discovery_dimensions` + the 12 seeded rows |
+| `supabase/migrations/<n>_a_spine_of_things_worth_asking.sql` (create) | `discovery_dimensions` + the 14 seeded rows |
 | `supabase/migrations/<n>_an_interview_that_remembers_what_it_missed.sql` (create) | `discovery_sessions`, `discovery_proposals`, the coverage RPCs |
 | `supabase/functions/discovery-interview/index.ts` (create) | the turn loop: extract → mark → choose next |
 | `tests/discovery-spine.test.ts` (create) | spine shape, capability-gap derivation, coverage state machine |
@@ -55,6 +55,16 @@ These were asked and not answered; each is the safe default and none is hard to 
 ---
 
 ## Task 1: A spine of things worth asking
+
+> **Stale since round-1 review (Founder Ruling B), corrected 2026-08-13:** everything below in
+> this Task 1 section — the corpus-reading instruction, the EXPECTED array, and the test
+> description — was written and executed against **twelve** dimensions, reproduced here
+> unmodified as the historical brief actually given. Ruling B added `how_work_gets_delivered`
+> and `the_workforce_itself` (twelve → fourteen) after this section was written, and two further
+> review rounds revised guidance, `serves_archetypes` and the test suite substantially beyond
+> what is shown here. **Do not use this section as a current reference for the dimension count,
+> the EXPECTED array, or the shape of `tests/discovery-spine.test.ts`.** The live migrations
+> (`supabase/migrations/733`–`736`) and the live test file are the source of truth.
 
 **Files:**
 - Create: `supabase/migrations/<claimed>_a_spine_of_things_worth_asking.sql`

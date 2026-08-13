@@ -34,6 +34,26 @@
 //     legal is none of those) to money_out (vendor contracts and their
 //     review, which is where a legal-capability gap actually surfaces).
 //
+// ROUND 3 REVIEW (migration 736, 733/734/735 stay applied, untouched):
+//   - Founder ruling: the_workforce_itself now carries {planned_hr}, same
+//     mechanism as procurement/QA/legal. Before this, '{}' meant two
+//     different things on different dimensions (see migration 736's
+//     header); after it, '{}' means only "produces settings, not a role" —
+//     checked below by confirming the five dimensions that mean it stay
+//     empty.
+//   - The old "dimensions with empty serves_archetypes never appear as
+//     gaps" assertion (previously here) was DELETED: given the view's own
+//     `gaps.planned_archetypes is not null` guard, an empty array cannot
+//     structurally produce a gap row, so that assertion could never fail —
+//     protecting nothing while reading as a guarantee. The real,
+//     falsifiable version of that check now lives in migration 736's `do $$`
+//     block as a THIRD rolled-back probe case (an empty-array row, asserted
+//     absent from the gap view) — vitest has no write access to run a probe
+//     like that itself.
+//   - winning_business regained a hard, numeric ad-spend ceiling
+//     (google_ads.budget_caps), lost when money_out was correctly
+//     re-derived in round 1 and never re-homed anywhere.
+//
 // Read-only: runQuery() refuses anything that is not a lone SELECT/WITH.
 // ============================================================
 import { describe, it, expect } from 'vitest';
@@ -89,8 +109,9 @@ run('the spine', () => {
     // check made impossible to commit. This is asserted on the REAL,
     // currently-committed rows — not a rolled-back probe — specifically so
     // "gaps -> []" can never again be reported as a clean, checked result by
-    // accident. As of round 2, how_work_gets_delivered (planned_procurement,
-    // planned_qa) and money_out (planned_legal) should both fire.
+    // accident. As of round 3, how_work_gets_delivered (planned_procurement,
+    // planned_qa), money_out (planned_legal) and the_workforce_itself
+    // (planned_hr) should all three fire.
     const gaps = await runQuery<{ dimension_key: string; planned_archetypes: string[]; customer_message: string }>(
       'select dimension_key, planned_archetypes, customer_message from public.discovery_capability_gaps order by dimension_key');
     console.log(`capability gaps today: ${gaps.map((g) => `${g.dimension_key} (${g.planned_archetypes.join(', ')})`).join('; ') || '(none)'}`);
@@ -106,19 +127,36 @@ run('the spine', () => {
       expect(g.customer_message, `${g.dimension_key} customer_message must promise to build it`).toMatch(/will build/i);
       expect(g.customer_message, `${g.dimension_key} customer_message must not read as an apology/refusal`).not.toMatch(/sorry|we can.?t|unable to/i);
     }
+  });
 
-    // Dimensions with no serves_archetypes at all must never appear as a
-    // gap — they never claimed a role in the first place. Queried
-    // structurally (a join, not a hardcoded key list) so this stays correct
-    // no matter which dimensions happen to carry an empty array on a given
-    // day — round 2 moved the_workforce_itself into that set and a
-    // hand-maintained list would have needed editing to notice.
-    const badGaps = await runQuery<{ key: string }>(`
-      select d.key
-        from public.discovery_dimensions d
-        join public.discovery_capability_gaps g on g.dimension_key = d.key
-       where d.active and coalesce(array_length(d.serves_archetypes, 1), 0) = 0`);
-    expect(badGaps.map((r) => r.key), 'dimensions with empty serves_archetypes must never be reported as gaps').toEqual([]);
+  it('the config-only dimensions have not silently gained an archetype', async () => {
+    // Round 3 review, item 2: this REPLACES a deleted assertion that queried
+    // discovery_dimensions joined to discovery_capability_gaps for dimensions
+    // with an empty serves_archetypes array. That assertion could never fail:
+    // the view only ever returns a row when
+    // `unnest(serves_archetypes) has a planned_-prefixed element`, and an
+    // empty array cannot contain one — structurally, not by luck of today's
+    // data. It read as protecting the config dimensions from ever being
+    // misreported as gaps and protected nothing, because no state of this
+    // table could have violated it. Proven empirically before deleting it:
+    // a one-off SELECT reproducing the view WITHOUT its `is not null` guard
+    // returns all 14 active dimensions, config ones included — that guard is
+    // where the real guarantee lives, not in any data query.
+    //
+    // What CAN meaningfully regress at the data layer is different: a future
+    // migration accidentally attaching a real or planned_ archetype to one
+    // of the five dimensions that are supposed to stay pure config (they
+    // produce settings — vocabulary, guardrails, approval chains, contact
+    // maps, success criteria — never a role). That is what this checks.
+    // Round 1 made the_workforce_itself's old membership here temporary
+    // (Founder Ruling A gave it planned_hr instead) — these five are the
+    // ones the clarified rule (migration 736) says stay empty permanently.
+    const configOnly = ['what_we_do', 'must_never_happen', 'who_signs_off', 'who_is_who', 'what_good_looks_like'];
+    const rows = await runQuery<{ key: string; n: number }>(
+      "select key, coalesce(array_length(serves_archetypes,1),0) as n from public.discovery_dimensions where active");
+    const byKey = Object.fromEntries(rows.map((r) => [r.key, r.n]));
+    const drifted = configOnly.filter((k) => (byKey[k] ?? 0) !== 0);
+    expect(drifted, 'config-only dimensions that have gained an archetype').toEqual([]);
   });
 
   it('no dimension can be closed by a transcript that said nothing about it', async () => {
@@ -150,5 +188,31 @@ run('the spine', () => {
     const byKey = Object.fromEntries(rows.map((r) => [r.key, r.serves_archetypes]));
     expect(byKey['money_out'], 'money_out must carry planned_legal').toContain('planned_legal');
     expect(byKey['the_workforce_itself'] ?? [], 'the_workforce_itself must no longer carry planned_legal').not.toContain('planned_legal');
+  });
+
+  it('the_workforce_itself carries planned_hr', async () => {
+    // Round 3 founder ruling: apply the same gap mechanism procurement,
+    // legal and QA already get. A customer describing payroll and rotas now
+    // gets the identical "we'll build one around what you've described"
+    // promise, and the platform gets the same demand flag.
+    const rows = await runQuery<{ serves_archetypes: string[] }>(
+      "select serves_archetypes from public.discovery_dimensions where active and key = 'the_workforce_itself'");
+    expect(rows.length).toBe(1);
+    expect(rows[0].serves_archetypes).toEqual(['planned_hr']);
+  });
+
+  it('winning_business elicits an ad-spend ceiling as a number, not an intention', async () => {
+    // Round 3, item 3: money_out's correct re-derivation to AP/vendor
+    // renewals (round 1) dropped google_ads.budget_caps ("e.g. $500/day,
+    // $12,000/month") on the way out — no dimension asked for it afterward.
+    // Re-homed to winning_business, which already discusses google_ads for
+    // its conversion_goals fact. A prose mention of "budget" would not be
+    // enough — the guidance must actually contain a dollar figure, the same
+    // way money_in's worked example contains "net 30" rather than "prompt
+    // payment terms".
+    const rows = await runQuery<{ guidance: string }>(
+      "select guidance from public.discovery_dimensions where active and key = 'winning_business'");
+    expect(rows.length).toBe(1);
+    expect(rows[0].guidance, 'winning_business guidance must contain a concrete dollar figure').toMatch(/\$[0-9]/);
   });
 });
