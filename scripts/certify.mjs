@@ -773,6 +773,26 @@ const sections = [
       // were in production before either tree saw the other, so neither can be
       // renamed. A convention only holds once everyone has it.
       '669',
+      // 2026-08-12 — the same defeat as 669, twice in one morning, and the
+      // second one is the sharper lesson. Two agents, one repo:
+      //   715_ratchet_default_privileges_authenticated   applied 10:37:33
+      //   715_the_definition_says_which_engine_owns_it   applied 10:44:33
+      //   717_revoke_live_uncalled_grants_slice1_content applied 10:57:43
+      //   717_four_roles_get_a_procedure_and_intake      applied 10:58:00
+      //
+      // `npm run migrate:next` was run for both of mine and answered correctly
+      // at the time — for 715 it read `local 713 · origin 714 · prod ledger
+      // 714`, and it caught the 716 claim in between, which is why there is no
+      // 716 collision. The gap it cannot close is CLAIM-TO-APPLY: the other
+      // session's 715 landed in the seven minutes between my claim and my
+      // apply. On 717 the margin was SEVENTEEN SECONDS.
+      //
+      // So this is not "someone forgot to run the tool". O_EXCL binds the file
+      // on ONE disk; production is the shared resource and nothing holds a
+      // claim there until apply. Closing it needs the claim to be taken in the
+      // ledger at claim time, not at apply time — a real change to
+      // migrate:next, recorded here rather than attempted in passing.
+      '715', '717',
     ]);
     const names = readdirSync('supabase/migrations').filter((f) => f.endsWith('.sql'));
     const byNum = new Map();
