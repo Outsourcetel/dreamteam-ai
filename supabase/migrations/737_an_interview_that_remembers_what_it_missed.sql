@@ -94,10 +94,19 @@ create table if not exists public.discovery_sessions (
   created_by  uuid,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
+  -- The brief's literal shape for this constraint used
+  -- `not exists (select 1 from jsonb_each(coverage) e where ...)` — Postgres
+  -- refuses that outright (0A000: cannot use subquery in check constraint),
+  -- even though the subquery only ever touches the row's own column. Proven
+  -- live against production before writing this: the CREATE TABLE failed
+  -- exactly there, nothing landed. jsonb_path_exists is the subquery-free
+  -- equivalent — a single function call over a jsonpath literal, which IS
+  -- allowed — and it keeps all four state words in the constraint's own
+  -- text (checked below and by the vitest suite via pg_get_constraintdef,
+  -- which is why this isn't hidden behind a helper function instead).
   constraint discovery_sessions_coverage_states check (
-    not exists (
-      select 1 from jsonb_each(coverage) e
-       where e.value->>'state' not in ('heard','parked','skipped','not_heard'))
+    not jsonb_path_exists(coverage,
+      '$.*.state ? (@ != "heard" && @ != "parked" && @ != "skipped" && @ != "not_heard")')
   )
 );
 
