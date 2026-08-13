@@ -1,0 +1,404 @@
+/**
+ * discovery-interview — Task 3 of the discovery interview engine plan
+ * (.superpowers/sdd/2026-08-13-discovery-interview-engine): the ENGINE that
+ * drives a plain-English conversation across the SPINE (Task 1: fourteen
+ * seeded public.discovery_dimensions) using the MEMORY (Task 2:
+ * public.discovery_sessions.coverage, start_discovery_session,
+ * record_dimension_state).
+ *
+ * THE FOUNDER'S REQUIREMENT, VERBATIM — everything below serves it: "I don't
+ * want to lose the depth of the interview or getting side tracked because
+ * customer got focused on one thing and forgot other critical pieces."
+ *
+ * THE GATE. Every model turn's extraction passes through coverageAfter
+ * (supabase/functions/_shared/discoveryCoverage.ts) before anything is
+ * persisted — the model PROPOSES which dimensions it heard evidence for,
+ * this function DISPOSES: validates every dimension key and state against
+ * the real spine, throws on a typo rather than silently minting a new
+ * dimension, and the caller (below) never trusts an extraction that fails
+ * that gate. Same shape as de-mission's validateScope and
+ * compile-trust-plan's live-validator pass — copied deliberately, per the
+ * task instructions ("the best-built precedent in this codebase").
+ *
+ * THE SPINE CANNOT BE LEFT. The next question this function returns always
+ * targets a dimension that is still 'not_heard' or 'parked' — never
+ * whatever the model or the customer brought up unprompted. The model's own
+ * `next_question` proposal is used ONLY when it names a dimension genuinely
+ * still owed after this turn's extraction; otherwise a deterministic
+ * fallback question (fallbackQuestionText, also used for the very first
+ * question at 'start') takes over. `done` is likewise computed ONLY from the
+ * real coverage ledger (nothing left not_heard or parked) — the model's own
+ * "done" opinion in its JSON response is read nowhere below; see the
+ * comment at its one appearance in the prompt schema.
+ *
+ * WHERE coverageAfter ACTUALLY LIVES. This file imports it (and stillOwed)
+ * from ../_shared/discoveryCoverage.ts and re-exports both below, so they
+ * remain real, documented exports of this deployed function. Direct import
+ * of THIS file from vitest is not possible under Node's ESM loader (it
+ * rejects the https: scheme this file's own serve()/createClient() imports
+ * use, unconditionally, before any of this file's code runs) — proven
+ * empirically and explained in full in
+ * tests/discovery-sidetrack.test.ts's header, which is why that test
+ * imports coverageAfter from the _shared module directly instead.
+ *
+ * VAGUE ANSWERS AND MONOLOGUES — the two failure modes this prompt is
+ * written against (task instructions, verbatim: "state to yourself what a
+ * model would do with a customer who answers everything with one vague
+ * sentence, and what it would do with one who monologues about a single
+ * topic"):
+ *   - A vague answer ("we help customers") must never be marked 'heard' —
+ *     buildInterviewSystem() tells the model to apply each dimension's own
+ *     guidance text literally as the heard/not-heard bar (that guidance
+ *     already states, per dimension, exactly what "vague" looks like — see
+ *     migration 734's own worked examples) and to ask ONE sharper,
+ *     concrete follow-up before ever parking a dimension that stays vague.
+ *   - A monologue on one topic must not stall the interview — the system
+ *     prompt instructs the model to extract everything the answer supports
+ *     across EVERY still-owed dimension at once (a rambling answer often
+ *     touches several) and to redirect once a topic is genuinely covered.
+ *     That instruction is a SOFT rail (the model can ignore it); the HARD
+ *     rail is server-side: next_question.dimension is only ever honored
+ *     when it is still in the owed set computed AFTER this turn's
+ *     extraction, so even a model that keeps proposing an already-heard
+ *     dimension is overridden by the deterministic fallback. Two layers,
+ *     because the prompt is advisory and the gate is not.
+ *
+ * Consumes: discovery_dimensions, discovery_sessions, start_discovery_session,
+ * record_dimension_state, _shared/llm.ts (via _shared/modelCall.ts, the
+ * entity-draft/compile-trust-plan pattern).
+ * Produces: POST { action:'start', tenant_id } -> { session_id, question }
+ *           POST { action:'answer', session_id, text } -> { question|null, coverage, done }
+ *
+ * Never writes digital_employees, guardrail_rules, playbook_definitions or
+ * connectors rows — proposal-writing (discovery_proposals) is out of scope
+ * for this task; Step 6's own description of the turn loop's mechanics
+ * (transcript+owed dims -> model -> extraction+next_question -> gate ->
+ * persist -> return) never mentions generating a proposal, so none is
+ * generated here. Nothing here reads or writes a digital_employees row with
+ * is_workforce_assistant = true — nothing here touches digital_employees at
+ * all. Not deployed by this task (deployment ships with the UI, Plan 3b).
+ */
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { hasLLMProvider } from '../_shared/llm.ts';
+import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
+import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
+import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
+import { reportEdgeError } from '../_shared/errorReport.ts';
+import { budgetBlocked, rpcOrThrow } from '../_shared/rpcSafety.ts';
+import { makeCallModelText } from '../_shared/modelCall.ts';
+import {
+  coverageAfter,
+  stillOwed,
+  type DiscoveryCoverageMap,
+  type DiscoveryExtraction,
+} from '../_shared/discoveryCoverage.ts';
+
+// Re-exported so this remains a real, documented export of the deployed
+// function — see the file header for why tests reach it via the _shared
+// module directly instead of through this one.
+export { coverageAfter, stillOwed };
+
+const callModel = makeCallModelText('discovery-interview', 1536, { temperature: 0.4 });
+
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-dispatch-secret',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...CORS, 'Content-Type': 'application/json' } });
+const fail = (error: string, detail: string, s: number) => json({ ok: false, error, detail }, s);
+
+const MAX_ANSWER_CHARS = 4000;
+const MAX_TRANSCRIPT_TURNS_STORED = 80;
+const MAX_TRANSCRIPT_TURNS_TO_MODEL = 24;
+
+interface DimensionRow { key: string; ordinal: number; title: string; guidance: string }
+interface TranscriptTurn { role: 'user' | 'assistant'; text: string; at: string }
+
+function parseJson(t: string): Record<string, unknown> | null {
+  const m = t.match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  try { return JSON.parse(m[0]); } catch { return null; }
+}
+
+/** Customer-facing, generic across any dimension — guidance itself is
+ *  written FOR THE MODEL (it says things like "mark heard only once…"), so
+ *  this never quotes it directly; it just names the topic and invites an
+ *  open answer. Used both for the very first question at 'start' and as the
+ *  hard fallback whenever the model's own next_question does not survive
+ *  validation. */
+function fallbackQuestionText(dim: DimensionRow): string {
+  return `Let's talk about ${dim.title.toLowerCase()}. Tell me about it in your own words — what's actually going on there today?`;
+}
+
+function buildInterviewSystem(): string {
+  return [
+    'You are conducting a plain-English discovery interview for a new business customer, so a governed AI workforce product can be configured around real facts about their business rather than guesses.',
+    '',
+    'THE RULE THAT MATTERS MOST: a customer may fixate on one topic — support tickets, one big account, whatever is on their mind today — for many turns in a row. Do not let that happen. Read their latest answer together with the recent conversation, extract everything it actually supports across EVERY still-owed dimension it touches (a rambling answer often gives real evidence for more than one at once), then move the conversation forward. Never ask a second follow-up about a dimension already marked heard. Your next_question.dimension MUST be chosen from the STILL-OWED DIMENSIONS list given to you below — never a dimension outside that list, and never simply whatever the customer brought up unprompted.',
+    '',
+    'HANDLING A VAGUE ANSWER: each still-owed dimension below carries its own guidance describing, with concrete worked examples, exactly what counts as covered versus a vague restatement of the topic (e.g. "we help customers" is never covered; a specific, concrete fact is). Apply that bar literally. Do NOT mark a dimension "heard" just because the customer said something on-topic — and never invent detail they did not actually give. If an answer is vague or generic: (a) leave that dimension OUT of extraction (no change — it stays open) and ask ONE sharper, concrete follow-up on the SAME dimension (a specific example, a number, a named system, a named person), or (b) if you have already asked about it more than once and it is still vague, extract it as "parked" — never "heard" — and move to a different still-owed dimension instead of asking a third time.',
+    '',
+    'EXTRACTION: for every still-owed dimension the customer\'s LATEST answer genuinely gives real evidence for, emit one entry: {"dimension": <a key from STILL-OWED DIMENSIONS>, "state": "heard"|"parked"|"skipped", "evidence": <the concrete fact, your own words, under 300 characters>}. "skipped" is only for a dimension the customer explicitly says does not apply to their business (never assume this from silence). "parked" is for "ask me later" or a second still-vague answer, as above. Omit a dimension entirely when you have no real update for it this turn — omitting means "no change", never "heard".',
+    '',
+    'Return ONLY JSON, nothing else:',
+    '{"extraction": [{"dimension": string, "state": "heard"|"parked"|"skipped", "evidence": string}],',
+    ' "next_question": {"dimension": string, "text": string} | null,',
+    ' "done": boolean}',
+    'next_question.dimension MUST be one of the still-owed keys given to you, deliberately chosen — redirect once a dimension is genuinely covered, do not default back to the one the customer was just asked about unless it is still open. Set next_question to null only if you believe this turn\'s extraction covers every still-owed dimension. "done" is your own opinion for logging only — the platform decides authoritatively from the real coverage ledger, never from this field, so getting it wrong changes nothing except that the platform will supply its own next question instead of yours.',
+    FIREWALL_RULES,
+  ].join('\n');
+}
+
+function coerceExtraction(raw: unknown): DiscoveryExtraction[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((x): x is Record<string, unknown> => !!x && typeof x === 'object')
+    .slice(0, 20)
+    .map((x) => ({
+      dimension: String(x.dimension ?? ''),
+      state: String(x.state ?? ''),
+      evidence: x.evidence != null ? String(x.evidence).slice(0, 500) : null,
+    }));
+}
+
+type ValidationResult =
+  | { ok: true; coverage: DiscoveryCoverageMap }
+  | { ok: false; error: string };
+
+/** THE GATE. Every extraction passes through coverageAfter before anything
+ *  is persisted — an unknown dimension or state throws, and this function
+ *  turns that throw into an honest, retryable validation result rather than
+ *  letting it crash the request. */
+function validateExtraction(
+  dimensions: readonly DimensionRow[],
+  priorCoverage: DiscoveryCoverageMap,
+  rawExtraction: unknown,
+): ValidationResult {
+  const extraction = coerceExtraction(rawExtraction);
+  try {
+    return { ok: true, coverage: coverageAfter(dimensions, priorCoverage, extraction) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+  if (req.method !== 'POST') return fail('method_not_allowed', 'POST only', 405);
+
+  let tenantId: string | null = null;
+  try {
+    const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const svc = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const dispatch = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
+    const body = await req.json().catch(() => ({}));
+    const action = String(body.action ?? '');
+    if (action !== 'start' && action !== 'answer') return fail('bad_request', "action must be 'start' or 'answer'", 400);
+
+    // ── auth: user JWT (tenant resolved from profile) or service/dispatch
+    // with an explicit tenant_id — the entity-draft pattern. Discovery is a
+    // setup-time action any tenant member can run for their own workspace,
+    // not a manager-only mutation like compile-trust-plan's trust ladders. ──
+    const bearer = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+    if ((dispatch && req.headers.get('x-dispatch-secret') === dispatch) || bearer === svc) {
+      tenantId = typeof body.tenant_id === 'string' ? body.tenant_id : null;
+      if (!tenantId) return fail('bad_request', 'tenant_id required for service/dispatch calls', 400);
+    } else {
+      const { data: u } = await admin.auth.getUser(bearer);
+      if (!u?.user) return fail('unauthorized', 'user JWT required', 401);
+      const { data: prof } = await admin.from('profiles').select('tenant_id, layer').eq('user_id', u.user.id).maybeSingle();
+      tenantId = await resolveTenantWithRemoteAccess(admin, u.user.id, prof?.tenant_id, prof?.layer, body?.tenant_id);
+      if (!tenantId) return fail('no_tenant', 'no tenant resolved for this user', 403);
+    }
+
+    const gate = await loadTenantGate(admin, tenantId);
+    if (gate.suspended) return json({ ok: false, ...TENANT_SUSPENDED_BODY }, 402);
+
+    const { data: dimRows, error: dimErr } = await admin
+      .from('discovery_dimensions')
+      .select('key, ordinal, title, guidance')
+      .eq('active', true)
+      .order('ordinal', { ascending: true });
+    if (dimErr) return fail('dimensions_unavailable', dimErr.message, 500);
+    const dimensions = (dimRows ?? []) as DimensionRow[];
+    if (dimensions.length === 0) return fail('no_dimensions', 'no active discovery dimensions are configured', 500);
+    const dimByKey = new Map(dimensions.map((d) => [d.key, d]));
+
+    // ── action: start ──────────────────────────────────────────────────
+    if (action === 'start') {
+      // No model call happens in this action (the opening question is
+      // deterministic — see fallbackQuestionText), but every turn after
+      // this one needs the AI engine, so fail BEFORE creating a session
+      // rather than leaving a stray row an interview can never continue.
+      if (!(await hasLLMProvider(admin, tenantId))) {
+        return fail('llm_not_configured', 'no AI engine key configured for this workspace yet (Settings → AI Engine) — the interview needs it for every turn after this one', 503);
+      }
+
+      const sessionId = await rpcOrThrow<string>(admin, 'start_discovery_session', { p_tenant_id: tenantId });
+
+      const opening = `Hi! I'd like to get to know your business so we can set things up right. ${fallbackQuestionText(dimensions[0])}`;
+      const openingTurn: TranscriptTurn = { role: 'assistant', text: opening, at: new Date().toISOString() };
+      // Best-effort side record, same contract as rpcLoud: a failure here
+      // must not cost the customer their session_id/opening question (the
+      // next 'answer' call still works off whatever transcript actually
+      // persisted), but it must be LOGGED, never silently swallowed.
+      const { error: transcriptErr } = await admin.from('discovery_sessions').update({ transcript: [openingTurn] }).eq('id', sessionId);
+      if (transcriptErr) console.error(`[discovery-interview] opening transcript write failed (best-effort, continuing): ${transcriptErr.message}`);
+
+      return json({ session_id: sessionId, question: opening });
+    }
+
+    // ── action: answer ─────────────────────────────────────────────────
+    const sessionId = String(body.session_id ?? '').trim();
+    const text = String(body.text ?? '').trim().slice(0, MAX_ANSWER_CHARS);
+    if (!sessionId) return fail('bad_request', 'session_id required', 400);
+    if (!text) return fail('bad_request', "text required — the customer's answer", 400);
+
+    // Cross-tenant perimeter: the session must belong to the TENANT WE
+    // RESOLVED, not merely exist — a bare session_id is never treated as
+    // its own authorization (the exact "tenant-id param IS authorisation"
+    // pattern this codebase has had to re-fence more than once).
+    const { data: session, error: sessErr } = await admin
+      .from('discovery_sessions')
+      .select('id, status, coverage, transcript')
+      .eq('id', sessionId)
+      .eq('tenant_id', tenantId)
+      .maybeSingle();
+    if (sessErr) return fail('session_unavailable', sessErr.message, 500);
+    if (!session) return fail('session_not_found', 'no such discovery session in this workspace', 404);
+    if (session.status !== 'running') {
+      return fail('session_not_running', `this session is '${session.status}', not running — it cannot take another answer`, 409);
+    }
+
+    if (!(await hasLLMProvider(admin, tenantId))) {
+      return fail('llm_not_configured', 'no AI engine key configured for this workspace (Settings → AI Engine)', 503);
+    }
+    const { data: budget, error: budgetErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
+    if (budgetBlocked(budgetErr, budget)) return fail('ai_budget_exceeded', 'this workspace has reached its AI budget', 429);
+
+    const priorCoverage = (session.coverage ?? {}) as DiscoveryCoverageMap;
+    const owedKeysBefore = new Set(stillOwed(priorCoverage));
+    const owedDims = dimensions.filter((d) => owedKeysBefore.has(d.key));
+
+    // Defensive, not expected in normal use: if a prior turn already closed
+    // every dimension, answer honestly without spending a model call rather
+    // than crash on an empty owed set.
+    if (owedDims.length === 0) {
+      return json({ question: null, coverage: priorCoverage, done: true });
+    }
+
+    const priorTranscript = (Array.isArray(session.transcript) ? session.transcript : []) as TranscriptTurn[];
+    const transcriptForModel = priorTranscript
+      .slice(-MAX_TRANSCRIPT_TURNS_TO_MODEL)
+      .map((t) => `${t.role === 'user' ? 'CUSTOMER' : 'INTERVIEWER'}: ${t.text}`)
+      .join('\n');
+
+    const system = buildInterviewSystem();
+    const owedForPrompt = owedDims.map((d) => ({ key: d.key, title: d.title, guidance: d.guidance }));
+    const buildUserMsg = (correction?: string): string =>
+      `STILL-OWED DIMENSIONS (the ONLY legal targets for next_question.dimension — platform-authored, trusted):\n${JSON.stringify(owedForPrompt)}\n\n`
+      + `CONVERSATION SO FAR:\n${wrapUntrusted(transcriptForModel, 'interview-transcript')}\n\n`
+      + `THE CUSTOMER'S LATEST ANSWER:\n${wrapUntrusted(text, 'customer-latest-answer')}`
+      + (correction ? `\n\n${correction}` : '');
+
+    let totalIn = 0, totalOut = 0;
+
+    async function attempt(correction?: string): Promise<{ parsed: Record<string, unknown> | null; failReason: string | null }> {
+      const c = await callModel(admin, system, [{ role: 'user', content: buildUserMsg(correction) }], 1536);
+      if ('error' in c) return { parsed: null, failReason: `model call failed: ${c.error}` };
+      totalIn += c.inTok; totalOut += c.outTok;
+      const p = parseJson(c.text);
+      if (!p) return { parsed: null, failReason: 'model did not return valid JSON' };
+      return { parsed: p, failReason: null };
+    }
+
+    let { parsed, failReason } = await attempt();
+    let validation: ValidationResult = parsed
+      ? validateExtraction(dimensions, priorCoverage, parsed.extraction)
+      : { ok: false, error: failReason ?? 'no parseable model response' };
+
+    // Exactly ONE retry total, whichever failure class fired — unparseable
+    // JSON or a spine-violating extraction both cost one question, never
+    // the session (task instructions, verbatim).
+    if (!validation.ok) {
+      const correction = failReason
+        ? 'Your previous reply was not valid JSON. Return ONLY the JSON object described above, nothing else.'
+        : `Your previous extraction was rejected: ${validation.error}. Every "dimension" you name MUST be one of the exact keys in STILL-OWED DIMENSIONS above, and every "state" must be exactly "heard", "parked" or "skipped". Return the corrected, complete JSON object, nothing else.`;
+      const retry = await attempt(correction);
+      parsed = retry.parsed;
+      failReason = retry.failReason;
+      validation = parsed
+        ? validateExtraction(dimensions, priorCoverage, parsed.extraction)
+        : { ok: false, error: failReason ?? 'no parseable model response' };
+    }
+
+    // Give up gracefully: mark nothing, carry prior coverage forward
+    // unchanged. The customer's raw answer is still saved to the
+    // transcript below, so nothing said is lost — only credited.
+    const newCoverage: DiscoveryCoverageMap = validation.ok ? validation.coverage : priorCoverage;
+
+    // Persist ONLY what actually changed this turn. record_dimension_state
+    // is a CLAIM the customer's answer is recorded — a failure here must
+    // stop the response, never be swallowed (rpcOrThrow, not rpcLoud; see
+    // _shared/rpcSafety.ts's own header on why .rpc() resolving on error is
+    // exactly the trap this avoids).
+    const changedKeys = Object.keys(newCoverage).filter((k) => {
+      const before = priorCoverage[k];
+      const after = newCoverage[k];
+      return !before || before.state !== after.state || (before.evidence ?? null) !== (after.evidence ?? null);
+    });
+    for (const key of changedKeys) {
+      const entry = newCoverage[key];
+      await rpcOrThrow(admin, 'record_dimension_state', {
+        p_session_id: sessionId, p_dimension: key, p_state: entry.state, p_evidence: entry.evidence,
+      });
+    }
+
+    const owedAfter = stillOwed(newCoverage);
+    const done = owedAfter.length === 0; // computed from the real ledger — never from parsed.done
+
+    // next_question: the model PROPOSES, this function DISPOSES. Used only
+    // when it names a dimension genuinely still owed AFTER this turn's
+    // extraction — the hard version of "the model cannot leave the spine";
+    // the prompt only asks nicely, this is what actually enforces it.
+    let questionText: string | null = null;
+    if (!done) {
+      const proposedRaw = parsed && typeof parsed.next_question === 'object' ? parsed.next_question as Record<string, unknown> | null : null;
+      const proposedDim = proposedRaw ? String(proposedRaw.dimension ?? '') : '';
+      const proposedText = proposedRaw ? String(proposedRaw.text ?? '').trim().slice(0, 600) : '';
+      questionText = proposedText && owedAfter.includes(proposedDim)
+        ? proposedText
+        : fallbackQuestionText(dimByKey.get(owedAfter[0])!);
+    }
+
+    // Transcript: appended separately from the per-dimension coverage
+    // writes above (which already went through record_dimension_state) —
+    // this is the ONLY place discovery_sessions.transcript is written.
+    const now = new Date().toISOString();
+    const newTranscript: TranscriptTurn[] = [
+      ...priorTranscript,
+      { role: 'user', text, at: now },
+      ...(questionText ? [{ role: 'assistant' as const, text: questionText, at: now }] : []),
+    ].slice(-MAX_TRANSCRIPT_TURNS_STORED);
+    // Best-effort side record, same contract as rpcLoud: the coverage state
+    // that actually gates the interview was already durably persisted above
+    // via record_dimension_state (rpcOrThrow — a real failure there already
+    // aborted the request). A failure writing the transcript costs future
+    // conversational context, never the ledger, but must still be logged.
+    const { error: transcriptErr } = await admin.from('discovery_sessions').update({ transcript: newTranscript }).eq('id', sessionId);
+    if (transcriptErr) console.error(`[discovery-interview] transcript write failed (best-effort, continuing): ${transcriptErr.message}`);
+
+    return json({
+      question: questionText,
+      coverage: newCoverage,
+      done,
+      usage: { input_tokens: totalIn, output_tokens: totalOut },
+    });
+  } catch (err) {
+    console.error('discovery-interview error:', String(err));
+    await reportEdgeError('discovery-interview', err, {}, tenantId);
+    return fail('internal_error', String(err), 500);
+  }
+});
