@@ -291,6 +291,90 @@ comes last, after the replacement is proven.
 
 ---
 
+## 11b. SHORT PROPOSALS — researched 2026-08-13, founder asked "will be nice if we can give short proposals"
+
+**The premise needed correcting first. Ada's cards were ALREADY short** — title plus four
+key-value lines. Length was never why 19 of her 26 proposals went undecided; migration 737's own
+header names the cause (they went into the ops queue). Her real defects were different: no decline
+control, no cost, no statement of *what the thing will be able to do*, `approve` firing
+immediately, and `params.outline` dumping unbounded prose into a card.
+
+**So the goal is not "shorter". It is: shorter where that is safe, and never shorter where it is
+not.**
+
+### The evidence, and where it is contested
+
+- **Choice overload is weaker than the folklore.** Scheibehenne, Greifeneder & Todd (2010, *JCR*
+  37:409-425; 63 conditions, N≈5,036) found a **mean effect near zero**. Chernev, Böckenholt &
+  Goodman (2015) recovered it only under four moderators: set complexity, task difficulty,
+  preference uncertainty, decision goal. **Discovery proposals hit all four — so overload is real
+  HERE, but item count is the wrong lever.**
+- **Decision fatigue is the contested one.** Danziger et al. (2011) is undercut by
+  Weinshall-Margel & Shapard (non-random case ordering) and Glöckner (2016, implausible d≈1.96).
+  Do not design around it.
+- **The well-evidenced failure is habituation from volume**, and it is severe: drug-interaction
+  alert override ≈**90%**; Chrome SSL warning click-through **70.2%**; **74%** skip the policy via
+  clickwrap; only **3%** understood Android permissions. ⚠ Most pointed of all — Böhme & Köpsell
+  (CHI 2010): **the more a dialog looks like a EULA, the more blindly it is accepted.**
+- Layered disclosure is regulator-sanctioned (WP29 WP260rev01 requires purpose, identity and rights
+  in the *first* layer). But NN/g is clear that hiding content diminishes awareness of it and is
+  **wrong when users must compare across items** — which is exactly guardrails and trust rules.
+
+### THE LINE — irreversibility × blast radius, and it moves by kind
+
+The card must carry every fact needed to **predict what changes without you**.
+
+| Kind | On the card | Why |
+|---|---|---|
+| `conversation_type` | label + owner — one line | a label acts on nothing |
+| `connector` | provider + what it reads/writes + "you still enter the credential" | the credential step **is** the second gate |
+| `procedure` | name + trigger + "draft; runs only when you publish" | publish is the real gate |
+| `employee` | name + job + **the systems it will be able to touch** + "starts supervised, drafts everything, sends nothing" + "comes with a published SOP" | tool reach belongs on the card, not behind a link |
+| `guardrail` | the rule sentence **and its literal pattern or threshold, verbatim** | ⚠ **you cannot consent to a block you cannot predict** |
+| `trust_rule` | employee + action category + the dollar/confidence cap + what happens above it | ⚠ **the only kind where no card is short enough** — it is the one proposal that removes a human |
+
+### Shape, granularity, and the gap message
+
+**Card shape:** reuse `DecisionCard` unchanged (it already has the right five slots) — title in plain
+English · one sentence of consequence · the enforceable literal in `meta` (`matches: refund|chargeback`,
+`over $10,000`, `HubSpot · reads deals, writes notes`) · Accept/Decline/Park · the one thing changeable
+later. ~25 words plus one literal. A `Drawer` carries rationale, `source_dimension`, the transcript
+sentence it came from, and what accepting writes. **One disclosure level, never two.**
+
+**Granularity — batch by kind, ordered by stakes:**
+- **All-at-once is refused** — it is the EULA shape Böhme & Köpsell showed gets accepted blind.
+- **Item-by-item for ~40 items is also refused** — it manufactures the volume that produces
+  90%-override habituation, and it is what cost Ada 19 decisions.
+- Low-stakes kinds (`conversation_type`, `procedure`-as-draft, `connector`-at-`pending_credentials`)
+  → "accept all N" with per-item unchecking, **because their second gate is the real consent.**
+- `employee` → batch by department, every card individually visible.
+- ⚠ **`guardrail` and `trust_rule` never batch** — guardrails because comparison across rules is
+  the task disclosure ruins; trust rules because they are the only proposal that removes a human.
+
+⚠ **CORRECTION TO §5:** the two-column "WHAT WE RECOMMEND / WHAT WE DIDN'T HEAR" layout is **wrong**
+for the capability-gap message. Equal visual weight makes a non-decision compete with decisions.
+Put `discovery_capability_gaps.customer_message` **below the last batch as a `Banner tone="info"`
+with no action control** — it cannot be approved, declined or parked, so it cannot join the queue.
+
+**Safely deferred** (each has a later unavoidable gate): connector field mappings and action
+enablement · playbook step bodies · the archetype's own `setup_questions` (Phase 2 by design) ·
+watcher configs · KPI targets · escalation contacts.
+**NOT deferrable:** a guardrail's pattern/threshold, an employee's system access, a trust rule's cap
+— *accepting them is the last human moment.*
+
+### Volume, and one open question
+
+Worst case ≈**80** proposals; a real SMB answering all 14 dimensions honestly lands at **30–45**.
+Design for 40, survive 80.
+
+⚠ **UNRESOLVED, and it changes the ordering:** does a `trust_rule` proposal *create* a
+`trust_policies` row, or *edit* one `install_role_kit` already made? `set_trust_ladder` mutates an
+existing row keyed on `(de_id, action_category)`. If it edits, trust rules cannot be proposed until
+their employee is accepted — which constrains the whole screen's sequence. Settle this before
+building the proposal screen.
+
+---
+
 ## 12. START HERE — handoff for Plan 3 (written 2026-08-13)
 
 Steps 1–2 of §11 are **DONE and live**. This section is what a session with no prior context needs.
