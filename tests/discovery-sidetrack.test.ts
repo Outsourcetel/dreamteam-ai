@@ -67,7 +67,7 @@
 // ============================================================
 import { describe, it, expect } from 'vitest';
 import { runQuery, adminTokenAvailable } from './helpers/adminQuery';
-import { coverageAfter } from '../supabase/functions/_shared/discoveryCoverage.ts';
+import { coverageAfter, stillOwed } from '../supabase/functions/_shared/discoveryCoverage.ts';
 
 // The real, live fourteen — see deviation 1 above. Identical order to
 // tests/discovery-spine.test.ts's own EXPECTED array (that file asserts
@@ -108,6 +108,13 @@ describe('the sidetrack test', () => {
     // Red if: parked/skipped are normalised into each other, or 'owed'
     // includes a skipped dimension (nagging someone who declined) or
     // excludes a parked one (burying what they meant to return to).
+    //
+    // Calls the SHIPPED stillOwed here, not an inline re-implementation of
+    // its filter — a prior version of this test wrote the filter out by
+    // hand, which meant this test walked a COPY of the logic while
+    // index.ts:359/:283 walked the original. A stillOwed that returned []
+    // unconditionally (making every interview report done:true on turn one)
+    // would have left that copy — and this whole suite — green.
     const cov = coverageAfter(DIMS, [], [
       { dimension: 'money_out', state: 'parked', evidence: 'ask me later' },
       { dimension: 'winning_business', state: 'skipped', evidence: 'we do not sell' },
@@ -115,9 +122,29 @@ describe('the sidetrack test', () => {
     expect(cov.money_out.state).toBe('parked');
     expect(cov.winning_business.state).toBe('skipped');
     // The behavioural difference: only parked is still owed a question.
-    const owed = Object.entries(cov).filter(([, v]) => v.state === 'not_heard' || v.state === 'parked');
-    expect(owed.map(([k]) => k)).toContain('money_out');
-    expect(owed.map(([k]) => k)).not.toContain('winning_business');
+    const owed = stillOwed(cov);
+    expect(owed).toContain('money_out');
+    expect(owed).not.toContain('winning_business');
+  });
+
+  it('stillOwed: a heard dimension is not owed, a parked one is (both directions, pinned directly)', () => {
+    // The dedicated stillOwed test the reviewer asked for — grep found zero
+    // references to stillOwed anywhere in tests/ before this. Red if:
+    // stillOwed drops 'parked' from what is owed (a customer who asked to
+    // come back to something gets silently skipped forever), or continues
+    // to report a genuinely 'heard' dimension as owed (the interview would
+    // never be able to finish, and would nag about settled topics).
+    const cov = coverageAfter(DIMS, [], [
+      { dimension: 'what_we_do', state: 'heard', evidence: 'a two-location dental practice' },
+      { dimension: 'money_out', state: 'parked', evidence: 'ask me later' },
+    ]);
+    const owed = stillOwed(cov);
+    expect(owed, 'a heard dimension must not be owed').not.toContain('what_we_do');
+    expect(owed, 'a parked dimension must still be owed').toContain('money_out');
+    // not_heard (never mentioned) is owed too — the third state that must
+    // read as "still open", proven here rather than assumed from the
+    // earlier tests' incidental coverage of it.
+    expect(owed, 'an untouched not_heard dimension must be owed').toContain('must_never_happen');
   });
 
   it('refuses an extraction naming a dimension that does not exist', () => {
@@ -177,7 +204,23 @@ describe('the sidetrack test', () => {
   });
 });
 
-const run = adminTokenAvailable() ? describe : describe.skip;
+const hasToken = adminTokenAvailable();
+const run = hasToken ? describe : describe.skip;
+
+// vitest's own summary line already distinguishes "skipped" from "passed"
+// (e.g. "8 passed | 1 skipped (9)"), but that is easy to skim past. This is
+// the cheap, unmissable version: when there is no token, say in the console
+// output — plainly, every run — that the ONE check comparing this fixture
+// against reality did not happen, so a token-less run cannot be mistaken
+// for proof the fixture still matches production. It only compares DIMS
+// against itself in that case, which is not a comparison against anything.
+if (!hasToken) {
+  console.warn(
+    '[discovery-sidetrack] NO SUPABASE_ACCESS_TOKEN — the live-spine drift check ' +
+    'did NOT run. DIMS was NOT compared against production in this run. ' +
+    'This proves nothing about whether the fixture has drifted.',
+  );
+}
 
 run('the fixture stays honest against the live spine', () => {
   it('DIMS matches the live discovery_dimensions keys, in ordinal order', async () => {

@@ -278,7 +278,22 @@ serve(async (req) => {
     const { data: budget, error: budgetErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
     if (budgetBlocked(budgetErr, budget)) return fail('ai_budget_exceeded', 'this workspace has reached its AI budget', 429);
 
-    const priorCoverage = (session.coverage ?? {}) as DiscoveryCoverageMap;
+    // Baselined through the SAME gate every extraction goes through, with an
+    // empty extraction. This is not a no-op: coverageAfter(dimensions, raw,
+    // []) returns a COMPLETE map keyed by every CURRENTLY active dimension,
+    // defaulting anything raw is missing to not_heard. Without this, a
+    // dimension added to discovery_dimensions after this session started
+    // (start_discovery_session cannot have seeded it) would be simply absent
+    // from the raw coverage object, stillOwed would never see it as owed,
+    // and the interview would fail OPEN — declaring itself done having asked
+    // about that dimension exactly never. Cannot fire today
+    // (start_discovery_session seeds every active dimension at turn zero),
+    // but it is the wrong direction to fail in against exactly the drift the
+    // live-spine test in discovery-sidetrack.test.ts exists to catch, so the
+    // baseline runs unconditionally rather than depending on that always
+    // holding true in the future.
+    const rawCoverage = (session.coverage ?? {}) as DiscoveryCoverageMap;
+    const priorCoverage = coverageAfter(dimensions, rawCoverage, []);
     const owedKeysBefore = new Set(stillOwed(priorCoverage));
     const owedDims = dimensions.filter((d) => owedKeysBefore.has(d.key));
 
@@ -298,7 +313,8 @@ serve(async (req) => {
     const system = buildInterviewSystem();
     const owedForPrompt = owedDims.map((d) => ({ key: d.key, title: d.title, guidance: d.guidance }));
     const buildUserMsg = (correction?: string): string =>
-      `STILL-OWED DIMENSIONS (the ONLY legal targets for next_question.dimension — platform-authored, trusted):\n${JSON.stringify(owedForPrompt)}\n\n`
+      `${owedDims.length} of ${dimensions.length} topics remain open — pace yourself accordingly (do not spend several turns on one when this many are still waiting).\n\n`
+      + `STILL-OWED DIMENSIONS (the ONLY legal targets for next_question.dimension — platform-authored, trusted):\n${JSON.stringify(owedForPrompt)}\n\n`
       + `CONVERSATION SO FAR:\n${wrapUntrusted(transcriptForModel, 'interview-transcript')}\n\n`
       + `THE CUSTOMER'S LATEST ANSWER:\n${wrapUntrusted(text, 'customer-latest-answer')}`
       + (correction ? `\n\n${correction}` : '');
