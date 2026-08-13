@@ -68,13 +68,41 @@
  * entity-draft/compile-trust-plan pattern).
  * Produces: POST { action:'start', tenant_id } -> { session_id, question }
  *           POST { action:'answer', session_id, text } -> { question|null, coverage, done }
+ *           POST { action:'end', session_id, status?, resume_hint? }
+ *             -> { session_id, status, coverage, owed, done:true }
+ *
+ * WHY 'end' EXISTS. `done` is computed from the ledger — nothing owed — and
+ * 'parked' is owed forever by design ("ask me later" must come back). So an
+ * interview in which the customer parks even one dimension can never reach
+ * done:true on its own. Task 3 Step 6 says done is true when nothing is owed
+ * "or THE CALLER STOPS", and spec §7 says abandonment mid-interview is "a
+ * legitimate end state, not an error" — until migration 739 there was no
+ * caller-stops path at all, discovery_sessions.status never left 'running',
+ * and the 409 `session_not_running` guard below was unreachable code. 'end'
+ * is that path: it moves the session to 'parked' or 'abandoned' through
+ * end_discovery_session and reports the gaps honestly, and it does not touch
+ * the coverage ledger — what was heard stays heard, what was never asked
+ * stays visibly unasked.
  *
  * Never writes digital_employees, guardrail_rules, playbook_definitions or
- * connectors rows — proposal-writing (discovery_proposals) is out of scope
- * for this task; Step 6's own description of the turn loop's mechanics
- * (transcript+owed dims -> model -> extraction+next_question -> gate ->
- * persist -> return) never mentions generating a proposal, so none is
- * generated here. Nothing here reads or writes a digital_employees row with
+ * connectors rows.
+ *
+ * NO PROPOSALS ARE WRITTEN HERE, AND THE REASON IS DEFERRAL, NOT ABSENCE.
+ * Task 3 Step 6's constraints say, verbatim: "Proposals go to
+ * discovery_proposals with state='pending'." An earlier version of this
+ * comment claimed Step 6 "never mentions generating a proposal" — that was
+ * simply false, and a justification that misquotes its own source is worse
+ * than no justification, because the next reader believes it. The real
+ * reason: generating proposals is a second model concern (what to BUILD from
+ * what was heard) with its own prompt, its own validation and its own
+ * accept/decline surface, and the surface is explicitly Plan 3b. Writing
+ * pending rows here that nothing can yet read, decide or expire would
+ * recreate exactly the invisible pile the spec's §7 warns about — 19 of Ada's
+ * proposals still undecided. So: deliberately deferred to the plan that
+ * builds the screen which acts on them, and the coverage ledger this function
+ * does write is the complete input that plan needs.
+ *
+ * Nothing here reads or writes a digital_employees row with
  * is_workforce_assistant = true — nothing here touches digital_employees at
  * all. Not deployed by this task (deployment ships with the UI, Plan 3b).
  */
@@ -142,6 +170,8 @@ function buildInterviewSystem(): string {
     '',
     'EXTRACTION: for every still-owed dimension the customer\'s LATEST answer genuinely gives real evidence for, emit one entry: {"dimension": <a key from STILL-OWED DIMENSIONS>, "state": "heard"|"parked"|"skipped", "evidence": <the concrete fact, your own words, under 300 characters>}. "skipped" is only for a dimension the customer explicitly says does not apply to their business (never assume this from silence). "parked" is for "ask me later" or a second still-vague answer, as above. Omit a dimension entirely when you have no real update for it this turn — omitting means "no change", never "heard".',
     '',
+    'EVIDENCE IS NOT OPTIONAL, AND THIS ONE IS ENFORCED. "heard" and "skipped" both CLOSE a dimension permanently — the interview will never ask about it again. The platform REJECTS your entire turn, unread, if any "heard" or "skipped" entry has an empty or missing "evidence": it is not downgraded for you, the whole extraction is thrown away and you are asked again. So never close a dimension you cannot quote a concrete fact for. If the customer has not given you one, the correct move is to omit the dimension (no change) or "parked" — which needs no evidence, because it closes nothing.',
+    '',
     'Return ONLY JSON, nothing else:',
     '{"extraction": [{"dimension": string, "state": "heard"|"parked"|"skipped", "evidence": string}],',
     ' "next_question": {"dimension": string, "text": string} | null,',
@@ -159,7 +189,15 @@ function coerceExtraction(raw: unknown): DiscoveryExtraction[] {
     .map((x) => ({
       dimension: String(x.dimension ?? ''),
       state: String(x.state ?? ''),
-      evidence: x.evidence != null ? String(x.evidence).slice(0, 500) : null,
+      // Only a genuine STRING counts as evidence. `String(x.evidence)` would
+      // have turned `{}` into "[object Object]" and `0` into "0" — both
+      // non-empty, both of which would then satisfy coverageAfter's grounds
+      // check and close a dimension on nothing. Anything that is not a
+      // string becomes null here, and null is exactly what the gate refuses
+      // for a terminal state. (coverageAfter is independently strict about
+      // this too — it reads a non-string evidence as absent — so the two
+      // agree rather than one relying on the other.)
+      evidence: typeof x.evidence === 'string' ? x.evidence.slice(0, 500) : null,
     }));
 }
 
@@ -195,7 +233,9 @@ serve(async (req) => {
     const dispatch = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
     const body = await req.json().catch(() => ({}));
     const action = String(body.action ?? '');
-    if (action !== 'start' && action !== 'answer') return fail('bad_request', "action must be 'start' or 'answer'", 400);
+    if (action !== 'start' && action !== 'answer' && action !== 'end') {
+      return fail('bad_request', "action must be 'start', 'answer' or 'end'", 400);
+    }
 
     // ── auth: user JWT (tenant resolved from profile) or service/dispatch
     // with an explicit tenant_id — the entity-draft pattern. Discovery is a
@@ -250,11 +290,9 @@ serve(async (req) => {
       return json({ session_id: sessionId, question: opening });
     }
 
-    // ── action: answer ─────────────────────────────────────────────────
+    // ── actions: answer + end — both act on one existing session ───────
     const sessionId = String(body.session_id ?? '').trim();
-    const text = String(body.text ?? '').trim().slice(0, MAX_ANSWER_CHARS);
     if (!sessionId) return fail('bad_request', 'session_id required', 400);
-    if (!text) return fail('bad_request', "text required — the customer's answer", 400);
 
     // Cross-tenant perimeter: the session must belong to the TENANT WE
     // RESOLVED, not merely exist — a bare session_id is never treated as
@@ -268,6 +306,55 @@ serve(async (req) => {
       .maybeSingle();
     if (sessErr) return fail('session_unavailable', sessErr.message, 500);
     if (!session) return fail('session_not_found', 'no such discovery session in this workspace', 404);
+
+    // ── action: end ────────────────────────────────────────────────────
+    // The caller-stops path (migration 739). No model call, no coverage
+    // write: this says the CONVERSATION is over, never that anything more
+    // was heard in it. The gaps are reported from the same ledger, through
+    // the same stillOwed the turn loop uses — there is deliberately no
+    // second definition of "what is still owed" anywhere, in SQL or here.
+    if (action === 'end') {
+      const endStatus = String(body.status ?? 'parked').trim();
+      if (endStatus !== 'parked' && endStatus !== 'abandoned') {
+        return fail('bad_request', "status must be 'parked' (the customer means to come back) or 'abandoned' (they do not)", 400);
+      }
+      const resumeHint = body.resume_hint != null ? String(body.resume_hint).trim().slice(0, 500) : null;
+      // Already ended into the SAME state: idempotent, the RPC no-ops and
+      // the honest report below is still worth returning. Ended into a
+      // DIFFERENT one: refused here rather than deep inside the RPC, so the
+      // caller gets a 409 it can act on instead of a 500.
+      if (session.status !== 'running' && session.status !== endStatus) {
+        return fail('session_not_running', `this session is '${session.status}', not running — it cannot be ended as '${endStatus}'`, 409);
+      }
+
+      const result = await rpcOrThrow<Record<string, unknown>>(admin, 'end_discovery_session', {
+        p_session_id: sessionId,
+        p_tenant_id: tenantId,
+        p_status: endStatus,
+        p_resume_hint: resumeHint,
+      });
+
+      const endCoverage = coverageAfter(dimensions, (session.coverage ?? {}) as DiscoveryCoverageMap, []);
+      const owed = stillOwed(endCoverage);
+      return json({
+        session_id: sessionId,
+        status: endStatus,
+        previous_status: result?.previous_status ?? session.status,
+        resume_hint: result?.resume_hint ?? resumeHint,
+        coverage: endCoverage,
+        // The honest half: what this interview is ending WITHOUT. Named
+        // explicitly rather than left for the reader to derive from
+        // coverage, because "we stopped" and "we stopped with nine of
+        // fourteen never asked" are different facts.
+        owed,
+        owed_count: owed.length,
+        done: true,
+      });
+    }
+
+    // ── action: answer ─────────────────────────────────────────────────
+    const text = String(body.text ?? '').trim().slice(0, MAX_ANSWER_CHARS);
+    if (!text) return fail('bad_request', "text required — the customer's answer", 400);
     if (session.status !== 'running') {
       return fail('session_not_running', `this session is '${session.status}', not running — it cannot take another answer`, 409);
     }
@@ -341,7 +428,7 @@ serve(async (req) => {
     if (!validation.ok) {
       const correction = failReason
         ? 'Your previous reply was not valid JSON. Return ONLY the JSON object described above, nothing else.'
-        : `Your previous extraction was rejected: ${validation.error}. Every "dimension" you name MUST be one of the exact keys in STILL-OWED DIMENSIONS above, and every "state" must be exactly "heard", "parked" or "skipped". Return the corrected, complete JSON object, nothing else.`;
+        : `Your previous extraction was rejected: ${validation.error}. Every "dimension" you name MUST be one of the exact keys in STILL-OWED DIMENSIONS above. Every "state" must be exactly "heard", "parked" or "skipped" — "not_heard" is never something you may claim. Every "heard" and every "skipped" MUST carry a non-empty "evidence" quoting the concrete fact the customer actually gave; if you cannot point to one, do not include that dimension at all (omitting it means "no change", which is always safe) or use "parked". Return the corrected, complete JSON object, nothing else.`;
       const retry = await attempt(correction);
       parsed = retry.parsed;
       failReason = retry.failReason;

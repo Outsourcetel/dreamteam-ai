@@ -166,6 +166,88 @@ describe('the sidetrack test', () => {
     ])).toThrow(/unknown state/i);
   });
 
+  // ── THE CLOSURE BAR ────────────────────────────────────────────────────
+  // Everything above validates the SHAPE of the model's claim. These four
+  // validate its GROUNDS, which is where the founder's requirement actually
+  // lives: before them, one over-eager turn emitting
+  // {"dimension":"money_in","state":"skipped"} with no evidence closed a
+  // dimension the customer never answered — permanently, since stillOwed
+  // drops 'skipped' forever — and every test, the certify section and this
+  // whole file stayed green. "Silence is not coverage" appeared in 14/14
+  // guidance strings and NOWHERE in the code that enforces closure.
+
+  it('refuses to close a dimension on a heard with no evidence', () => {
+    // Red if: the evidence bar on terminal states is removed or weakened —
+    // this exact extraction is what a model produces when it is pattern-
+    // matching on the topic rather than on what the customer said, and it
+    // is what closed money_in for free before this guard existed. A falsely
+    // 'heard' planned_* dimension ALSO writes a fabricated row into
+    // discovery_capability_demand, the platform's roadmap signal.
+    expect(() => coverageAfter(DIMS, [], [
+      { dimension: 'money_in', state: 'heard', evidence: null },
+    ])).toThrow(/no evidence|silence is not coverage/i);
+  });
+
+  it('refuses to close a dimension on a skipped whose evidence is only whitespace', () => {
+    // Both terminal states, and a non-null-but-empty string — the shape a
+    // model emits when it has been told evidence is required and has
+    // nothing to put there. Red if: the guard tests `!= null` instead of
+    // "non-empty after trimming", which would accept "" and "   " and make
+    // the whole bar a formality one space character defeats.
+    expect(() => coverageAfter(DIMS, [], [
+      { dimension: 'must_never_happen', state: 'skipped', evidence: '   ' },
+    ])).toThrow(/no evidence|silence is not coverage/i);
+  });
+
+  it('still accepts a parked with no evidence — the bar is on CLOSURE, not on every claim', () => {
+    // The non-firing half of the pair, and it is load-bearing: 'parked'
+    // keeps a dimension owed, so it closes nothing and needs no grounds
+    // ("ask me later" IS the whole content of that claim). Red if: the
+    // evidence bar is applied to every state indiscriminately — which would
+    // make the model unable to park anything, so a customer who says "come
+    // back to that" would have their answer rejected turn after turn.
+    const cov = coverageAfter(DIMS, [], [
+      { dimension: 'money_out', state: 'parked', evidence: null },
+    ]);
+    expect(cov.money_out.state).toBe('parked');
+    expect(cov.money_out.evidence).toBeNull();
+    expect(stillOwed(cov), 'a parked dimension is still owed a question').toContain('money_out');
+  });
+
+  it('refuses an extraction claiming not_heard — a model cannot un-hear a dimension', () => {
+    // 'not_heard' is a legal LEDGER state (every dimension starts there) and
+    // must never be a legal CLAIM. Red if: extraction states are validated
+    // against the four stored states rather than the three the prompt
+    // offers — a model could then delete real evidence from the ledger and
+    // re-open a dimension the customer already answered, which reads to the
+    // customer as the interview forgetting what they just said.
+    const prior = { what_we_do: { state: 'heard' as const, evidence: 'a two-location dental practice' } };
+    expect(() => coverageAfter(DIMS, prior, [
+      { dimension: 'what_we_do', state: 'not_heard', evidence: null },
+    ])).toThrow(/cannot be claimed|un-hear/i);
+  });
+
+  it('rejects the WHOLE turn when one item in it is a groundless close', () => {
+    // The turn loop treats a throw as "mark nothing, carry prior coverage
+    // forward, retry once" — so a mixed extraction costs the good items too.
+    // That is the deliberate trade (reject, never silently downgrade), and
+    // this is the arm that documents it rather than leaving the next reader
+    // to discover it. Red if: coverageAfter ever starts applying the valid
+    // items of a rejected extraction, which would half-persist a turn the
+    // caller believes it discarded.
+    expect(() => coverageAfter(DIMS, [], [
+      { dimension: 'what_we_do', state: 'heard', evidence: 'we run two dental clinics' },
+      { dimension: 'money_in', state: 'skipped', evidence: null },
+    ])).toThrow(/no evidence|silence is not coverage/i);
+    // And nothing partial leaked: re-running with only the good item is the
+    // only way what_we_do gets recorded at all.
+    const cov = coverageAfter(DIMS, [], [
+      { dimension: 'what_we_do', state: 'heard', evidence: 'we run two dental clinics' },
+    ]);
+    expect(cov.what_we_do.state).toBe('heard');
+    expect(cov.money_in.state, 'money_in was never grounded, so it stays open').toBe('not_heard');
+  });
+
   it('counts what it compared', () => {
     // Red if: the fixture silently shrinks (e.g. someone deletes a case
     // above and forgets to update DIMS) without this number moving too —

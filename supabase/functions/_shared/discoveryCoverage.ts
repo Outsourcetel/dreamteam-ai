@@ -48,10 +48,40 @@
 
 export type DiscoveryCoverageState = 'heard' | 'parked' | 'skipped' | 'not_heard';
 
+/** The four states the LEDGER can hold — the same four
+ *  public.discovery_coverage_states_valid(jsonb) accepts (migration 738) and
+ *  the same four record_dimension_state writes. This is what a STORED entry
+ *  may be, which is a strictly wider question than what a MODEL may CLAIM;
+ *  see DISCOVERY_EXTRACTION_STATES below. */
 export const DISCOVERY_COVERAGE_STATES: readonly DiscoveryCoverageState[] =
   ['heard', 'parked', 'skipped', 'not_heard'];
 
 const VALID_STATES: ReadonlySet<string> = new Set(DISCOVERY_COVERAGE_STATES);
+
+/** The three states an EXTRACTION may claim — exactly the three the system
+ *  prompt offers the model ("state": "heard"|"parked"|"skipped").
+ *
+ *  'not_heard' is deliberately absent. It is the state every dimension STARTS
+ *  in (start_discovery_session seeds all fourteen that way at turn zero), not
+ *  a claim anyone should be able to make: accepting it as an extraction lets
+ *  one over-eager turn UN-HEAR a dimension the customer already answered,
+ *  silently deleting real evidence from the ledger and re-opening a settled
+ *  topic. Nothing in the interview ever needs to move a dimension backwards —
+ *  "no update this turn" is expressed by OMITTING the dimension, which the
+ *  prompt says in those words. */
+export const DISCOVERY_EXTRACTION_STATES: readonly DiscoveryCoverageState[] =
+  ['heard', 'parked', 'skipped'];
+
+const EXTRACTABLE_STATES: ReadonlySet<string> = new Set(DISCOVERY_EXTRACTION_STATES);
+
+/** The two states that CLOSE a dimension: stillOwed() drops both, forever, so
+ *  the interview will never ask about that dimension again and `done` can go
+ *  true without it. Both therefore require GROUNDS — non-empty evidence,
+ *  enforced in coverageAfter's extraction loop below. 'parked' is NOT here on
+ *  purpose: it keeps a dimension owed, so it closes nothing. */
+export const DISCOVERY_TERMINAL_STATES: readonly DiscoveryCoverageState[] = ['heard', 'skipped'];
+
+const TERMINAL_STATES: ReadonlySet<string> = new Set(DISCOVERY_TERMINAL_STATES);
 
 /** Anything shaped like a discovery_dimensions row — only `.key` is read,
  *  deliberately, so a test fixture and a live DB row (which both carry many
@@ -100,9 +130,27 @@ export interface DiscoveryExtraction {
  *    missing key and an unaddressed dimension can never be confused —
  *    exactly the guarantee start_discovery_session gives at turn zero.
  *  - THROWS on an extraction naming a dimension key not in `dimensions`.
- *  - THROWS on a state outside the four real ones.
+ *  - THROWS on an extraction state outside the THREE the prompt offers
+ *    (heard/parked/skipped). 'not_heard' is a legal STORED state and an
+ *    illegal CLAIM — a model must not be able to un-hear a dimension.
+ *  - THROWS on a TERMINAL state ('heard'/'skipped') carrying no evidence.
+ *    Both of those drop a dimension out of stillOwed permanently, so both
+ *    are a CLOSURE, and a closure with no grounds is exactly the founder's
+ *    named failure: "customer got focused on one thing and forgot other
+ *    critical pieces". Rejecting (rather than silently downgrading to
+ *    'parked') is deliberate — the turn then costs one question and a
+ *    correction retry, and the dimension stays visibly open, instead of the
+ *    ledger quietly recording a state nobody claimed.
  *  - 'parked' and 'skipped' are stored exactly as given, never normalised
  *    into one another and never silently promoted to 'heard'.
+ *
+ * WHAT THIS FUNCTION STILL CANNOT DO. It checks that grounds EXIST, not that
+ * they are TRUE — a model determined to fabricate can fabricate a sentence as
+ * easily as a state. What it removes is the free close: the state and the
+ * evidence now have to agree, so a turn that closes a dimension has to assert
+ * a concrete fact that lands in the ledger and is readable back by a human
+ * against the transcript. That is the honest limit of a pure function here,
+ * and it is stated rather than implied.
  *
  * `priorCoverage` accepts the real production shape (a jsonb OBJECT keyed
  * by dimension, exactly discovery_sessions.coverage) OR an empty
@@ -143,12 +191,31 @@ export function coverageAfter(
       );
     }
     const state = item?.state;
-    if (typeof state !== 'string' || !VALID_STATES.has(state)) {
+    if (state === 'not_heard') {
+      // Legal in the ledger, illegal as a claim. Its own message, because
+      // "unknown state" would be a lie — the model did not typo, it tried to
+      // move a dimension BACKWARDS, and the next reader needs to know which.
       throw new Error(
-        `coverageAfter: unknown state "${String(state)}" for dimension "${dim}" — must be one of ${DISCOVERY_COVERAGE_STATES.join(', ')}`,
+        `coverageAfter: state "not_heard" cannot be claimed for dimension "${dim}" — not_heard is where every dimension STARTS, not something an extraction may assert; a model must never be able to un-hear a dimension (omit the dimension to mean "no change")`,
       );
     }
-    next[dim] = { state: state as DiscoveryCoverageState, evidence: item.evidence ?? null };
+    if (typeof state !== 'string' || !EXTRACTABLE_STATES.has(state)) {
+      throw new Error(
+        `coverageAfter: unknown state "${String(state)}" for dimension "${dim}" — must be one of ${DISCOVERY_EXTRACTION_STATES.join(', ')}`,
+      );
+    }
+    // GROUNDS. 'heard' and 'skipped' both close a dimension permanently
+    // (stillOwed drops both), so both must carry a concrete fact the customer
+    // actually gave. Silence is not coverage — a phrase that appears in all
+    // fourteen guidance strings and, before this, existed ONLY as prompt text
+    // the model was free to ignore.
+    const evidence = typeof item.evidence === 'string' ? item.evidence.trim() : '';
+    if (TERMINAL_STATES.has(state) && evidence.length === 0) {
+      throw new Error(
+        `coverageAfter: state "${state}" for dimension "${dim}" carries no evidence — silence is not coverage; a dimension may only be closed on a concrete fact the customer actually gave`,
+      );
+    }
+    next[dim] = { state: state as DiscoveryCoverageState, evidence: evidence.length ? evidence : null };
   }
 
   return next;
