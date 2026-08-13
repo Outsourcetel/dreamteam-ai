@@ -51,6 +51,10 @@ import { triggerExecutePerimeterSql } from './trigger-execute-perimeter.mjs';
 // turn imports the SAME derivation scripts/gen-provider-seed.mjs uses to write
 // the seed, so the gate checks the generator instead of agreeing with itself.
 import { providerCatalogFailures, providerCheckValues, readConnectorConstants } from './provider-catalog-check.mjs';
+// Same split, same reason: certify fetches and formats, discoverySpineFailures
+// decides — and scripts/certify-mutation-test.mjs imports the identical
+// function so its fixtures exercise the real gate, not a paraphrase of it.
+import { discoverySpineFailures } from './discovery-spine-check.mjs';
 
 const FAST = process.argv.includes('--fast');
 const PIN = process.argv.includes('--pin-allowlist');
@@ -836,6 +840,63 @@ const sections = [
         + `(${inCheck.size} CHECK values), ${compared} field values, ${aliasCount} aliases, `
         + `${cats.length} required categories`;
     if (!failures.length) console.log(`        provider-catalog: ${detail}`);
+    return { ok: failures.length === 0, detail };
+  }),
+  // ── The discovery interview's fixed spine cannot silently shrink ────────
+  // Tasks 1-3 of the 2026-08-13 discovery-interview-engine plan built the
+  // spine (public.discovery_dimensions), the session coverage ledger
+  // (public.discovery_sessions) and the turn-loop engine that writes it.
+  // Nothing since then stood guard over any of it — this is that guard.
+  //
+  // ⚠ The task-4 brief that specified this section was written against a
+  // STALE count of 12 dimensions; the live spine has 14 (migrations 734-736
+  // grew it after the brief was drafted). Nothing below hardcodes either
+  // number — every assertion is phrased against whatever
+  // discovery-spine-check.mjs counts live, which is the entire point: the
+  // brief's own staleness is the argument for never hardcoding a dimension
+  // count or key list here.
+  //
+  // This section FETCHES and FORMATS; discovery-spine-check.mjs decides —
+  // see its header for why, and for why certify-mutation-test.mjs imports
+  // the identical function rather than a paraphrase of it.
+  section('discovery-spine', async () => {
+    const dims = await q(`select key, ordinal, title, guidance, serves_archetypes, produces, active
+                            from public.discovery_dimensions`);
+    const archetypeRows = await q(`select key from public.role_archetypes`);
+    const sessions = await q(`select id, coverage from public.discovery_sessions`);
+    const [priv] = await q(`select
+        has_table_privilege('authenticated','public.discovery_dimensions','select') as dim_select_authenticated,
+        has_table_privilege('authenticated','public.discovery_dimensions','insert') as dim_insert_authenticated,
+        has_table_privilege('authenticated','public.discovery_dimensions','update') as dim_update_authenticated,
+        has_table_privilege('authenticated','public.discovery_dimensions','delete') as dim_delete_authenticated,
+        has_table_privilege('authenticated','public.discovery_capability_demand','select') as demand_select_authenticated,
+        has_table_privilege('anon','public.discovery_capability_demand','select') as demand_select_anon`);
+
+    const { failures, dimensionsExamined, activeDimensionsExamined, sessionsExamined } = discoverySpineFailures({
+      dims,
+      archetypeKeys: new Set(archetypeRows.map((r) => r.key)),
+      sessions,
+      priv: {
+        dimSelectAuthenticated: priv?.dim_select_authenticated,
+        dimInsertAuthenticated: priv?.dim_insert_authenticated,
+        dimUpdateAuthenticated: priv?.dim_update_authenticated,
+        dimDeleteAuthenticated: priv?.dim_delete_authenticated,
+        demandSelectAuthenticated: priv?.demand_select_authenticated,
+        demandSelectAnon: priv?.demand_select_anon,
+      },
+    });
+
+    // Counts, not just findings — zero examined must itself be a violation
+    // (enforced inside discoverySpineFailures for dimensions; sessions is
+    // reported here regardless of value so "0 sessions, 0 findings" is never
+    // misreadable as "checked and clean" — see that file's header for why
+    // sessions does not ALSO gate ok/not-ok the way dimensions does).
+    const detail = failures.length
+      ? failures.join('\n')
+      : `examined ${dimensionsExamined} dimension(s) (${activeDimensionsExamined} active, unique contiguous ordinals), `
+        + `${sessionsExamined} discovery_sessions row(s)`
+        + (sessionsExamined === 0 ? ' (interview engine not yet used in production — coverage-state check has nothing to examine yet)' : '');
+    if (!failures.length) console.log(`        discovery-spine: ${detail}`);
     return { ok: failures.length === 0, detail };
   }),
   section('edge-typecheck', () => {

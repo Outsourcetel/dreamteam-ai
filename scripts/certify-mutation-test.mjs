@@ -25,6 +25,13 @@ import { triggerExecutePerimeterSql, TRIGGER_FN_SOURCE } from './trigger-execute
 // that can prove they fire is running the real function over a mutated copy of
 // real state — see the cases at the end of CASES.
 import { providerCatalogFailures, providerCheckValues, readConnectorConstants } from './provider-catalog-check.mjs';
+// certify's ACTUAL discovery-spine comparison. Same reason as
+// provider-catalog above: production is clean (14 well-formed dimensions, 0
+// sessions today — the interview engine has not been used yet), so every
+// assertion below is silent against real state, and the only way to prove
+// any of them can fire is to hand the REAL function a mutated COPY of that
+// state, never a write.
+import { discoverySpineFailures } from './discovery-spine-check.mjs';
 
 // ── Fixtures for no-untyped-literal-appended-to-a-container ────────────────
 // The production catalog is CLEAN of this shape, so the probe returns zero rows
@@ -1630,6 +1637,168 @@ const CASES = [
         // then demands them back, so the two halves hold each other.
         name: 'provider-catalog (emptying AMBIGUOUS_ALIASES does not buy silence)',
         firesJs: withState({ AMBIGUOUS_ALIASES: [] }),
+        silentJs: clean,
+      },
+    ];
+  })()),
+  // ── discovery-spine ──────────────────────────────────────────────────────
+  // The spine (14 well-formed dimensions) and the coverage ledger (0 sessions
+  // — the interview engine has not been used in production yet, per
+  // task-3-report.md) are both clean today, so every assertion below is
+  // silent against real state. These fetch the live state ONCE and run
+  // certify's actual discoverySpineFailures() over a mutated COPY of it — the
+  // same function the gate calls, imported, not paraphrased. No table is
+  // ever written; every violation is SYNTHESISED in memory.
+  ...(await (async () => {
+    const dims = await q(`select key, ordinal, title, guidance, serves_archetypes, produces, active
+                            from public.discovery_dimensions`);
+    const archetypeRows = await q(`select key from public.role_archetypes`);
+    const sessions = await q(`select id, coverage from public.discovery_sessions`);
+    const [privRow] = await q(`select
+        has_table_privilege('authenticated','public.discovery_dimensions','select') as dim_select_authenticated,
+        has_table_privilege('authenticated','public.discovery_dimensions','insert') as dim_insert_authenticated,
+        has_table_privilege('authenticated','public.discovery_dimensions','update') as dim_update_authenticated,
+        has_table_privilege('authenticated','public.discovery_dimensions','delete') as dim_delete_authenticated,
+        has_table_privilege('authenticated','public.discovery_capability_demand','select') as demand_select_authenticated,
+        has_table_privilege('anon','public.discovery_capability_demand','select') as demand_select_anon`);
+
+    const base = {
+      dims,
+      archetypeKeys: new Set(archetypeRows.map((r) => r.key)),
+      sessions,
+      priv: {
+        dimSelectAuthenticated: privRow?.dim_select_authenticated,
+        dimInsertAuthenticated: privRow?.dim_insert_authenticated,
+        dimUpdateAuthenticated: privRow?.dim_update_authenticated,
+        dimDeleteAuthenticated: privRow?.dim_delete_authenticated,
+        demandSelectAuthenticated: privRow?.demand_select_authenticated,
+        demandSelectAnon: privRow?.demand_select_anon,
+      },
+    };
+    const clean = () => discoverySpineFailures(base).failures;
+    // Every case mutates ONE thing against otherwise-live state, so a finding
+    // can only have come from the thing that was broken.
+    const withState = (patch) => () => discoverySpineFailures({ ...base, ...patch }).failures;
+    const activeKey = dims.find((d) => d.active)?.key;
+    const otherActiveKey = dims.find((d) => d.active && d.key !== activeKey)?.key;
+    if (!activeKey || !otherActiveKey) {
+      throw new Error('discovery-spine mutation fixtures need at least 2 active dimensions in production to mutate — found fewer');
+    }
+    const dimsPatched = (key, patch) =>
+      dims.map((d) => (d.key === key ? { ...d, ...patch } : d));
+
+    return [
+      {
+        // A dimension pointing at a NON-planned archetype that does not
+        // exist. planned_ is the ONE deliberate exemption (migration 734's
+        // founder ruling A) — anything else pointing at nothing must fire.
+        name: 'discovery-spine (a dimension naming a non-existent, non-planned archetype fires)',
+        firesJs: withState({
+          dims: dimsPatched(activeKey, { serves_archetypes: ['__no_such_archetype__'] }),
+        }),
+        silentJs: clean,
+      },
+      {
+        // Thin guidance. < 120 chars is too short to tell a model when a
+        // dimension is actually heard versus still vague.
+        name: 'discovery-spine (guidance thinner than 120 chars fires)',
+        firesJs: withState({
+          dims: dimsPatched(activeKey, { guidance: 'too short' }),
+        }),
+        silentJs: clean,
+      },
+      {
+        // Duplicate ordinal. Two dimensions cannot occupy the same interview
+        // slot — this is exactly the collision migration 734's DROP/re-ADD of
+        // the UNIQUE constraint exists to make loud rather than silent.
+        name: 'discovery-spine (a duplicate ordinal fires)',
+        firesJs: withState({
+          dims: dimsPatched(otherActiveKey, { ordinal: dims.find((d) => d.key === activeKey).ordinal }),
+        }),
+        silentJs: clean,
+      },
+      {
+        // A coverage value outside the four states. Synthesised and APPENDED
+        // to the real (today: empty) sessions array — never written to
+        // discovery_sessions, exactly the "synthesise, never write" contract
+        // this file's own header describes.
+        name: 'discovery-spine (a session coverage state outside {heard,parked,skipped,not_heard} fires)',
+        firesJs: withState({
+          sessions: [...sessions, { id: '__probe_session__', coverage: { what_we_do: { state: 'maybe_later' } } }],
+        }),
+        silentJs: clean,
+      },
+      {
+        // A coverage state of the wrong TYPE (a number, not a string) —
+        // migration 738's own headline fix: jsonb_path_exists treated a
+        // mismatched JSON type as "unknown", which a `?()` filter excludes
+        // exactly like "false" does, so {"state":42} silently passed the
+        // FIRST version of the Postgres constraint. Proves this JS mirror
+        // does not repeat that exact hole.
+        name: 'discovery-spine (a NUMERIC coverage state fires — the exact type hole migration 738 closed)',
+        firesJs: withState({
+          sessions: [...sessions, { id: '__probe_session_2__', coverage: { what_we_do: { state: 42 } } }],
+        }),
+        silentJs: clean,
+      },
+      {
+        // Zero dimensions fetched. discovery_dimensions is seeded, standing
+        // product data — an empty fetch can only mean the query broke, the
+        // table emptied, or the grant that lets this section read it is
+        // gone. This is the literal "zero examined must itself be a
+        // violation" case the task-4 brief names by name.
+        name: 'discovery-spine (zero discovery_dimensions rows examined fires)',
+        firesJs: withState({ dims: [] }),
+        silentJs: clean,
+      },
+      {
+        // authenticated gaining a write grant on the spine. The spine is
+        // read-only from the browser by design (migration 733) — a write
+        // grant would let a tenant session edit the platform's own interview
+        // definition.
+        name: 'discovery-spine (authenticated gaining INSERT on discovery_dimensions fires)',
+        firesJs: withState({ priv: { ...base.priv, dimInsertAuthenticated: true } }),
+        silentJs: clean,
+      },
+      {
+        // The other two write verbs, so every branch of the "cannot write it"
+        // assertion is proven, not just INSERT.
+        name: 'discovery-spine (authenticated gaining UPDATE on discovery_dimensions fires)',
+        firesJs: withState({ priv: { ...base.priv, dimUpdateAuthenticated: true } }),
+        silentJs: clean,
+      },
+      {
+        name: 'discovery-spine (authenticated gaining DELETE on discovery_dimensions fires)',
+        firesJs: withState({ priv: { ...base.priv, dimDeleteAuthenticated: true } }),
+        silentJs: clean,
+      },
+      {
+        // The read half of "authenticated can SELECT ... and cannot write
+        // it" — losing SELECT must fire too, not just gaining a write.
+        name: 'discovery-spine (authenticated LOSING SELECT on discovery_dimensions fires — the interview UI could not read the spine)',
+        firesJs: withState({ priv: { ...base.priv, dimSelectAuthenticated: false } }),
+        silentJs: clean,
+      },
+      {
+        // discovery_capability_demand aggregates DEMAND ACROSS EVERY TENANT
+        // by design (migration 737) — it must never be reachable by an
+        // ordinary tenant-scoped session, in either direction.
+        name: 'discovery-spine (authenticated gaining SELECT on discovery_capability_demand fires — cross-tenant aggregate)',
+        firesJs: withState({ priv: { ...base.priv, demandSelectAuthenticated: true } }),
+        silentJs: clean,
+      },
+      {
+        name: 'discovery-spine (anon gaining SELECT on discovery_capability_demand fires — cross-tenant aggregate)',
+        firesJs: withState({ priv: { ...base.priv, demandSelectAnon: true } }),
+        silentJs: clean,
+      },
+      {
+        // "non-empty produces" — the other half of the guidance/produces
+        // assertion. Not named in the task-4 brief's 4-fixture minimum, but
+        // this repo's own rule applies to every assertion equally: if the
+        // data that turns it red cannot be named AND fired, it is theatre.
+        name: 'discovery-spine (an empty produces array fires)',
+        firesJs: withState({ dims: dimsPatched(activeKey, { produces: [] }) }),
         silentJs: clean,
       },
     ];
