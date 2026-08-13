@@ -216,3 +216,48 @@ run('the spine', () => {
     expect(rows[0].guidance, 'winning_business guidance must contain a concrete dollar figure').toMatch(/\$[0-9]/);
   });
 });
+
+run('the coverage ledger', () => {
+  it('accepts exactly the four states, and no others', async () => {
+    const [{ def }] = await runQuery<{ def: string }>(`
+      select pg_get_constraintdef(oid) as def from pg_constraint
+       where conrelid = 'public.discovery_sessions'::regclass
+         and conname = 'discovery_sessions_coverage_states'`);
+    for (const s of ['heard', 'parked', 'skipped', 'not_heard']) expect(def).toContain(s);
+  });
+
+  it('treats parked and skipped as different things', async () => {
+    // This is the whole point. Collapsing them either nags people who declined
+    // or bins what they meant to return to. The DB must distinguish them
+    // before any UI can.
+    const [{ def }] = await runQuery<{ def: string }>(`
+      select pg_get_functiondef(p.oid) as def from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'record_dimension_state'`);
+    expect(def).toContain('parked');
+    expect(def).toContain('skipped');
+    expect(def).not.toMatch(/parked['"\s]*[,|]?\s*['"]?\s*=\s*['"]?skipped/i);
+  });
+
+  it('starts a session with every dimension not_heard, not absent', async () => {
+    // A missing key and an unaddressed dimension are indistinguishable to a
+    // reader. The ledger must be complete from the first turn.
+    const [{ def }] = await runQuery<{ def: string }>(`
+      select pg_get_functiondef(p.oid) as def from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'start_discovery_session'`);
+    expect(def).toContain('not_heard');
+    expect(def).toContain('discovery_dimensions');
+  });
+
+  it('keeps proposals out of the human task queue', async () => {
+    // Ada's proposals went into action_executions, the same queue as
+    // operational approvals, and 19 of 26 are still undecided. Setup approval
+    // belongs in the setup flow.
+    const rows = await runQuery<{ n: number }>(`
+      select count(*)::int as n from information_schema.columns
+       where table_schema='public' and table_name='discovery_proposals'
+         and column_name in ('human_task_id','action_execution_id')`);
+    expect(rows[0].n, 'proposals must not be coupled to the ops queue').toBe(0);
+  });
+});
