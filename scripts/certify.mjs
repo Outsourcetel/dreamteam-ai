@@ -388,28 +388,67 @@ const PROBES = [
   },
   {
     name: 'workspace-admin-has-an-owner',
-    why: 'the other half — restricting the admin verbs to one role is only safe if that role can actually reach them, whatever the reason it might not: a missing connector included. The old form used a connected platform_admin connector as a precondition to even look at a tenant, so deleting that connector silenced the exact failure this probe exists to catch — a workspace nobody can administer',
-    sql: `select t.slug as violation
-            from tenants t
-           where t.status = 'active'
-             -- Provisioning refuses this tenant by id, on purpose: both
-             -- provision_onboarding_architect and provision_tenant_baseline_internal
-             -- (mig 730) return early for the demo tenant, so it genuinely has no
-             -- platform_admin connector and never will under current provisioning.
-             -- Same exclusion audit_tenant_feature_parity and audit_tenant_provisioning
-             -- use (mig 723) — match the house convention. Remove this line if
-             -- provisioning ever starts covering the demo tenant too.
-             and t.id <> 'a0000000-0000-0000-0000-000000000001'
-             and exists (select 1 from digital_employees d
-                          where d.tenant_id = t.id and coalesce(d.is_workforce_assistant, false))
-             and not exists (
+    why: 'the other half — restricting the admin verbs to one role is only safe if that role can actually reach them, whatever the reason it might not: a missing connector included. The old form used a connected platform_admin connector as a precondition to even look at a tenant, so deleting that connector silenced the exact failure this probe exists to catch — a workspace nobody can administer. ⚠ IT NO LONGER FILTERS BY TENANT STATUS EITHER, and that is the same defect one layer out: every tenant is BORN `trial` (complete_signup and request_subtenant both insert `status=\'trial\'`), so an `active`-only probe was blind for the entire window in which a newly-provisioned workspace is newly broken — and expire_trials() then flips a lapsed trial to `suspended` on a timer, which would have moved it from one blind status to another without a human ever seeing it. A status filter is a precondition that a single UPDATE can use to silence the alarm, which is exactly what the connector precondition was. Measured before widening (2026-08-13): with no status filter at all, and the demo exemption still in place, the predicate returns ZERO tenants — 17 of the 18 workspaces holding a Workspace Assistant have 1 admin connector and 4 reachable workforce_assistant verbs, and the 18th is the exempt Demo Workspace. Widening silenced nothing and flagged nothing; it removed a snooze button. The denominator prints on every run, and zero examined is a violation rather than a quiet pass',
+    // ⚠ THIS TEMPLATE LITERAL IS READ AS TEXT by scripts/certify-mutation-test.mjs,
+    // which runs it verbatim as the `silent` half and runs a copy with the demo
+    // exemption removed as the `fires` half. Keep the exemption on its own line
+    // and keep the SQL free of backticks; the extractor asserts on both and
+    // throws rather than testing nothing if either stops being true.
+    sql: `with examined as (
+            -- Provisioning refuses this tenant by id, on purpose: both
+            -- provision_onboarding_architect and provision_tenant_baseline_internal
+            -- (mig 730) return early for the demo tenant, so it genuinely has no
+            -- platform_admin connector and never will under current provisioning.
+            -- Same exclusion audit_tenant_feature_parity and audit_tenant_provisioning
+            -- use (mig 723) — match the house convention. Remove this line if
+            -- provisioning ever starts covering the demo tenant too. It is also
+            -- the live fixture the mutation test lifts to prove this probe fires.
+            select t.id, t.slug, t.status
+              from tenants t
+             where t.id <> 'a0000000-0000-0000-0000-000000000001'
+               and exists (select 1 from digital_employees d
+                            where d.tenant_id = t.id and coalesce(d.is_workforce_assistant, false))
+          ),
+          flagged as (
+            select e.slug, e.status
+              from examined e
+             where not exists (
                select 1 from digital_employees de
                cross join lateral jsonb_array_elements(
                  public.get_agentic_tools_for_de(de.tenant_id, de.id)) x
                join action_definitions ad on ad.id = (x->>'action_definition_id')::uuid
-              where de.tenant_id = t.id
+              where de.tenant_id = e.id
                 and coalesce(de.is_workforce_assistant, false)
-                and ad.requires_role = 'workforce_assistant')`,
+                and ad.requires_role = 'workforce_assistant')
+          ),
+          counted as (
+            select (select count(*) from examined) as n,
+                   (select count(*) from flagged)  as bad,
+                   (select coalesce(string_agg(s.status || '=' || s.c, ', ' order by s.status), 'none')
+                      from (select e.status, count(*) as c from examined e group by e.status) s) as by_status
+          )
+          select f.slug || ' (' || f.status || ') — holds a Workspace Assistant but is offered no '
+                 || 'requires_role=''workforce_assistant'' action: nobody can administer this workspace' as violation,
+                 null::text as note
+            from flagged f
+          union all
+          -- Zero examined renders identically to zero violations. Both gates
+          -- that remain (the demo id, and "has an assistant") are things a row
+          -- change can empty, so the denominator is asserted, not just printed.
+          select 'no-comparisons — this probe examined ZERO workspaces. Every tenant is '
+                 || 'supposed to hold a Workspace Assistant (auto_provision_new_tenant), so '
+                 || 'either that stopped being true or the predicate drifted off '
+                 || 'digital_employees. Both are failures, and neither is a pass.' as violation,
+                 null::text as note
+            from counted c
+           where c.n = 0
+          union all
+          select null::text as violation,
+                 'workspace-admin-has-an-owner: examined ' || c.n
+                 || ' workspace(s) holding a Workspace Assistant, all statuses (' || c.by_status
+                 || '), demo tenant exempt. ' || c.bad
+                 || ' with no reachable workforce_assistant verb' as note
+            from counted c`,
   },
   {
     name: 'guard-bypass-setters-pinned',

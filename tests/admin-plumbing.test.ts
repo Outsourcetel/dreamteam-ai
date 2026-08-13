@@ -37,10 +37,41 @@ run('the platform_admin connector is baseline plumbing', () => {
     expect(def).toMatch(/select\s+id\s+into/i);
   });
 
-  it('every active workspace that has an assistant also has the connector', async () => {
-    const rows = await runQuery<{ slug: string }>(`
-      select t.slug from tenants t
-       where t.status='active'
+  it('every tenant-creation path reaches the connector, not just the two that call baseline', async () => {
+    // mig 730 moved the connector from provision_onboarding_architect — which
+    // runs from an AFTER INSERT ON tenants trigger and therefore covers EVERY
+    // tenant — into provision_tenant_baseline_internal, which only
+    // complete_signup and approve_subtenant_request call. request_subtenant's
+    // self-serve branch (the platform console's "Provision Tenant") inserts
+    // the tenants row itself, so mig 732 gave it the helper directly.
+    //
+    // Enumerated from the catalog rather than listed by hand: a FOURTH
+    // creation path added later is caught by the same assertion.
+    const rows = await runQuery<{ proname: string; reaches: boolean }>(`
+      select p.proname,
+             pg_get_functiondef(p.oid) ~* 'provision_platform_admin_connector_internal|provision_tenant_baseline_internal' as reaches
+        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.prokind in ('f','p')
+         and p.prosrc ~* 'insert\\s+into\\s+(public\\.)?tenants\\y'
+       order by 1`);
+    // Zero paths examined would pass the filter below having compared nothing.
+    expect(rows.length, 'functions that create a tenants row').toBeGreaterThanOrEqual(3);
+    expect(
+      rows.filter((r) => !r.reaches).map((r) => r.proname),
+      'tenant-creation paths that never reach the platform_admin connector',
+    ).toEqual([]);
+  });
+
+  it('every workspace that has an assistant also has the connector, whatever its status', async () => {
+    // ⚠ NOT filtered to status='active'. Every tenant is BORN 'trial'
+    // (complete_signup and request_subtenant both insert status='trial'), and
+    // expire_trials() moves a lapsed trial to 'suspended' on a timer — so an
+    // active-only assertion was blind for the entire window in which a newly
+    // provisioned workspace is newly broken, and then blind again afterwards.
+    // Measured before widening (2026-08-13): all three statuses, demo tenant
+    // exempt, returns zero rows.
+    const rows = await runQuery<{ slug: string; status: string }>(`
+      select t.slug, t.status from tenants t
          -- Provisioning deliberately skips the demo tenant — both
          -- provision_onboarding_architect (v_demo) and
          -- provision_tenant_baseline_internal (v_demo_tenant_id) refuse to
@@ -49,14 +80,35 @@ run('the platform_admin connector is baseline plumbing', () => {
          -- asserting coverage here would assert a promise nobody made. Same
          -- exclusion audit_tenant_feature_parity and audit_tenant_provisioning
          -- use (migration 723) — match the house convention, not a new one.
-         and t.id <> 'a0000000-0000-0000-0000-000000000001'
+       where t.id <> 'a0000000-0000-0000-0000-000000000001'
          and exists (select 1 from digital_employees d
                       where d.tenant_id=t.id and coalesce(d.is_workforce_assistant,false))
          and not exists (select 1 from connectors c
                           where c.tenant_id=t.id and c.category='platform_admin' and c.status='connected')`);
-    expect(rows.map((r) => r.slug), 'workspaces with an assistant but no admin connector').toEqual([]);
+    expect(
+      rows.map((r) => `${r.slug} (${r.status})`),
+      'workspaces with an assistant but no admin connector',
+    ).toEqual([]);
   });
 });
+
+// Reads the shipped probe out of scripts/certify.mjs. Bounded by the NEXT
+// probe's `name:` key rather than a fixed character count — the old 1600-char
+// window stopped covering the probe the moment it grew, and a window that
+// silently ends early makes every `not.toMatch` below pass on text it never
+// read.
+async function shippedProbeText(): Promise<string> {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync('scripts/certify.mjs', 'utf8');
+  const start = src.indexOf("name: 'workspace-admin-has-an-owner'");
+  expect(start, 'probe not found in scripts/certify.mjs').toBeGreaterThan(-1);
+  const next = src.indexOf("\n    name: '", start + 10);
+  const probe = src.slice(start, next > -1 ? next : src.length);
+  // Landmarks: if the window drifted off the probe, fail here rather than in
+  // an assertion that would read as a clean pass.
+  expect(probe, 'extraction window missed the probe body').toContain('get_agentic_tools_for_de');
+  return probe;
+}
 
 run('the admin gate cannot be silenced by removing the connector', () => {
   it('examines a workspace with an assistant regardless of its connectors', async () => {
@@ -65,12 +117,41 @@ run('the admin gate cannot be silenced by removing the connector', () => {
     // check go quiet on exactly the workspace it was meant to protect.
     // Assert on the shipped probe text: the connector must not appear as a
     // precondition alongside the tenant-status filter.
-    const { readFileSync } = await import('node:fs');
-    const src = readFileSync('scripts/certify.mjs', 'utf8');
-    const start = src.indexOf("name: 'workspace-admin-has-an-owner'");
-    expect(start, 'probe not found').toBeGreaterThan(-1);
-    const probe = src.slice(start, start + 1600);
+    const probe = await shippedProbeText();
     expect(probe).toContain('is_workforce_assistant');
     expect(probe).not.toMatch(/exists\s*\(\s*select 1 from connectors/);
+  });
+
+  it('...or by leaving the workspace on trial', async () => {
+    // The second precondition, one layer out. complete_signup and
+    // request_subtenant both create tenants with status='trial', and
+    // expire_trials() moves a lapsed trial to 'suspended' — so an
+    // `active`-only probe was silent for the whole window in which a
+    // newly-provisioned workspace is newly broken, and silent again on the
+    // far side of it. A status filter is something a single UPDATE can use to
+    // quiet the alarm, which is exactly what the connector precondition was.
+    const probe = await shippedProbeText();
+    expect(probe, 'the probe must not filter tenants by status').not.toMatch(
+      /\bstatus\s*(=|<>|!=|in)\s*[('"]/i,
+    );
+  });
+
+  it('says how many workspaces it examined, so a clean pass is not a silent one', async () => {
+    // F4. The probe sits behind two gates it can be emptied through (the demo
+    // id, and "has an assistant"), so "no violations found" and "nothing
+    // examined" render identically. Run the SHIPPED SQL and require a real
+    // denominator behind the silence.
+    const probe = await shippedProbeText();
+    const open = probe.indexOf('sql: `');
+    const sql = probe.slice(open + 6, probe.indexOf('`', open + 6));
+    expect(sql.length, 'probe SQL not extracted').toBeGreaterThan(200);
+
+    const rows = await runQuery<{ violation: string | null; note: string | null }>(sql);
+    const violations = rows.filter((r) => r.violation != null).map((r) => r.violation);
+    const notes = rows.filter((r) => r.note != null).map((r) => r.note as string);
+    expect(violations, 'workspaces nobody can administer').toEqual([]);
+    expect(notes.length, 'the probe must emit exactly one denominator row').toBe(1);
+    const examined = Number(/examined (\d+) workspace/.exec(notes[0])?.[1] ?? 0);
+    expect(examined, `zero examined is not a clean pass — ${notes[0]}`).toBeGreaterThan(0);
   });
 });

@@ -151,6 +151,54 @@ async function q(sql, attempt = 0) {
   return JSON.parse(t);
 }
 
+// ── workspace-admin-has-an-owner: the REAL probe, read as text ─────────────
+// This probe is INLINE in certify.mjs (like its neighbour
+// bound-onboarding-items-complete-from-evidence), so unlike advisory-boundary
+// or landed-predicate there is no module to import. It is therefore READ AS
+// TEXT rather than paraphrased — a paraphrase is the thing this file exists to
+// distrust, and this probe's whole premise is that a checker which cannot fail
+// is theatre. Every step below THROWS instead of degrading into a case that
+// silently tests nothing.
+const DEMO_EXEMPTION = "t.id <> 'a0000000-0000-0000-0000-000000000001'";
+const WORKSPACE_ADMIN_SQL = (() => {
+  const src = readFileSync('scripts/certify.mjs', 'utf8');
+  const at = src.indexOf("name: 'workspace-admin-has-an-owner'");
+  if (at < 0) throw new Error('workspace-admin-has-an-owner: probe not found in scripts/certify.mjs');
+  const open = src.indexOf('sql: `', at);
+  if (open < 0) throw new Error('workspace-admin-has-an-owner: no sql template literal follows the probe name');
+  const close = src.indexOf('`', open + 6);
+  if (close < 0) throw new Error('workspace-admin-has-an-owner: unterminated sql template literal');
+  const sql = src.slice(open + 6, close);
+  // Landmarks, so a formatting change that moves the extraction window fails
+  // here rather than producing cases that pass over the wrong text.
+  for (const landmark of ['is_workforce_assistant', 'get_agentic_tools_for_de', DEMO_EXEMPTION]) {
+    if (!sql.includes(landmark)) {
+      throw new Error(`workspace-admin-has-an-owner: extracted SQL is missing "${landmark}" — the extractor grabbed the wrong text`);
+    }
+  }
+  return sql;
+})();
+// The probe now emits a denominator row (violation NULL, note set) on every
+// run, which certify prints and never fails on. The harness counts ROWS, so
+// the note would make every `silent` half return 1 and every case fail — these
+// count violations, exactly as certify does.
+const violationsOnly = (sql) => `select * from (${sql}) z where z.violation is not null`;
+const mutate = (find, replaceWith) => {
+  const out = WORKSPACE_ADMIN_SQL.replace(find, replaceWith);
+  if (out === WORKSPACE_ADMIN_SQL) {
+    throw new Error(`workspace-admin-has-an-owner: mutation "${find}" changed nothing — the case would have tested the unmutated probe`);
+  }
+  return out;
+};
+// A tenant-status filter anywhere in the predicate is the regression F2 named:
+// every tenant is born 'trial', so an active-only probe is blind for exactly
+// the window in which a newly-provisioned workspace is newly broken.
+const STATUS_FILTER = /\bstatus\s*(=|<>|!=|in)\s*[('"]/i;
+const statusFilterFindings = (sql) => {
+  const m = sql.match(STATUS_FILTER);
+  return m ? [{ finding: `the probe filters tenants by status: ${m[0]}` }] : [];
+};
+
 // Each case: a predicate lifted from the real probe, applied to a synthesised
 // violating row. It MUST return >=1 row (probe fires) and the clean row MUST
 // return 0 (probe silent). Both halves matter: a probe that fires on everything
@@ -578,6 +626,69 @@ const CASES = [
                where i.status = 'done' and i.has_action_key
                  and not exists (select 1 from (select null::text as decision where false) ae
                                   where ae.decision in ('auto_executed','executed_after_approval')))`,
+  },
+  // ── workspace-admin-has-an-owner ────────────────────────────────────────
+  // Until now this probe's only "it can fire" evidence was a one-time manual
+  // git-stash run recorded in a ledger. The day the Onboarding Architect is
+  // retired it becomes the SOLE automated guard that a workspace still has a
+  // platform_admin connector, so it needs a fixture that is re-runnable.
+  //
+  // The first case is the strongest available and needs no synthesis at all:
+  // the Demo Workspace is a LIVE instance of the exact violating condition
+  // (holds a Workspace Assistant, 0 admin connectors, 0 reachable
+  // workforce_assistant verbs — against 1 and 4 for all 17 others). It is
+  // exempt by id because provisioning refuses it by id. Lift that one line and
+  // certify's ACTUAL query, over production, names it.
+  {
+    name: 'workspace-admin-has-an-owner (THE REAL PROBE over PRODUCTION — lift the one-id demo exemption and it names the workspace nobody can administer)',
+    fires: violationsOnly(mutate(DEMO_EXEMPTION, 'true')),
+    silent: violationsOnly(WORKSPACE_ADMIN_SQL),
+  },
+  {
+    // F2's regression, guarded on the SHIPPED TEXT rather than a model of it,
+    // because no live tenant can distinguish the two shapes: today every
+    // trial and suspended workspace is clean, so a status filter would cost
+    // nothing visible and silence everything later. `fires` injects the exact
+    // filter that was there until 2026-08-13; `silent` is the shipped probe.
+    name: 'workspace-admin-has-an-owner (a re-introduced tenant-status filter is caught — every tenant is born `trial`)',
+    firesJs: () => statusFilterFindings(mutate(DEMO_EXEMPTION, `t.status = 'active' and ${DEMO_EXEMPTION}`)),
+    silentJs: () => statusFilterFindings(WORKSPACE_ADMIN_SQL),
+  },
+  {
+    // The core arm, synthesised because the live estate holds no second
+    // instance: an assistant that reaches ZERO requires_role='workforce_assistant'
+    // actions is the violation, whatever the reason — a missing connector, a
+    // revoked grant, a de_may_use_action regression. `silent` is the same
+    // workspace with one such verb reachable, so this proves discrimination
+    // rather than mere firing.
+    name: 'workspace-admin-has-an-owner (assistant present, ZERO reachable workforce_assistant verbs -> violation)',
+    fires: `select 1 where exists (
+              select 1 from (values (true, 0)) t(has_assistant, wa_verbs)
+               where t.has_assistant and t.wa_verbs = 0)`,
+    silent: `select 1 where exists (
+              select 1 from (values (true, 4)) t(has_assistant, wa_verbs)
+               where t.has_assistant and t.wa_verbs = 0)`,
+  },
+  {
+    // The gate that is legitimate: a workspace with no Workspace Assistant is
+    // not examined, because there is no assistant for the admin verbs to be
+    // unreachable BY. Without this case, replacing the assistant gate with a
+    // constant true would pass every case above.
+    name: 'workspace-admin-has-an-owner (no Workspace Assistant -> exempt by design, never a violation)',
+    fires: `select 1 where exists (
+              select 1 from (values (true, 0)) t(has_assistant, wa_verbs)
+               where t.has_assistant and t.wa_verbs = 0)`,
+    silent: `select 1 where exists (
+              select 1 from (values (false, 0)) t(has_assistant, wa_verbs)
+               where t.has_assistant and t.wa_verbs = 0)`,
+  },
+  {
+    // F4's arm. Both remaining gates (the demo id, "has an assistant") are
+    // things a row change can empty, and zero examined renders identically to
+    // zero violations. The probe now raises rather than printing a quiet pass.
+    name: 'workspace-admin-has-an-owner (zero workspaces examined is a VIOLATION, not a clean run)',
+    fires: `select 'no-comparisons' where exists (select 1 from (values (0)) c(n) where c.n = 0)`,
+    silent: `select 'no-comparisons' where exists (select 1 from (values (17)) c(n) where c.n = 0)`,
   },
   // ── mig 685's ratchet: no-untyped-literal-appended-to-a-container ───────
   // Every case runs bareContainerLiteralSql() — certify's ACTUAL query — over
