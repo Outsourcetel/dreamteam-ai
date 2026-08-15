@@ -89,6 +89,7 @@ export const PAGE_TO_URL: Record<Page, string> = {
   // Setup
   company_setup:  '/setup',
   onboarding_architect: '/setup/quick-start',
+  discovery_proposals: '/setup/discovery-proposals',
 };
 
 export const URL_TO_PAGE: Record<string, Page> = Object.fromEntries(
