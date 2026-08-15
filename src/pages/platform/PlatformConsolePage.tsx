@@ -750,15 +750,63 @@ const PlatformHealthPage = () => {
     return () => { cancelled = true; };
   }, []);
 
-  const total = rows?.length ?? 0;
-  const healthy = (rows || []).filter((r) => r.status === 'connected' && r.consecutive_failures === 0).length;
-  const failing = (rows || []).filter((r) => r.status === 'error' || r.consecutive_failures > 0).length;
-  const disconnected = (rows || []).filter((r) => r.status === 'disconnected').length;
+  // ── ONE classifier, read by the tiles AND the row badges ────────────────
+  // Until 2026-08-15 there were two, and they contradicted each other on this
+  // single screen: the Healthy tile required `status === 'connected'`, while
+  // statusBadge tested error-or-failures, then 'disconnected', then FELL
+  // THROUGH to a green "Healthy". A connector staged at 'pending_credentials'
+  // — one that has never held a secret and will not until a human enters one
+  // — matched neither arm, so it badged green, permanently: connector-hub
+  // answers {error:'no_credentials'} and returns before recordHealth is ever
+  // reached, so consecutive_failures stays 0 forever. The rows said Healthy;
+  // the tile above them did not count them; the four tiles stopped summing to
+  // the total. (They also over-summed before: a 'disconnected' row with
+  // failures was counted by BOTH the Failing and the Disconnected tile.)
+  //
+  // ⚠ The default arm is 'unknown', NOT 'healthy'. That is the load-bearing
+  // half of this fix. `PlatformConnectorHealthRow.status` is a union the
+  // compiler believes because src/lib/api.ts casts the RPC result with `as` —
+  // and the live platform_connector_health_summary body selects `c.status`
+  // with no filter whatsoever, so a sixth value added to
+  // connectors_status_check would arrive here on the day it is added. Falling
+  // through to green is how a status nobody has taught this page about buys a
+  // clean bill of health. Unknown rows are counted and named below instead.
+  //
+  // INVERT IT: change one arm's literal (e.g. 'connected' → 'connectedx') and
+  // the Healthy tile drops to 0, 24 rows badge "Unrecognised: connected", and
+  // the red banner appears. It fails loudly, in three places at once.
+  type HealthClass = 'failing' | 'awaiting_credential' | 'disconnected' | 'healthy' | 'unknown';
+  const classify = (r: PlatformConnectorHealthRow): HealthClass => {
+    if (r.status === 'error' || r.consecutive_failures > 0) return 'failing';
+    if (r.status === 'pending_credentials') return 'awaiting_credential';
+    if (r.status === 'disconnected') return 'disconnected';
+    if (r.status === 'connected') return 'healthy';
+    return 'unknown';
+  };
+  const countOf = (c: HealthClass) => (rows || []).filter((r) => classify(r) === c).length;
 
+  const total = rows?.length ?? 0;
+  const healthy = countOf('healthy');
+  const failing = countOf('failing');
+  const awaiting = countOf('awaiting_credential');
+  const disconnected = countOf('disconnected');
+  const unknown = countOf('unknown');
+
+  const BADGES: Record<HealthClass, { label: string; color: string }> = {
+    failing: { label: 'Failing', color: 'red' },
+    awaiting_credential: { label: 'Awaiting credential', color: 'amber' },
+    disconnected: { label: 'Disconnected', color: 'slate' },
+    healthy: { label: 'Healthy', color: 'green' },
+    unknown: { label: 'Unrecognised', color: 'red' },
+  };
   const statusBadge = (r: PlatformConnectorHealthRow) => {
-    if (r.status === 'error' || r.consecutive_failures > 0) return <Badge label="Failing" color="red" />;
-    if (r.status === 'disconnected') return <Badge label="Disconnected" color="slate" />;
-    return <Badge label="Healthy" color="green" />;
+    const cls = classify(r);
+    return (
+      <Badge
+        label={cls === 'unknown' ? `Unrecognised: ${String(r.status)}` : BADGES[cls].label}
+        color={BADGES[cls].color}
+      />
+    );
   };
 
   return (
@@ -770,12 +818,26 @@ const PlatformHealthPage = () => {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      {/* Five tiles, and they SUM to the total — every row lands in exactly
+          one class, and any row that lands in none of them is named in the
+          banner below rather than quietly rounded into green. */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <StatCard label="Connectors Tracked" value={String(total)} icon="◈" color="indigo" trend="All tenants" />
-        <StatCard label="Healthy" value={String(healthy)} icon="✓" color="emerald" trend="No recent failures" />
+        <StatCard label="Healthy" value={String(healthy)} icon="✓" color="emerald" trend="Connected, no failures" />
         <StatCard label="Failing" value={String(failing)} icon="⚠" color={failing > 0 ? 'amber' : 'emerald'} trend={failing > 0 ? 'Needs attention' : 'None'} />
-        <StatCard label="Disconnected" value={String(disconnected)} icon="◎" color="slate" trend="Never connected / removed" />
+        <StatCard label="Awaiting Credential" value={String(awaiting)} icon="⏳" color="amber" trend="Staged, never authenticated" />
+        <StatCard label="Disconnected" value={String(disconnected)} icon="◎" color="slate" trend="Credential removed" />
       </div>
+
+      {unknown > 0 && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 mb-6">
+          <p className="text-xs text-red-300">
+            {unknown} connector{unknown === 1 ? '' : 's'} report a status this page does not recognise. They are
+            counted in the total and in none of the four classes above — deliberately not treated as healthy.
+            Somebody widened connectors_status_check without teaching this screen the new value.
+          </p>
+        </div>
+      )}
 
       <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-6">
         <p className="text-xs text-amber-300">

@@ -348,7 +348,20 @@ export interface PlatformConnectorHealthRow {
   connector_id: string;
   display_name: string;
   provider: string;
-  status: 'connected' | 'error' | 'disconnected';
+  /** ⚠ FOUR values, not three. `pending_credentials` has been legal since
+   *  migration 728 and this union said otherwise until 2026-08-15 — and tsc
+   *  could not catch the gap, because the RPC returns `status text` and the
+   *  fetcher below casts the whole array with `as`. A cast is a promise the
+   *  compiler believes; it does not check it. The live
+   *  `platform_connector_health_summary` body (read from pg_get_functiondef)
+   *  selects `c.status` with NO status filter at all, so every value the
+   *  connectors_status_check admits reaches this page verbatim.
+   *
+   *  Kept in step with src/lib/connectorApi.ts's ConnectorStatus. If a sixth
+   *  status is ever added, widen BOTH — and note that PlatformConsolePage's
+   *  classifier deliberately treats an unrecognised value as unknown rather
+   *  than healthy, so the page degrades to "we don't know" instead of green. */
+  status: 'connected' | 'error' | 'disconnected' | 'pending_credentials';
   last_ok_at: string | null;
   last_error_at: string | null;
   last_error: string | null;

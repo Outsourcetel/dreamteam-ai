@@ -32,7 +32,15 @@ export type ConnectorProvider =
   | 'netsuite' | 'powerschool' | 'ellucian' | 'toast' | 'athenahealth' | 'epic' | 'cerner'
   | 'dropbox' | 'twilio' | 'typeform' | 'calendly' | 'okta' | 'contentful' | 'template'
   | 'erpnext' | 'mcp' | 'chargebee' | 'clover' | 'zohocrm' | 'zohodesk';
-export type ConnectorStatus = 'connected' | 'error' | 'disconnected';
+/** ⚠ 'pending_credentials' is a REAL status live — connectors_status_check
+ *  reads `status = ANY (ARRAY['connected','error','disconnected',
+ *  'pending_credentials'])` (read from pg_constraint, 2026-08-15). It was
+ *  missing from this union, so the one status the database has for "the row
+ *  exists, nobody has entered the credential yet" could not be expressed in
+ *  TypeScript. It is NOT interchangeable with 'disconnected': that one means
+ *  "was connected, isn't now", and poll_de_work_sources_targets filters on
+ *  `c.status <> 'disconnected'` specifically. */
+export type ConnectorStatus = 'connected' | 'error' | 'disconnected' | 'pending_credentials';
 export type ConnectorAccessMode = 'ingest' | 'fetch_only';
 
 export interface Connector {
@@ -1127,6 +1135,17 @@ export interface ConnectProviderInput {
   /** When set, UPDATE this existing connector in place (reconnect) instead of
    *  inserting a new row — so re-entering credentials never spawns a duplicate. */
   reconnectId?: string;
+  /** The status to write. Defaults to 'disconnected', which is what every
+   *  credential-entering caller (LiveConnectorsPage, McpServersPage) wants and
+   *  is exactly what this function wrote before the parameter existed.
+   *
+   *  Discovery accept (src/lib/discoveryApi.ts) passes 'pending_credentials':
+   *  it stages a connector the customer agreed to on a card, with NO secrets,
+   *  for the human to credential later. Routing that through this writer
+   *  rather than a second `insert into connectors` is the point — the plan's
+   *  Global Constraint is "no new creation engine", so there stays exactly one
+   *  statement in the app that brings a connector row into existence. */
+  status?: ConnectorStatus;
 }
 
 export async function connectProvider(
@@ -1151,7 +1170,7 @@ export async function connectProvider(
     category: input.category,
     access_mode: input.accessMode,
     config: input.config ?? {},
-    status: 'disconnected' as ConnectorStatus,
+    status: (input.status ?? 'disconnected') as ConnectorStatus,
   };
   // Reconnect updates the SAME row (no duplicate); a fresh connect inserts.
   const { data, error } = input.reconnectId
@@ -1183,9 +1202,17 @@ export async function connectProvider(
     ]);
   }
 
-  const test = PROVIDERS[input.provider].implemented
-    ? await invokeHub<{ ok: boolean; error?: string; detail?: string }>({ action: 'test', connector_id: connector.id })
-    : { ok: false, error: 'not_implemented' };
+  // A row staged at 'pending_credentials' has no secret by definition, so
+  // there is nothing a live test could succeed at: connector-hub reads
+  // connector_secrets_decrypted and answers {error:'no_credentials'} (400)
+  // when it finds none. Returning that same string locally, instead of paying
+  // a round trip to be told it, keeps callers on one vocabulary and stops a
+  // staged connector recording a failure it was never given a chance to pass.
+  const test = row.status === 'pending_credentials'
+    ? { ok: false, error: 'no_credentials' }
+    : PROVIDERS[input.provider].implemented
+      ? await invokeHub<{ ok: boolean; error?: string; detail?: string }>({ action: 'test', connector_id: connector.id })
+      : { ok: false, error: 'not_implemented' };
 
   const { data: fresh } = await supabase
     .from('connectors').select('*').eq('id', connector.id).single();

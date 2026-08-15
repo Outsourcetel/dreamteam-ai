@@ -55,6 +55,17 @@ import { providerCatalogFailures, providerCheckValues, readConnectorConstants } 
 // decides — and scripts/certify-mutation-test.mjs imports the identical
 // function so its fixtures exercise the real gate, not a paraphrase of it.
 import { discoverySpineFailures } from './discovery-spine-check.mjs';
+// The sibling section, same split again: the proposal-DECISION assertions the
+// 2026-08-13 discovery-proposals-and-creation plan calls Task 5. It is a
+// SEPARATE section from discovery-spine on purpose — the spine is seeded
+// standing data (14 rows, never legitimately zero) while discovery_proposals
+// is a transactional table that is legitimately empty until the first
+// interview, so the two have opposite answers to "is zero examined a
+// violation" and must not share a PASS/FAIL line that hides the difference.
+import {
+  discoveryProposalFailures, proposalsSql, resolverControlSql, routeTablesSql,
+  deciderSql, kindCheckValues, constraintDefsSql, privSql, mapPriv,
+} from './discovery-proposal-check.mjs';
 // Same split again, and this one replaces a probe that could not fail: the
 // ledger-vs-COMMITTED comparison needs git as well as SQL, so it cannot be a
 // PROBES entry. certify-mutation-test.mjs imports committedLedgerFailures too.
@@ -970,6 +981,87 @@ const sections = [
         + (sessionsExamined === 0 ? ' (interview engine not yet used in production — coverage-state check has nothing to examine yet)' : '');
     if (!failures.length) console.log(`        discovery-spine: ${detail}`);
     return { ok: failures.length === 0, detail };
+  }),
+  // ── A proposal in a terminal state must have a person and a thing ───────
+  // Task 5 of the 2026-08-13 discovery-proposals-and-creation plan, landing
+  // WITH the first kind rather than after the last one — task-3-contract.md
+  // §9: "the assertions must be red-provable on the first kind, or they will
+  // be written to fit whatever shipped."
+  //
+  // Four row assertions (no terminal state without decided_by AND decided_at;
+  // no accepted row without a created_object_id; every kind present is one a
+  // writer can route; and an accepted row's created_object_id must resolve to
+  // a LIVE row in the table its kind creates into — a stored uuid is not a
+  // created thing).
+  //
+  // ⚠⚠ discovery_proposals holds ZERO rows today and every one of those four
+  // therefore compares nothing. That is measured, not assumed: 0 proposals, 0
+  // discovery_sessions, and 0 audit_events carrying
+  // detail->>'kind'='discovery_proposal_decision' — checked, because in this
+  // repo zero rows is never on its own evidence that a feature never ran. A
+  // section that reported PASS on that basis would be the ninth
+  // check-that-cannot-fail in five days. So:
+  //   · the row denominator is printed on EVERY run, and zero prints as a
+  //     ⚠ NOT-YET-EXERCISED line saying in words that those four proved
+  //     nothing today;
+  //   · four further families run on every run whatever the table holds —
+  //     the ROUTES (each routable kind's target table must resolve live AND
+  //     must be the table EXPECTED_KIND_TABLES independently names, which is
+  //     what makes both "add conversation_type to KIND_ROUTES" and "point a
+  //     kind at a live-but-wrong table" go red instead of buying silence);
+  //     the STATES (TERMINAL_STATES/NON_TERMINAL_STATES diffed against
+  //     discovery_proposals_state_check in both directions, so a new state
+  //     cannot be skipped by every row arm in silence); the RESOLVER CONTROLS
+  //     (the same SQL expression the dangling-uuid assertion uses, driven
+  //     four ways per kind — nil uuid must say no, a real row must say yes,
+  //     that row under ANOTHER tenant must say no, and an excluded row
+  //     (is_workforce_assistant) must say no); and the AUDIT-WRITE PERIMETER,
+  //     because the "created then deleted" relief reads an audit event as
+  //     evidence and that is admissible only while the browser cannot write
+  //     one.
+  //
+  // FETCHES and FORMATS only; discovery-proposal-check.mjs decides, and
+  // certify-mutation-test.mjs drives that same function over mutated copies of
+  // this same live state.
+  section('discovery-proposal-decisions', async () => {
+    const proposals = await q(proposalsSql());
+    const controls = await q(`select * from (${resolverControlSql()}) _c order by kind, arm`);
+    const routeTables = await q(routeTablesSql());
+    const constraintDefs = await q(constraintDefsSql());
+    const defOf = (name) => constraintDefs.find((c) => c.conname === name)?.def;
+    const deciders = await q(deciderSql());
+    const [priv] = await q(privSql());
+
+    const r = discoveryProposalFailures({
+      proposals,
+      controls,
+      routeTables,
+      kindsInCheck: kindCheckValues(defOf('discovery_proposals_kind_check')),
+      // The STATE vocabulary, fetched for the same reason the kind vocabulary
+      // is: TERMINAL_STATES used to be a JS literal compared against nothing,
+      // so a future `expired` state would have been skipped by every per-row
+      // arm while still counting in the denominator.
+      statesInCheck: kindCheckValues(defOf('discovery_proposals_state_check')),
+      deciders,
+      priv: mapPriv(priv),
+    });
+
+    // Count the comparisons, not just the findings — and print them whether
+    // the section passes or fails, because the number that matters most here
+    // is the one that is currently zero.
+    const denominator = `compared ${r.proposalsExamined} proposal row(s) `
+      + `(${r.terminalExamined} terminal, ${r.acceptedExamined} accepted, `
+      + `${r.retiredExamined} accepted-but-object-since-deleted, kinds present: `
+      + `${r.kindsPresent.length ? r.kindsPresent.join('/') : 'none'}), `
+      + `${r.routesExamined} routable kind(s) against live target tables, `
+      + `${r.expectationsExamined} route/exclusion expectation(s), `
+      + `${r.statesExamined} admitted state value(s), `
+      + `${r.controlsExamined} resolver control(s); `
+      + `kinds the CHECK admits that no writer routes: `
+      + `${r.admittedButUnroutable.length ? r.admittedButUnroutable.join('/') : 'none'}`;
+    for (const n of r.notes) console.log(`        ${n}`);
+    console.log(`        discovery-proposal-decisions: ${denominator}`);
+    return { ok: r.failures.length === 0, detail: r.failures.join('\n') };
   }),
   section('edge-typecheck', () => {
     const { counts, total, unattributed, fns } = edgeErrorCounts();

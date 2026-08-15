@@ -62,6 +62,10 @@ import { reportEdgeError } from '../_shared/errorReport.ts';
 import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
 import { budgetBlocked } from '../_shared/rpcSafety.ts';
 import { rankDocs } from '../_shared/answerEnvelope.ts';
+// ⚠ ONE definition of "a connector we can actually call", shared with
+// playbook-execute — see that file's header for why a deny-list on
+// 'disconnected' is not the same question.
+import { orderedCallableConnectors } from '../_shared/connectorSelection.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -348,9 +352,19 @@ async function runResolveInquiry(
     items.slice(0, 5).map((i) => ({ system, ref: i.external_ref, title: i.title.slice(0, 160), url: i.url, snippet: (i.snippet ?? '').slice(0, 200) }));
 
   const { data: allConns } = await admin.from('connectors')
-    .select('id, provider, display_name, category, status, access_mode')
+    .select('id, provider, display_name, category, status, access_mode, created_at')
     .eq('tenant_id', tenantId);
-  const conns = (allConns ?? []).filter((c) => c.status !== 'disconnected');
+  // ⚠ Was `.filter(c => c.status !== 'disconnected')` followed by `[0]` on the
+  // result — a deny-list plus an arbitrary pick. It admitted the
+  // `pending_credentials` rows the discovery accept path now stages (a
+  // connector nobody has ever given a secret), so a workspace that accepted a
+  // "Connect HubSpot" card would stop recording "No product system or CRM
+  // connected — skipped honestly" and start recording a live-lookup FAILURE
+  // against a connector-hub 400. orderedCallableConnectors also gives the [0]
+  // below a real order — connected before error, then oldest — instead of
+  // whatever PostgREST happened to return. See
+  // ../_shared/connectorSelection.ts for the measurements.
+  const conns = orderedCallableConnectors(allConns ?? []);
   const byCategory = (category: string) => conns.filter((c) => c.category === category);
   const label = (c: { provider: string; display_name: string }) => c.display_name || c.provider;
 

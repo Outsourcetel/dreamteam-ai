@@ -99,6 +99,12 @@ import { semanticGate, loadBlockingRulesForJudge, semanticGuardrailScreen, GUARD
 import { matchPattern } from '../_shared/guardrailMatch.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { rpcLoud } from '../_shared/rpcSafety.ts';
+// ⚠ ONE definition of "a connector we can actually call", shared with
+// specialist-consult. The three selectors below used to spell it
+// `.neq('status','disconnected').limit(1)` — a deny-list that admits the
+// `pending_credentials` rows the discovery accept path now creates, plus no
+// ORDER BY at all. See that file's header for the measured consequence.
+import { CALLABLE_CONNECTOR_STATUSES, pickCallableConnector } from '../_shared/connectorSelection.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -910,12 +916,19 @@ async function executeDefinitionSteps(
     const actionCategory = String(p.action_category ?? '');
     const actionKey = String(p.action_key ?? '');
     const runDeId = await resolveRunDeId();
-    const { data: actConn } = await admin
-      .from('connectors').select('id, provider, display_name, category, status')
+    // ⚠ Allow-list + a deterministic pick, never `.neq('status',
+    // 'disconnected').limit(1)`. A `pending_credentials` connector has never
+    // held a secret, so calling it returns connector-hub's
+    // {error:'no_credentials'} 400 and this step would record a FAILURE where
+    // the honest skip below is the truth. The missing ORDER BY was the second
+    // half: two connectors in one category and which one you got was a coin
+    // toss. ../_shared/connectorSelection.ts carries the whole argument.
+    const { data: actConnRows } = await admin
+      .from('connectors').select('id, provider, display_name, category, status, created_at')
       .eq('tenant_id', tenantId)
       .eq(actionCategory ? 'category' : 'id', actionCategory || '00000000-0000-0000-0000-000000000000')
-      .neq('status', 'disconnected')
-      .limit(1).maybeSingle();
+      .in('status', [...CALLABLE_CONNECTOR_STATUSES]);
+    const actConn = pickCallableConnector(actConnRows);
     if (!actConn) {
       stepLike.status = 'skipped'; stepLike.at = now();
       stepLike.detail = `skipped: no connected ${actionCategory || 'target'} system for action "${actionKey}"`;
@@ -1625,10 +1638,17 @@ async function executeDefinitionSteps(
           if (typeof params.category === 'string' && params.category) {
             const category = params.category as string;
             const op = String(params.op ?? '');
-            const { data: catConn } = await admin
-              .from('connectors').select('id, provider, display_name, status')
-              .eq('tenant_id', tenantId).eq('category', category).neq('status', 'disconnected')
-              .limit(1).maybeSingle();
+            // ⚠ See ../_shared/connectorSelection.ts. `<> 'disconnected'`
+            // admits a staged `pending_credentials` row, which turns the
+            // honest "skipped: no connected <category> system" three lines
+            // below into a connector-hub 400 recorded as a failure — the exact
+            // regression a workspace with no CRM would meet the first time it
+            // accepts a "Connect HubSpot" card.
+            const { data: catConnRows } = await admin
+              .from('connectors').select('id, provider, display_name, status, created_at')
+              .eq('tenant_id', tenantId).eq('category', category)
+              .in('status', [...CALLABLE_CONNECTOR_STATUSES]);
+            const catConn = pickCallableConnector(catConnRows);
             if (!catConn) {
               step.status = 'skipped'; step.at = now();
               step.detail = `skipped: no connected ${category} system for this workspace`;
@@ -1696,12 +1716,16 @@ async function executeDefinitionSteps(
           if (typeof params.action_key === 'string' && params.action_key) {
             const actionCategory = String(params.action_category ?? '');
             const actionKey = params.action_key as string;
-            const { data: actConn } = await admin
-              .from('connectors').select('id, provider, display_name, category, status')
+            // ⚠ Same allow-list + deterministic pick as execRegisteredAction
+            // above and the category_op form before it — one definition, in
+            // ../_shared/connectorSelection.ts, so these three cannot drift
+            // into three different answers to "which connector".
+            const { data: actConnRows } = await admin
+              .from('connectors').select('id, provider, display_name, category, status, created_at')
               .eq('tenant_id', tenantId)
               .eq(actionCategory ? 'category' : 'id', actionCategory || '00000000-0000-0000-0000-000000000000')
-              .neq('status', 'disconnected')
-              .limit(1).maybeSingle();
+              .in('status', [...CALLABLE_CONNECTOR_STATUSES]);
+            const actConn = pickCallableConnector(actConnRows);
             if (!actConn) {
               step.status = 'skipped'; step.at = now();
               step.detail = `skipped: no connected ${actionCategory || 'target'} system for action "${actionKey}"`;

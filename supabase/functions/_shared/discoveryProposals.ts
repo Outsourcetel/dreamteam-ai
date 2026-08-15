@@ -26,8 +26,10 @@
 //                          belongs on the card, not behind a link")
 //     connector         — from matchProvider() over the dimension's evidence
 //                          text against the live connector_providers catalog
-//     conversation_type — label (the dimension's own title) + owner (the
-//                          archetype it serves)
+//     conversation_type — ⚠ NOT EMITTED. Removed 2026-08-15; returns with a
+//                          real payload (match_pattern + set_category) and a
+//                          real writer (support_triage_rules) in the
+//                          follow-up task. See DIMENSION_STRUCTURAL_KINDS.
 //
 //   NOT PURE — proposalsFrom emits the SHAPE only, with needs_model_fill:
 //   true and a payload that is DELIBERATELY incomplete. A model fills the
@@ -551,9 +553,9 @@ export interface ProposalsFromOptions {
  *  Mapped from the spine's own design (docs/superpowers/specs/2026-08-12-
  *  discovery-interview-design.md §3 and the 14-dimension guidance text,
  *  migration 734):
- *   - how_customers_reach_us is the one dimension whose own produces list
- *     is about channels/routing for customer contact — the natural source
- *     of a conversation_type.
+ *   - how_customers_reach_us WAS mapped here (it is the one dimension whose
+ *     own produces list is about channels/routing for customer contact),
+ *     and is deliberately mapped to nothing today — see the ⚠ note below.
  *   - must_never_happen (734, ordinal 11) is the SOLE guardrail source —
  *     "capture the hard lines ... these become guardrails rather than
  *     judgment calls".
@@ -572,9 +574,35 @@ export interface ProposalsFromOptions {
  *  systems_of_record / the_workforce_itself (employee/connector only, via
  *  the generic paths above), and who_is_who / what_good_looks_like (org
  *  contacts and KPI targets — §11b lists both under "Safely deferred",
- *  no proposal kind among the six fits either). */
+ *  no proposal kind among the six fits either).
+ *
+ *  ⚠ `how_customers_reach_us` PRODUCES NOTHING STRUCTURAL TODAY, and its
+ *  absence from this table is a deliberate, dated decision — not an
+ *  oversight, and not a removal of the kind.
+ *  Until 2026-08-15 this table read `how_customers_reach_us:
+ *  ['conversation_type']` and the loop below emitted a complete draft whose
+ *  payload was `{ label: dim.title, owner_ref }`. Two measured facts killed
+ *  it: `dim.title` for this dimension is literally "How customers reach us"
+ *  — the interview's own question heading — so every tenant, every session,
+ *  produced the SAME card; and there is no `conversation_types` table, no
+ *  writer, and nothing that routes on the label, so accepting it could only
+ *  ever have been a no-op wearing an accept button.
+ *  ⚠ The topic axis it was pretending to be IS REAL and IS LIVE: it is
+ *  `de_conversations.category`, driven by `support_triage_rules`
+ *  (match_pattern -> set_category), tenant-editable with full CRUD UI. The
+ *  founder's 2026-08-15 ruling is that the interview will write REAL triage
+ *  rules, and `conversation_type` returns here WITH THAT PAYLOAD
+ *  (match_pattern + set_category) AND WITH ITS WRITER — the follow-up task,
+ *  not this one. Do NOT re-add the key here without that writer: a card that
+ *  offers a decision no writer can carry out is the thing this whole module
+ *  exists to refuse. The kind stays in ProposalKind, in
+ *  discovery_proposals_kind_check and in the presentation module precisely so
+ *  it can come back whole.
+ *  Standing rule, unchanged: a kind absent from scripts/discovery-proposal-
+ *  check.mjs's KIND_ROUTES makes certify go RED on any row carrying it, and
+ *  that stays true for conversation_type. The fix was always to stop the
+ *  emitter, never to add a route. */
 const DIMENSION_STRUCTURAL_KINDS: Readonly<Record<string, readonly ProposalKind[]>> = {
-  how_customers_reach_us: ['conversation_type'],
   money_in: ['procedure'],
   how_work_gets_delivered: ['procedure'],
   repetitive_work: ['procedure'],
@@ -597,9 +625,11 @@ const DIMENSION_STRUCTURAL_KINDS: Readonly<Record<string, readonly ProposalKind[
  *     dimension's evidence text, deduplicated by provider_key across the
  *     whole call the same way;
  *   - the dimension's own structural kind(s) from DIMENSION_STRUCTURAL_KINDS,
- *     if any — conversation_type is emitted complete; procedure/guardrail/
- *     trust_rule are emitted as an intentionally incomplete SHAPE with
- *     needs_model_fill: true (see the module header's "THE SPLIT").
+ *     if any — procedure/guardrail/trust_rule, all emitted as an
+ *     intentionally incomplete SHAPE with needs_model_fill: true (see the
+ *     module header's "THE SPLIT"). ⚠ conversation_type used to be the one
+ *     structural kind emitted COMPLETE; it is emitted not at all as of
+ *     2026-08-15 — see DIMENSION_STRUCTURAL_KINDS' header.
  *
  * A dimension key present in `dimensions` but absent from
  * DIMENSION_STRUCTURAL_KINDS simply contributes no structural draft — this
@@ -700,20 +730,15 @@ export function proposalsFrom(
     }
 
     // ---- this dimension's own structural kind(s) --------------------------
+    // ⚠ There is deliberately NO `conversation_type` arm here. It was removed
+    // on 2026-08-15 together with the DIMENSION_STRUCTURAL_KINDS entry that
+    // reached it — see that table's header for the measured reasons and for
+    // the exact shape it returns in with (match_pattern + set_category,
+    // writing support_triage_rules). Re-adding this arm without that writer
+    // puts an un-routable card in front of a customer and turns
+    // scripts/discovery-proposal-check.mjs red on the first real interview.
     for (const kind of DIMENSION_STRUCTURAL_KINDS[dim.key] ?? []) {
-      if (kind === 'conversation_type') {
-        const ownerArchKey = dim.serves_archetypes.find((k) => !k.startsWith('planned_') && archetypeByKey.has(k));
-        drafts.push({
-          kind: 'conversation_type',
-          payload: {
-            label: dim.title,
-            owner_ref: ownerArchKey ? `archetype:${ownerArchKey}` : 'unassigned',
-          },
-          rationale: `Heard evidence for "${dim.title}": ${evidenceLine}`,
-          source_dimension: dim.key,
-          needs_model_fill: false,
-        });
-      } else if (kind === 'procedure') {
+      if (kind === 'procedure') {
         drafts.push({
           kind: 'procedure',
           payload: {

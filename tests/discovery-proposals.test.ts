@@ -552,17 +552,38 @@ describe('proposalsFrom — connector (pure, via matchProvider)', () => {
   });
 });
 
-describe('proposalsFrom — conversation_type (pure)', () => {
-  // Red if: the label or owner_ref is missing/empty on a heard
-  // how_customers_reach_us dimension.
-  it('derives a complete, self-validating conversation_type draft', () => {
+describe('proposalsFrom — conversation_type is NOT emitted (2026-08-15)', () => {
+  // This test used to assert the OPPOSITE — that a heard
+  // how_customers_reach_us derives "a complete, self-validating
+  // conversation_type draft". It was inverted, not deleted, on 2026-08-15,
+  // and the inversion is the point: a kind with no writer and no target
+  // table must not reach a customer's screen wearing an accept button.
+  //
+  // Red if: the emitter comes back WITHOUT its writer. The kind returns in
+  // the follow-up task carrying a real payload (match_pattern +
+  // set_category) that writes support_triage_rules — the live topic axis on
+  // de_conversations.category. When that lands, this test is rewritten to
+  // assert the NEW payload shape. Until then, re-adding the old emitter
+  // makes this go red on the same run that
+  // scripts/discovery-proposal-check.mjs goes red on the row it produces.
+  it('emits NO conversation_type draft for a heard how_customers_reach_us', () => {
     const drafts = proposalsFrom(DIMS, {
       how_customers_reach_us: { state: 'heard', evidence: 'they call and email' },
     }, ARCHETYPES);
-    const ct = drafts.filter((d) => d.kind === 'conversation_type');
-    expect(ct).toHaveLength(1);
-    expect(ct[0].needs_model_fill).toBe(false);
-    expect(() => validatePayload('conversation_type', ct[0].payload)).not.toThrow();
+    expect(drafts.filter((d) => d.kind === 'conversation_type')).toHaveLength(0);
+    // ⚠ Vacuity guard. Asserting only an absence would also pass on a
+    // proposalsFrom that emits nothing at all for any input, which is not
+    // what was changed. That dimension still produces its employee drafts.
+    expect(drafts.filter((d) => d.kind === 'employee').length).toBeGreaterThan(0);
+  });
+
+  // The KIND itself is untouched — validatePayload still knows its shape, so
+  // the follow-up task re-enables an emitter rather than rebuilding a kind.
+  // Red if: someone "cleans up" conversation_type out of the validator while
+  // the emitter is off, which would make the return a much bigger change
+  // than the ruling describes.
+  it('still validates a conversation_type payload — the kind is dormant, not deleted', () => {
+    expect(() => validatePayload('conversation_type', { label: 'Billing question', owner_ref: 'archetype:billing_ar' })).not.toThrow();
   });
 });
 

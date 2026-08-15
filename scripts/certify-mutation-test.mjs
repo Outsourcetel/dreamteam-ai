@@ -32,6 +32,19 @@ import { providerCatalogFailures, providerCheckValues, readConnectorConstants } 
 // any of them can fire is to hand the REAL function a mutated COPY of that
 // state, never a write.
 import { discoverySpineFailures } from './discovery-spine-check.mjs';
+// certify's ACTUAL discovery-proposal-DECISION comparison — the same function,
+// imported, never a paraphrase. This one is the most important import in the
+// file: public.discovery_proposals holds ZERO rows (measured, along with 0
+// discovery_sessions and 0 discovery_proposal_decision audit events), so its
+// four ROW assertions are silent against real state for the reason that most
+// resembles being correct. Nothing but a fired mutation is evidence that any
+// of them can fail at all. KIND_ROUTES comes with it so the cases below can
+// perform the exact edit that would buy silence and watch it be refused.
+import {
+  discoveryProposalFailures, KIND_ROUTES, EXPECTED_KIND_TABLES, NIL_UUID,
+  proposalsSql, resolverControlSql, routeTablesSql, deciderSql, kindCheckValues,
+  constraintDefsSql, privSql, mapPriv,
+} from './discovery-proposal-check.mjs';
 // certify's ACTUAL ledger-vs-COMMITTED comparison. This one is here because
 // its predecessor was the exact thing this file exists to distrust: a probe
 // named migration-files-match-ledger-checksums that asserted only "no ledger
@@ -1868,6 +1881,688 @@ const CASES = [
       },
     ];
   })()),
+  // ── discovery-proposal-decisions ─────────────────────────────────────────
+  // Task 5 of the 2026-08-13 discovery-proposals-and-creation plan.
+  //
+  // ⚠⚠ THIS BLOCK IS THE ONLY EVIDENCE THE SECTION CAN FAIL AT ALL.
+  // public.discovery_proposals holds ZERO rows — measured, not assumed, and
+  // corroborated by 0 discovery_sessions and 0 audit_events carrying
+  // detail->>'kind' = 'discovery_proposal_decision', because in this repo zero
+  // rows is never on its own evidence that a feature never ran. Four of the
+  // section's assertions are per-ROW assertions, so against real state they
+  // compare nothing and return nothing, which renders identically to a clean
+  // result. That is the shape this whole file exists to distrust, and it has
+  // shipped nine times in five days here.
+  //
+  // Every case below fetches live state ONCE and mutates a COPY in memory. No
+  // proposal is ever decided, no employee is ever created, no dangling uuid is
+  // ever written. Four families are worth reading before the rest:
+  //
+  //   · the two EXEMPTION cases. "adding conversation_type to KIND_ROUTES"
+  //     performs the naive edit someone would make to silence a red and shows
+  //     it goes red anyway on LIVE to_regclass evidence. "pointing a kind at a
+  //     LIVE BUT WRONG table" performs the edit that used to WORK — every arm
+  //     was derived from the same map entry, so naming any live table made
+  //     them all agree. An un-gameability claim that lives only in a comment
+  //     is not a claim.
+  //   · the RESOLVER cases, now four directions per kind. The
+  //     dangling-created_object_id assertion is only as strong as a SQL
+  //     expression: a resolver that answered "yes" to every uuid, or that had
+  //     no tenant predicate, or that had lost its is_workforce_assistant
+  //     exclusion, would be incapable of firing while every row fixture still
+  //     passed. Those cases prove the section notices.
+  //   · the I7 cases. An accepted connector the customer later DELETES must
+  //     not turn certify permanently red, and a uuid that was NEVER created
+  //     must still turn it red. Both directions are pinned, plus the audit
+  //     perimeter the distinction rests on.
+  //   · the LIVE BASELINE case, which is why the fixtures below are hermetic
+  //     on `proposals`/`deciders` without that being a way of not looking.
+  ...(await (async () => {
+    const proposals = await q(proposalsSql());
+    const controls = await q(`select * from (${resolverControlSql()}) _c order by kind, arm`);
+    const routeTables = await q(routeTablesSql());
+    const constraintDefs = await q(constraintDefsSql());
+    const kindChk = constraintDefs.find((c) => c.conname === 'discovery_proposals_kind_check');
+    const stateChk = constraintDefs.find((c) => c.conname === 'discovery_proposals_state_check');
+    const deciders = await q(deciderSql());
+    const [privRow] = await q(privSql());
+    // Asked of production, not hardcoded: the exemption case below rests on
+    // conversation_type having no table, and if one is ever created (the
+    // follow-up task makes topics real) this fixture must stop claiming that
+    // as its reason. `wrongTableLive` is the other half of the same idea — the
+    // live-but-WRONG-table case is only an honest fixture while the table it
+    // names actually exists.
+    const [ct] = await q(`select to_regclass('public.conversation_types') is not null as table_live,
+                                 to_regclass('public.de_conversations')  is not null as wrong_table_live`);
+
+    const kindsInCheck = kindCheckValues(kindChk?.def);
+    const statesInCheck = kindCheckValues(stateChk?.def);
+    const livePriv = mapPriv(privRow);
+
+    // The decision RPC as migration 741 will create it.
+    const goodDecider = {
+      sig: 'decide_discovery_proposal(uuid,text,text,uuid)',
+      authenticated: true, service_role: false, anon: false, pub: false, secdef: true,
+    };
+
+    // ⚠⚠ THE BASELINE IS PINNED ON THE TWO DIMENSIONS EVERY CASE SHARES, and
+    // this is a defect fix, not a style choice. `proposals` and `deciders` are
+    // LIVE state that every helper in this block used to inherit:
+    //
+    //   · one violating proposal row ANYWHERE in production made `silent !== 0`
+    //     for every case in this block at once — the whole block would report "these
+    //     assertions cannot be proven to fire" at the exact moment they were
+    //     firing correctly, which is the most misleading output this file can
+    //     produce;
+    //   · `deciders` is [] today only because 741 is unapplied. One case's
+    //     firesJs DEPENDED on that emptiness ("terminal rows with NO
+    //     decide_discovery_proposal installed"), so the moment the orchestrator
+    //     applied 741 that case's state would have become identical to the
+    //     silent baseline and it would have failed under a name that reads
+    //     "the gate broke" when nothing had.
+    //
+    // So the fixtures are hermetic on those two, and every case that means
+    // something about them says so explicitly. The live values are NOT
+    // discarded: the LIVE BASELINE case below feeds them to the real function
+    // untouched and requires zero findings, so a dirty production state fails
+    // ONE case, by name, instead of collapsing the block.
+    const base = {
+      proposals: [],
+      deciders: [goodDecider],
+      controls,
+      routeTables,
+      kindsInCheck,
+      statesInCheck,
+      priv: livePriv,
+    };
+    const liveState = { ...base, proposals, deciders };
+    const clean = () => discoveryProposalFailures(base).failures;
+    // Every case mutates ONE thing against otherwise-live state, so a finding
+    // can only have come from the thing that was broken.
+    const withState = (patch) => () => discoveryProposalFailures({ ...base, ...patch }).failures;
+
+    // The shape of a proposal that is RIGHT, so that the row cases below can
+    // be paired against it rather than against an empty table. Silent-against-
+    // empty proves nothing: it is silent because there is nothing there. Every
+    // row case's `silentJs` therefore appends the WELL-FORMED row and its
+    // `firesJs` appends the same row with ONE field broken, which is the only
+    // pairing that shows the arm reacts to the defect and not to the shape.
+    const ok = (over = {}) => ({
+      id: '11111111-1111-1111-1111-111111111111',
+      kind: 'connector',
+      state: 'accepted',
+      tenant_id: '33333333-3333-3333-3333-333333333333',
+      has_decided_by: true,
+      has_decided_at: true,
+      created_object_id: '22222222-2222-2222-2222-222222222222',
+      has_last_error: false,
+      attempts: 0,
+      // The three the resolver and the audit cross-check produce. A
+      // WELL-FORMED accepted row resolves in its own tenant, exists, and has
+      // the audit event the governed path writes in the same transaction —
+      // all three, because the row arms now read all three and a fixture that
+      // omitted one would be firing on the omission.
+      object_resolves: true,
+      object_exists_anywhere: true,
+      has_creation_audit: true,
+      ...over,
+    });
+    // The row cases run against a base that HAS the decider, for a reason that
+    // is not convenience: with no decider installed, ANY decided row is a
+    // violation on its own ("they were decided by something other than the
+    // governed path"), so a row case built on the live empty-decider state
+    // would fire for that reason regardless of the field it broke — the case
+    // would pass while proving nothing about its own assertion. One mutation
+    // per case, always. `base` already pins it; rowBase is kept as a name so
+    // the row cases read as a family.
+    const rowBase = base;
+    const cleanRow = () => discoveryProposalFailures(rowBase).failures;
+    // ⚠ FIXTURE ROWS ONLY — never `[...proposals, ok(over)]`. See the pinning
+    // note above: inheriting the live array put production state on the SILENT
+    // side of every one of these pairs.
+    const withRow = (over) => () =>
+      discoveryProposalFailures({ ...rowBase, proposals: [ok(over)] }).failures;
+    const silentWithGoodRow = () =>
+      discoveryProposalFailures({ ...rowBase, proposals: [ok()] }).failures;
+    const silentWithRow = (over) => () =>
+      discoveryProposalFailures({ ...rowBase, proposals: [ok(over)] }).failures;
+
+    const controlsPatched = (kind, arm, patch) =>
+      controls.map((c) => (c.kind === kind && c.arm === arm ? { ...c, ...patch } : c));
+    // KIND_ROUTES with ONE kind pointed at a table that is LIVE but WRONG.
+    // public.de_conversations exists, carries tenant_id and holds rows, so
+    // to_regclass says yes and the route arm's original single question —
+    // "does the named table exist" — is fully satisfied by the edit.
+    const wrongTableRoutes = {
+      ...KIND_ROUTES,
+      guardrail: { ...KIND_ROUTES.guardrail, table: 'de_conversations' },
+    };
+
+    return [
+      {
+        // Baseline for every row case: the well-formed accepted row is SILENT.
+        // Without this the whole block could be a function that fires on any
+        // proposal at all, and every case below would still "pass".
+        name: 'discovery-proposal-decisions (a well-formed ACCEPTED row is silent, and a dangling created_object_id is not — the pairing)',
+        firesJs: withRow({ object_resolves: false, object_exists_anywhere: false, has_creation_audit: false }),
+        silentJs: silentWithGoodRow,
+      },
+      {
+        // ASSERTION 4, THE ONE THIS TASK DESIGNED. `created_object_id` is a
+        // uuid stored on a row: reading it back proves only that somebody
+        // wrote a uuid. The trap this repo keeps paying for is treating that
+        // stored marker as proof the thing exists. Same defect class as
+        // bound-onboarding-items-complete-from-evidence.
+        name: 'discovery-proposal-decisions (ACCEPTED with a created_object_id that resolves to no live row AND no creation audit fires — the dangling uuid)',
+        firesJs: withRow({ object_resolves: false, object_exists_anywhere: false, has_creation_audit: false }),
+        silentJs: cleanRow,
+      },
+      {
+        // The divergence case: a row whose kind the RESOLVER has no arm for.
+        // Distinct from "dangling" — nothing was checked at all — and it must
+        // not be silently folded into a pass.
+        name: 'discovery-proposal-decisions (ACCEPTED with an id the resolver has NO ROUTE to check fires — unchecked is not clean)',
+        firesJs: withRow({ object_resolves: null }),
+        silentJs: silentWithGoodRow,
+      },
+      {
+        // ASSERTION 2.
+        name: 'discovery-proposal-decisions (ACCEPTED with no created_object_id fires)',
+        firesJs: withRow({ created_object_id: null, object_resolves: null }),
+        silentJs: silentWithGoodRow,
+      },
+      {
+        // The INVERSE of assertion 2, and the worse half: the plan's Step-1
+        // test is "a declined proposal creates nothing". A row that was
+        // refused and still points at an object means something was created
+        // for a customer who said no.
+        name: 'discovery-proposal-decisions (a DECLINED row still carrying a created_object_id fires — declining must create nothing)',
+        firesJs: withRow({ state: 'declined', object_resolves: true }),
+        silentJs: silentWithRow({ state: 'declined', created_object_id: null, object_resolves: null }),
+      },
+      {
+        // ASSERTION 1, first half. Under service_role auth.uid() is null, so
+        // this is the row a service_role accept would leave behind —
+        // task-3-contract.md §1's fourth measured reason for the narrower grant.
+        name: 'discovery-proposal-decisions (a terminal ACCEPTED row with no decided_by fires — the service_role accept leaves this)',
+        firesJs: withRow({ has_decided_by: false }),
+        silentJs: silentWithGoodRow,
+      },
+      {
+        // ASSERTION 1, second half, asserted separately so the message names
+        // which of the two is missing.
+        name: 'discovery-proposal-decisions (a terminal ACCEPTED row with no decided_at fires)',
+        firesJs: withRow({ has_decided_at: false }),
+        silentJs: silentWithGoodRow,
+      },
+      {
+        // Terminal is three states, not one. Declining and parking are
+        // UNGATED by design (task-3-contract.md §6: "a rule that stops someone
+        // saying no is not an authority model") — ungated is not unrecorded,
+        // and these two cases are what says so.
+        name: 'discovery-proposal-decisions (a DECLINED row with no decided_by fires — ungated is not unrecorded)',
+        firesJs: withRow({ state: 'declined', created_object_id: null, object_resolves: null, has_decided_by: false }),
+        silentJs: silentWithRow({ state: 'declined', created_object_id: null, object_resolves: null }),
+      },
+      {
+        name: 'discovery-proposal-decisions (a PARKED row with no decided_at fires — park is the pile migration 737 measured)',
+        firesJs: withRow({ state: 'parked', created_object_id: null, object_resolves: null, has_decided_at: false }),
+        silentJs: silentWithRow({ state: 'parked', created_object_id: null, object_resolves: null }),
+      },
+      {
+        // The revert-to-pending path (task-3-contract.md §3) sets state back
+        // to 'pending' AND clears decided_by/decided_at. Leaving the stamp
+        // makes the screen and the ledger disagree about whether a human has
+        // already answered.
+        name: 'discovery-proposal-decisions (a PENDING row still wearing decided_by fires — the revert path left its stamp)',
+        firesJs: withRow({ state: 'pending', created_object_id: null, object_resolves: null }),
+        silentJs: silentWithRow({
+          state: 'pending', created_object_id: null, object_resolves: null,
+          has_decided_by: false, has_decided_at: false,
+        }),
+      },
+      {
+        // §3's success arm ends `set created_object_id = …, last_error = null`.
+        // An accepted row still carrying a refusal reason went through both
+        // arms, or through half of one.
+        name: 'discovery-proposal-decisions (an ACCEPTED row still carrying last_error fires)',
+        firesJs: withRow({ has_last_error: true, attempts: 1 }),
+        silentJs: silentWithGoodRow,
+      },
+      {
+        // Plan Task 3 Step 3, the sentence this whole column set exists for:
+        // "a proposal that silently fails to become a thing is the worst
+        // outcome available here". A pending row whose attempt counter moved
+        // and whose reason is gone is that outcome exactly.
+        name: 'discovery-proposal-decisions (a PENDING row with attempts>0 and NO last_error fires — the silent failure Step 3 forbids)',
+        firesJs: withRow({
+          state: 'pending', created_object_id: null, object_resolves: null,
+          has_decided_by: false, has_decided_at: false, attempts: 2, has_last_error: false,
+        }),
+        silentJs: silentWithRow({
+          state: 'pending', created_object_id: null, object_resolves: null,
+          has_decided_by: false, has_decided_at: false, attempts: 2, has_last_error: true,
+        }),
+      },
+      {
+        // The other direction on the same pair. They are written in one
+        // statement, so a reason with no attempt behind it means one of the
+        // two writes was dropped by a later edit.
+        name: 'discovery-proposal-decisions (a last_error with attempts still 0 fires — the reason and the counter are one statement)',
+        firesJs: withRow({
+          state: 'pending', created_object_id: null, object_resolves: null,
+          has_decided_by: false, has_decided_at: false, attempts: 0, has_last_error: true,
+        }),
+        silentJs: silentWithRow({
+          state: 'pending', created_object_id: null, object_resolves: null,
+          has_decided_by: false, has_decided_at: false, attempts: 1, has_last_error: true,
+        }),
+      },
+      {
+        // ASSERTION 3, and the kind it is actually about. conversation_type is
+        // admitted by discovery_proposals_kind_check and IS still emitted by
+        // supabase/functions/_shared/discoveryProposals.ts, so this is not a
+        // hypothetical row — it is what the first real interview will produce.
+        name: 'discovery-proposal-decisions (a conversation_type proposal fires — a kind no writer can route)',
+        firesJs: withRow({ kind: 'conversation_type', created_object_id: null, object_resolves: null }),
+        silentJs: cleanRow,
+      },
+      {
+        // ⚠ THE UN-GAMEABILITY CASE. The cheapest way to make the case above
+        // green is to add conversation_type to KIND_ROUTES. This performs that
+        // exact edit and shows the section STILL goes red — because the route
+        // arm asks to_regclass, and public.conversation_types does not exist.
+        // The `table_live` value below is fetched from production, not
+        // asserted here, so on the day Task 3c creates the table this fixture
+        // changes its own answer instead of lying.
+        name: 'discovery-proposal-decisions (adding conversation_type to KIND_ROUTES to buy silence is REFUSED — its table does not exist)',
+        firesJs: () => discoveryProposalFailures({
+          ...rowBase,
+          routes: { ...KIND_ROUTES, conversation_type: { table: 'conversation_types', writer: 'none — there is none' } },
+          routeTables: [...routeTables, { tbl: 'conversation_types', table_live: ct?.table_live === true }],
+          // The controls are given to it too, answering correctly, so this
+          // case isolates ONE arm: not "you forgot the resolver", but "the
+          // table this route names does not exist". to_regclass alone refuses
+          // the edit.
+          controls: [...controls,
+            { kind: 'conversation_type', arm: 'negative', sample_available: true, resolves: false },
+            { kind: 'conversation_type', arm: 'positive', sample_available: false, resolves: null }],
+          // No proposal row is needed and none is added: the refusal is of the
+          // MAP, not of a row. The edit is dead on arrival whether or not a
+          // conversation_type proposal exists.
+        }).failures,
+        silentJs: cleanRow,
+      },
+      {
+        // The other direction on the same map: a route the CHECK cannot admit
+        // is dead code claiming coverage.
+        name: 'discovery-proposal-decisions (a routable kind the kind CHECK does not admit fires — a dead route)',
+        firesJs: withState({ kindsInCheck: new Set([...kindsInCheck].filter((k) => k !== 'connector')) }),
+        silentJs: clean,
+      },
+      {
+        name: 'discovery-proposal-decisions (a route whose target table to_regclass cannot resolve fires)',
+        firesJs: withState({
+          routeTables: routeTables.map((r) => (r.tbl === 'connectors' ? { ...r, table_live: false } : r)),
+        }),
+        silentJs: clean,
+      },
+      {
+        // Liveness on the vocabulary the routable-kind comparison is made
+        // against. A parser that stops matching the constraint would leave
+        // that comparison with an empty right-hand side — findings would drop
+        // to zero and look like a pass.
+        name: 'discovery-proposal-decisions (a kind CHECK that yields zero admitted values fires — 0 compared is not 0 findings)',
+        firesJs: withState({ kindsInCheck: new Set() }),
+        silentJs: clean,
+      },
+      {
+        name: 'discovery-proposal-decisions (zero route target tables fetched fires — the route claim would be unverified)',
+        firesJs: withState({ routeTables: [] }),
+        silentJs: clean,
+      },
+      {
+        // ⚠ RESOLVER, direction 1. If the resolver says a uuid that exists
+        // nowhere resolves, the dangling-uuid assertion above can never fire
+        // and every row fixture in this block still passes. This is the case
+        // that stops that being invisible.
+        name: 'discovery-proposal-decisions (a resolver that says the NIL uuid resolves fires — it could not detect a dangling id)',
+        firesJs: withState({ controls: controlsPatched('connector', 'negative', { resolves: true }) }),
+        silentJs: clean,
+      },
+      {
+        // RESOLVER, direction 2: a routable kind with no arm at all. The CASE
+        // falls through to `else null`, so created_object_id for that kind is
+        // compared against nothing.
+        name: 'discovery-proposal-decisions (a routable kind with NO resolver arm fires — null is not false)',
+        firesJs: withState({ controls: controlsPatched('trust_rule', 'negative', { resolves: null }) }),
+        silentJs: clean,
+      },
+      {
+        // RESOLVER, direction 3, the one a negative-only control set cannot
+        // see: a resolver joined on the wrong column answers "no" to
+        // everything. It passes every negative control and would report every
+        // future accepted proposal as dangling.
+        name: 'discovery-proposal-decisions (a resolver blind to a row that demonstrably EXISTS fires — the positive direction)',
+        firesJs: withState({ controls: controlsPatched('employee', 'positive', { resolves: false }) }),
+        silentJs: clean,
+      },
+      {
+        name: 'discovery-proposal-decisions (zero resolver controls fires — an undriven resolver is a check that cannot fail)',
+        firesJs: withState({ controls: [] }),
+        silentJs: clean,
+      },
+      {
+        // Not the same as zero controls: a control set that quietly stopped
+        // covering ONE kind keeps a healthy-looking count.
+        name: 'discovery-proposal-decisions (a missing control for ONE routable kind fires — the count alone would still look healthy)',
+        firesJs: withState({ controls: controls.filter((c) => !(c.kind === 'procedure' && c.arm === 'positive')) }),
+        silentJs: clean,
+      },
+      {
+        // ⚠ THE GRANT THAT MAKES ASSERTION 1 MEAN ANYTHING. If the browser can
+        // UPDATE this table, decided_by is whatever the browser chose to write
+        // and "no terminal state without decided_by" is a check on a
+        // self-report. authenticated holds SELECT only today (measured).
+        name: 'discovery-proposal-decisions (authenticated gaining UPDATE on discovery_proposals fires — decided_by would become a self-report)',
+        firesJs: withState({ priv: { ...base.priv, tblUpdateAuthenticated: true } }),
+        silentJs: clean,
+      },
+      {
+        name: 'discovery-proposal-decisions (authenticated gaining INSERT on discovery_proposals fires)',
+        firesJs: withState({ priv: { ...base.priv, tblInsertAuthenticated: true } }),
+        silentJs: clean,
+      },
+      {
+        name: 'discovery-proposal-decisions (authenticated gaining DELETE on discovery_proposals fires — a refused proposal could be erased)',
+        firesJs: withState({ priv: { ...base.priv, tblDeleteAuthenticated: true } }),
+        silentJs: clean,
+      },
+      {
+        // The read half. A perimeter check that only ever tests the
+        // too-permissive direction cannot see a revoke that took too much.
+        name: 'discovery-proposal-decisions (authenticated LOSING SELECT on discovery_proposals fires — the decision screen would be empty)',
+        firesJs: withState({ priv: { ...base.priv, tblSelectAuthenticated: false } }),
+        silentJs: clean,
+      },
+      {
+        name: 'discovery-proposal-decisions (anon gaining SELECT on discovery_proposals fires — draft employees and trust caps are not public)',
+        firesJs: withState({ priv: { ...base.priv, tblSelectAnon: true } }),
+        silentJs: clean,
+      },
+      {
+        // Empty `deciders` is only innocent while NOTHING has been decided —
+        // decided rows with no decider means something else decided them.
+        //
+        // ⚠ `deciders: []` IS THE MUTATION AND MUST BE WRITTEN OUT. It used to
+        // be inherited from live state, which was empty only because 741 was
+        // unapplied. The moment the orchestrator applies it, the inherited
+        // value becomes the real function — identical to the pinned decider
+        // the silent baseline uses — and this case's firesJs would return ZERO
+        // findings and fail, under a name that reads "the gate broke" when all
+        // that changed was the world. A fixture that depends on a migration
+        // not having been applied yet is a fixture with an expiry date on it.
+        name: 'discovery-proposal-decisions (terminal rows with NO decide_discovery_proposal installed fires — something else decided them)',
+        firesJs: withState({ deciders: [], proposals: [ok()] }),
+        silentJs: clean,
+      },
+      // ── I3: KIND_ROUTES was a per-kind exemption switch ─────────────────
+      {
+        // ⚠ THE OTHER EXEMPTION, and the one the conversation_type case above
+        // could not see. The route arm asked ONE question — "does the named
+        // table exist" — and every other arm was DERIVED FROM THE SAME MAP
+        // ENTRY: routeTablesSql() asked to_regclass about the map's table, the
+        // resolver was built from the map's table, and the positive control
+        // sampled from the map's table. So pointing a kind at any LIVE table
+        // made all of them answer correctly and the section went silent in
+        // every channel it had. EXPECTED_KIND_TABLES is the second, independent
+        // statement, and this is the case that proves it bites.
+        //
+        // The wrong table is public.de_conversations, fetched live below so
+        // this fixture stops claiming "live" the day it stops being true.
+        name: 'discovery-proposal-decisions (pointing a kind at a LIVE BUT WRONG table fires — to_regclass alone cannot tell a route from an exemption)',
+        firesJs: () => {
+          if (ct?.wrong_table_live !== true) {
+            return ['fixture precondition failed: public.de_conversations does not exist, so this case cannot demonstrate a LIVE-but-wrong table. Pick another live table rather than deleting the case.'];
+          }
+          return discoveryProposalFailures({
+            ...rowBase,
+            routes: wrongTableRoutes,
+            // The route table set is given the wrong table as LIVE, so this
+            // case isolates the EXPECTATION arm: to_regclass is satisfied,
+            // the kind CHECK is satisfied, and the section must still refuse.
+            routeTables: [...routeTables, { tbl: 'de_conversations', table_live: true }],
+          }).failures;
+        },
+        silentJs: cleanRow,
+      },
+      {
+        // The same edit, seen from the LIVE side rather than the literal side.
+        // The positive control samples from EXPECTED_KIND_TABLES
+        // (guardrail_rules) and hands that id to a resolver built from
+        // KIND_ROUTES (de_conversations), so production itself answers false —
+        // no second literal required. This is the arm the map genuinely cannot
+        // supply both sides of.
+        name: 'discovery-proposal-decisions (a kind pointed at the wrong table makes its POSITIVE resolver control answer false — live evidence, not a second literal)',
+        firesJs: withState({
+          routes: wrongTableRoutes,
+          routeTables: [...routeTables, { tbl: 'de_conversations', table_live: true }],
+          controls: controlsPatched('guardrail', 'positive', { resolves: false }),
+        }),
+        silentJs: clean,
+      },
+      {
+        // The other half of the same exemption: DROPPING a kind from the map.
+        // A kind nobody routes has no row assertion to fail, so removing it is
+        // as effective as pointing it somewhere wrong — and used to be
+        // completely silent while no proposal of that kind existed.
+        name: 'discovery-proposal-decisions (DROPPING a kind from KIND_ROUTES fires — a kind with no route has no row assertion left to fail)',
+        firesJs: () => {
+          const { trust_rule: _dropped, ...rest } = KIND_ROUTES;
+          return discoveryProposalFailures({
+            ...rowBase,
+            routes: rest,
+            controls: controls.filter((c) => c.kind !== 'trust_rule'),
+          }).failures;
+        },
+        silentJs: cleanRow,
+      },
+      // ── I9: five of the ten resolver controls could not be false ─────────
+      {
+        // ⚠ THE TENANT PREDICATE. objectResolvesSql had none and proposalsSql
+        // did not even select p.tenant_id, so a created_object_id pointing at
+        // ANOTHER WORKSPACE'S connector resolved true and read as clean. This
+        // is the only control arm that can see it: negative and positive both
+        // answer identically with or without the predicate. Measured live
+        // 2026-08-15: all five kinds answer false on this arm today.
+        name: 'discovery-proposal-decisions (a resolver with NO TENANT PREDICATE fires — another workspace\'s row would read as a created object)',
+        firesJs: withState({ controls: controlsPatched('connector', 'cross_tenant', { resolves: true }) }),
+        silentJs: clean,
+      },
+      {
+        name: 'discovery-proposal-decisions (a missing cross_tenant control fires — an undriven direction is an unproven predicate)',
+        firesJs: withState({ controls: controls.filter((c) => !(c.kind === 'trust_rule' && c.arm === 'cross_tenant')) }),
+        silentJs: clean,
+      },
+      {
+        // ⚠ THE is_workforce_assistant EXCLUSION. The positive control used to
+        // apply the SAME `extra` to the SAME table, so both sides of the
+        // comparison moved together and deleting `extra` broke nothing. The
+        // `excluded` arm samples a row the exclusion is supposed to REJECT
+        // (drawn from EXPECTED_KIND_EXCLUSIONS, not from the map) and requires
+        // the resolver to say false. Measured live: it does.
+        name: 'discovery-proposal-decisions (a resolver that says a Workspace Assistant row RESOLVES fires — the exclusion asks the only question it exists for)',
+        firesJs: withState({ controls: controlsPatched('employee', 'excluded', { resolves: true }) }),
+        silentJs: clean,
+      },
+      {
+        // The pure-JS half of the same pin, and the reason there are two: the
+        // control arm above catches a broken predicate, this one catches a
+        // DELETED one. Deleting `extra` from KIND_ROUTES is a one-word edit.
+        name: 'discovery-proposal-decisions (deleting the is_workforce_assistant `extra` from KIND_ROUTES fires — the declaration is checked, not trusted)',
+        firesJs: () => {
+          const { extra: _gone, ...employeeWithoutExtra } = KIND_ROUTES.employee;
+          return discoveryProposalFailures({
+            ...rowBase,
+            routes: { ...KIND_ROUTES, employee: employeeWithoutExtra },
+          }).failures;
+        },
+        silentJs: cleanRow,
+      },
+      // ── I7: an accepted object the customer later DELETED ────────────────
+      {
+        // ⚠ THE JUDGEMENT CALL, PINNED IN BOTH DIRECTIONS. `authenticated`
+        // holds DELETE on connectors (measured true; false for the other four
+        // target tables) and it is wired to live UI, so the first customer who
+        // removes a connector they accepted would have turned certify
+        // permanently red with no product-level remedy — the "tick everyone
+        // learns to ignore". The relief is an audit event recording that this
+        // proposal created exactly this object. THIS case is the guard on the
+        // relief: with no such audit event the dangling assertion must STILL
+        // go red, because a uuid that was never created has no audit event
+        // either. The silent side is the same row WITH the audit event.
+        name: 'discovery-proposal-decisions (an object that is gone AND was never audited as created still fires — the relief is not a blanket amnesty)',
+        firesJs: withRow({ object_resolves: false, object_exists_anywhere: false, has_creation_audit: false }),
+        silentJs: silentWithRow({ object_resolves: false, object_exists_anywhere: false, has_creation_audit: true }),
+      },
+      {
+        // The inverse, and the reason the audit event is load-bearing in BOTH
+        // directions rather than being a one-way valve: an accepted row whose
+        // object EXISTS but which no audit event records deciding means the
+        // stamp arrived from a second path — one with its own grants, its own
+        // authority model and no reconstruction record.
+        name: 'discovery-proposal-decisions (an ACCEPTED row whose object resolves but which NO audit event records fires — two paths, one counted)',
+        firesJs: withRow({ has_creation_audit: false }),
+        silentJs: silentWithGoodRow,
+      },
+      {
+        // Worse than dangling and never relieved: the id names a LIVE row that
+        // belongs to a different workspace. 741's Zone-3 guard refuses this for
+        // connector ("a created-object id is not its own authorisation"), and
+        // this is the row that guard failing would leave behind.
+        name: 'discovery-proposal-decisions (an ACCEPTED row pointing at ANOTHER WORKSPACE\'s live row fires, audit event or not)',
+        firesJs: withRow({ object_resolves: false, object_exists_anywhere: true, has_creation_audit: true }),
+        silentJs: silentWithGoodRow,
+      },
+      {
+        // The perimeter the relief rests on. An audit event is only evidence
+        // while nobody outside the governed path can write one.
+        name: 'discovery-proposal-decisions (authenticated gaining INSERT on audit_events fires — the "it was created" relief would become forgeable)',
+        firesJs: withState({ priv: { ...livePriv, auditInsertAuthenticated: true } }),
+        silentJs: clean,
+      },
+      {
+        name: 'discovery-proposal-decisions (anon gaining INSERT on audit_events fires — the reconstruction record would be writable by the internet)',
+        firesJs: withState({ priv: { ...livePriv, auditInsertAnon: true } }),
+        silentJs: clean,
+      },
+      // ── The STATE vocabulary, closed the way the KIND vocabulary is ──────
+      {
+        // TERMINAL_STATES was a JS literal compared against nothing. A future
+        // `expired` state would be admitted by discovery_proposals_state_check,
+        // written by something, and SKIPPED by every per-row arm here while
+        // still counting in the denominator — findings would stay at zero and
+        // look exactly like a clean result.
+        name: 'discovery-proposal-decisions (a state the CHECK admits that this checker does not classify fires — it would be skipped by every row arm silently)',
+        firesJs: withState({ statesInCheck: new Set([...statesInCheck, 'expired']) }),
+        silentJs: clean,
+      },
+      {
+        // The other direction: a classification with no state behind it means
+        // the assertions keyed on it compare nothing.
+        name: 'discovery-proposal-decisions (a classified state the CHECK no longer admits fires — a dead classification compares nothing)',
+        firesJs: withState({ statesInCheck: new Set([...statesInCheck].filter((v) => v !== 'parked')) }),
+        silentJs: clean,
+      },
+      {
+        name: 'discovery-proposal-decisions (a state CHECK that yields zero admitted values fires — the row arms lost the vocabulary they classify against)',
+        firesJs: withState({ statesInCheck: new Set() }),
+        silentJs: clean,
+      },
+      {
+        // And the row-level consequence, so the vocabulary arm is not the only
+        // thing standing between a new state and total silence.
+        name: 'discovery-proposal-decisions (a ROW carrying an unclassified state fires — the denominator counted it and no assertion examined it)',
+        firesJs: withRow({ state: 'expired', created_object_id: null, object_resolves: null, object_exists_anywhere: null }),
+        silentJs: silentWithGoodRow,
+      },
+      // ── The live state itself ────────────────────────────────────────────
+      {
+        // ⚠ THIS CASE IS WHY PINNING THE BASELINE IS NOT A CHEAT. Every case
+        // above runs against a hermetic `proposals: []` / `deciders:
+        // [goodDecider]` baseline so that one bad production row cannot make
+        // `silent !== 0` for the whole block. That would be a fair complaint
+        // if the live rows then went unexamined — so they do not: this case
+        // feeds the REAL function the REAL live state, untouched, and requires
+        // zero findings from it. A dirty production state fails exactly ONE
+        // case, by name, instead of collapsing 40 of them under a message that
+        // says the opposite of what happened.
+        //
+        // Its firesJs breaks the same live state one way (authenticated
+        // gaining UPDATE), so the pair still proves the function reacts rather
+        // than merely staying quiet over an empty table.
+        name: 'discovery-proposal-decisions (the LIVE state this block mutates is itself clean — and one break in it still fires)',
+        firesJs: () => discoveryProposalFailures({ ...liveState, priv: { ...livePriv, tblUpdateAuthenticated: true } }).failures,
+        silentJs: () => discoveryProposalFailures(liveState).failures,
+      },
+      ...(() => {
+        // The RPC's own grants. These synthesise the pg_proc row migration 741
+        // will create, so they are provable BEFORE it lands rather than after
+        // — which is the whole point of Task 5 shipping with the first kind.
+        const good = goodDecider;
+        const withDecider = (patch) => withState({ deciders: [{ ...good, ...patch }] });
+        const silentDecider = () => discoveryProposalFailures({ ...base, deciders: [good] }).failures;
+        return [
+          {
+            // ⚠ task-3-contract.md §1's headline refusal, and the assertion
+            // that goes red if someone later "helpfully" adds the grant.
+            // Under service_role auth.uid() is null, and FOUR safety
+            // mechanisms then fail OPEN at once — measured, not argued:
+            // instantiate_role_archetype and install_role_kit guard with
+            // `auth.uid() is not null and not exists(…)`, so they SKIP their
+            // authority check rather than fail it.
+            name: 'discovery-proposal-decisions (service_role holding EXECUTE on decide_discovery_proposal fires — four guards fail open at once)',
+            firesJs: withDecider({ service_role: true }),
+            silentJs: silentDecider,
+          },
+          {
+            name: 'discovery-proposal-decisions (authenticated LOSING EXECUTE on decide_discovery_proposal fires — nobody could decide anything)',
+            firesJs: withDecider({ authenticated: false }),
+            silentJs: silentDecider,
+          },
+          {
+            name: 'discovery-proposal-decisions (anon holding EXECUTE on decide_discovery_proposal fires)',
+            firesJs: withDecider({ anon: true }),
+            silentJs: silentDecider,
+          },
+          {
+            // Postgres grants EXECUTE to PUBLIC by default — migs 610/630's
+            // doctrine, re-shipped twice in this repo.
+            name: 'discovery-proposal-decisions (PUBLIC holding EXECUTE on decide_discovery_proposal fires — the default grant was never revoked)',
+            firesJs: withDecider({ pub: true }),
+            silentJs: silentDecider,
+          },
+          {
+            // authenticated holds no UPDATE on discovery_proposals, so a
+            // SECURITY INVOKER decider matches zero rows and PostgREST
+            // returns success — the RLS-denied-write shape, one layer down.
+            name: 'discovery-proposal-decisions (a decider that is not SECURITY DEFINER fires — it could not write the decision it was called to make)',
+            firesJs: withDecider({ secdef: false }),
+            silentJs: silentDecider,
+          },
+          {
+            // A second overload is a second decision path with its own
+            // grants, and PostgREST picks between them by argument shape.
+            name: 'discovery-proposal-decisions (a SECOND decide_discovery_proposal overload fires — two decision paths, two grant surfaces)',
+            firesJs: withState({
+              deciders: [good, { ...good, sig: 'decide_discovery_proposal(uuid,text)', service_role: true }],
+            }),
+            silentJs: silentDecider,
+          },
+        ];
+      })(),
+    ];
+  })()),
   // ── migration-files-match-ledger-checksums ───────────────────────────────
   // Production is clean here — 761 ledger rows match their committed file
   // byte for byte after line-ending normalisation — so every assertion below
@@ -2015,6 +2710,7 @@ const CASES = [
 // line above it says so, because "N pass" over a silently narrowed set is the
 // padded number this file exists to stop.
 const FILTER = process.argv.slice(2).find((a) => !a.startsWith('--')) ?? null;
+const SHOW = process.argv.includes('--show');
 const SELECTED = FILTER ? CASES.filter((c) => c.name.includes(FILTER)) : CASES;
 if (FILTER) {
   console.log(`FILTERED to "${FILTER}": ${SELECTED.length} of ${CASES.length} case(s). NOT a full suite run.`);
@@ -2032,10 +2728,20 @@ for (const c of SELECTED) {
   // those supply `firesJs`/`silentJs`, thunks returning the violation list. The
   // pass condition is identical either way: the mutation must produce at least
   // one finding and the clean state must produce none.
-  const fired = (c.firesJs ? await c.firesJs() : await q(c.fires)).length;
+  const firedRows = c.firesJs ? await c.firesJs() : await q(c.fires);
+  const fired = firedRows.length;
   const silent = (c.silentJs ? await c.silentJs() : await q(c.silent)).length;
   const ok = fired >= 1 && silent === 0;
   console.log(`  ${ok ? 'PASS' : 'FAIL'}    ${c.name}  (violation→${fired} rows, clean→${silent} rows)`);
+  // --show prints WHAT the mutation made the gate say. A count proves a case
+  // fired; only the text proves it fired for the reason the case is named
+  // after, and "I saw this assertion go red" is a claim someone has to be
+  // able to check. Off by default so the ordinary run stays one line per case.
+  if (SHOW) {
+    for (const r of firedRows) {
+      console.log(`            RED: ${(typeof r === 'string' ? r : JSON.stringify(r)).replace(/\s+/g, ' ')}`);
+    }
+  }
   ok ? pass++ : fail++;
 }
 console.log(`\nmutation test${FILTER ? ` (FILTERED — ${SELECTED.length}/${CASES.length} cases)` : ''}: ${pass} pass, ${fail} fail`);
