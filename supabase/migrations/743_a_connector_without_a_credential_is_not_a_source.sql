@@ -54,7 +54,7 @@
 -- `search_path = public, extensions` and it is preserved.
 -- ==========================================================================
 
-create or replace function public.poll_de_work_sources_targets(p_tenant_id uuid)
+create or replace function public.poll_de_work_sources_targets(p_tenant_id uuid default null)
 returns table(tenant_id uuid, connector_id uuid, connector_provider text, connector_display_name text,
               category text, subject_kind text, subject_id uuid, subject_name text,
               last_seen_external_ref text, last_seen_timestamp timestamptz)
@@ -108,7 +108,7 @@ as $fn$
     );
 $fn$;
 
-create or replace function public.poll_support_inbox_targets(p_tenant_id uuid)
+create or replace function public.poll_support_inbox_targets(p_tenant_id uuid default null)
 returns table(tenant_id uuid, connector_id uuid, connector_provider text, connector_display_name text,
               subject_kind text, subject_id uuid, subject_name text,
               last_seen_external_ref text, last_seen_timestamp timestamptz)
