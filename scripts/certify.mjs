@@ -65,6 +65,7 @@ import { discoverySpineFailures } from './discovery-spine-check.mjs';
 import {
   discoveryProposalFailures, proposalsSql, resolverControlSql, routeTablesSql,
   deciderSql, kindCheckValues, constraintDefsSql, privSql, mapPriv,
+  exclusionAnchorSql,
 } from './discovery-proposal-check.mjs';
 // Same split again, and this one replaces a probe that could not fail: the
 // ledger-vs-COMMITTED comparison needs git as well as SQL, so it cannot be a
@@ -1031,11 +1032,19 @@ const sections = [
     const defOf = (name) => constraintDefs.find((c) => c.conname === name)?.def;
     const deciders = await q(deciderSql());
     const [priv] = await q(privSql());
+    // The live half of the exclusion check. Three booleans per anchor — see
+    // EXCLUSION_ANCHORS for exactly which three and why the third is the
+    // narrowest read that can answer "was the `excluded` control arm even
+    // driveable this run". Fetched here rather than derived, because deriving
+    // it from EXPECTED_KIND_EXCLUSIONS is what let a two-line edit delete the
+    // whole control without a single red.
+    const anchorProbes = await q(`select * from (${exclusionAnchorSql()}) _a order by kind`);
 
     const r = discoveryProposalFailures({
       proposals,
       controls,
       routeTables,
+      anchorProbes,
       kindsInCheck: kindCheckValues(defOf('discovery_proposals_kind_check')),
       // The STATE vocabulary, fetched for the same reason the kind vocabulary
       // is: TERMINAL_STATES used to be a JS literal compared against nothing,
@@ -1055,8 +1064,16 @@ const sections = [
       + `${r.kindsPresent.length ? r.kindsPresent.join('/') : 'none'}), `
       + `${r.routesExamined} routable kind(s) against live target tables, `
       + `${r.expectationsExamined} route/exclusion expectation(s), `
+      + `${r.anchorsExamined} live exclusion anchor(s), `
       + `${r.statesExamined} admitted state value(s), `
       + `${r.controlsExamined} resolver control(s); `
+      // WHICH workspace each cross_tenant arm contrasted with, on green runs
+      // too. That arm's `false` only means something against a contrast that
+      // owns a row in the target table, the contrast is picked from live data,
+      // and it shipped once picked purely by accident — so the choice is
+      // printed rather than trusted. A control quietly going vacuous is
+      // otherwise indistinguishable from one that passed.
+      + `cross_tenant contrasted with ${r.crossTenantContrasts?.length ? r.crossTenantContrasts.join(', ') : 'NOTHING'}; `
       + `kinds the CHECK admits that no writer routes: `
       + `${r.admittedButUnroutable.length ? r.admittedButUnroutable.join('/') : 'none'}`;
     for (const n of r.notes) console.log(`        ${n}`);

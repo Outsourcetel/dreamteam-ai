@@ -44,6 +44,12 @@ import {
   discoveryProposalFailures, KIND_ROUTES, EXPECTED_KIND_TABLES, NIL_UUID,
   proposalsSql, resolverControlSql, routeTablesSql, deciderSql, kindCheckValues,
   constraintDefsSql, privSql, mapPriv,
+  EXPECTED_KIND_EXCLUSIONS, EXCLUSION_ANCHORS, exclusionAnchorSql,
+  // The two resolver expressions, imported so the WIRING cases can perform the
+  // exact swaps that used to be invisible — putting the tenant-SCOPED resolver
+  // in the tenant-BLIND slot, and widening the tenant-blind one in place —
+  // instead of describing them in a comment.
+  objectResolvesSql, objectExistsAnyTenantSql,
 } from './discovery-proposal-check.mjs';
 // certify's ACTUAL ledger-vs-COMMITTED comparison. This one is here because
 // its predecessor was the exact thing this file exists to distrust: a probe
@@ -1926,6 +1932,11 @@ const CASES = [
     const stateChk = constraintDefs.find((c) => c.conname === 'discovery_proposals_state_check');
     const deciders = await q(deciderSql());
     const [privRow] = await q(privSql());
+    // The live half of the exclusion check. Fetched, not synthesised, for the
+    // same reason `controls` is: the cases below need to perform the real
+    // two-line exemption edit and watch PRODUCTION refuse it, and a hardcoded
+    // probe row would just be a third literal moving with the other two.
+    const anchorProbes = await q(`select * from (${exclusionAnchorSql()}) _a order by kind`);
     // Asked of production, not hardcoded: the exemption case below rests on
     // conversation_type having no table, and if one is ever created (the
     // follow-up task makes topics real) this fixture must stop claiming that
@@ -1971,6 +1982,7 @@ const CASES = [
       deciders: [goodDecider],
       controls,
       routeTables,
+      anchorProbes,
       kindsInCheck,
       statesInCheck,
       priv: livePriv,
@@ -1997,14 +2009,16 @@ const CASES = [
       created_object_id: '22222222-2222-2222-2222-222222222222',
       has_last_error: false,
       attempts: 0,
-      // The three the resolver and the audit cross-check produce. A
-      // WELL-FORMED accepted row resolves in its own tenant, exists, and has
-      // the audit event the governed path writes in the same transaction —
-      // all three, because the row arms now read all three and a fixture that
-      // omitted one would be firing on the omission.
+      // The four the resolver and the two evidence cross-checks produce. A
+      // WELL-FORMED accepted row resolves in its own tenant, exists, has the
+      // audit event the governed path writes in the same transaction, and has
+      // NO deletion record — because its object is still there. All four,
+      // because the row arms read all four and a fixture that omitted one
+      // would be firing on the omission.
       object_resolves: true,
       object_exists_anywhere: true,
       has_creation_audit: true,
+      has_deletion_record: false,
       ...over,
     });
     // The row cases run against a base that HAS the decider, for a reason that
@@ -2184,8 +2198,15 @@ const CASES = [
           // case isolates ONE arm: not "you forgot the resolver", but "the
           // table this route names does not exist". to_regclass alone refuses
           // the edit.
+          // ⚠ The synthetic negative arm carries the ASKABILITY columns too
+          // (a real tenant, and that tenant holding a matchable row). Without
+          // them this case would fire a second time for "CONTROL NOT ASKABLE"
+          // — a fixture defect, not the thing the case is named after, and
+          // `fired >= 1` would have hidden it.
           controls: [...controls,
-            { kind: 'conversation_type', arm: 'negative', sample_available: true, resolves: false },
+            { kind: 'conversation_type', arm: 'negative', sample_available: true, resolves: false,
+              sample_tenant: '33333333-3333-3333-3333-333333333333',
+              handed_tenant: '33333333-3333-3333-3333-333333333333', handed_tenant_holds_row: true },
             { kind: 'conversation_type', arm: 'positive', sample_available: false, resolves: null }],
           // No proposal row is needed and none is added: the refusal is of the
           // MAP, not of a row. The edit is dead on arrival whether or not a
@@ -2409,6 +2430,242 @@ const CASES = [
         },
         silentJs: cleanRow,
       },
+      // ── I5: the TWO-LINE exemption the pair above could not see ──────────
+      {
+        // ⚠⚠ THE EDIT THAT USED TO BE FREE. Deleting `extra` alone goes red in
+        // two arms — the case above. Deleting the DECLARATION as well went
+        // completely green, and not by defeating a control: the control ceased
+        // to exist. resolverControlSql() emits the `excluded` arm only when
+        // EXPECTED_KIND_EXCLUSIONS names one, and the arms-required loop
+        // demands that arm for the same reason, so both sides of the check
+        // disappeared in one stroke and the section reported a clean result
+        // over one fewer comparison. Two lines, six words, no red.
+        //
+        // The fixture therefore performs ALL THREE consequences of the real
+        // source edit — no `extra`, no declaration, and no `excluded` control
+        // row, because the SQL builder would no longer emit one. Anything less
+        // would be testing a state the edit cannot actually produce.
+        //
+        // What refuses it is EXCLUSION_ANCHORS, answered by production: while
+        // public.digital_employees still carries a boolean
+        // is_workforce_assistant column, the exclusion is required in both of
+        // the other two statements and the `excluded` arm must have been
+        // driven. That is the third anchor the tables pair had and this pair
+        // did not.
+        name: 'discovery-proposal-decisions (deleting BOTH the `extra` predicate AND the EXPECTED_KIND_EXCLUSIONS key — the TWO-LINE exemption — fires against the live anchor)',
+        firesJs: () => {
+          const { extra: _gone, ...employeeWithoutExtra } = KIND_ROUTES.employee;
+          const { employee: _alsoGone, ...exclusionsWithoutEmployee } = EXPECTED_KIND_EXCLUSIONS;
+          return discoveryProposalFailures({
+            ...rowBase,
+            routes: { ...KIND_ROUTES, employee: employeeWithoutExtra },
+            exclusions: exclusionsWithoutEmployee,
+            controls: controls.filter((c) => !(c.kind === 'employee' && c.arm === 'excluded')),
+          }).failures;
+        },
+        silentJs: cleanRow,
+      },
+      {
+        // The THIRD line, so the honest limit stated in EXCLUSION_ANCHORS'
+        // header is itself pinned: a three-line edit still buys silence, but
+        // not for free — emptying the anchors is its own named red. Nothing in
+        // a checker can stop the checker's author; what it can do is refuse to
+        // let the last statement go quietly.
+        name: 'discovery-proposal-decisions (emptying EXCLUSION_ANCHORS fires — the third line of a three-line exemption is not free either)',
+        firesJs: withState({ anchors: {} }),
+        silentJs: clean,
+      },
+      {
+        // The anchor is only worth having while it is DRIVEN. Zero probe rows
+        // is the shape this whole file distrusts: the declaration and the
+        // implementation would once again be compared only against each other.
+        name: 'discovery-proposal-decisions (zero exclusion-anchor probe rows fires — the live half of the exclusion check would not have run)',
+        firesJs: withState({ anchorProbes: [] }),
+        silentJs: clean,
+      },
+      {
+        // Production disagreeing with the anchor. A stale anchor is worse than
+        // no anchor: the two arms it drives would SKIP while looking exactly
+        // like arms that ran.
+        name: 'discovery-proposal-decisions (an exclusion anchor whose column production no longer carries fires — a stale anchor skips silently)',
+        firesJs: withState({
+          anchorProbes: anchorProbes.map((a) => (a.kind === 'employee' ? { ...a, column_live: false } : a)),
+        }),
+        silentJs: clean,
+      },
+      {
+        // The declaration drifting off the column the anchor names. This is
+        // the quiet version of the two-line edit: keep a declaration, keep an
+        // `extra`, but stop them both being about is_workforce_assistant. The
+        // `excluded` control samples BY THE DECLARATION, so it would keep
+        // answering false for a reason that has nothing to do with assistants.
+        name: 'discovery-proposal-decisions (an exclusion declaration that no longer mentions the anchored column fires — the control would sample the wrong rows)',
+        firesJs: withState({ exclusions: { employee: 'coalesce(_s.is_active, false)' } }),
+        silentJs: clean,
+      },
+      {
+        // The same drift on the implementation side.
+        name: 'discovery-proposal-decisions (an `extra` predicate that no longer mentions the anchored column fires — the resolver would exclude the wrong rows)',
+        firesJs: withState({
+          routes: { ...KIND_ROUTES, employee: { ...KIND_ROUTES.employee, extra: 'not coalesce(_o.is_active, false)' } },
+        }),
+        silentJs: clean,
+      },
+      // ── NEW-1 / NEW-2: THE CONTROLS THAT COULD NOT BE ASKED ──────────────
+      // ⚠⚠ THE FIX WAVE THAT CLOSED I9 OPENED THESE TWO, IN THE SAME EDIT, ON
+      // THE SAME CONJUNCT. The resolver is `_o.id = <id> and _o.tenant_id =
+      // <tenant> [and <extra>]`, and any unsatisfiable conjunct forces the
+      // whole thing false — so an arm that must answer FALSE is only a control
+      // while every conjunct it is NOT testing can be satisfied.
+      //
+      //   NEW-1  the `negative` arm was handed the NIL uuid as its TENANT as
+      //          well as its id. Measured live: 0 rows across all five target
+      //          tables carry tenant_id = nil and no tenants row has that id,
+      //          so `_o.tenant_id = <nil>` alone made it false and the id
+      //          conjunct it exists to test was never reached.
+      //   NEW-2  the `cross_tenant` arm took `tenants order by id limit 1` —
+      //          the existence of a second WORKSPACE, not of a second
+      //          workspace's ROW. A contrast tenant owning nothing in the
+      //          table makes the tenant conjunct unsatisfiable for every row,
+      //          so the arm answers false for the same reason the nil tenant
+      //          did. It held only by accident: measured 2026-08-15 the
+      //          lowest-id tenant happens to own a row in all five tables,
+      //          while tenant a0000000-…-0001 owns employees and nothing else.
+      //
+      // MEASURED, with the real function over live state (mutants of this
+      // file, one substitution each): widen the id conjunct to `(_o.id =
+      // idExpr or idExpr is not null)` AND point the contrast tenant at
+      // a0000000-…-0001, and the version of this checker at git HEAD returned
+      // findings for `employee` ONLY — connector, guardrail, procedure and
+      // trust_rule were silent about a resolver that answered TRUE for any
+      // uuid in the proposal's own tenant. The repaired one returns 11.
+      //
+      // ⚠ ONE CLAIM IN THE REVIEW DID NOT REPRODUCE and is corrected here: the
+      // id-conjunct mis-edit ALONE does not pass all four arms today — with a
+      // contrast tenant that holds rows, `cross_tenant` catches it (measured:
+      // 6 findings at HEAD). It takes BOTH defects to reach zero, which is why
+      // both are pinned rather than one.
+      {
+        name: 'discovery-proposal-decisions (a NEGATIVE control handed the NIL uuid as its TENANT fires — its own tenant argument forced the false)',
+        firesJs: withState({ controls: controlsPatched('connector', 'negative', { sample_tenant: NIL_UUID, handed_tenant: NIL_UUID }) }),
+        silentJs: clean,
+      },
+      {
+        // Not the same edit and not the same detector: the tenant can be a
+        // real uuid and still own nothing the resolver could match — which is
+        // what a hardcoded literal, or a tenant whose rows were deleted, looks
+        // like. The re-test is computed from the tenant the arm REPORTS, so a
+        // weakened choice changes the answer instead of moving both sides.
+        name: 'discovery-proposal-decisions (a NEGATIVE control whose tenant owns NO matchable row fires — the tenant conjunct was unsatisfiable, so false was not the id\'s doing)',
+        firesJs: withState({ controls: controlsPatched('guardrail', 'negative', { handed_tenant_holds_row: false }) }),
+        silentJs: clean,
+      },
+      {
+        name: 'discovery-proposal-decisions (a NEGATIVE control that does not report WHICH tenant it handed the resolver fires — an arm that cannot say what it was asked is not a control)',
+        firesJs: withState({ controls: controlsPatched('procedure', 'negative', { handed_tenant: null }) }),
+        silentJs: clean,
+      },
+      {
+        // NEW-2's headline. `resolves` is left at its live `false`, so this
+        // case is isolated to the vacuity and does not borrow the tenant-
+        // predicate arm's finding.
+        name: 'discovery-proposal-decisions (a CROSS_TENANT control whose contrast workspace holds NO row in the target table fires — the arm passed vacuously)',
+        firesJs: withState({ controls: controlsPatched('connector', 'cross_tenant', { handed_tenant_holds_row: false }) }),
+        silentJs: clean,
+      },
+      {
+        // The other way to make the arm meaningless: contrast with the sample
+        // row's OWN workspace. It would answer true and trip the tenant-
+        // predicate arm with a message accusing the resolver — a wrong
+        // diagnosis at the exact moment someone is reading for one.
+        name: 'discovery-proposal-decisions (a CROSS_TENANT control whose contrast tenant IS the sample tenant fires, by name — it would otherwise accuse the resolver)',
+        firesJs: () => {
+          const live = controls.find((c) => c.kind === 'trust_rule' && c.arm === 'cross_tenant');
+          if (!live?.sample_tenant) {
+            return ['fixture precondition failed: the live trust_rule/cross_tenant control reports no sample_tenant, so "contrast equals sample" cannot be constructed. Fix the control, not this case.'];
+          }
+          return discoveryProposalFailures({
+            ...base,
+            controls: controlsPatched('trust_rule', 'cross_tenant', { handed_tenant: live.sample_tenant }),
+          }).failures;
+        },
+        silentJs: clean,
+      },
+      {
+        name: 'discovery-proposal-decisions (a CROSS_TENANT control that names no contrast tenant at all fires)',
+        firesJs: withState({ controls: controlsPatched('employee', 'cross_tenant', { handed_tenant: null }) }),
+        silentJs: clean,
+      },
+      // ── I6: the WIRING arm guarded one of the TWO resolvers ──────────────
+      // proposalsSql() computes two columns from two different expressions:
+      // `object_resolves` from the TENANT-SCOPED resolver, `object_exists_
+      // anywhere` from the deliberately TENANT-BLIND one. The second is what
+      // separates two findings that must never be merged — an id naming a LIVE
+      // row in ANOTHER workspace is a security event and is never relieved; an
+      // id naming nothing anywhere is a customer's own deletion and is printed
+      // as a note. Put the tenant-scoped resolver in the blind slot and a
+      // cross-tenant pointer reports exists_anywhere = false, falls out of the
+      // failure arm into the note arm, and is reported GREEN. No resolver
+      // control can see it: the controls drive the other expression.
+      //
+      // Measured against live state: at git HEAD that swap produced ZERO
+      // findings. So did widening the blind resolver in place. Both now fire.
+      //
+      // Each case supplies all three strings so exactly ONE of the four
+      // assertions can fire, and the silent side supplies the REAL three —
+      // which is also what proves the override path is the same comparison.
+      ...(() => {
+        const SCOPED = objectResolvesSql('p.kind', 'p.created_object_id', 'p.tenant_id');
+        const BLIND = objectExistsAnyTenantSql('p.kind', 'p.created_object_id');
+        const SQL = proposalsSql();
+        const silentWiring = () =>
+          discoveryProposalFailures({ ...base, wiring: { sql: SQL, scoped: SCOPED, blind: BLIND } }).failures;
+        const wire = (w) => () => discoveryProposalFailures({ ...base, wiring: w }).failures;
+        // The two in-place widenings, built by substitution on the REAL text
+        // so they are the edits themselves rather than descriptions of them.
+        const BLIND_WIDE = BLIND.replaceAll('_x.id = p.created_object_id', '_x.id = p.created_object_id and _x.tenant_id = p.tenant_id');
+        const SCOPED_BLIND = SCOPED.replaceAll(' and _o.tenant_id = p.tenant_id', '');
+        const precondition = () => {
+          if (!SQL.includes(SCOPED)) return 'fixture precondition failed: proposalsSql() does not embed the tenant-scoped resolver at all, so these cases cannot isolate a slot.';
+          if (!SQL.includes(BLIND)) return 'fixture precondition failed: proposalsSql() does not embed the tenant-blind resolver at all.';
+          if (BLIND_WIDE === BLIND) return 'fixture precondition failed: the tenant-widening substitution matched nothing, so the mutant is identical to the original and the case would prove nothing.';
+          if (SCOPED_BLIND === SCOPED) return 'fixture precondition failed: the tenant-predicate removal matched nothing, so the mutant is identical to the original.';
+          return null;
+        };
+        const guarded = (w) => () => { const p = precondition(); return p ? [p] : wire(w)(); };
+        return [
+          {
+            // Slot 1. The assertion this block already had — and had no
+            // mutation case for, which is its own version of the defect.
+            name: 'discovery-proposal-decisions (proposalsSql computing object_resolves with the TENANT-BLIND resolver fires — slot 1)',
+            firesJs: guarded({ sql: SQL.replace(SCOPED, BLIND), scoped: SCOPED, blind: BLIND }),
+            silentJs: silentWiring,
+          },
+          {
+            // Slot 2 — the one nothing guarded. A security event silently
+            // downgraded to a customer decision.
+            name: 'discovery-proposal-decisions (proposalsSql computing object_exists_anywhere with the TENANT-SCOPED resolver fires — slot 2, the cross-tenant FAILURE would become a retired NOTE)',
+            firesJs: guarded({ sql: SQL.replace(BLIND, SCOPED), scoped: SCOPED, blind: BLIND }),
+            silentJs: silentWiring,
+          },
+          {
+            // Neither `includes` comparison can see this one: proposalsSql()
+            // is BUILT from objectExistsAnyTenantSql, so widening it in place
+            // moves both sides of both comparisons together. Only the defining
+            // property is left to state.
+            name: 'discovery-proposal-decisions (widening objectExistsAnyTenantSql IN PLACE with a tenant predicate fires — both wiring comparisons still pass)',
+            firesJs: guarded({ sql: SQL.replace(BLIND, BLIND_WIDE), scoped: SCOPED, blind: BLIND_WIDE }),
+            silentJs: silentWiring,
+          },
+          {
+            // The mirror, for the same reason: the tenant-scoped resolver
+            // losing its tenant predicate is invisible to `includes` too.
+            name: 'discovery-proposal-decisions (objectResolvesSql losing its tenant predicate IN PLACE fires — the static half of the cross_tenant control)',
+            firesJs: guarded({ sql: SQL.replace(SCOPED, SCOPED_BLIND), scoped: SCOPED_BLIND, blind: BLIND }),
+            silentJs: silentWiring,
+          },
+        ];
+      })(),
       // ── I7: an accepted object the customer later DELETED ────────────────
       {
         // ⚠ THE JUDGEMENT CALL, PINNED IN BOTH DIRECTIONS. `authenticated`
@@ -2416,14 +2673,72 @@ const CASES = [
         // target tables) and it is wired to live UI, so the first customer who
         // removes a connector they accepted would have turned certify
         // permanently red with no product-level remedy — the "tick everyone
-        // learns to ignore". The relief is an audit event recording that this
-        // proposal created exactly this object. THIS case is the guard on the
-        // relief: with no such audit event the dangling assertion must STILL
-        // go red, because a uuid that was never created has no audit event
-        // either. The silent side is the same row WITH the audit event.
+        // learns to ignore". THIS case is the guard on the relief: with
+        // neither record the dangling assertion must STILL go red. The silent
+        // side is the same row with BOTH records.
         name: 'discovery-proposal-decisions (an object that is gone AND was never audited as created still fires — the relief is not a blanket amnesty)',
-        firesJs: withRow({ object_resolves: false, object_exists_anywhere: false, has_creation_audit: false }),
-        silentJs: silentWithRow({ object_resolves: false, object_exists_anywhere: false, has_creation_audit: true }),
+        firesJs: withRow({ object_resolves: false, object_exists_anywhere: false, has_creation_audit: false, has_deletion_record: false }),
+        silentJs: silentWithRow({ object_resolves: false, object_exists_anywhere: false, has_creation_audit: true, has_deletion_record: true }),
+      },
+      {
+        // ⚠⚠ THE ARM THAT COULD NOT FIRE, AND THE ONE CASE THAT PROVES IT NOW
+        // CAN. This is the exact state migration 741 produces for EVERY
+        // governed accept whose object is missing: `created_object_id` and the
+        // audit event carrying created_object_id/created_object_table are
+        // written from the SAME two variables, unconditionally, in ONE
+        // transaction (741:536-549), so has_creation_audit was TRUE BY
+        // CONSTRUCTION and the relief was granted by the accept restating
+        // itself. Under the old predicate this fixture was SILENT — classified
+        // `retired` and printed as a green note — and the demonstration was a
+        // single deletion: remove 741:455-461 (the Zone-3 check that the
+        // connector belongs to this workspace) and a garbage uuid landed here.
+        //
+        // The fires side is that garbage uuid. The silent side adds the ONE
+        // thing decide_discovery_proposal cannot write: a tenant_activity_log
+        // DELETE row, written by the log_tenant_activity trigger on the target
+        // table, which can only exist if a row was there to delete. The pair
+        // is the whole fix — the arm still relieves a genuine deletion and no
+        // longer relieves a uuid that was never created.
+        name: 'discovery-proposal-decisions (an object that is GONE, whose creation the accept audited, but whose deletion NOTHING independent recorded, fires — the relief cannot be granted by the accept restating itself)',
+        firesJs: withRow({ object_resolves: false, object_exists_anywhere: false, has_creation_audit: true, has_deletion_record: false }),
+        silentJs: silentWithRow({ object_resolves: false, object_exists_anywhere: false, has_creation_audit: true, has_deletion_record: true }),
+      },
+      {
+        // The other half of the conjunction, so the relief is not simply
+        // re-pointed at a single new field. A deletion record with NO record
+        // of the governed path ever creating the thing means something was
+        // deleted that this proposal cannot be shown to have made.
+        name: 'discovery-proposal-decisions (a deletion record with NO creation audit is still not a relief — the retired verdict needs both records or neither)',
+        firesJs: withRow({ object_resolves: false, object_exists_anywhere: false, has_creation_audit: false, has_deletion_record: true }),
+        silentJs: silentWithRow({ object_resolves: false, object_exists_anywhere: false, has_creation_audit: true, has_deletion_record: true }),
+      },
+      {
+        // The perimeter of the NEW half. A record anyone can write is not a
+        // record: with INSERT on tenant_activity_log, a dangling
+        // created_object_id becomes excusable by writing a row that says the
+        // object was deleted. Measured 2026-08-15: authenticated holds SELECT
+        // on that table and nothing else.
+        name: 'discovery-proposal-decisions (authenticated gaining INSERT on tenant_activity_log fires — the deletion record the relief now rests on would become forgeable)',
+        firesJs: withState({ priv: { ...livePriv, activityInsertAuthenticated: true } }),
+        silentJs: clean,
+      },
+      {
+        name: 'discovery-proposal-decisions (anon gaining INSERT on tenant_activity_log fires — the deletion record would be writable by the internet)',
+        firesJs: withState({ priv: { ...livePriv, activityInsertAnon: true } }),
+        silentJs: clean,
+      },
+      {
+        // The WRITER of that record. Drop log_tenant_activity from a target
+        // table and the relief becomes unreachable for that kind — every
+        // genuinely-deleted object then goes red under a message about a uuid
+        // that was never created, which would be false. Measured 2026-08-15:
+        // all five target tables carry trg_tenant_activity_log firing ON
+        // DELETE.
+        name: 'discovery-proposal-decisions (a target table losing its ON DELETE activity trigger fires — the relief would silently become ungrantable)',
+        firesJs: withState({
+          routeTables: routeTables.map((r) => (r.tbl === 'connectors' ? { ...r, delete_logged: false } : r)),
+        }),
+        silentJs: clean,
       },
       {
         // The inverse, and the reason the audit event is load-bearing in BOTH
