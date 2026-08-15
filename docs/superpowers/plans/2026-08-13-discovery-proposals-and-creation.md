@@ -144,19 +144,90 @@ Render `discovery_capability_gaps.customer_message` **below the last batch, as `
 
 ## Task 3: Deciding, and creating only what was accepted
 
-**Files:** create the migration (RPCs); modify the page and `discoveryApi.ts`.
+> **AMENDED 2026-08-15** after a ten-agent investigation produced
+> `.superpowers/sdd/2026-08-13-discovery-proposals-and-creation/task-3-contract.md`.
+> **Read the contract before writing any of this task.** Three things below
+> contradict what this plan originally said, and the contract is right each time.
 
-**Interfaces:** Produces `decide_discovery_proposal(p_proposal_id uuid, p_decision text, p_note text)` — `accepted | declined | parked` — service_role or owner/admin, audited.
+**Files:** create the migrations (prerequisite columns, then the RPC); modify the page,
+`discoveryApi.ts`, `discoveryProposals.ts` and `discoveryProposalPresentation.ts`.
+
+**Interfaces:** Produces
+`decide_discovery_proposal(p_proposal_id uuid, p_decision text, p_note text default null, p_created_object_id uuid default null)`
+returning **`jsonb`** — `accepted | declined | parked` — **`authenticated` only**, audited.
+
+### Three corrections to this plan's own text
+
+1. **"A single RPC calling the ordinary writer" is unsatisfiable.** Three of six kinds have
+   no SQL writer: `guardrail` and `connector` are client TS inserts under RLS, `procedure`
+   is an edge function and `pg_net` is fire-and-forget. **One RPC, two accept paths** —
+   Path A (SQL-native: `employee`, `trust_rule`) and Path B (the browser calls the ordinary
+   writer as the human under RLS, then the RPC stamps `p_created_object_id`). This is the
+   shape already shipped at `src/lib/governanceAiApi.ts:111-153`.
+2. **Not "service_role or owner/admin" — `authenticated` only.** Under `service_role`
+   `auth.uid()` is null, and `instantiate_role_archetype` / `install_role_kit` guard with
+   `auth.uid() is not null and not exists(…)`, so they **skip the authority check rather
+   than fail it**. Four safety mechanisms fail open at once and the accept leaves no
+   identity in the audit trail.
+3. **Return `jsonb`, never a composite.** PostgREST serialises a NULL composite as all-NULL
+   columns, so `if (!data)` never fires — the defect that logged one approval three times.
+
+### Founder rulings, 2026-08-15
+
+| Blocker | Ruling |
+|---|---|
+| `trust_rule` enforces nothing (90 policies, 0 ladders, 0 above level 0) | **Ship it, and say what it truly does.** The card states plainly that it sets the limit the employee will follow once it has earned trust, and that nothing changes today. |
+| `conversation_type` has no table, no router, and a label that is always the interview's own question heading | **Fix it properly — make topics real.** Scope carved out below; do not ship the current no-op card. |
+| Guardrail thresholds carry no unit; cents vs percent | **Ship patterns now, hold thresholds.** Pattern guardrails accept as `blocked_phrase`; a threshold-only payload is refused with a visible reason. |
+
+### Build order (risk-ordered — see contract §9)
+
+- [ ] **Step 0: Prerequisite migration.** `last_error`, `last_error_at`, `attempts` on
+  `discovery_proposals` — Step 3 below is *impossible* without them, since the table has
+  12 columns and nowhere to put a reason. Plus the `identity_key` generated column and its
+  unique index, so a re-emitted proposal cannot produce a duplicate card. Table holds 0 rows.
 
 - [ ] **Step 1: Write the failing tests** — park is not decline; a declined proposal creates nothing; an accepted one records `created_object_id`.
 
-- [ ] **Step 2: The RPC.** Accepting routes to the ordinary validated writer for the kind. ⚠ **For `trust_rule`, ensure a `trust_policies` row exists first** (`seed_de_trust_policy`) and **raise loudly if it cannot be created** — do not silently skip, and do not invent a second trust-writing path.
+- [ ] **Step 2: The RPC.** Three zones, one transaction, exactly one sub-block (contract §3).
+  The Zone-2 compare-and-swap (`where … state='pending' returning`) **is** the double-click
+  guard. Accepting routes to the ordinary validated writer for the kind. ⚠ **For `trust_rule`,
+  ensure a `trust_policies` row exists first** (`seed_de_trust_policy`) and **raise loudly if
+  it cannot be created** — do not silently skip, and do not invent a second trust-writing path.
+  Both trust writes share one sub-block: split them and a `validate_trust_ladder` refusal
+  leaves an unconsented level-0 row that *shadows* the workspace row and silently narrows behaviour.
 
 - [ ] **Step 3: A writer that refuses must leave the proposal `pending` with the reason visible.** A proposal that silently fails to become a thing is the worst outcome available here.
 
-- [ ] **Step 4: Verification block** — a rolled-back probe proving accept creates exactly one object and records its id; decline creates nothing; park leaves it decidable.
+- [ ] **Step 4: Verification block** — a rolled-back probe proving accept creates exactly one object and records its id; decline creates nothing; park leaves it decidable. ⚠ Each refusal must be fired against data an *earlier* constraint would otherwise catch first — a check intercepted by a prior constraint proves nothing.
 
 - [ ] **Step 5: Commit before applying** (`git status --short` clean), apply, re-run tests.
+
+### Per-kind order, and what each is gated on
+
+| # | Kind | Path | Gate |
+|---|---|---|---|
+| 1 | `connector` | B | none — build first. Smallest blast radius; the object genuinely cannot act. ⚠ **Do not write a `data_access_grants` row** — that grant is what arms the pollers past the status filter, and withholding it is what makes "you still enter the credential" true. |
+| 2 | `guardrail` | B | pattern-bearing only, as `blocked_phrase`. Leave `compliance_pack_key` NULL or the row becomes un-retirable. |
+| 3 | `employee` | A | **Fix the card first**: it reads `required_connector_categories`, the writer binds `system_templates`, and they disagree for every archetype sampled. Also weaken or gate "comes with a published SOP" — 0 of 15 archetypes produce a `playbook_versions` snapshot. |
+| 4 | `procedure` | B | **Verify an LLM provider resolves in production before building.** With none, every accept returns `503 llm_not_configured`. |
+| 5 | `trust_rule` | A | Last. Honest card copy per the ruling above. Resolve `de_ref` from the sibling employee proposal's `created_object_id`, never by `archetype_key` lookup (not unique per tenant). ⚠ `answer_dock` inverts the unit — `min_confidence` 0-100, not cents. |
+| — | `conversation_type` | — | Carved out to Task 3c below. Do **not** ship the current accept control; its three presentation strings promise routing that does not exist. |
+
+---
+
+## Task 3c: Make conversation topics real
+
+The founder ruled that topics should become a real thing rather than be dropped. This is a
+genuine feature and is scoped separately so it cannot silently delay the five kinds above.
+
+- [ ] **Step 1:** Establish what already exists for classifying conversations — the support
+  topic axis, migration 671's channel split, the escalation taxonomy, and whether any
+  playbook or knowledge row carries a joinable category. *(research in flight)*
+- [ ] **Step 2:** Design and approve the topic model before building. It must have a reader
+  at runtime — a topic nothing consults is the same no-op card in a new table.
+- [ ] **Step 3:** Until it lands, remove the accept control from the `conversation_type` card
+  and correct the three false strings at `discoveryProposalPresentation.ts:286,287,400`.
 
 ---
 

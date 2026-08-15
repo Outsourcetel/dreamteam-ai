@@ -349,14 +349,23 @@ async function fillProposalLiterals(
  *  state='pending'. Returns honest counts; never partial-writes a payload
  *  that failed validation.
  *
- *  IDEMPOTENCY, NAMED RATHER THAN HIDDEN: guarded by a check for existing
- *  proposals on this session before doing any work, not by a DB-level
- *  constraint (none exists on discovery_proposals(session_id) and adding
- *  one is a migration, out of scope for this task). This closes the normal
- *  case (natural completion, then a later 'end' call on the same session)
- *  but is not airtight against two truly concurrent requests for the same
- *  session_id racing this check — a real gap, left for Task 2/3 to close
- *  with a proper constraint if it matters in practice. */
+ *  IDEMPOTENCY, IN TWO LAYERS. The cheap read below ("does this session
+ *  already have proposals?") closes the normal case without doing any work.
+ *  It is NOT airtight against two concurrent requests for the same session
+ *  racing it, so migration 740 added the constraint that is:
+ *
+ *      unique (session_id, kind, identity_key)
+ *
+ *  where identity_key is a generated column resolving per kind — the
+ *  archetype_key for an employee, the provider_key for a connector, the
+ *  source_dimension for everything else. That is why the write below is an
+ *  upsert with ignoreDuplicates rather than an insert: under a race the
+ *  loser must skip the rows that already exist, not fail the whole batch.
+ *
+ *  ⚠ The conflict target is NOT (session_id, kind, source_dimension). One
+ *  dimension proposes many employees — serves_archetypes has 13 entries in
+ *  one place — so keying on the dimension would silently drop every employee
+ *  after the first. Migration 740's probe 2 fires exactly that case. */
 async function emitProposals(
   admin: SupabaseClient,
   tenantId: string,
@@ -456,8 +465,10 @@ async function emitProposals(
   }
 
   if (rows.length > 0) {
-    const { error: insErr } = await admin.from('discovery_proposals').insert(rows);
-    if (insErr) throw new Error(`discovery_proposals insert failed: ${insErr.message}`);
+    const { error: insErr } = await admin
+      .from('discovery_proposals')
+      .upsert(rows, { onConflict: 'session_id,kind,identity_key', ignoreDuplicates: true });
+    if (insErr) throw new Error(`discovery_proposals upsert failed: ${insErr.message}`);
   }
 
   return { proposed: rows.length, refused, skipped_already_proposed: false };
