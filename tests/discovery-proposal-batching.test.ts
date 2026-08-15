@@ -15,10 +15,19 @@
 // "name the data that turns it red" standard this programme holds itself to.
 import { describe, it, expect } from 'vitest';
 import {
-  PROPOSAL_KINDS, SECTION_ORDER, batchModeFor, cardCopyFor, guardrailLiteral,
-  formatCap, humanizeToken, humanizeSystem, whatAcceptingWrites, trustRuleBlockReason,
+  PROPOSAL_KINDS, SECTION_ORDER, batchModeFor, cardCopyFor, guardrailLiteral, guardrailKindOf,
+  formatCap, formatBareNumber, humanizeToken, humanizeSystem, humanizeConnectorTouch,
+  whatAcceptingWrites, trustRuleBlockReason, itemsForBatchMode,
+  __looksLikeEnforceablePattern_forDriftTestOnly as looksLikeEnforceablePattern,
 } from '../src/lib/discoveryProposalPresentation';
 import type { ProposalKind } from '../src/lib/discoveryProposalPresentation';
+// The REAL implementation this file's copy must never drift from — same
+// "duplicated on purpose, drift-guarded here" pattern Task 1's own test file
+// uses for matchProvider (tests/discovery-proposals.test.ts). A real import
+// of a supabase/functions/_shared module is legal under vitest (Vite
+// resolves it fine); it is Deno that cannot load anything importing
+// import.meta.env, which is why the frontend copy exists at all.
+import { validatePayload as realValidatePayload } from '../supabase/functions/_shared/discoveryProposals.ts';
 
 describe('batchModeFor — the single gate the page renders through', () => {
   it('guardrail never batches — RED if this ever returns anything but "never"', () => {
@@ -50,20 +59,97 @@ describe('batchModeFor — the single gate the page renders through', () => {
   });
 });
 
-describe('guardrailLiteral — the enforceable literal, verbatim', () => {
+describe('guardrailLiteral — the enforceable literal, verbatim (fix round 1, Critical 1)', () => {
   it('a pattern renders as "matches: X" — RED if the pattern text is altered or dropped', () => {
     expect(guardrailLiteral({ rule: 'No refund promises', pattern: 'refund|chargeback', threshold: null }))
       .toBe('matches: refund|chargeback');
   });
 
-  it('a threshold with no pattern renders as "over $X" — RED if it silently invents a pattern-shaped string instead', () => {
-    expect(guardrailLiteral({ rule: 'Escalate large refunds', pattern: null, threshold: 10000 }))
-      .toBe('over $10,000');
+  it('a threshold with no pattern renders as a BARE number, no invented currency — RED if a "$" ever appears here', () => {
+    // The review's own two failing examples, both fixed by removing the
+    // fabricated dollar sign rather than only one of them:
+    //  - a 20%-discount cap used to render "$20"
+    //  - a require_approval_over_cents value of 100000 (= $1,000, in
+    //    CENTS) used to render "$100,000" — a hundredfold error
+    expect(guardrailLiteral({ rule: 'Max 20% discount without VP approval', pattern: null, threshold: 20 }))
+      .toBe('threshold: 20');
+    expect(guardrailLiteral({ rule: 'Invoices over $10,000 need approval', pattern: null, threshold: 100000 }))
+      .toBe('threshold: 100,000');
   });
 
   it('neither present is reported honestly, not hidden — RED if this returns an empty string a card could render blank', () => {
     expect(guardrailLiteral({ rule: 'Be careful', pattern: null, threshold: null }))
       .toBe('no literal recorded yet');
+  });
+
+  it('a PROSE pattern beside a valid threshold falls back to the threshold, never renders the prose as the literal — RED if "matches: ..." appears here', () => {
+    // The exact live-reachable shape the review flagged: Task 1's
+    // validatePayload accepts a guardrail whose pattern fails
+    // looksLikeEnforceablePattern as long as threshold is a valid number —
+    // it does not null out the invalid pattern first. A card that then
+    // treats ANY truthy payload.pattern as the literal renders un-consentable
+    // prose as if it were enforceable.
+    const payload = { rule: 'Do not upset customers', pattern: 'anything the customer might find upsetting', threshold: 10000 };
+    // Prove the premise first: Task 1's real validatePayload actually
+    // accepts this payload (via the threshold), so this is not a
+    // hypothetical shape — it is exactly what can reach discovery_proposals.
+    expect(() => realValidatePayload('guardrail', payload)).not.toThrow();
+    expect(guardrailLiteral(payload)).toBe('threshold: 10,000');
+    expect(guardrailLiteral(payload)).not.toMatch(/matches:/);
+  });
+});
+
+describe('guardrailKindOf — pattern vs threshold vs none, the fact whatAcceptingWrites/cardCopyFor branch on', () => {
+  it('a real pattern is "pattern" — RED if a valid enforceable pattern is ever misread as "threshold" or "none"', () => {
+    expect(guardrailKindOf({ pattern: 'refund|chargeback', threshold: null })).toBe('pattern');
+  });
+  it('a prose "pattern" with a valid threshold is "threshold", not "pattern" — RED if this ever returns "pattern" for prose', () => {
+    expect(guardrailKindOf({ pattern: 'anything the customer might find upsetting', threshold: 10000 })).toBe('threshold');
+  });
+  it('neither is "none" — RED if this silently reports "pattern" or "threshold" for an empty payload', () => {
+    expect(guardrailKindOf({ pattern: null, threshold: null })).toBe('none');
+  });
+});
+
+describe('looksLikeEnforceablePattern — drift-guarded against the real Task 1 behaviour', () => {
+  // Task 1's copy (supabase/functions/_shared/discoveryProposals.ts) does not
+  // export looksLikeEnforceablePattern directly, so the oracle here is its
+  // OWN exported validatePayload: for a fixed valid rule and threshold=null,
+  // whether validatePayload throws is entirely a function of whether the
+  // pattern is enforceable. If the two implementations of
+  // looksLikeEnforceablePattern ever disagree, this test goes red on
+  // whichever case it disagrees on — not a hypothetical, an actual behaviour
+  // comparison against the real Deno-deployed module.
+  const cases: Array<[string, boolean]> = [
+    ['refund|chargeback', true],
+    ['refund|chargeback|free month', true],
+    ['anything the customer might find upsetting', false],
+    ['Do not upset customers.', false],           // trailing punctuation
+    ['a b c d e f g h', false],                    // over 5 tokens
+    ['', false],
+  ];
+  it('agrees with the real validatePayload on every case — RED on the first disagreement', () => {
+    for (const [pattern, expected] of cases) {
+      const local = looksLikeEnforceablePattern(pattern);
+      expect(local, `local looksLikeEnforceablePattern("${pattern}")`).toBe(expected);
+      if (!pattern) continue; // empty pattern + null threshold throws for a DIFFERENT reason (no literal at all) — not what's under test here
+      const realAccepts = (() => {
+        try { realValidatePayload('guardrail', { rule: 'x', pattern, threshold: null }); return true; }
+        catch { return false; }
+      })();
+      expect(realAccepts, `real validatePayload accepts pattern "${pattern}"`).toBe(expected);
+    }
+  });
+});
+
+describe('formatBareNumber — no invented unit, ever', () => {
+  it('groups digits for legibility but never adds a currency or percent sign — RED if "$" or "%" ever appears', () => {
+    expect(formatBareNumber(100000)).toBe('100,000');
+    expect(formatBareNumber(20)).toBe('20');
+    expect(formatBareNumber('10000')).toBe('10,000');
+  });
+  it('a non-numeric value is reported honestly rather than crashing or printing "NaN" — RED on either failure mode', () => {
+    expect(formatBareNumber('whatever seems reasonable')).toBe('whatever seems reasonable');
   });
 });
 
@@ -99,6 +185,20 @@ describe('humanizeToken / humanizeSystem — display only, never compared agains
   });
 });
 
+describe('humanizeConnectorTouch — fix round 1, Important ("connector literals leak snake_case")', () => {
+  it('the exact live shape Task 1 emits — "<category> records" — is humanized, RED if "erp_financials" leaks through raw', () => {
+    expect(humanizeConnectorTouch('erp_financials records')).toBe('ERP / Financials records');
+    expect(humanizeConnectorTouch('helpdesk records')).toBe('Helpdesk records');
+  });
+  it('an unknown underscored shape still degrades to Title Case rather than leaking snake_case — RED if an underscore ever survives', () => {
+    expect(humanizeConnectorTouch('mcp_stripe_refunds')).not.toMatch(/_/);
+  });
+  it('a plain English word (spec §11b\'s own illustrative "deals"/"notes") passes through unchanged — RED if this breaks that shape when it does occur', () => {
+    expect(humanizeConnectorTouch('deals')).toBe('deals');
+    expect(humanizeConnectorTouch('notes')).toBe('notes');
+  });
+});
+
 describe('cardCopyFor — every kind carries its literal on the card, not just in the Drawer', () => {
   const noOwners = new Map<string, string>();
 
@@ -121,6 +221,17 @@ describe('cardCopyFor — every kind carries its literal on the card, not just i
     expect(copy.detail).toMatch(/credential/i);
   });
 
+  it('connector: the REAL Task 1 payload shape is humanized, not left as snake_case — RED if "erp_financials" appears verbatim in meta (fix round 1, Important)', () => {
+    // supabase/functions/_shared/discoveryProposals.ts's proposalsFrom emits
+    // reads exactly as [`${row.category} records`] — this is that shape, not
+    // the spec's hypothetical "deals"/"notes" illustration.
+    const copy = cardCopyFor('connector', {
+      provider_key: 'erpnext', label: 'ERPNext', reads: ['erp_financials records'], writes: [],
+    }, noOwners);
+    expect(copy.meta).toBe('ERPNext · reads ERP / Financials records');
+    expect(copy.meta).not.toMatch(/erp_financials/);
+  });
+
   it('employee: systems it can touch are on the card, humanized — RED if this shows raw category keys instead of readable labels', () => {
     const copy = cardCopyFor('employee', { name: 'Billing & AR', systems: ['erp_financials', 'billing'] }, noOwners);
     expect(copy.meta).toBe('Systems: ERP / Financials, Billing');
@@ -134,6 +245,22 @@ describe('cardCopyFor — every kind carries its literal on the card, not just i
     expect(copy.meta).toBe('matches: refund|chargeback');
   });
 
+  it('guardrail with a PATTERN claims blocking — RED if the "blocked" sentence disappears for the one case where it is actually true', () => {
+    const copy = cardCopyFor('guardrail', { rule: 'Never promise a refund over the phone', pattern: 'refund|chargeback' }, noOwners);
+    expect(copy.detail).toMatch(/blocked/i);
+  });
+
+  it('guardrail with only a THRESHOLD claims approval, NEVER blocking — RED if "blocked" appears here (fix round 1, Critical 2)', () => {
+    // findBlockingMatch (supabase/functions/_shared/guardrailMatch.ts) is
+    // pattern-only. A threshold-only guardrail (max_discount_pct /
+    // require_approval_over_cents in src/lib/guardrailApi.ts's real
+    // GuardrailRuleType union) is an approval gate — nothing "matches" a
+    // number, so nothing about it blocks outbound text.
+    const copy = cardCopyFor('guardrail', { rule: 'Max 20% discount without VP approval', pattern: null, threshold: 20 }, noOwners);
+    expect(copy.detail).not.toMatch(/blocked/i);
+    expect(copy.detail).toMatch(/approval/i);
+  });
+
   it('trust_rule: employee + category + cap, all three, on the meta line — RED if any one of the three is missing', () => {
     const copy = cardCopyFor('trust_rule', { de_ref: 'archetype:billing_ar', action_category: 'erp_financials', cap: 10000 },
       new Map([['billing_ar', 'Morgan']]));
@@ -141,13 +268,38 @@ describe('cardCopyFor — every kind carries its literal on the card, not just i
     expect(copy.title).toContain('Morgan');
     expect(copy.title).toContain('$10,000');
   });
+
+  it('trust_rule: above_cap, when the model supplied one, is on the CARD (not just the drawer) — RED if it never appears (fix round 1, minor)', () => {
+    const copy = cardCopyFor('trust_rule', {
+      de_ref: 'archetype:billing_ar', action_category: 'erp_financials', cap: 10000,
+      above_cap: 'Above $10,000 it goes to Finance for sign-off.',
+    }, new Map([['billing_ar', 'Morgan']]));
+    expect(copy.detail).toBe('Above $10,000 it goes to Finance for sign-off.');
+  });
+
+  it('trust_rule: with no above_cap supplied, a generic honest fallback is used — RED if this renders empty', () => {
+    const copy = cardCopyFor('trust_rule', { de_ref: 'archetype:billing_ar', action_category: 'erp_financials', cap: 10000 },
+      new Map([['billing_ar', 'Morgan']]));
+    expect(copy.detail.length).toBeGreaterThan(5);
+  });
 });
 
 describe('whatAcceptingWrites — every kind states what its acceptance creates', () => {
+  const EMPTY: Record<string, unknown> = {};
+
   it('all 6 kinds return a non-empty, distinct sentence — RED if two kinds accidentally share one generic sentence', () => {
-    const sentences = PROPOSAL_KINDS.map((k) => whatAcceptingWrites(k));
+    const sentences = PROPOSAL_KINDS.map((k) => whatAcceptingWrites(k, EMPTY));
     for (const s of sentences) expect(s.length).toBeGreaterThan(10);
     expect(new Set(sentences).size).toBe(sentences.length);
+  });
+
+  it('guardrail branches on pattern vs threshold, same as the card — RED if "enforced" appears for a threshold-only guardrail (fix round 1, Critical 2)', () => {
+    const patternSentence = whatAcceptingWrites('guardrail', { pattern: 'refund|chargeback', threshold: null });
+    const thresholdSentence = whatAcceptingWrites('guardrail', { pattern: null, threshold: 20 });
+    expect(patternSentence).toMatch(/block/i);
+    expect(thresholdSentence).not.toMatch(/block/i);
+    expect(thresholdSentence).toMatch(/approval/i);
+    expect(patternSentence).not.toBe(thresholdSentence);
   });
 });
 
@@ -179,5 +331,41 @@ describe('trustRuleBlockReason — §11b requirement 4: blocked with a reason, n
       { payload: { archetype_key: 'billing_ar', name: 'Morgan' }, state: 'accepted' },
     ]);
     expect(reason).toBeNull();
+  });
+});
+
+describe('itemsForBatchMode — fix round 1, Important ("batching is structural for the value, conventional for the wiring")', () => {
+  const items: Array<{ kind: ProposalKind; id: string }> = [
+    { kind: 'guardrail', id: 'g1' },
+    { kind: 'guardrail', id: 'g2' },
+    { kind: 'trust_rule', id: 't1' },
+    { kind: 'employee', id: 'e1' },
+    { kind: 'connector', id: 'c1' },
+  ];
+
+  it('THE EXACT BYPASS THE REVIEW NAMED — calling the accept-all path for guardrail returns nothing, not the two guardrail items — RED if this ever returns g1/g2', () => {
+    // Before this fix, the page's renderAcceptAllSection(kind) trusted
+    // whatever kind it was called with. A single mis-typed
+    // renderAcceptAllSection('guardrail') would have rendered these two
+    // guardrails inside a bulk "Accept all" checkbox batch with every
+    // existing test (which only ever checked batchModeFor in isolation)
+    // still green. This is that exact call, one level down from the React
+    // component so it's provable without a DOM.
+    expect(itemsForBatchMode('guardrail', 'accept_all', items)).toEqual([]);
+  });
+
+  it('the same bypass for trust_rule via "department" mode also returns nothing — RED if t1 appears', () => {
+    expect(itemsForBatchMode('trust_rule', 'department', items)).toEqual([]);
+  });
+
+  it('correct usage still works — RED if this now ALSO returns nothing (the guard must not become a wall)', () => {
+    expect(itemsForBatchMode('guardrail', 'never', items).map((i) => i.id)).toEqual(['g1', 'g2']);
+    expect(itemsForBatchMode('trust_rule', 'never', items).map((i) => i.id)).toEqual(['t1']);
+    expect(itemsForBatchMode('employee', 'department', items).map((i) => i.id)).toEqual(['e1']);
+    expect(itemsForBatchMode('connector', 'accept_all', items).map((i) => i.id)).toEqual(['c1']);
+  });
+
+  it('even with the right mode, only that kind is returned from a mixed list — RED if a guardrail leaks into an employee department section', () => {
+    expect(itemsForBatchMode('employee', 'department', items)).not.toContainEqual(expect.objectContaining({ kind: 'guardrail' }));
   });
 });

@@ -5,8 +5,11 @@
 //
 // ⚠ NO DECISION WRITES HERE. decide_discovery_proposal does not exist yet —
 // that is Task 3. Every Accept/Decline/Park control on this screen is
-// rendered disabled, with a title explaining why, so nothing on this page
-// can be mistaken for having saved anything. The only state that changes on
+// rendered disabled, and a visible banner near the top says so in plain
+// language — NOT a title= tooltip on the disabled buttons themselves (fix
+// round 1, review: disabled elements never fire mouse events in a browser,
+// so a tooltip there is invisible to every sighted user, always — the
+// original version was explained to nobody). The only state that changes on
 // this screen is local React state (which checkboxes are ticked, which
 // Drawer is open) — src/lib/discoveryApi.ts performs zero writes.
 //
@@ -37,11 +40,17 @@ import type {
 } from '../../lib/discoveryApi';
 import {
   SECTION_ORDER, KIND_LABELS, batchModeFor, cardCopyFor, whatAcceptingWrites, trustRuleBlockReason,
+  itemsForBatchMode,
 } from '../../lib/discoveryProposalPresentation';
 import type { ProposalKind } from '../../lib/discoveryProposalPresentation';
 import type { Page } from '../../types';
 
-const DECIDE_NOT_WIRED_YET = 'Deciding what happens next is built in the following step — nothing here saves yet.';
+// Fix round 1 (review, Important): this used to live ONLY in a title= on a
+// disabled <button> — disabled elements never fire mouse events, so that
+// tooltip could never appear to anyone. Said once, visibly, near the top of
+// the page instead — customer voice, not "built in the following step".
+const PREVIEW_EXPLANATION =
+  "You're looking these over, not deciding yet. Accept, Decline and Park don't do anything on this screen — you'll make the real call once this is turned on for you.";
 
 export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?: (p: Page) => void }) {
   const [loading, setLoading] = useState(true);
@@ -99,11 +108,12 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
     return m;
   }, [employeeProposals]);
 
-  const pendingByKind = useMemo(() => {
-    const m = new Map<ProposalKind, DiscoveryProposal[]>();
-    for (const kind of SECTION_ORDER) m.set(kind, proposals.filter((p) => p.kind === kind && p.state === 'pending'));
-    return m;
-  }, [proposals]);
+  // Every proposal still awaiting a decision, kind-mixed on purpose: the
+  // three renderers below each route their slice of this through
+  // itemsForBatchMode, which is what actually enforces which kind belongs
+  // in which section — not this array, and not which renderer happens to
+  // get called with which kind. See itemsForBatchMode's own header.
+  const pendingProposals = useMemo(() => proposals.filter((p) => p.state === 'pending'), [proposals]);
 
   const toggleSelected = (id: string) => {
     setSelected((prev) => {
@@ -121,13 +131,21 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
     const blocked = opts.blockedReason ?? null;
     const detail = blocked ?? copy.detail;
     const tone = blocked ? 'neutral' : 'warn';
-    const actions = blocked ? (
-      <Chip tone="neutral">Blocked</Chip>
-    ) : (
+    // Fix round 1 (review, minor): the blocked branch used to REPLACE the
+    // whole action row with just a "Blocked" chip, which took the Details
+    // button with it — the one card a reader can't act on is exactly the
+    // one they'd most want to read. Details now survives both branches.
+    const actions = (
       <>
-        <Button kind="primary" size="sm" disabled title={DECIDE_NOT_WIRED_YET}>Accept</Button>
-        <Button kind="secondary" size="sm" disabled title={DECIDE_NOT_WIRED_YET}>Decline</Button>
-        <Button kind="ghost" size="sm" disabled title={DECIDE_NOT_WIRED_YET}>Park</Button>
+        {blocked ? (
+          <Chip tone="neutral">Blocked</Chip>
+        ) : (
+          <>
+            <Button kind="primary" size="sm" disabled>Accept</Button>
+            <Button kind="secondary" size="sm" disabled>Decline</Button>
+            <Button kind="ghost" size="sm" disabled>Park</Button>
+          </>
+        )}
         <Button kind="ghost" size="sm" onClick={() => setOpenProposal(p)}>Details</Button>
       </>
     );
@@ -159,7 +177,11 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
   // ── section renderers, one per BatchMode ────────────────────────────────
 
   const renderAcceptAllSection = (kind: ProposalKind) => {
-    const items = pendingByKind.get(kind) ?? [];
+    // itemsForBatchMode(kind, 'accept_all', ...) returns [] for guardrail or
+    // trust_rule even if this renderer is ever called with one by mistake —
+    // that mis-call is exactly what tests/discovery-proposal-batching.test.ts's
+    // "the exact bypass the review named" case proves stays closed.
+    const items = itemsForBatchMode(kind, 'accept_all', pendingProposals);
     if (items.length === 0) return null;
     const selectedCount = items.filter((p) => selected.has(p.id)).length;
     return (
@@ -167,7 +189,7 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
         key={kind}
         title={`${KIND_LABELS[kind]} (${items.length})`}
         actions={
-          <Button kind="primary" size="sm" disabled title={DECIDE_NOT_WIRED_YET}>
+          <Button kind="primary" size="sm" disabled>
             Accept {selectedCount} selected
           </Button>
         }
@@ -182,7 +204,7 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
   };
 
   const renderDepartmentSection = (kind: ProposalKind) => {
-    const items = pendingByKind.get(kind) ?? [];
+    const items = itemsForBatchMode(kind, 'department', pendingProposals);
     if (items.length === 0) return null;
     const byDept = new Map<string, DiscoveryProposal[]>();
     for (const p of items) {
@@ -204,7 +226,7 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
   };
 
   const renderNeverBatchSection = (kind: ProposalKind) => {
-    const items = pendingByKind.get(kind) ?? [];
+    const items = itemsForBatchMode(kind, 'never', pendingProposals);
     if (items.length === 0) return null;
     return (
       <PanelCard key={kind} title={`${KIND_LABELS[kind]} (${items.length})`}>
@@ -262,6 +284,8 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
 
       {!loading && !error && session && (sections.length > 0 || gaps.length > 0) && (
         <div className="space-y-6">
+          <Banner tone="neutral">{PREVIEW_EXPLANATION}</Banner>
+
           {sections}
 
           {/* §11b's correction to spec §5: NOT the two-column layout — a
@@ -291,7 +315,7 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
             </div>
             <div>
               <div className="text-xs uppercase tracking-wide text-dt-muted mb-1">If you accept</div>
-              <p className="text-dt-support">{whatAcceptingWrites(openProposal.kind)}</p>
+              <p className="text-dt-support">{whatAcceptingWrites(openProposal.kind, openProposal.payload)}</p>
             </div>
           </div>
         </Drawer>

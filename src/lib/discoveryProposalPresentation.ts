@@ -127,11 +127,36 @@ export function humanizeSystem(key: string): string {
   return CATEGORY_SHORT_LOCAL[key] ?? humanizeToken(key);
 }
 
+/** Fix round 1 (review, Important — "connector literals leak snake_case").
+ *  Task 1 (supabase/functions/_shared/discoveryProposals.ts) emits a
+ *  connector's `reads` as exactly `${row.category} records` — e.g.
+ *  "erp_financials records", "helpdesk records". Humanizes the leading
+ *  category token via the same short labels employee systems already use
+ *  (so "erp_financials records" and an employee's "ERP / Financials" read
+ *  as the same system), and falls back to Title Case for any other
+ *  underscored shape a future payload might carry, rather than ever
+ *  leaving a raw snake_case token on a card. A string with no leading
+ *  known category and no underscore (e.g. a literal object name like
+ *  "deals") passes through unchanged — this is what makes spec §11b's own
+ *  illustrative "reads deals, writes notes" still render correctly if a
+ *  future payload shape ever produces it, without that illustration being
+ *  treated as proof today's shape needs no humanizing. */
+export function humanizeConnectorTouch(raw: string): string {
+  const trimmed = raw.trim();
+  const spaceIdx = trimmed.indexOf(' ');
+  const firstWord = spaceIdx === -1 ? trimmed : trimmed.slice(0, spaceIdx);
+  const rest = spaceIdx === -1 ? '' : trimmed.slice(spaceIdx);
+  if (CATEGORY_SHORT_LOCAL[firstWord]) return `${CATEGORY_SHORT_LOCAL[firstWord]}${rest}`;
+  return /_/.test(trimmed) ? humanizeToken(trimmed) : trimmed;
+}
+
 /** "10000" / 10000 / "$10,000" → "$10,000". answer_dock/answer_widget are
  *  the two action categories set_trust_ladder confidence-gates instead of
  *  dollar-gating (src/lib/trustApi.ts's own trustLevelSettings encodes the
  *  same split) — so a cap on either reads as a confidence percentage, not
- *  money. */
+ *  money. ONLY for trust_rule's cap, which carries a real actionCategory to
+ *  decide the unit from — see the header note on guardrailLiteral below for
+ *  why a guardrail's threshold must NOT go through this function. */
 export function formatCap(actionCategory: string, cap: unknown): string {
   const n = numericLiteral(cap);
   if (n === null) return str(cap) || 'no cap recorded';
@@ -140,14 +165,90 @@ export function formatCap(actionCategory: string, cap: unknown): string {
   return `$${n.toLocaleString('en-US')}`;
 }
 
-/** guardrail's enforceable literal, verbatim per §11b: "matches: X" for a
- *  pattern, "over $X" for a threshold — never both, pattern wins if both
- *  are somehow present because a pattern is the more specific literal. */
+/** A bare number, grouped for legibility, with NO invented unit — "100000"
+ *  → "100,000", never "$100,000". A guardrail's threshold carries no unit
+ *  field anywhere in Task 1's payload (its FILL_WHITELIST is only
+ *  `pattern`/`threshold` — no `rule_type`, no currency, no percent), so a
+ *  20%-discount threshold of 20 and a require_approval_over_cents threshold
+ *  of 100000 are BOTH just the bare number 20 / 100000 on the wire. Fix
+ *  round 1 (review): the previous version ran every guardrail threshold
+ *  through formatCap('', threshold), which always fell into formatCap's
+ *  dollar branch (an empty actionCategory is never 'answer_dock'/
+ *  'answer_widget') — rendering a 20%-discount cap as "$20" and a
+ *  100,000-CENTS approval threshold as "$100,000", a hundred-fold error.
+ *  §11b: "you cannot consent to a block you cannot predict" — a wrong unit
+ *  is not a smaller version of that failure, it IS that failure. */
+export function formatBareNumber(v: unknown): string {
+  const n = numericLiteral(v);
+  if (n === null) return str(v) || 'no threshold recorded';
+  return n.toLocaleString('en-US');
+}
+
+// ── looksLikeEnforceablePattern — duplicated on purpose ─────────────────────
+// Byte-for-byte behaviourally identical to supabase/functions/_shared/
+// discoveryProposals.ts's own copy, same "cannot import across the
+// supabase/ boundary" reason as matchProvider's duplication in that file
+// (its own header explains why: that module must load under both Vite and
+// Deno, and re-declaring six kinds' worth of small pure logic here is a
+// smaller surface than pulling in a Deno-shaped module tree). Kept honest
+// by tests/discovery-proposal-batching.test.ts's drift-guard case, which
+// imports the REAL one from supabase/functions/_shared/discoveryProposals.ts
+// (legal under vitest, same as Task 1's own drift guard for matchProvider)
+// and asserts identical output across a battery of cases.
+//
+// Fix round 1 (review, Critical 1 second half): the previous guardrailLiteral
+// treated ANY truthy payload.pattern as the enforceable literal. But Task 1's
+// validatePayload accepts a guardrail whose pattern fails this exact check
+// as long as threshold is a valid number — pattern is never nulled out in
+// that case, so a persisted row can carry a PROSE pattern
+// ("anything the customer might find upsetting") sitting right next to a
+// valid numeric threshold. Rendering that prose as "matches: ..." presents
+// exactly the un-consentable literal §11b's guardrail row warns against.
+const PATTERN_PROSE_WORDS = /\b(the|and|might|could|should|would|whatever|anything|something|appropriate|reasonable|seems|find|please|kindly|customer|customers)\b/i;
+function looksLikeEnforceablePattern(v: string): boolean {
+  const t = v.trim();
+  if (!t || t.length > 120) return false;
+  if (/[.!?]$/.test(t)) return false;
+  if (t.split(/\s+/).filter(Boolean).length > 5) return false;
+  if (PATTERN_PROSE_WORDS.test(t)) return false;
+  return true;
+}
+export { looksLikeEnforceablePattern as __looksLikeEnforceablePattern_forDriftTestOnly };
+
+/** Which of the two real guardrail behaviours this payload actually
+ *  describes, derived from what's PRESENT and VALID on the payload — never
+ *  from a rule_type field, because Task 1 never collects one (see
+ *  formatBareNumber's header). This is a closed inference, not a guess:
+ *  public.guardrail_rules.rule_type (src/lib/guardrailApi.ts) has exactly
+ *  four values, and the two that carry a threshold at all
+ *  (require_approval_over_cents, max_discount_pct) are BOTH approval gates —
+ *  there is no threshold-bearing BLOCKING rule_type in the whole union. So
+ *  "this payload has a valid threshold and no valid pattern" reliably means
+ *  "approval gate", regardless of which specific rule_type Task 3 eventually
+ *  assigns it. findBlockingMatch (supabase/functions/_shared/
+ *  guardrailMatch.ts) is pattern-only — nothing in this codebase blocks
+ *  outbound text on a bare number. */
+export type GuardrailKind = 'pattern' | 'threshold' | 'none';
+export function guardrailKindOf(payload: Record<string, unknown>): GuardrailKind {
+  const patternRaw = str(payload.pattern);
+  if (patternRaw && looksLikeEnforceablePattern(patternRaw)) return 'pattern';
+  if (isNumericLiteral(payload.threshold)) return 'threshold';
+  return 'none';
+}
+
+/** guardrail's enforceable literal, verbatim per §11b — but "verbatim" means
+ *  exactly what's on the payload, never a unit invented to make it read
+ *  nicer. A pattern renders as "matches: X" ONLY when it re-passes
+ *  looksLikeEnforceablePattern here (Task 1's validatePayload does not null
+ *  out a prose pattern sitting beside a valid threshold — see the header
+ *  above). A threshold renders as a bare, grouped number with no currency
+ *  or percent sign, because the payload carries no unit to be honest about. */
 export function guardrailLiteral(payload: Record<string, unknown>): string {
-  const pattern = str(payload.pattern);
-  if (pattern) return `matches: ${pattern}`;
-  if (isNumericLiteral(payload.threshold)) return `over ${formatCap('', payload.threshold)}`;
-  return 'no literal recorded yet';
+  switch (guardrailKindOf(payload)) {
+    case 'pattern': return `matches: ${str(payload.pattern)}`;
+    case 'threshold': return `threshold: ${formatBareNumber(payload.threshold)}`;
+    case 'none': return 'no literal recorded yet';
+  }
 }
 
 // ── card copy ────────────────────────────────────────────────────────────
@@ -190,8 +291,14 @@ export function cardCopyFor(
 
     case 'connector': {
       const label = str(payload.label) || str(payload.provider_key) || 'this system';
-      const reads = strArray(payload.reads);
-      const writes = strArray(payload.writes);
+      // Fix round 1 (review, Important): Task 1 emits reads as
+      // "<category> records" (e.g. "erp_financials records") — a raw
+      // category token, not English. humanizeConnectorTouch turns the
+      // KNOWN-category cases into "ERP / Financials records" and degrades
+      // any other underscored shape to Title Case rather than leaking
+      // snake_case onto the card.
+      const reads = strArray(payload.reads).map(humanizeConnectorTouch);
+      const writes = strArray(payload.writes).map(humanizeConnectorTouch);
       const touches = [reads.length ? `reads ${reads.join(', ')}` : null, writes.length ? `writes ${writes.join(', ')}` : null]
         .filter(Boolean).join(', ');
       return {
@@ -226,9 +333,23 @@ export function cardCopyFor(
 
     case 'guardrail': {
       const rule = str(payload.rule) || 'New guardrail';
+      // Fix round 1 (review, Critical 2): the old detail sentence
+      // ("Anything matching this is blocked before it reaches a customer")
+      // was hardcoded for every guardrail, but it is only true for a
+      // PATTERN rule — findBlockingMatch (guardrailMatch.ts) is pattern-
+      // only, and nothing in this codebase blocks outbound text on a bare
+      // number. A threshold-only guardrail is an approval gate, not a
+      // block — guardrailKindOf's own header explains why that's a safe
+      // inference even without a rule_type field on the payload.
+      const kindOfRule = guardrailKindOf(payload);
+      const detail = kindOfRule === 'pattern'
+        ? 'Anything matching this is blocked before it reaches a customer.'
+        : kindOfRule === 'threshold'
+          ? 'Above this, it needs your approval before it goes ahead.'
+          : 'This guardrail has no enforceable literal yet.';
       return {
         title: rule,
-        detail: 'Anything matching this is blocked before it reaches a customer.',
+        detail,
         meta: guardrailLiteral(payload),
         nudge: 'You can edit or remove this rule later in Governance.',
       };
@@ -240,9 +361,17 @@ export function cardCopyFor(
       const who = employeeName ?? 'This employee';
       const actionCategory = str(payload.action_category);
       const cap = formatCap(actionCategory, payload.cap);
+      // §11b's own table lists "what happens above it" as part of the
+      // CARD, not the drawer, for this one kind — trust_rule is explicitly
+      // exempted from the short-card budget ("the only kind where no card
+      // is short enough"). Fix round 1 (review minor): above_cap was
+      // collected by the model fill and never shown anywhere — this is
+      // where it belongs, verbatim, falling back to a generic sentence
+      // only when the model didn't supply one.
+      const aboveCap = str(payload.above_cap);
       return {
         title: `Let ${who} act on its own up to ${cap}`,
-        detail: 'Above this, it stops and asks you first.',
+        detail: aboveCap || 'Above this, it stops and asks you first.',
         meta: `${who} · ${humanizeToken(actionCategory) || 'unnamed category'} · up to ${cap}`,
         nudge: 'You can lower or raise this cap later in Trust settings.',
       };
@@ -252,16 +381,56 @@ export function cardCopyFor(
 
 /** What accepting a proposal of this kind actually creates — the Drawer's
  *  "what accepting writes" line. Deliberately plain, not a repeat of the
- *  card's own detail sentence. */
-export function whatAcceptingWrites(kind: ProposalKind): string {
+ *  card's own detail sentence.
+ *
+ *  `payload` is required (fix round 1, Critical 2): the old single-string
+ *  version claimed "Creates an ENFORCED guardrail rule with this exact
+ *  pattern OR threshold" for every guardrail — the same overclaim as the
+ *  card's detail sentence, and false for the same reason: a threshold-only
+ *  guardrail is an approval gate, never something findBlockingMatch
+ *  enforces. Every other kind's sentence is unconditional on payload
+ *  content, so this parameter is unused for them — kept required anyway so
+ *  a future kind that DOES need to branch can't be added without a payload
+ *  already in scope. */
+export function whatAcceptingWrites(kind: ProposalKind, payload: Record<string, unknown>): string {
   switch (kind) {
     case 'employee': return 'Creates a digital employee — draft, supervised — with its SOP and requested systems attached.';
     case 'connector': return 'Creates a connector record for this system, waiting on your credential.';
     case 'procedure': return 'Creates a draft procedure definition. It will not run until you publish it.';
     case 'conversation_type': return 'Adds this as a routable conversation topic.';
-    case 'guardrail': return 'Creates an enforced guardrail rule with this exact pattern or threshold.';
+    case 'guardrail': {
+      const kindOfRule = guardrailKindOf(payload);
+      if (kindOfRule === 'pattern') return 'Creates a guardrail that blocks anything matching this pattern before it reaches a customer.';
+      if (kindOfRule === 'threshold') return 'Creates a guardrail that requires your approval above this threshold — nothing about it stops a message from going out.';
+      return 'Creates a guardrail rule — it has no enforceable literal yet, so it will not do anything until one is added.';
+    }
     case 'trust_rule': return 'Creates or raises this employee’s trust policy, up to the stated cap.';
   }
+}
+
+/** THE structural gate for the page's three section renderers (fix round 1,
+ *  Important — "batching is structural for the value, conventional for the
+ *  wiring"). Before this, batchModeFor(kind) was correct, but nothing
+ *  stopped a renderer from being CALLED with the wrong kind — a single
+ *  mis-typed `renderAcceptAllSection('guardrail')` would have rendered a
+ *  guardrail inside a bulk-accept batch with every existing test still
+ *  green, because batchModeFor itself was never wrong; it was just never
+ *  consulted at the render call site.
+ *
+ *  Every renderer must fetch its items through THIS function, never by
+ *  filtering `proposals` directly — when `mode` does not match the kind's
+ *  real batchModeFor, it returns an EMPTY array regardless of what `items`
+ *  contains, so the mis-wired call renders nothing rather than the wrong
+ *  thing. tests/discovery-proposal-batching.test.ts proves the exact
+ *  scenario the review named: `itemsForBatchMode('guardrail', 'accept_all',
+ *  <real guardrail items>)` must return `[]`. */
+export function itemsForBatchMode<T extends { kind: ProposalKind }>(
+  kind: ProposalKind,
+  mode: BatchMode,
+  items: readonly T[],
+): readonly T[] {
+  if (batchModeFor(kind) !== mode) return [];
+  return items.filter((i) => i.kind === kind);
 }
 
 /** §11b requirement 4: a trust_rule proposal may not be decided before the
