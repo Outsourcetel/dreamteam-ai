@@ -181,7 +181,20 @@ create or replace view public.discovery_capability_demand as
 -- at all, and NOBODY may UPDATE or DELETE — including service_role, because a
 -- history somebody can edit is not a history. Only a migration can ever
 -- change what is here.
-revoke all on table public.discovery_capability_demand_log from public, anon, authenticated;
+-- ⚠⚠ REVOKING FROM public/anon/authenticated IS NOT ENOUGH, AND THE FIRST
+-- VERSION OF THIS MIGRATION FAILED ON EXACTLY THAT. `ALTER DEFAULT PRIVILEGES`
+-- in this database grants `service_role` the FULL set — arwdDxtm — on every
+-- new table in `public` (pg_default_acl, grantor postgres, objtype r). So a
+-- table is born with the platform role holding INSERT, UPDATE, DELETE and
+-- TRUNCATE, and "append-only" is a comment rather than a grant until this
+-- line runs. The perimeter probe below caught it, which is the only reason
+-- this is a comment and not a defect.
+--
+-- ⚠ Note that `audit_events` — the repo's own append-only precedent — carries
+-- `service_role=arwdDxtm`. Its immutability is enforced elsewhere, not by
+-- grant. This table is stricter on purpose: nothing but a migration running as
+-- the owner may ever change what is here.
+revoke all on table public.discovery_capability_demand_log from public, anon, authenticated, service_role;
 grant select on table public.discovery_capability_demand_log to service_role;
 revoke all on function public.capture_capability_demand() from public, anon, authenticated;
 
@@ -255,7 +268,7 @@ begin
     select count(*) into v_rows from public.discovery_capability_demand_log
      where session_id = v_session and capability = v_gap_cap and dimension_key = v_gap_dim;
     if v_rows <> 1 then
-      v_bad := v_bad || format('marking %L heard produced %s log row(s) for %L, expected 1 — the trigger is not capturing', v_gap_dim, v_rows, v_gap_cap);
+      v_bad := array_append(v_bad, format('marking %L heard produced %s log row(s) for %L, expected 1 — the trigger is not capturing', v_gap_dim, v_rows, v_gap_cap));
     end if;
 
     -- ---- PROBE 4 (here, while the session exists): NOT an over-capture ----
@@ -263,7 +276,7 @@ begin
     -- this, a trigger that logged every heard dimension would pass probe 1.
     if exists (select 1 from public.discovery_capability_demand_log
                 where session_id = v_session and dimension_key = v_plain_dim) then
-      v_bad := v_bad || format('a dimension with no planned_ archetype (%L) produced a demand row — the capture is not restricted to real gaps', v_plain_dim);
+      v_bad := array_append(v_bad, format('a dimension with no planned_ archetype (%L) produced a demand row — the capture is not restricted to real gaps', v_plain_dim));
     end if;
 
     -- ---- PROBE 5: idempotent across turns --------------------------------
@@ -283,7 +296,7 @@ begin
     select count(*) into v_dupes from public.discovery_capability_demand_log
      where session_id = v_session and capability = v_gap_cap and dimension_key = v_gap_dim;
     if v_dupes <> 1 then
-      v_bad := v_bad || format('after three coverage writes the log holds %s row(s) for one capability — repeated turns inflate the demand count', v_dupes);
+      v_bad := array_append(v_bad, format('after three coverage writes the log holds %s row(s) for one capability — repeated turns inflate the demand count', v_dupes));
     end if;
 
     -- ---- PROBE 2: THE MIGRATION. Delete the session; the demand survives --
@@ -291,7 +304,7 @@ begin
     select count(*) into v_rows from public.discovery_capability_demand_log
      where session_id = v_session and capability = v_gap_cap;
     if v_rows <> 1 then
-      v_bad := v_bad || 'the demand row did NOT survive deletion of its session — this migration has achieved nothing, which is the whole and only point of it';
+      v_bad := array_append(v_bad, 'the demand row did NOT survive deletion of its session — this migration has achieved nothing, which is the whole and only point of it');
     end if;
 
     -- ---- PROBE 6: and the VIEW still reports it --------------------------
@@ -299,7 +312,7 @@ begin
     select count(*) into v_view_rows from public.discovery_capability_demand
      where capability = v_gap_cap and dimension_key = v_gap_dim;
     if v_view_rows < 1 then
-      v_bad := v_bad || 'the log kept the row but discovery_capability_demand does not report it — the view is still reading live sessions';
+      v_bad := array_append(v_bad, 'the log kept the row but discovery_capability_demand does not report it — the view is still reading live sessions');
     end if;
 
     raise exception using errcode = 'P0001', message = '__undo_probe__';
@@ -314,26 +327,26 @@ begin
   select count(*) into v_fkeys from pg_constraint
    where conrelid = 'public.discovery_capability_demand_log'::regclass and contype = 'f';
   if v_fkeys <> 0 then
-    v_bad := v_bad || format('%s foreign key(s) exist on discovery_capability_demand_log — a demand that cascades away with its session, dimension or tenant is the bug this migration was written to remove', v_fkeys);
+    v_bad := array_append(v_bad, format('%s foreign key(s) exist on discovery_capability_demand_log — a demand that cascades away with its session, dimension or tenant is the bug this migration was written to remove', v_fkeys));
   end if;
 
   -- ---- rollback integrity ----------------------------------------------
   select count(*) into v_after from public.discovery_capability_demand_log;
   if v_before <> v_after then
-    v_bad := v_bad || format('the log went from %s to %s row(s) — the probe did not roll back and this migration has left test demand in production', v_before, v_after);
+    v_bad := array_append(v_bad, format('the log went from %s to %s row(s) — the probe did not roll back and this migration has left test demand in production', v_before, v_after));
   end if;
 
   -- ---- perimeter --------------------------------------------------------
   if has_table_privilege('authenticated', 'public.discovery_capability_demand_log', 'SELECT')
      or has_table_privilege('authenticated', 'public.discovery_capability_demand', 'SELECT') then
-    v_bad := v_bad || 'authenticated can read the demand log or its view — this is a CROSS-TENANT tally of what customers cannot get, and one workspace must never see another''s';
+    v_bad := array_append(v_bad, 'authenticated can read the demand log or its view — this is a CROSS-TENANT tally of what customers cannot get, and one workspace must never see another''s');
   end if;
   if has_table_privilege('service_role', 'public.discovery_capability_demand_log', 'UPDATE')
      or has_table_privilege('service_role', 'public.discovery_capability_demand_log', 'DELETE') then
-    v_bad := v_bad || 'service_role can UPDATE or DELETE the demand log — a history somebody can edit is not a history';
+    v_bad := array_append(v_bad, 'service_role can UPDATE or DELETE the demand log — a history somebody can edit is not a history');
   end if;
   if not has_table_privilege('service_role', 'public.discovery_capability_demand_log', 'SELECT') then
-    v_bad := v_bad || 'service_role cannot read the demand log — the platform signal is unreadable by the platform';
+    v_bad := array_append(v_bad, 'service_role cannot read the demand log — the platform signal is unreadable by the platform');
   end if;
 
   if array_length(v_bad, 1) > 0 then
