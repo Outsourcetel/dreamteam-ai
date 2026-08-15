@@ -232,11 +232,60 @@ describe('cardCopyFor — every kind carries its literal on the card, not just i
     expect(copy.meta).not.toMatch(/erp_financials/);
   });
 
-  it('employee: systems it can touch are on the card, humanized — RED if this shows raw category keys instead of readable labels', () => {
-    const copy = cardCopyFor('employee', { name: 'Billing & AR', systems: ['erp_financials', 'billing'] }, noOwners);
-    expect(copy.meta).toBe('Systems: ERP / Financials, Billing');
+  // ⚠ M1 of the 2026-08-15 review. This test used to feed CATEGORY KEYS
+  // ("erp_financials") and assert they were humanized — but since BLOCKER 2,
+  // Task 1 does not emit category keys here at all. It emits finished display
+  // strings built from role_archetypes.system_templates: a label plus the
+  // read/write reach in parentheses. Running humanizeSystem over those
+  // title-cased every word, so the live shape rendered as "Invoices (AR)
+  // (Read/Write)". The fixture below is the REAL payload shape, copied from
+  // proposalsFrom's own output, and the assertion is that it is left alone.
+  // Red if title-casing ever comes back.
+  it('employee: systems are the REAL system_templates strings, rendered verbatim — RED if "(read/write)" is title-cased', () => {
+    const copy = cardCopyFor('employee', {
+      name: 'Billing & AR Specialist',
+      systems: ['Invoices (AR) (read/write)', 'CRM / booking system (read only)'],
+    }, noOwners);
+    expect(copy.meta).toBe('Systems: Invoices (AR) (read/write), CRM / booking system (read only)');
+    expect(copy.meta).not.toMatch(/\(Read\/Write\)/);
+    expect(copy.meta).not.toMatch(/\(Read Only\)/);
     expect(copy.detail).toMatch(/supervised/i);
     expect(copy.detail).toMatch(/SOP/i);
+  });
+
+  // ⚠ R4 — §11b, "put the fact on the card". evidence_quote is the
+  // customer's own sentence, checked VERBATIM against the transcript by
+  // supabase/functions/_shared/discoveryProposals.ts, and it is the entire
+  // reason this role is being offered rather than one of the other fourteen.
+  // The mechanical gate can prove the model did not invent those words; it
+  // cannot prove the role fits, and its own header says so. The person
+  // reading their own sentence next to the job title is the only thing that
+  // can — so hiding it in the Details drawer would leave the judgement to the
+  // half of the system that is admittedly incapable of making it.
+  // RED if either the quote or the fit_reason falls off the card.
+  it('employee: the customer\'s own quoted words are ON THE CARD, next to the fit reason', () => {
+    const copy = cardCopyFor('employee', {
+      name: 'Google Ads Specialist',
+      systems: ['Ads platform (read only)'],
+      evidence_quote: 'we do run Google Ads',
+      fit_reason: 'They already run Google Ads themselves and nobody is watching the spend.',
+    }, noOwners);
+    expect(copy.meta).toContain('we do run Google Ads');
+    expect(copy.meta).toContain('Systems: Ads platform (read only)');
+    expect(copy.detail).toContain('They already run Google Ads themselves');
+    // the consequence sentence survives alongside it — the quote must not
+    // push "starts supervised, sends nothing" off the card
+    expect(copy.detail).toMatch(/supervised/i);
+    expect(copy.detail).toMatch(/sends nothing/i);
+  });
+
+  // The degraded shape still renders honestly — RED if a payload with no
+  // quote (an older row, or a hand-built one) renders an empty quotation.
+  it('employee: a card with no quote falls back to the generic sentence, never an empty quotation', () => {
+    const copy = cardCopyFor('employee', { name: 'Billing & AR Specialist', systems: ['Invoices (AR) (read/write)'] }, noOwners);
+    expect(copy.meta).toBe('Systems: Invoices (AR) (read/write)');
+    expect(copy.meta).not.toContain('“');
+    expect(copy.detail).toMatch(/^Comes with a published SOP/);
   });
 
   it('guardrail: the rule sentence is the title, verbatim — RED if it gets paraphrased or truncated', () => {

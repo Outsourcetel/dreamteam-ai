@@ -116,13 +116,23 @@ const CATEGORY_SHORT_LOCAL: Record<string, string> = {
   other: 'Other',
 };
 
-/** A connector category ("erp_financials") to the same short label
+/** A CONNECTOR CATEGORY KEY ("erp_financials") to the same short label
  *  src/lib/categoryContracts.ts's CATEGORY_SHORT already uses elsewhere in
  *  the app — duplicated here (not imported) to keep this module's only
  *  dependency being plain data, no risk of pulling in anything with I/O.
- *  Falls back to humanizeToken for anything outside the known set (an
- *  employee's required_connector_categories can legitimately name a
- *  provider-specific category this table doesn't know about). */
+ *  Falls back to humanizeToken for anything outside the known set.
+ *
+ *  ⚠ CATEGORY KEYS ONLY. M1 of the 2026-08-15 review: this used to be mapped
+ *  over an employee payload's `systems`, and the doc comment above still
+ *  described those as "an employee's required_connector_categories" long
+ *  after BLOCKER 2 rebuilt them from role_archetypes.system_templates. They
+ *  are no longer category keys — they are finished display strings carrying
+ *  the reach in parentheses ("Invoices (AR) (read/write)"), and humanizeToken
+ *  title-cases every word, so the card rendered "Invoices (AR) (Read/Write)".
+ *  A stale doc comment is how that survived review: it said the input was
+ *  something it had stopped being. Employee systems are now rendered
+ *  verbatim; the only caller left is humanizeConnectorTouch below, on a
+ *  genuine category token. */
 export function humanizeSystem(key: string): string {
   return CATEGORY_SHORT_LOCAL[key] ?? humanizeToken(key);
 }
@@ -146,7 +156,7 @@ export function humanizeConnectorTouch(raw: string): string {
   const spaceIdx = trimmed.indexOf(' ');
   const firstWord = spaceIdx === -1 ? trimmed : trimmed.slice(0, spaceIdx);
   const rest = spaceIdx === -1 ? '' : trimmed.slice(spaceIdx);
-  if (CATEGORY_SHORT_LOCAL[firstWord]) return `${CATEGORY_SHORT_LOCAL[firstWord]}${rest}`;
+  if (CATEGORY_SHORT_LOCAL[firstWord]) return `${humanizeSystem(firstWord)}${rest}`;
   return /_/.test(trimmed) ? humanizeToken(trimmed) : trimmed;
 }
 
@@ -322,11 +332,74 @@ export function cardCopyFor(
 
     case 'employee': {
       const name = str(payload.name) || 'This role';
-      const systems = strArray(payload.systems).map(humanizeSystem);
+      // M1 (2026-08-15 review): NOT humanizeSystem'd. Since BLOCKER 2 these
+      // are finished display strings built from role_archetypes
+      // .system_templates — label + reach — not category keys, and
+      // title-casing them turned "Invoices (AR) (read/write)" into
+      // "Invoices (AR) (Read/Write)".
+      const systems = strArray(payload.systems);
+      // §11b, and the reason this fix wave exists: PUT THE FACT ON THE CARD.
+      // The note recorded under the topic that nominated this role is the
+      // entire reason it is being offered rather than one of the other
+      // fourteen. The mechanical gate can prove the fill model did not invent
+      // those words; it CANNOT prove the role fits. The person reading the
+      // note next to the job title is the only thing that can, so hiding it
+      // behind the Details drawer would leave the judgement to the half of the
+      // system that is admittedly incapable of making it. fit_reason leads the
+      // detail line for the same reason: before this, every card from one
+      // dimension carried the identical generic sentence.
+      //
+      // ⚠⚠ TWO THINGS THIS DELIBERATELY DOES NOT DO, both measured defects.
+      //
+      // 1. IT DOES NOT SAY "You told us". `coverage[dim].evidence` is written
+      //    by the INTERVIEW model — its extraction prompt asks for "the
+      //    concrete fact, YOUR OWN WORDS, under 300 characters" — so it is a
+      //    paraphrase, not a transcription. Putting a machine's summary inside
+      //    quotation marks and attributing it to the person reading the card
+      //    is the strongest available version of "looks governed and is not",
+      //    and it is worst precisely here, on the fact the design nominates as
+      //    the backstop. "What we recorded under <topic>" is what actually
+      //    happened, so that is what it says.
+      //
+      // 2. IT DOES NOT SHOW THE QUOTED SPAN ALONE. Nothing requires the span
+      //    to preserve the meaning of the sentence it came from, and a
+      //    substring can invert it. Measured, all three passed the gate:
+      //      recorded: "we don't run Google Ads at all, it's all word of mouth"
+      //      quoted:   "run Google Ads at all"           -> offers Google Ads
+      //      recorded: "we never chase overdue invoices, the owner does it"
+      //      quoted:   "chase overdue invoices"          -> offers Billing & AR
+      //      recorded: "if we ever grow we might need someone on social, not now"
+      //      quoted:   "need someone to manage social media" -> offers Social
+      //    That survives a customer's judgement, because they recognise words
+      //    they really did say and cannot see the "don't" that was cropped off.
+      //    So the WHOLE recorded note goes on the card and the span is marked
+      //    inside it. The backstop only works if the negation is still visible.
+      const fit = str(payload.fit_reason);
+      const quote = str(payload.evidence_quote);
+      const sources = Array.isArray(payload.evidence_sources)
+        ? (payload.evidence_sources as Array<Record<string, unknown>>)
+        : [];
+      // The source the span was taken from, if it can be identified; else the
+      // first. Matching is a plain case-insensitive containment test — the
+      // same relationship the gate enforced, not a second, looser one.
+      const needle = quote.toLowerCase();
+      const cited = sources.find((s) => str(s.evidence).toLowerCase().includes(needle)) ?? sources[0];
+      const citedTopic = cited ? str(cited.title) : '';
+      const citedNote = cited ? str(cited.evidence) : '';
+      const heard = citedNote
+        ? `What we recorded under ${citedTopic || 'this topic'}: ${citedNote}`
+        : quote
+          ? `What we recorded: ${quote}`
+          : null;
       return {
         title: `Add ${name} to your team`,
-        detail: 'Comes with a published SOP. Starts supervised, drafts everything, sends nothing until you say so.',
-        meta: systems.length ? `Systems: ${systems.join(', ')}` : 'No systems requested yet.',
+        detail: fit
+          ? `${fit} Starts supervised, drafts everything, sends nothing until you say so.`
+          : 'Comes with a published SOP. Starts supervised, drafts everything, sends nothing until you say so.',
+        meta: [
+          heard,
+          systems.length ? `Systems: ${systems.join(', ')}` : 'No systems requested yet.',
+        ].filter(Boolean).join(' · '),
         nudge: 'You can add or remove systems any time after hiring.',
       };
     }

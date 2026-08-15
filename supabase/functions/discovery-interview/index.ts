@@ -125,10 +125,14 @@ import {
 import {
   proposalsFrom,
   validatePayload,
-  applyModelFill,
+  applyFillToDraft,
+  vocabularyOrUndefined,
+  ROLE_ARCHETYPE_SELECT,
   type ArchetypeLike,
   type ProviderCatalogRow,
   type ProposalDraft,
+  type ValidatePayloadOptions,
+  type EvidenceSource,
 } from '../_shared/discoveryProposals.ts';
 
 // Re-exported so this remains a real, documented export of the deployed
@@ -241,10 +245,16 @@ function validateExtraction(
 // (.superpowers/sdd/2026-08-13-discovery-proposals-and-creation).
 // proposalsFrom/validatePayload (_shared/discoveryProposals.ts) are pure —
 // this is the glue that gives them the live data they need and, for the
-// three kinds a pure function cannot finish (guardrail/procedure/
+// four kinds a pure function cannot finish (employee/guardrail/procedure/
 // trust_rule — see that module's header), the one model call that fills in
 // the literal §11b says must be on the card before either path is allowed
 // through the SAME validatePayload gate.
+//
+// ⚠ employee joined that list on 2026-08-15. It is NOT a new filter step: a
+// candidate whose fit_reason the model cannot ground fails the same
+// validatePayload every other incomplete payload fails, and is counted and
+// logged on the same line. See discoveryProposals.ts's "EMPLOYEE IS
+// MODEL-FILLED" for the defect that moved it.
 //
 // Writes ONLY to discovery_proposals, state='pending'. Never creates a
 // digital_employees, playbook_definitions, guardrail_rules, connectors or
@@ -253,9 +263,9 @@ function validateExtraction(
 // respected, it is never in scope.
 // ============================================================================
 
-/** Best-effort model fill for the three kinds proposalsFrom cannot finish on
- *  its own. Replaces each draft's `payload` with `applyModelFill(kind,
- *  payload, fill)` (_shared/discoveryProposals.ts) — REVIEW ROUND 1,
+/** Best-effort model fill for the four kinds proposalsFrom cannot finish on
+ *  its own. Hands each draft to `applyFillToDraft`
+ *  (_shared/discoveryProposals.ts) — REVIEW ROUND 1,
  *  Important 3: that function, not this one, owns the per-kind whitelist,
  *  so the same rule is enforced whether a caller reaches it from here or
  *  from a test. This function NEVER marks a draft valid; validatePayload
@@ -272,17 +282,54 @@ async function fillProposalLiterals(
   drafts: readonly ProposalDraft[],
   employeeArchetypeKeys: readonly string[],
   validActionCategories: readonly string[],
+  archetypeByKey: ReadonlyMap<string, ArchetypeLike>,
 ): Promise<void> {
   if (drafts.length === 0) return;
 
-  const items = drafts.map((d, idx) => ({
-    idx,
-    kind: d.kind,
-    dimension: d.source_dimension,
-    evidence: typeof d.payload.evidence === 'string' && d.payload.evidence
-      ? d.payload.evidence
-      : d.rationale,
-  }));
+  const items = drafts.map((d, idx) => {
+    const base: Record<string, unknown> = {
+      idx,
+      kind: d.kind,
+      dimension: d.source_dimension,
+      evidence: typeof d.payload.evidence === 'string' && d.payload.evidence
+        ? d.payload.evidence
+        : d.rationale,
+    };
+    if (d.kind !== 'employee') return base;
+    // The role's OWN words, read LIVE from public.role_archetypes by the
+    // caller — never a hardcoded description here, and never a hardcoded
+    // notion of which roles suit which industry. The model gets the role and
+    // the customer's sentence, and is asked to say whether the second
+    // supports the first.
+    const archetypeKey = String(d.payload.archetype_key ?? '');
+    const arch = archetypeByKey.get(archetypeKey);
+    // BLOCKER 1 (2026-08-15 review): the model sees EVERY heard dimension's
+    // sentence for this role, not just the first one's. Sent as separate
+    // entries rather than one joined string precisely because
+    // `evidence_quote` must be verbatim from ONE of them — a model shown a
+    // joined blob would reasonably quote across the seam and be refused for
+    // it. Measured defect this closes: "we do run Google Ads" recorded under
+    // systems_of_record (ordinal 9) was invisible to google_ads, which bound
+    // winning_business (ordinal 5) and its "leads come from referrals".
+    const sources = (Array.isArray(d.payload.evidence_sources) ? d.payload.evidence_sources : []) as EvidenceSource[];
+    // ⚠ `evidence` IS DELETED FROM THE EMPLOYEE ITEM, and that is the whole
+    // point of the two lines above. `base.evidence` is the ' · '-joined union
+    // of every source. Leaving it in place meant each employee item carried
+    // BOTH — a field literally named `evidence` holding the joined blob, and
+    // `evidence_sources` holding the separate spans — so the comment above
+    // described a design the object contradicted three lines later. A model
+    // that quotes from the obvious field is refused for straddling the seam,
+    // silently, counted only in `refused`.
+    const { evidence: _joined, ...employeeBase } = base;
+    return {
+      ...employeeBase,
+      archetype_key: archetypeKey,
+      role_name: arch?.name ?? String(d.payload.name ?? ''),
+      role_description: arch?.description ?? '',
+      role_responsibilities: arch?.responsibilities ?? [],
+      evidence_sources: sources.map((s) => ({ topic: s.title, said: s.evidence })),
+    };
+  });
 
   // REVIEW ROUND 1, Important 1: no more "unassigned" as an offered answer —
   // instructing a model to emit a placeholder that the gate then has to
@@ -297,21 +344,54 @@ async function fillProposalLiterals(
     '',
     'You are given several DRAFT items. For each, return exactly the fields listed for its "kind":',
     '',
+    // ── employee ──────────────────────────────────────────────────────────
+    // THE DEFAULT IS TO DECLINE, said in the prompt in those words, because
+    // the candidate list handed to the model is deliberately the WIDEST the
+    // answer may be, not a shortlist: it is every role the topic could
+    // conceivably involve (winning_business alone nominates six, including
+    // SEO, Google Ads and social media). A model that treats the list as a
+    // recommendation reproduces exactly the defect this exists to fix, so
+    // "most of these will not fit" and "omitting is the correct answer" are
+    // stated outright rather than implied.
+    '"employee": return BOTH of these two fields, or neither:',
+    '  - "evidence_quote" — a span copied EXACTLY, character for character, from ONE of that item\'s "evidence_sources[].said" strings. At least 3 words. Do not tidy it, do not fix its grammar, do not merge words from two different entries, do not join two parts with an ellipsis, do not paraphrase it. The platform checks it verbatim against those strings and refuses the whole item if it does not match, so an approximate quote costs you the item.',
+    '  - Choose a span that still means what the sentence meant. If the recorded note says they do NOT do something, or want it only later, that is a reason to DECLINE the item — never a span to quote out of its negation.',
+    '  - "fit_reason" — ONE short sentence, IN YOUR OWN WORDS, saying what that quoted fact makes true about this business that is worth paying this role to handle. Paraphrase freely here; this one is not checked verbatim.',
+    'THE DEFAULT FOR AN EMPLOYEE ITEM IS TO DECLINE, and declining is done by OMITTING both fields (or returning null for them). The roles you are shown are not a shortlist: they are every role the interview topic could conceivably involve, for any business in any industry. Most of them will NOT fit the business in front of you. If nothing the customer said clearly supports hiring this specific role for this specific business, OMIT them. That is the CORRECT answer and the platform will simply not offer the role — it is not a failure, you are not being marked on how many you fill in, and filling one in on thin evidence is a worse outcome than leaving it empty, because the customer will believe the recommendation came from what they told us. The quote goes on the card in front of them: if you would be embarrassed to have this customer read that sentence next to that job title, decline.',
+    'Do NOT restate the role\'s own name, description or responsibilities back at us ("a Support Agent handles support tickets") — that is true of every business on earth and therefore says nothing about this one. Do not write generic value claims ("this role would help the business grow"). If the only thing you can write is generic, the honest answer is to omit both fields.',
+    '',
     '"guardrail": return "pattern" (a short "|"-separated list of the literal words or phrases the rule matches, lowercase, e.g. "refund|chargeback|free month" — at most a handful of tokens, never a sentence) OR "threshold" (a bare number, no words) — whichever the evidence actually supports. Never both, never neither if the evidence gives you anything concrete to work with.',
     '"procedure": return "name" (a short title), "trigger" (the concrete event or schedule that starts it, in the evidence\'s own terms) and "steps" (an ordered array of 2 to 6 short, concrete steps the evidence actually implies).',
     `"trust_rule": return "de_ref" — the single best match from this session's proposed employees, one of ${JSON.stringify(employeeArchetypeKeys)}, formatted EXACTLY as "archetype:<key>". If none of those employees plausibly owns this approval, OMIT de_ref entirely (and therefore the whole item) — never write "unassigned" or invent a reference. Also return "action_category" chosen EXACTLY from this workspace's real category list: ${JSON.stringify(validActionCategories)} — if none of them fits, OMIT action_category rather than inventing a new one. Also return "cap" (a bare number — the literal amount or threshold named in the evidence, no words) and "above_cap" (one short sentence: what happens above it).`,
     '',
     'If an item\'s evidence genuinely does not support a real value for a required field, OMIT that field rather than guessing — an omitted field means the platform will correctly decline to show that item to the customer, which is the safe outcome, not a failure.',
     '',
-    'Return ONLY a JSON array, one object per item, each carrying "idx" copied from the input plus only the fields described above for that item\'s kind. Nothing else — no prose, no markdown fences.',
+    // BLOCKER 2 (2026-08-15 review): the response used to be matched to
+    // drafts by array index ALONE. An answer written for item 4 landing on
+    // item 7 passed every check and rendered as a specific, customer-grounded
+    // sentence under the wrong job title. The model must now say which item
+    // each answer is for, in fields the platform can compare — and for an
+    // employee it is REQUIRED, because that is the kind where a mismatch is
+    // invisible on the card.
+    'Return ONLY a JSON array, one object per item, each carrying "idx" AND "kind" copied EXACTLY from that input item — and, for an "employee" item, "archetype_key" copied exactly too — plus only the fields described above for that item\'s kind. Nothing else — no prose, no markdown fences.',
+    'The platform matches your answers back to the items by those copied fields. An employee answer with no "archetype_key", or one whose copied value does not match the item it lands on, is DISCARDED WHOLESALE — so copy them, and never move an answer from one item to another.',
     FIREWALL_RULES,
   ].join('\n');
 
   const userMsg = `DRAFT ITEMS:\n${wrapUntrusted(JSON.stringify(items), 'proposal-fill-items')}`;
 
+  // The fill is ONE call covering every draft, and a truncated JSON array
+  // silently drops its tail — which, now that employee is a filled kind,
+  // would read as "the model declined the last N roles" rather than as the
+  // truncation it is. A real interview can carry 15+ employee candidates, so
+  // the budget scales with the item count instead of sitting at the 1024
+  // default that was sized when at most a handful of structural drafts ever
+  // reached here.
+  const fillMaxTokens = Math.min(4096, Math.max(1024, 256 + drafts.length * 160));
+
   let parsed: unknown[] | null = null;
   try {
-    const res = await callFillModel(admin, system, [{ role: 'user', content: userMsg }]);
+    const res = await callFillModel(admin, system, [{ role: 'user', content: userMsg }], fillMaxTokens);
     if ('error' in res) {
       console.error(`[discovery-interview] proposal-fill model call failed: ${res.error}`);
     } else {
@@ -334,11 +414,26 @@ async function fillProposalLiterals(
 
   for (let i = 0; i < drafts.length; i++) {
     const fill = byIdx.get(i);
+    // No fill for this item is the model DECLINING it, and for an employee
+    // that is the documented correct answer, not an error: the payload stays
+    // incomplete and validatePayload refuses it downstream, counted as
+    // `refused` by the caller exactly like a guardrail with no pattern.
     if (!fill) continue;
     // REVIEW ROUND 1, Important 3: whitelist, not a blind merge — enforced
-    // by applyModelFill (_shared/discoveryProposals.ts), tested directly
-    // there against an adversarial fill object.
-    drafts[i].payload = applyModelFill(drafts[i].kind, drafts[i].payload, fill);
+    // by applyFillToDraft/applyModelFill (_shared/discoveryProposals.ts),
+    // tested directly there against an adversarial fill object.
+    // BLOCKER 2 (2026-08-15): the index lookup is no longer the ONLY thing
+    // deciding which draft an answer belongs to. applyFillToDraft refuses a
+    // fill that cannot prove it was written for this draft and returns the
+    // reason — see fillIdentityProblem for what "prove" means per kind and
+    // why employee is the strict one. A refused fill leaves the draft
+    // incomplete, so it is refused downstream by the same validatePayload as
+    // every other unfinished payload: still no second drop path, and the
+    // reason is logged here rather than swallowed.
+    const problem = applyFillToDraft(drafts[i], fill);
+    if (problem) {
+      console.error(`[discovery-interview] model fill discarded (${drafts[i].kind}, source_dimension=${drafts[i].source_dimension}): ${problem}`);
+    }
   }
 }
 
@@ -366,19 +461,59 @@ async function fillProposalLiterals(
  *  dimension proposes many employees — serves_archetypes has 13 entries in
  *  one place — so keying on the dimension would silently drop every employee
  *  after the first. Migration 740's probe 2 fires exactly that case. */
+/** Why the model fill did or did not run — IMPORTANT 6 (2026-08-15 review).
+ *
+ *  THE DEFECT: emitProposals checks check_tenant_ai_budget before filling,
+ *  but the 'end' action never checks it before calling emitProposals, while
+ *  'answer' returns 429. So an over-budget workspace that ends an interview
+ *  loses EVERY employee, guardrail, procedure and trust rule — all four
+ *  model-filled kinds refused at once, connectors alone surviving — and the
+ *  only trace was a console.error and a `refused` integer that reads exactly
+ *  like a correctly-narrowing interview. Before employee became model-filled,
+ *  employees survived that path because they were pure, so this path got
+ *  strictly worse in the same change.
+ *
+ *  WHY NOT A 429 ON 'end' TOO, argued rather than assumed: 'end' is the
+ *  caller-stops path (migration 739). Its own work — end_discovery_session,
+ *  the honest coverage/owed report — costs no AI at all, and it is the ONLY
+ *  way a session leaves 'running'. A 429 there would strand the customer's
+ *  session open indefinitely and give them no way to record that they
+ *  stopped, to fix a budget problem they cannot act on from that screen. That
+ *  trades a recoverable loss (proposals, which the interview can produce
+ *  again) for an unrecoverable one (a session nobody can close). So 'end'
+ *  still ends.
+ *
+ *  WHAT CHANGES: the outcome stops being silent. This field rides back in the
+ *  'end'/'answer' response next to the counts, so "this workspace is over its
+ *  AI budget" is distinguishable from "the customer's own words supported
+ *  nothing" — which is the distinction the refusal design depends on and the
+ *  one an integer alone cannot carry.
+ *
+ *  ⚠ 'skipped_ai_budget' and 'skipped_no_llm' both mean the loss is REAL and
+ *  NOT retried: emitProposals' idempotency guard means a second 'end' on the
+ *  same session proposes nothing. The caller is told so it can say so. */
+type ModelFillOutcome = 'not_needed' | 'ran' | 'skipped_no_llm' | 'skipped_ai_budget';
+
+interface EmitProposalsResult {
+  proposed: number;
+  refused: number;
+  skipped_already_proposed: boolean;
+  model_fill: ModelFillOutcome;
+}
+
 async function emitProposals(
   admin: SupabaseClient,
   tenantId: string,
   sessionId: string,
   dimensions: readonly DimensionRow[],
   coverage: DiscoveryCoverageMap,
-): Promise<{ proposed: number; refused: number; skipped_already_proposed: boolean }> {
+): Promise<EmitProposalsResult> {
   const { count: existing } = await admin
     .from('discovery_proposals')
     .select('id', { count: 'exact', head: true })
     .eq('session_id', sessionId);
   if ((existing ?? 0) > 0) {
-    return { proposed: 0, refused: 0, skipped_already_proposed: true };
+    return { proposed: 0, refused: 0, skipped_already_proposed: true, model_fill: 'not_needed' };
   }
 
   // REVIEW ROUND 1, Important 2: read the REAL, live action_category
@@ -391,7 +526,20 @@ async function emitProposals(
   // make the whitelist empty and silently block every trust_rule proposal
   // for exactly the customers this feature exists for.
   const [archResult, catalogResult, categoryResult] = await Promise.all([
-    admin.from('role_archetypes').select('key, name, domain, required_connector_categories').eq('status', 'active'),
+    // ⚠ THE COLUMN LIST IS NOT WRITTEN HERE. It is ROLE_ARCHETYPE_SELECT,
+    // exported from _shared/discoveryProposals.ts and asserted by
+    // tests/discovery-proposals.test.ts — IMPORTANT 1 of the 2026-08-15
+    // review, PROVEN BY MUTATION: reverting this SELECT to the pre-BLOCKER-2
+    // list left the whole suite green while, in production, every employee
+    // would have been refused for "does not say what systems it can touch"
+    // and the log line would have read exactly like a correctly-narrowing
+    // interview. No test can import this file (Node's ESM loader rejects its
+    // https: imports) and tsconfig excludes supabase/functions, so a literal
+    // list here is pinned by nothing whatsoever. See that constant's own
+    // header for why each column is load-bearing.
+    admin.from('role_archetypes')
+      .select(ROLE_ARCHETYPE_SELECT)
+      .eq('status', 'active'),
     admin.from('connector_providers').select('provider_key, label, category, aliases').eq('active', true),
     admin.from('trust_policies').select('action_category').limit(5000),
   ]);
@@ -399,6 +547,16 @@ async function emitProposals(
   if (catalogResult.error) console.error(`[discovery-interview] connector_providers fetch failed (proceeding without): ${catalogResult.error.message}`);
   if (categoryResult.error) console.error(`[discovery-interview] trust_policies category fetch failed (proceeding without a namespace check): ${categoryResult.error.message}`);
   const archetypes = (archResult.data ?? []) as ArchetypeLike[];
+  const archetypeByKey = new Map(archetypes.map((a) => [a.key, a] as const));
+  /** The archetype's OWN vocabulary, for fitReasonProblem check (b) — a
+   *  fit_reason made only of these words is the role describing itself,
+   *  which is true for every business and so evidence about none. Built from
+   *  the live row, never from a table in code. */
+  const archetypeSelfText = (key: string): string | undefined => {
+    const a = archetypeByKey.get(key);
+    if (!a) return undefined;
+    return [a.name, a.description ?? '', ...(a.responsibilities ?? [])].join(' ');
+  };
   const providerCatalog = (catalogResult.data ?? []) as ProviderCatalogRow[];
   const validActionCategories = new Set(
     ((categoryResult.data ?? []) as Array<{ action_category: string | null }>)
@@ -411,40 +569,59 @@ async function emitProposals(
   // fallback validatePayload already takes when this option is omitted
   // entirely. Enforcing membership against a known-empty set would refuse
   // every trust_rule outright, which is a worse failure than not checking.
-  const validActionCategoriesOrUndefined = validActionCategories.size > 0 ? validActionCategories : undefined;
+  // ⚠ vocabularyOrUndefined, not an inline `.size > 0` ternary, because the
+  // de_ref set below needs the IDENTICAL degradation and had the opposite
+  // one — see IMPORTANT 5 and that function's own header.
+  const validActionCategoriesOrUndefined = vocabularyOrUndefined(validActionCategories);
 
   const drafts = proposalsFrom(dimensions, coverage, archetypes, { providerCatalog });
-  if (drafts.length === 0) return { proposed: 0, refused: 0, skipped_already_proposed: false };
+  if (drafts.length === 0) return { proposed: 0, refused: 0, skipped_already_proposed: false, model_fill: 'not_needed' };
 
+  // The employee CANDIDATES — every one of which may still be declined by
+  // the fill below. This list is what the fill prompt offers a trust_rule's
+  // de_ref, because the prompt is written before any validation has run; the
+  // de_ref MEMBERSHIP check further down uses the narrower SURVIVOR set
+  // instead, so a trust rule naming an employee the interview ended up not
+  // offering is refused rather than left pointing at nothing.
   const employeeArchetypeKeys = drafts
     .filter((d) => d.kind === 'employee')
     .map((d) => String(d.payload.archetype_key));
-  // REVIEW ROUND 1, Important 1: the exact "archetype:<key>" references a
-  // trust_rule's de_ref is allowed to name THIS session — nothing else
-  // exists yet for it to point at (Task 1 creates no rows besides these
-  // proposals), so an employee not proposed this round is not a real
-  // reference either.
-  const validDeRefs = new Set(employeeArchetypeKeys.map((k) => `archetype:${k}`));
 
   const needsFill = drafts.filter((d) => d.needs_model_fill);
+  let modelFill: ModelFillOutcome = 'not_needed';
   if (needsFill.length > 0) {
+    // NO MODEL, OR BUDGET EXCEEDED → every model-dependent draft stays
+    // incomplete and is refused below. For employee that is the SAFE
+    // direction, not a silent loss: offering all six of winning_business's
+    // roles unfiltered is precisely the defect this path exists to stop. It
+    // is also close to unreachable in practice — the interview's own 'start'
+    // action returns 503 llm_not_configured before a session can exist
+    // (see the `action === 'start'` block below), so a covered interview
+    // without a provider means the key was removed mid-interview.
     if (!(await hasLLMProvider(admin, tenantId))) {
+      modelFill = 'skipped_no_llm';
       console.error(`[discovery-interview] skipping model-fill for ${needsFill.length} proposal(s): no AI engine configured for this workspace`);
     } else {
       const { data: budget, error: budgetErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
       if (budgetBlocked(budgetErr, budget)) {
-        console.error(`[discovery-interview] skipping model-fill for ${needsFill.length} proposal(s): AI budget exceeded`);
+        // IMPORTANT 6 — see ModelFillOutcome's header. Reported back to the
+        // caller, not only logged: every model-filled kind is about to be
+        // refused for a reason that has nothing to do with what the customer
+        // said, and an integer count cannot carry that difference.
+        modelFill = 'skipped_ai_budget';
+        console.error(`[discovery-interview] skipping model-fill for ${needsFill.length} proposal(s): AI budget exceeded — every employee, guardrail, procedure and trust rule in this session will now be refused for want of its literal, and this session will not be re-proposed`);
       } else {
-        await fillProposalLiterals(admin, needsFill, employeeArchetypeKeys, [...validActionCategories]);
+        modelFill = 'ran';
+        await fillProposalLiterals(admin, needsFill, employeeArchetypeKeys, [...validActionCategories], archetypeByKey);
       }
     }
   }
 
   const rows: Record<string, unknown>[] = [];
   let refused = 0;
-  for (const d of drafts) {
+  const keepOrRefuse = (d: ProposalDraft, options: ValidatePayloadOptions): boolean => {
     try {
-      validatePayload(d.kind, d.payload, { validActionCategories: validActionCategoriesOrUndefined, validDeRefs });
+      validatePayload(d.kind, d.payload, options);
       rows.push({
         session_id: sessionId,
         tenant_id: tenantId,
@@ -454,14 +631,54 @@ async function emitProposals(
         source_dimension: d.source_dimension,
         state: 'pending',
       });
+      return true;
     } catch (e) {
       refused++;
       // Named, not silent: the refusal IS the feature (§11b) — a guardrail
-      // with no pattern, a trust rule with no cap, is unapprovable, and
-      // dropping it here rather than writing it incomplete is correct
-      // behaviour, not a bug to fix by loosening validatePayload.
+      // with no pattern, a trust rule with no cap, an employee the customer's
+      // own words do not support, is unapprovable, and dropping it here
+      // rather than writing it incomplete is correct behaviour, not a bug to
+      // fix by loosening validatePayload. ⚠ An employee refusal is now the
+      // ORDINARY case, not an anomaly: the candidate list is every role the
+      // topic could involve, and most will not fit. It is logged at the same
+      // level through the same path deliberately — a second, quieter drop
+      // path is exactly how a filter stops being auditable.
       console.error(`[discovery-interview] proposal refused, not persisted (${d.kind}, source_dimension=${d.source_dimension}): ${e instanceof Error ? e.message : String(e)}`);
+      return false;
     }
+  };
+
+  // PASS 1 — employees, because pass 2's trust_rule de_ref check needs to
+  // know which of them actually survived.
+  const survivingEmployeeKeys: string[] = [];
+  for (const d of drafts) {
+    if (d.kind !== 'employee') continue;
+    const key = String(d.payload.archetype_key ?? '');
+    if (keepOrRefuse(d, { archetypeSelfText: archetypeSelfText(key) })) survivingEmployeeKeys.push(key);
+  }
+  // REVIEW ROUND 1, Important 1: the exact "archetype:<key>" references a
+  // trust_rule's de_ref is allowed to name THIS session — nothing else
+  // exists yet for it to point at (Task 1 creates no rows besides these
+  // proposals), so an employee not proposed this round is not a real
+  // reference either. Since 2026-08-15 "proposed this round" means SURVIVED
+  // validation, not merely "was a candidate": a trust rule handing autonomy
+  // to a role the customer is never offered is not something a person can
+  // approve.
+  //
+  // ⚠ IMPORTANT 5 (2026-08-15 review), measured: this used to be a bare
+  // `new Set(...)`, and an EMPTY Set is TRUTHY. A session where zero
+  // employees survived therefore refused EVERY trust_rule — including a cap
+  // the customer had volunteered out loud, on a dimension that has nothing
+  // to do with which roles fit. Now it degrades to `undefined` exactly as
+  // validActionCategories above does: validatePayload falls back to its
+  // shape checks, which still refuse "unassigned" and free text. Narrowing
+  // when we know nothing is honest; refusing everything is not.
+  const validDeRefs = vocabularyOrUndefined(survivingEmployeeKeys.map((k) => `archetype:${k}`));
+
+  // PASS 2 — everything else.
+  for (const d of drafts) {
+    if (d.kind === 'employee') continue;
+    keepOrRefuse(d, { validActionCategories: validActionCategoriesOrUndefined, validDeRefs });
   }
 
   if (rows.length > 0) {
@@ -471,7 +688,7 @@ async function emitProposals(
     if (insErr) throw new Error(`discovery_proposals upsert failed: ${insErr.message}`);
   }
 
-  return { proposed: rows.length, refused, skipped_already_proposed: false };
+  return { proposed: rows.length, refused, skipped_already_proposed: false, model_fill: modelFill };
 }
 
 serve(async (req) => {
@@ -602,9 +819,16 @@ serve(async (req) => {
       // 'heard' dimensions ever produce anything — see
       // discoveryProposals.ts's hard rule — so a mostly-unheard interview
       // simply proposes little or nothing, honestly.
-      const proposals = wasRunning
+      // ⚠ IMPORTANT 6 (2026-08-15 review): there is deliberately NO budget
+      // gate in front of this call, and no 429 on this action. See
+      // ModelFillOutcome's header for the argument — briefly: 'end' is the
+      // only way a session leaves 'running', its own work costs no AI, and
+      // stranding a session open is a worse loss than losing proposals the
+      // interview can produce again. The over-budget outcome is instead made
+      // VISIBLE, in `proposals.model_fill` below.
+      const proposals: EmitProposalsResult = wasRunning
         ? await emitProposals(admin, tenantId, sessionId, dimensions, endCoverage)
-        : { proposed: 0, refused: 0, skipped_already_proposed: true };
+        : { proposed: 0, refused: 0, skipped_already_proposed: true, model_fill: 'not_needed' };
 
       return json({
         session_id: sessionId,
