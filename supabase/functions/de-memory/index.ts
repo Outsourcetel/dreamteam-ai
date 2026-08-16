@@ -86,7 +86,7 @@ serve(async (req) => {
       const content = typeof body.content === 'string' ? body.content.trim() : '';
       if (!content) return json({ error: 'content required' }, 400);
       const embedding = await embedText(content.slice(0, 4000)); // null-safe
-      const { data, error } = await admin.rpc('de_memory_write', {
+      const { data, error } = await admin.rpc('de_memory_write_internal', {
         p_tenant_id: tenant_id, p_de_id: de_id, p_content: content,
         p_embedding: embedding, p_subject_kind: body.subject_kind ?? 'general',
         p_subject_ref: body.subject_ref ?? null, p_kind: body.kind ?? 'episodic',
@@ -100,7 +100,7 @@ serve(async (req) => {
     if (action === 'search') {
       const query = typeof body.query === 'string' ? body.query.trim() : '';
       const embedding = query ? await embedText(query.slice(0, 2000)) : null;
-      const { data, error } = await admin.rpc('de_memory_search', {
+      const { data, error } = await admin.rpc('de_memory_search_internal', {
         p_tenant_id: tenant_id, p_de_id: de_id, p_query_embedding: embedding,
         p_subject_kind: body.subject_kind ?? null, p_subject_ref: body.subject_ref ?? null,
         p_kinds: Array.isArray(body.kinds) ? body.kinds : null,

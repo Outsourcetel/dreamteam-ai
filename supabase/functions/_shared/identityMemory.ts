@@ -44,7 +44,7 @@ export async function recallIdentityMemory(
 ): Promise<MemoryItem[]> {
   if (!identityActive(opts.verdict) || !opts.deId || !opts.queryEmbedding) return [];
   try {
-    const { data } = await admin.rpc('de_memory_search', {
+    const { data } = await admin.rpc('de_memory_search_internal', {
       p_tenant_id: opts.tenantId, p_de_id: opts.deId, p_query_embedding: opts.queryEmbedding,
       p_subject_kind: 'identity', p_subject_ref: opts.verdict.memory_ref, p_kinds: null,
       p_match_count: opts.matchCount ?? 5,
@@ -69,7 +69,7 @@ export async function rememberIdentity(
 ): Promise<void> {
   if (!identityActive(opts.verdict) || !opts.deId || !opts.content || !opts.embedding) return;
   try {
-    await admin.rpc('de_memory_write', {
+    await admin.rpc('de_memory_write_internal', {
       p_tenant_id: opts.tenantId, p_de_id: opts.deId, p_content: opts.content, p_embedding: opts.embedding,
       p_subject_kind: 'identity', p_subject_ref: opts.verdict.memory_ref,
       p_kind: opts.kind ?? 'fact', p_salience: opts.salience ?? 0.5, p_source: opts.source ?? 'de',

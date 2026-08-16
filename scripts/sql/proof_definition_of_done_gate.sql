@@ -1,3 +1,16 @@
+-- ⚠ THIS PROOF CALLS assess_definition_of_done_INTERNAL, and must.
+-- It runs through scripts/db-query.mjs as `postgres`, where auth.uid() is NULL.
+-- Migration 749 gave the public wrapper a hard "not authenticated" refusal and
+-- moved the logic behind _internal, so the first call from this file would
+-- abort the whole DO block.
+--
+-- ⚠⚠ AND THE TWO pg_get_functiondef PINS BELOW MUST READ _internal TOO. After
+-- 749 the wrapper is eight lines of authority guard containing none of the
+-- gate's logic, so a blacklist probe pointed at it answers "absent" BY
+-- CONSTRUCTION, forever, no matter what the real function does — two paths,
+-- one counted. The md5 fingerprint has the same problem: it would track a
+-- wrapper that never changes while the logic it fingerprints moves underneath.
+--
 -- proof_definition_of_done_gate.sql  (mig 678)
 -- ===========================================================================
 -- ONE rolled-back transaction. Builds its own fixtures through the product's
@@ -41,10 +54,10 @@ declare
   v_ok      boolean;
 begin
   v_out := v_out || format('FUNCTION UNDER TEST  md5=%s%s',
-    md5(pg_get_functiondef('public.assess_definition_of_done(uuid,text,uuid,uuid)'::regprocedure)), E'\n');
+    md5(pg_get_functiondef('public.assess_definition_of_done_internal(uuid,text,uuid,uuid)'::regprocedure)), E'\n');
   v_out := v_out || format('BLACKLIST STILL PRESENT? %s%s',
     position($tok$<> 'failed'$tok$ in
-      pg_get_functiondef('public.assess_definition_of_done(uuid,text,uuid,uuid)'::regprocedure)) > 0, E'\n\n');
+      pg_get_functiondef('public.assess_definition_of_done_internal(uuid,text,uuid,uuid)'::regprocedure)) > 0, E'\n\n');
 
   select id into v_ten from public.tenants limit 1;
   select id into v_def from public.action_definitions limit 1;
@@ -63,7 +76,7 @@ begin
            p_request_summary => 'PROOF-678 A pending', p_receipt => null, p_result => null,
            p_task_title => 'PROOF-678 A', p_task_detail => '', p_create_task => true,
            p_origin_kind => 'de_work_item', p_origin_id => v_origin) into v_rec;
-  v_v := public.assess_definition_of_done(v_ten, 'de_work_item', v_origin, null);
+  v_v := public.assess_definition_of_done_internal(v_ten, 'de_work_item', v_origin, null);
   v_ok := (v_v->>'verified')::boolean; v_p := (v_v->>'pending_count')::int;
   v_out := v_out || format('  A. task still PENDING                    verified=%s pending=%s   %s%s',
     v_ok, v_p, case when not v_ok then 'CORRECT — an unapproved action is not done' else 'BROKEN' end, E'\n');
@@ -85,7 +98,7 @@ begin
   if v_claimid is null then
     raise exception 'PROOF-678 CANNOT RUN: the claim did not happen: %', v_claim;
   end if;
-  v_v := public.assess_definition_of_done(v_ten, 'de_work_item', v_origin, null);
+  v_v := public.assess_definition_of_done_internal(v_ten, 'de_work_item', v_origin, null);
   v_ok := (v_v->>'verified')::boolean; v_p := (v_v->>'pending_count')::int;
   v_out := v_out || format('  B. CLAIM ONLY (nothing sent)             verified=%s pending=%s   %s%s',
     v_ok, v_p, case when v_ok then 'DEFECT — the gate passed work that has not happened'
@@ -97,7 +110,7 @@ begin
      set receipt = 'REQ-8801 accepted by the customer system',
          result  = '{"ok":true,"status":200,"error":null,"ref":"REQ-8801"}'::jsonb
    where id = v_claimid;
-  v_v := public.assess_definition_of_done(v_ten, 'de_work_item', v_origin, null);
+  v_v := public.assess_definition_of_done_internal(v_ten, 'de_work_item', v_origin, null);
   v_ok := (v_v->>'verified')::boolean; v_p := (v_v->>'pending_count')::int;
   v_out := v_out || format('  C. CLAIM then SUCCESS (receipt landed)   verified=%s pending=%s   %s%s',
     v_ok, v_p, case when v_ok then 'CORRECT — a genuine completion still PASSES'
@@ -121,7 +134,7 @@ begin
      set decision = 'failed', resolves_task_id = null,
          result = '{"ok":false,"status":502,"error":"connector refused"}'::jsonb
    where id = v_claimid;
-  v_v := public.assess_definition_of_done(v_ten, 'de_work_item', v_origin, null);
+  v_v := public.assess_definition_of_done_internal(v_ten, 'de_work_item', v_origin, null);
   v_ok := (v_v->>'verified')::boolean; v_p := (v_v->>'pending_count')::int;
   v_out := v_out || format('  D. CLAIM then FAILURE                    verified=%s pending=%s   %s%s',
     v_ok, v_p, case when not v_ok then 'CORRECT — a failed call does not count as done'
@@ -139,7 +152,7 @@ begin
            p_result => '{"ok":true,"status":200,"error":null}'::jsonb,
            p_task_title => null, p_task_detail => null, p_create_task => false,
            p_origin_kind => 'de_work_item', p_origin_id => v_origin) into v_rec;
-  v_v := public.assess_definition_of_done(v_ten, 'de_work_item', v_origin, null);
+  v_v := public.assess_definition_of_done_internal(v_ten, 'de_work_item', v_origin, null);
   v_ok := (v_v->>'verified')::boolean; v_p := (v_v->>'pending_count')::int;
   v_out := v_out || format('  E. UNGATED success (auto_executed)       verified=%s pending=%s   %s%s',
     v_ok, v_p, case when v_ok and v_p = 0 then 'CORRECT — the ungated lifecycle is untouched'
@@ -163,7 +176,7 @@ begin
      set receipt = 'REQ-9999 applied', result = '{"ok":true,"status":200}'::jsonb,
          rolled_back_at = now()
    where id = v_claimid;
-  v_v := public.assess_definition_of_done(v_ten, 'de_work_item', v_origin, null);
+  v_v := public.assess_definition_of_done_internal(v_ten, 'de_work_item', v_origin, null);
   v_ok := (v_v->>'verified')::boolean; v_p := (v_v->>'pending_count')::int;
   v_out := v_out || format('  F. landed, then ROLLED BACK              verified=%s pending=%s   %s%s',
     v_ok, v_p, case when not v_ok then 'CORRECT — an undone action is not a completion'
@@ -193,7 +206,7 @@ begin
        values (v_ten, v_def, 'execute', 'expired', v_task, null,
                '{"reason":"Approved but never executed. Voided before a scheduled executor existed."}'::jsonb);
   update public.human_tasks set status = 'expired' where id = v_task;
-  v_v := public.assess_definition_of_done(v_ten, 'agentic_run', v_run, null);
+  v_v := public.assess_definition_of_done_internal(v_ten, 'agentic_run', v_run, null);
   v_ok := (v_v->>'verified')::boolean;
   v_out := v_out || format('  G. resolved by an EXPIRED tombstone      verified=%s unresolved=%s   %s%s',
     v_ok, v_v->>'unresolved',
@@ -217,7 +230,7 @@ begin
   update public.human_tasks set status = 'approved' where id = v_task;
   select public.claim_gated_action_execution(v_ten, v_task, v_gate) into v_claim;
   v_claimid := (v_claim->>'claim_row_id')::uuid;
-  v_v := public.assess_definition_of_done(v_ten, 'agentic_run', v_run2, null);
+  v_v := public.assess_definition_of_done_internal(v_ten, 'agentic_run', v_run2, null);
   v_out := v_out || format('  H1. anchor, CLAIM ONLY                   verified=%s   %s%s',
     (v_v->>'verified')::boolean,
     case when not (v_v->>'verified')::boolean then 'CORRECT — withheld before the call'
@@ -225,7 +238,7 @@ begin
   update public.action_executions
      set receipt = 'REQ-7710 applied', result = '{"ok":true,"status":200}'::jsonb
    where id = v_claimid;
-  v_v := public.assess_definition_of_done(v_ten, 'agentic_run', v_run2, null);
+  v_v := public.assess_definition_of_done_internal(v_ten, 'agentic_run', v_run2, null);
   v_ok := (v_v->>'verified')::boolean;
   v_out := v_out || format('  H2. anchor, GENUINE completion           verified=%s   %s%s',
     v_ok, case when v_ok then 'CORRECT — the anchor still passes real work'

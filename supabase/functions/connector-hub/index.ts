@@ -7435,7 +7435,7 @@ serve(async (req) => {
             const oKind = (originRow as { origin_kind?: string | null } | null)?.origin_kind ?? null;
             const oId = (originRow as { origin_id?: string | null } | null)?.origin_id ?? null;
             if (oKind === 'agentic_run' && oId) {
-              const { data: verdict } = await admin.rpc('assess_definition_of_done', { p_tenant_id: tenantId, p_scope: 'agentic_run', p_scope_id: oId, p_objective_id: null });
+              const { data: verdict } = await admin.rpc('assess_definition_of_done_internal', { p_tenant_id: tenantId, p_scope: 'agentic_run', p_scope_id: oId, p_objective_id: null });
               if ((verdict as { verified?: boolean } | null)?.verified === true) {
                 await admin.from('agentic_step_runs').update({ status: 'completed', updated_at: new Date().toISOString() })
                   .eq('id', oId).eq('tenant_id', tenantId).eq('status', 'awaiting_verification');

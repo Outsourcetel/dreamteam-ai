@@ -888,7 +888,7 @@ serve(async (req) => {
     // ── Recall durable memory for this conversation (muscle #4, mig 155) ──
     let memoryContext = '';
     if (subjectDeId && convId) {
-      const { data: mems } = await admin.rpc('de_memory_search', {
+      const { data: mems } = await admin.rpc('de_memory_search_internal', {
         p_tenant_id: tenantId, p_de_id: subjectDeId, p_query_embedding: qEmbedding,
         p_subject_kind: 'conversation', p_subject_ref: convId, p_match_count: 5,
       });
@@ -1256,7 +1256,7 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
     if (subjectDeId && convId && !escalate && !replayMode) {
       try {
         const memEmb = await embedText(`Q: ${question}\nA: ${parsed.answer}`.slice(0, 2000));
-        await admin.rpc('de_memory_write', {
+        await admin.rpc('de_memory_write_internal', {
           p_tenant_id: tenantId, p_de_id: subjectDeId,
           p_content: `Customer asked: "${question}" — I answered: ${parsed.answer.slice(0, 500)}`,
           p_embedding: memEmb, p_subject_kind: 'conversation', p_subject_ref: convId,

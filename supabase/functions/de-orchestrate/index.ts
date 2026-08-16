@@ -190,7 +190,7 @@ serve(async (req) => {
     if (routed && aj.conversation_id) {
       try {
         const memEmb = await embedText(`Routed: ${question}`.slice(0, 1500));
-        await admin.rpc('de_memory_write', {
+        await admin.rpc('de_memory_write_internal', {
           p_tenant_id: tenant_id, p_de_id: supervisor_de_id,
           p_content: `I routed "${question.slice(0, 200)}" to ${aj.de_name} (${routeReason}) — they answered with confidence ${aj.confidence}%.`,
           p_embedding: memEmb, p_subject_kind: 'conversation', p_subject_ref: aj.conversation_id,

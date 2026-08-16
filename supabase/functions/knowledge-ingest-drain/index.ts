@@ -246,7 +246,13 @@ serve(async (req) => {
     // Scope the CLAIM, never the result. Filtering after claiming would flip
     // other workspaces' items to 'running', burn an attempt each, and strand
     // them until the reaper ran (mig 351).
-    const { data: claimed, error: claimErr } = await admin.rpc('claim_ingestion_items', {
+    // ⚠ ALL FOUR INGESTION RPCs IN THIS FILE MOVED TO `_internal` IN MIG 749.
+    // The un-suffixed names now refuse a caller with no auth.uid() and no
+    // longer hold EXECUTE for service_role; this drain runs on the service-role
+    // admin client with no signed-in person. Deploy this WITH migration 749 —
+    // between apply and deploy every call here returns permission denied and
+    // the whole knowledge import pipeline stops.
+    const { data: claimed, error: claimErr } = await admin.rpc('claim_ingestion_items_internal', {
       p_limit: limit, p_tenant_id: body.tenant_id ?? null,
     });
     if (claimErr) return json({ error: claimErr.message }, 500);
@@ -287,7 +293,7 @@ serve(async (req) => {
           p_tenant_id: item.tenant_id, p_title: title, p_content: content,
         });
         if (dupId) {
-          await admin.rpc('complete_ingestion_item', {
+          await admin.rpc('complete_ingestion_item_internal', {
             p_item_id: item.id, p_doc_id: dupId, p_duplicate: true,
           });
           skipped++;
@@ -312,15 +318,15 @@ serve(async (req) => {
         await chunkAndEmbed(admin, doc.id, item.tenant_id, dispatch);
 
         // Records success AND files it into the job's Space.
-        await admin.rpc('complete_ingestion_item', {
+        await admin.rpc('complete_ingestion_item_internal', {
           p_item_id: item.id, p_doc_id: doc.id, p_duplicate: false,
         });
         succeeded++;
       } catch (e) {
         const kind: Kind = e instanceof ItemError ? e.kind : 'retryable';
         const msg = e instanceof Error ? e.message : String(e);
-        // fail_ingestion_item decides retry-vs-final using attempts and kind.
-        const { data: outcome } = await admin.rpc('fail_ingestion_item', {
+        // fail_ingestion_item_internal decides retry-vs-final using attempts and kind.
+        const { data: outcome } = await admin.rpc('fail_ingestion_item_internal', {
           p_item_id: item.id, p_error: msg, p_kind: kind,
         });
         if (outcome === 'failed') failed++;

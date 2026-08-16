@@ -434,10 +434,15 @@ serve(async (req) => {
     let certification: Record<string, unknown> | null = null;
     if (targetDeId) {
       try {
-        const { data: cert, error: certErr } = await admin.rpc('certify_de_from_eval', {
+        // ⚠ _internal, since mig 749. certify_de_from_eval now REFUSES a caller
+        // with no auth.uid() — this runs on the service-role admin client and
+        // has no signed-in person — and service_role's EXECUTE on the old name
+        // is revoked, so the un-suffixed call returns permission denied. Deploy
+        // this WITH migration 749.
+        const { data: cert, error: certErr } = await admin.rpc('certify_de_from_eval_internal', {
           p_de_id: targetDeId, p_archetype_key: deArchetype, p_eval_run_id: runId, p_threshold_pct: 80,
         });
-        if (certErr) console.error('certify_de_from_eval:', certErr.message);
+        if (certErr) console.error('certify_de_from_eval_internal:', certErr.message);
         else certification = cert as Record<string, unknown>;
       } catch (e) { console.error('certify_de_from_eval:', e); }
     }

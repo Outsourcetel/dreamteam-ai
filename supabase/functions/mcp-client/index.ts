@@ -338,7 +338,11 @@ serve(async (req) => {
       // allowlist cannot be read we do not know whether this tenant restricts
       // hosts, and `allowed === false` on a null answer is false — which used
       // to let the call through to an unvetted host.
-      const { data: allowed, error: allowErr } = await admin.rpc('mcp_host_allowed', { p_tenant_id: tenantId, p_host: host });
+      // ⚠ _internal, since mig 749. mcp_host_allowed now refuses a caller with
+      // no auth.uid(), and this runs on the service-role admin client — with
+      // the old name the fail-closed branch below would fire on EVERY call and
+      // every MCP request would 503. Deploy this WITH migration 749.
+      const { data: allowed, error: allowErr } = await admin.rpc('mcp_host_allowed_internal', { p_tenant_id: tenantId, p_host: host });
       if (allowErr) {
         console.error(`[mcp-client] host allowlist unreadable for ${host} — refusing (fail closed): ${allowErr.message}`);
         return json({

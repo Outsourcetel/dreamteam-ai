@@ -36,7 +36,7 @@ export async function assessAndLog(
   if (!gate.enabled) return { withhold: false, verdict: {} };
   const enforce = gate.mode === 'enforce';
   try {
-    const { data: verdict } = await admin.rpc('assess_definition_of_done', {
+    const { data: verdict } = await admin.rpc('assess_definition_of_done_internal', {
       p_tenant_id: tenantId, p_scope: scope, p_scope_id: scopeId, p_objective_id: objectiveId,
     });
     const verified = (verdict as { verified?: boolean } | null)?.verified === true;

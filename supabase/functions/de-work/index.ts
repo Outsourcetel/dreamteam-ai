@@ -224,8 +224,13 @@ async function compileSopToWorkItems(
     // Annotated because the RPC's return type infers circularly here — the
     // same shape as the two pre-existing occurrences in planObjective, fixed
     // rather than inherited.
+    // ⚠ ALL THREE enqueue CALLS IN THIS FILE MOVED TO `_internal` IN MIG 749.
+    // enqueue_de_work_item now refuses a caller with no auth.uid() and no
+    // longer holds EXECUTE for service_role; this loop runs on the service-role
+    // admin client. Deploy this WITH migration 749 — between apply and deploy
+    // the autonomy loop enqueues nothing and every objective stalls.
     const { data: newId, error: enqErr }: { data: string | null; error: { message: string } | null } =
-      await admin.rpc('enqueue_de_work_item', {
+      await admin.rpc('enqueue_de_work_item_internal', {
       p_tenant_id: obj.tenant_id, p_de_id: obj.de_id,
       p_title: String(s.title ?? key).slice(0, 200),
       p_kind: ['act', 'check', 'follow_up'].includes(String(s.work_kind)) ? s.work_kind : 'act',
@@ -257,7 +262,7 @@ async function compileSopToWorkItems(
   }
   if (n === 0) return 0;
 
-  await admin.rpc('set_de_objective_status', { p_id: obj.id, p_status: 'in_progress' });
+  await admin.rpc('set_de_objective_status_internal', { p_id: obj.id, p_status: 'in_progress' });
   await admin.from('de_objectives').update({ next_wake_at: new Date(Date.now() + 60 * 60 * 1000).toISOString() }).eq('id', obj.id);
   await admin.from('de_decision_trace').insert({
     tenant_id: obj.tenant_id, de_id: obj.de_id, run_kind: 'work_item', run_ref: obj.id, seq: 0,
@@ -307,7 +312,7 @@ async function planObjective(admin: SupabaseClient, obj: { id: string; tenant_id
   let prev: string | null = null;
   for (let i = 0; i < steps.length; i++) {
     const s = steps[i];
-    const { data: stepId, error: enqErr }: { data: string | null; error: { message: string } | null } = await admin.rpc('enqueue_de_work_item', {
+    const { data: stepId, error: enqErr }: { data: string | null; error: { message: string } | null } = await admin.rpc('enqueue_de_work_item_internal', {
       p_tenant_id: obj.tenant_id, p_de_id: obj.de_id,
       p_title: String(s.title ?? `Step ${i + 1}`).slice(0, 200),
       p_kind: ['act', 'check', 'follow_up'].includes(String(s.kind)) ? s.kind : 'act',
@@ -320,7 +325,7 @@ async function planObjective(admin: SupabaseClient, obj: { id: string; tenant_id
     if (enqErr) { console.error('enqueue_de_work_item:', enqErr.message); break; }
     prev = stepId ?? prev;
   }
-  await admin.rpc('set_de_objective_status', { p_id: obj.id, p_status: 'in_progress' });
+  await admin.rpc('set_de_objective_status_internal', { p_id: obj.id, p_status: 'in_progress' });
   // Long-horizon (#7): arm the first check-in so the goal engine reviews
   // progress after the plan runs (cadence_minutes overrides at wake time).
   await admin.from('de_objectives').update({ next_wake_at: new Date(Date.now() + 60 * 60 * 1000).toISOString() }).eq('id', obj.id);
@@ -425,7 +430,7 @@ async function reviewObjective(
     let prev: string | null = null;
     for (let i = 0; i < steps.length; i++) {
       const s = steps[i];
-      const { data: stepId }: { data: string | null } = await admin.rpc('enqueue_de_work_item', {
+      const { data: stepId }: { data: string | null } = await admin.rpc('enqueue_de_work_item_internal', {
         p_tenant_id: obj.tenant_id, p_de_id: obj.de_id,
         p_title: String(s.title ?? `Follow-up ${i + 1}`).slice(0, 200),
         p_kind: ['act', 'check', 'follow_up'].includes(String(s.kind)) ? s.kind : 'follow_up',
@@ -803,7 +808,7 @@ async function dispatchTool(
   switch (name) {
     case 'recall_memory': {
       const emb = await embedText(String(input.query ?? '').slice(0, 2000));
-      const { data } = await admin.rpc('de_memory_search', { p_tenant_id: tenantId, p_de_id: deId, p_query_embedding: emb, p_subject_ref: (input.subject_ref as string) ?? subjectRef ?? null, p_match_count: 5 });
+      const { data } = await admin.rpc('de_memory_search_internal', { p_tenant_id: tenantId, p_de_id: deId, p_query_embedding: emb, p_subject_ref: (input.subject_ref as string) ?? subjectRef ?? null, p_match_count: 5 });
       return { result: (data ?? []).map((m: { content: string }) => m.content) };
     }
     case 'search_knowledge': {
@@ -816,12 +821,12 @@ async function dispatchTool(
       return { result: await res.json().catch(() => ({ error: 'compute_failed' })) };
     }
     case 'run_analytics': {
-      const { data } = await admin.rpc('run_analytics_query', { p_tenant_id: tenantId, p_key: String(input.key ?? ''), p_params: input.params ?? {} });
+      const { data } = await admin.rpc('run_analytics_query_internal', { p_tenant_id: tenantId, p_key: String(input.key ?? ''), p_params: input.params ?? {} });
       return { result: data };
     }
     case 'remember': {
       const emb = await embedText(String(input.content ?? '').slice(0, 4000));
-      await admin.rpc('de_memory_write', { p_tenant_id: tenantId, p_de_id: deId, p_content: String(input.content ?? ''), p_embedding: emb, p_subject_kind: subjectRef ? 'case' : 'general', p_subject_ref: subjectRef, p_kind: 'episodic', p_salience: typeof input.salience === 'number' ? input.salience : 0.6, p_source: 'de' });
+      await admin.rpc('de_memory_write_internal', { p_tenant_id: tenantId, p_de_id: deId, p_content: String(input.content ?? ''), p_embedding: emb, p_subject_kind: subjectRef ? 'case' : 'general', p_subject_ref: subjectRef, p_kind: 'episodic', p_salience: typeof input.salience === 'number' ? input.salience : 0.6, p_source: 'de' });
       return { result: { saved: true } };
     }
     case 'draft_outreach': {
@@ -2139,7 +2144,7 @@ serve(async (req) => {
           // Heal an interrupted plan (worker died between enqueue and status
           // update): items exist but the objective is still 'open' with no
           // alarm — without this it would be skipped forever, unreviewable.
-          await admin.rpc('set_de_objective_status', { p_id: o.id, p_status: 'in_progress' });
+          await admin.rpc('set_de_objective_status_internal', { p_id: o.id, p_status: 'in_progress' });
           await admin.from('de_objectives').update({ next_wake_at: new Date(Date.now() + 60 * 60 * 1000).toISOString() }).eq('id', o.id);
           continue;
         }
