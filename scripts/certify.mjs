@@ -18,6 +18,16 @@
 // never change it. Behavioral write-path proofs live in the vitest suite and
 // run against dev.
 //
+// ⚠ ONE SECTION IS NO LONGER COVERED BY THAT SENTENCE, and leaving it standing
+// unqualified would make this header the lie. `decide-discovery-proposal-behaviour`
+// calls verify_decide_discovery_proposal(), which DRIVES THE REAL RPC against
+// production: it inserts sessions, proposals and connectors in a live workspace
+// and deactivates a real owner's profile, because refusals that are never fired
+// prove nothing. Every one of its 39 writes sits inside a probe sub-block that
+// ends in an unconditional raise, so all of it rolls back — enumerated, not
+// assumed. It is the only section that writes, it is deliberate, and it is
+// named here so nobody has to discover it from a diff.
+//
 // The probe style is violations-only: every check returns rows ONLY when the
 // invariant is broken, so a probe that returns nothing is a proof and a probe
 // that returns anything is a named, actionable failure. A check that could
@@ -1079,6 +1089,130 @@ const sections = [
     for (const n of r.notes) console.log(`        ${n}`);
     console.log(`        discovery-proposal-decisions: ${denominator}`);
     return { ok: r.failures.length === 0, detail: r.failures.join('\n') };
+  }),
+  // ── The same surface, asked the OTHER question: does the function BEHAVE ─
+  // The section above asserts ROW invariants on discovery_proposals. That
+  // table holds zero rows and every one of those arms therefore compares
+  // nothing — it says so itself, on every run. Meanwhile NOTHING checked that
+  // the compare-and-swap refuses a second accept, that the role bar refuses a
+  // tenant_user, that a cross-tenant caller is refused, that an unroutable
+  // kind leaves the proposal pending WITH last_error set, that park is not
+  // decline, or that a successful accept clears a stale reason. Those are
+  // properties of the FUNCTION, true or false whether or not a customer has
+  // ever used the surface, and migration 741 proved them exactly ONCE, at
+  // apply time, in a DO block that then ceased to exist.
+  //
+  // Migration 745 turned 741's eleven probes into
+  // public.verify_decide_discovery_proposal(), which returns its findings
+  // instead of raising them. This runs it. It is the sibling of
+  // discovery-proposal-decisions and deliberately NOT merged into it: one
+  // reads rows that may legitimately be absent, the other drives behaviour
+  // that is never legitimately absent, and a shared PASS line would hide the
+  // difference.
+  //
+  // ⚠⚠ THIS IS THE ONE RING-0 SECTION THAT WRITES TO PRODUCTION, and the
+  // header's "probes are read-only" sentence does not cover it. Every probe
+  // creates a session, connectors and proposals in a real workspace, drives
+  // the RPC as `authenticated`, and rolls the whole lot back by raising a
+  // sentinel inside its own sub-block. Dev cannot substitute: the probes need
+  // a real owner, a real non-admin member of the same workspace, a second
+  // workspace's owner and a platform-layer profile, and those fixtures are
+  // production's. The rollback is ASSERTED rather than trusted — the function
+  // re-reads row counts for all five tables it touches against baselines taken
+  // before any probe ran, greps for its own tagged rows, and checks that the
+  // person probe 8 deactivates is active again. Any of those moving is a
+  // finding, printed here verbatim.
+  //
+  // ⚠ THE PROBE COUNT IS WHY THIS IS NOT THEATRE. An empty findings array from
+  // a function whose eleven probes all died looks exactly like a clean run —
+  // which is the ninth version of this repo's oldest mistake. The function
+  // prints probes_completed= and this REFUSES the run if it is missing or
+  // zero, before it ever looks at whether there were findings.
+  section('decide-discovery-proposal-behaviour', async () => {
+    let rows;
+    try {
+      // unnest, not the bare array: rows are unambiguous over the wire, where
+      // a text[] could arrive as an array or as a Postgres array literal
+      // depending on the driver — and guessing wrong would silently turn every
+      // finding into one unparsed string.
+      rows = await q('select f as finding from unnest(public.verify_decide_discovery_proposal()) f');
+    } catch (e) {
+      // A check that cannot run is a failure, never a skip. This is also what
+      // fires if the function was dropped or its perimeter revoked.
+      return {
+        ok: false,
+        detail: `verify_decide_discovery_proposal() ERRORED, so NOTHING about the decision path was verified this run — ${String(e).slice(0, 400)}`,
+      };
+    }
+
+    const all = rows.map((r) => r.finding).filter((f) => typeof f === 'string');
+    // ⚠ Match the FULL prefix, not `note: `. Any finding beginning with the
+    // shorter string would be reclassified as a note and silently excused —
+    // and a run genuinely reporting probes_completed=0 in a SECOND note went
+    // green under the loose match. Not live today (no finding in 745 starts
+    // that way), fixed because "not live today" is how it gets in.
+    const NOTE = 'note: probes_completed=';
+    const notes = all.filter((f) => f.startsWith(NOTE));
+    const findings = all.filter((f) => !f.startsWith(NOTE));
+    const note = notes[0] ?? '';
+    const probes = Number(/probes_completed=(\d+)/.exec(note)?.[1] ?? NaN);
+    const asserts = Number(/assertions=(\d+)/.exec(note)?.[1] ?? NaN);
+
+    // The denominator is checked BEFORE the findings, on purpose: "no
+    // findings" is only meaningful once something was compared.
+    if (!Number.isFinite(probes)) {
+      return {
+        ok: false,
+        detail: 'the function returned no `note: probes_completed=` line, so how much it compared is unknown. '
+          + 'Zero findings from zero probes is indistinguishable from a clean result, and this section refuses to '
+          + `guess which one it got. Returned ${all.length} element(s).`,
+      };
+    }
+    if (probes === 0) {
+      return {
+        ok: false,
+        detail: `the function ran ZERO of 11 probes and therefore proved nothing. This is a REFUSAL, not a pass.\n${note}`
+          + (findings.length ? `\n${findings.map((f) => `  ✗ ${f}`).join('\n')}` : ''),
+      };
+    }
+    // ⚠⚠ THE GATE MUST HOLD ITS OWN DENOMINATOR, not delegate it to the thing
+    // it is checking. Refusing only `0` left 7-of-11-with-no-findings GREEN —
+    // proven by mutant, not argued. The function happens to emit its own
+    // "only N of 11 probes completed" finding today, so that case is red in
+    // practice; one edit to that single line disarms the gate silently. Same
+    // for the assertion count: it was PARSED AND PRINTED and never compared,
+    // so hollowing out the probe bodies while leaving the eleven sub-blocks
+    // standing kept probes_completed=11 forever. That is exactly the
+    // one-shot-versus-standing distinction migration 745 exists to fix,
+    // reproduced one level up in its own gate.
+    const EXPECTED_PROBES = 11;
+    const ASSERTION_FLOOR = 95; // 741 shipped 95; 745 ports them plus 3 ctid arms.
+    if (probes !== EXPECTED_PROBES) {
+      return {
+        ok: false,
+        detail: `only ${probes} of ${EXPECTED_PROBES} probes completed. The missing ones proved nothing, and a partial `
+          + `run with no findings is not a pass.\n${note}`
+          + (findings.length ? `\n${findings.map((f) => `  ✗ ${f}`).join('\n')}` : ''),
+      };
+    }
+    if (!Number.isFinite(asserts) || asserts < ASSERTION_FLOOR) {
+      return {
+        ok: false,
+        detail: `${EXPECTED_PROBES} probes ran but only ${Number.isFinite(asserts) ? asserts : 'an unreadable number of'} `
+          + `assertion(s) were made, below the floor of ${ASSERTION_FLOOR}. Eleven empty sub-blocks would report eleven `
+          + `probes. If assertions were deliberately removed, move this floor and say why.\n${note}`,
+      };
+    }
+    if (findings.length > 0) {
+      return {
+        ok: false,
+        detail: `${findings.length} finding(s) from ${probes}/11 probe(s), ${asserts} assertion(s):\n`
+          + findings.map((f) => `  ✗ ${f}`).join('\n') + `\n${note}`,
+      };
+    }
+    // Count the comparisons, not just the findings — printed on green runs too.
+    console.log(`        decide-discovery-proposal-behaviour: ${note}`);
+    return { ok: true, detail: '' };
   }),
   section('edge-typecheck', () => {
     const { counts, total, unattributed, fns } = edgeErrorCounts();
