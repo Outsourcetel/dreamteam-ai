@@ -2346,6 +2346,34 @@ begin
   select pg_get_functiondef(p.oid) into v_res_body from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'restore_guardrail_rule';
 
+  -- ⚠⚠ STRIP THE COMMENTS BEFORE MATCHING, AND THIS IS NOT TIDINESS.
+  -- pg_get_functiondef returns the source INCLUDING `--` comments, so a
+  -- ratchet that greps for a banned construct also matches any COMMENT that
+  -- names it. The first run of this migration failed on exactly that: the
+  -- check below fired against attach_compliance_pack's own comment explaining
+  -- the `auth.uid() is not null and` bug it had just fixed. The code was
+  -- correct; the sentence describing why was indistinguishable from the thing
+  -- it described.
+  --
+  -- That is worse than a false alarm. A ratchet that a correct fix cannot pass
+  -- gets weakened by the next person under time pressure — and the comment is
+  -- exactly what a future reader most needs, so the check was punishing the
+  -- documentation. scripts/migration-append-check.mjs strips line comments
+  -- before matching for the same reason.
+  v_att_body  := regexp_replace(coalesce(v_att_body,  ''), '--[^' || chr(10) || ']*', '', 'g');
+  v_int_body  := regexp_replace(coalesce(v_int_body,  ''), '--[^' || chr(10) || ']*', '', 'g');
+  v_det_body  := regexp_replace(coalesce(v_det_body,  ''), '--[^' || chr(10) || ']*', '', 'g');
+  v_inst_body := regexp_replace(coalesce(v_inst_body, ''), '--[^' || chr(10) || ']*', '', 'g');
+  v_ddp_body  := regexp_replace(coalesce(v_ddp_body,  ''), '--[^' || chr(10) || ']*', '', 'g');
+  v_res_body  := regexp_replace(coalesce(v_res_body,  ''), '--[^' || chr(10) || ']*', '', 'g');
+
+  -- The strip must not silently empty everything — an all-blank body would
+  -- make every ratchet below pass over nothing.
+  v_checks := v_checks + 1;
+  if length(v_att_body) < 100 or length(v_det_body) < 100 or length(v_inst_body) < 100 then
+    v_bad := array_append(v_bad, 'a stripped function body came back under 100 characters — the comment strip has eaten the code and every static ratchet below is now comparing nothing');
+  end if;
+
   v_checks := v_checks + 1;
   if v_att_body like '%auth.uid() is not null and%' or v_det_body like '%auth.uid() is not null and%' then
     v_bad := array_append(v_bad, 'attach or detach still contains `auth.uid() is not null and` — that prefix makes the authority check SKIP instead of FAIL');
