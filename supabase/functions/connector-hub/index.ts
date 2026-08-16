@@ -3328,10 +3328,23 @@ async function dtQuota(c: Ctx, table: string, cap: number, noun: string): Promis
 
 const dreamteamActions: Record<string, NativeAction> = {
   // Hire a DE from a pre-built role archetype (mig 162). Delegates to
-  // instantiate_role_archetype, which applies persona/capabilities/model
-  // and auto-attaches the archetype's mandatory compliance packs — all in
+  // instantiate_role_archetype_internal, which applies persona/capabilities/
+  // model and auto-attaches the archetype's mandatory compliance packs — all in
   // one gated step. Same safety envelope as dt_create_digital_employee
   // (designed/supervised, cert-gated before go-live).
+  //
+  // ⚠ MIGRATION 748 — WHY THIS IS THE `_internal` VARIANT AND NOT THE PLAIN
+  // NAME. Both writers that create a digital employee used to open with
+  // `if auth.uid() is not null and not exists (…)`, which SKIPS the authority
+  // check under a null uid rather than failing it. 748 made the public
+  // `instantiate_role_archetype` HARD-REFUSE a null auth.uid() — which this
+  // call has, and legitimately so: the Onboarding Architect is a digital
+  // employee running an already-approved action through the service-role admin
+  // client, scoped to its own connector's tenant. The unchecked path therefore
+  // moved to `_internal` (service_role EXECUTE only, revoked from
+  // anon/authenticated) and the gate stayed on the name every other caller
+  // reaches for. p_via names this tool in the audit row 748 added, so the
+  // ledger can tell "a digital employee hired this" from "a person hired this".
   dt_hire_from_archetype: {
     render(_c, p) {
       if (!p.archetype_key?.trim()) return { ok: false, error: 'param_required', detail: 'archetype_key is required.' };
@@ -3343,11 +3356,12 @@ const dreamteamActions: Record<string, NativeAction> = {
       if (!p.archetype_key?.trim() || !p.de_name?.trim()) return { ok: false, error: 'param_required', detail: 'archetype_key and de_name are required.' };
       const deCap = await dtQuota(c, 'digital_employees', 50, 'Digital Employees');
       if (deCap) return { ok: false, error: 'quota_exceeded', detail: deCap };
-      const { data, error } = await c.admin.rpc('instantiate_role_archetype', {
+      const { data, error } = await c.admin.rpc('instantiate_role_archetype_internal', {
         p_tenant_id: c.tenantId,
         p_archetype_key: p.archetype_key.trim().slice(0, 60),
         p_de_name: p.de_name.trim().slice(0, 120),
         p_persona_name: p.persona_name?.trim()?.slice(0, 60) || null,
+        p_via: 'dt_hire_from_archetype',
       });
       if (error) return { ok: false, error: 'hire_failed', detail: error.message };
       return { ok: true, raw: { de_id: data, archetype: p.archetype_key.trim() },
