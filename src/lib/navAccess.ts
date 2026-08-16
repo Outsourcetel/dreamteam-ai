@@ -177,6 +177,67 @@ const PAGE_ACCESS: Partial<Record<Page, UserRole[]>> = {
   // ── Workspace administration ──────────────────────────────────────────────
   company_setup: ADMIN,
   onboarding_architect: ADMIN,
+  // ── THE DISCOVERY INTERVIEW AND WHAT IT DRAFTS ────────────────────────────
+  //
+  // ⚠ `discovery_proposals` WAS THE FOURTH PAGE MISSING FROM THIS MAP, and it
+  // failed in the worst of the three ways seen so far. It is routed in App.tsx,
+  // mapped in pageRoutes, present in the Page union — and absent from here. The
+  // deny at the top of canAccessPage fires BEFORE the platform-operator bypass
+  // below it, so `tenant_owner`, `tenant_admin` AND `dt_super_admin` all got
+  // false: not one human being on this platform could open the screen. Typing
+  // the URL bounced to the dashboard. `npm run audit:role-gates` had been
+  // printing it as a nav gap ("discovery_proposals (routed/tab)") the whole time.
+  //
+  // ⚠ ADMIN, AND IT IS NARROWER THAN THE DATABASE — not a mirror of it.
+  // Corrected 2026-08-17. The sentence that stood here said the DATABASE kept
+  // everyone but tenant_owner and tenant_admin out of
+  // `decide_discovery_proposal`, and that this tier merely matched it. It does
+  // not, and it never did. (The retracted claim is described rather than
+  // quoted, deliberately: a file that repeats the false sentence verbatim
+  // reads, to every grep and every reviewer skimming, exactly like a file
+  // still making it.) Migration 741 puts that role
+  // check INSIDE `if p_decision = 'accepted' then` (741:310-319) and grants
+  // EXECUTE to `authenticated` (741:573); its own exception text says so out
+  // loud — "declining and parking are open to anyone in the workspace". So the
+  // database gates ONE of three decisions, and this tier is stricter than the
+  // authority that exists, on two of them.
+  //
+  // The tier stands anyway, on the other rationale below — what the cards
+  // CARRY — which is the argument that was always doing the work. But it is a
+  // narrowing this file chose, so it is written down as one: nobody should
+  // later "align the page with the database" and open it, believing they are
+  // restoring a match that never existed.
+  //
+  // ⚠ AND VIEWING IS DELIBERATELY NOT WIDER, which is the part worth arguing
+  // rather than assuming. RLS would ALLOW it: discovery_proposals_tenant_read
+  // is `for select to authenticated using (tenant_id = auth_tenant_id())` with
+  // no role condition, so a tenant_user could technically read these rows. The
+  // reason to keep the page at ADMIN anyway is what the rows ARE. A proposal
+  // card carries an employee's system reach, a guardrail's literal pattern, a
+  // trust rule's dollar cap and the workspace's compliance posture — the same
+  // material `organisation`, `gov_*` and `systems_connectors` are all held at
+  // MANAGE or ADMIN for. Widening this one page would publish it to read_only
+  // seats while the neighbouring screens keep it closed, and "the screen would
+  // be convenient for them" is not a reason to open a gate. If a manager is
+  // ever meant to review setup without deciding it, that is a decision with a
+  // named owner, not a default reached by omission.
+  discovery_proposals: ADMIN,
+  // The conversation that produces them. Same tier, and — like the line above
+  // — a NARROWING rather than a reflection of what the engine enforces. The
+  // `discovery-interview` function admits any signed-in member of the
+  // workspace: its auth block resolves a tenant from the caller's profile and
+  // checks nothing else (index.ts:709-723, whose own comment says "a
+  // setup-time action any tenant member can run for their own workspace, not a
+  // manager-only mutation"). A tenant_user with a URL and a JWT could run the
+  // whole interview today.
+  //
+  // The tier is still ADMIN, deliberately: a person who cannot ACCEPT a single
+  // thing the interview drafts would be walked through fourteen questions to
+  // reach a screen that refuses them — the governed-refusal-reported-as-success
+  // shape this programme keeps finding. But that is a product decision made
+  // here, not a gate the database is holding for us, and the day someone wants
+  // to widen it the only thing in the way is this paragraph.
+  discovery_interview: ADMIN,
   settings: ADMIN,
   users: ADMIN,
   // ── ORGANISATION — the SECOND page found missing from this map ────────────

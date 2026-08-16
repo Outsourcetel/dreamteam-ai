@@ -221,6 +221,23 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
         // destinations gave no way to tell which one you wanted. It is now
         // offered inside Company Setup, and its route stays valid for the
         // Getting Started guide's deep link.
+        // ⚠ THE RE-OPENABLE HALF of the founder's ruling — "Both: offered at
+        // first login, re-openable later." First login lands here once
+        // (AuthContext); without a nav entry a workspace that skipped, stopped
+        // or wants to revisit would have no door at all, and the one-shot
+        // localStorage flag means that first landing never comes back.
+        //
+        // ABOVE Company Setup on purpose: this is the question we now want a
+        // new customer to answer, and the wizard below it is the fallback for
+        // the things the conversation does not cover (industry, vocabulary,
+        // pipeline stages, branding). Retiring that wizard is Plan 4, after
+        // this is proven — not today.
+        { id: 'discovery_interview', label: 'Setup Interview', icon: '✦', page: 'discovery_interview' },
+        // Where the interview's drafts wait to be accepted, declined or set
+        // aside. A separate entry rather than only a link from the interview:
+        // a customer who parked halfway needs to reach their recommendations
+        // without walking back through the conversation to find them.
+        { id: 'discovery_proposals', label: 'What We Recommend', icon: '✓', page: 'discovery_proposals' },
         { id: 'company_setup', label: 'Company Setup', icon: '⚙', page: 'company_setup' },
         // People was UNREACHABLE: UserManagementPage exists and App.tsx routes
         // to it, but no nav entry pointed at 'users' — so a workspace owner

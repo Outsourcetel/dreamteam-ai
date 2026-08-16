@@ -38,6 +38,52 @@ export type { CompanyProfile, CompanyId } from '../data/companies';
 // The seeded demo tenant in Supabase. Users on this tenant (or the local dev
 // demo login) see the TCP/PWC demo story; every other tenant is a LIVE tenant.
 export const DEMO_TENANT_ID = 'a0000000-0000-0000-0000-000000000001';
+
+/**
+ * Where a tenant user lands on their FIRST sign-in.
+ *
+ * ⚠ ONE FUNCTION BECAUSE THERE ARE THREE CALL SITES AND THEY MUST NEVER
+ * DISAGREE. `setAuthedUser`'s restore path, `signIn`'s fresh path and
+ * `completeOrgSetup` each decided this independently — the first two as the
+ * same expression written out twice ~320 lines apart, the third as a bare
+ * `setCurrentPage('dashboard')` that nobody counted as a landing decision at
+ * all. That third one is the path a BRAND-NEW workspace actually takes, and it
+ * is why the first two were unrendered for the customer this feature exists
+ * for (see completeOrgSetup's own note for the full trace).
+ *
+ * ⚠ AND THE TEST COUNTS `setCurrentPage(`, NOT `firstLoginLanding(`. Counting
+ * the calls that already go through the helper is a checker that cannot see the
+ * failure it is for: a fourth landing written as a plain string is invisible to
+ * it, and the previous version of that test asserted "exactly TWO first-login
+ * landings exist" — institutionalising the miss. The suite now pins every
+ * setCurrentPage call site in this file by its argument.
+ *
+ * ⚠ THE ROLE CHECK IS NOT DECORATION. Both call sites use `setCurrentPage`
+ * directly rather than `handleSetPage`, so nothing else consults PAGE_ACCESS on
+ * this path — a landing page named here is a landing page reached, whatever the
+ * map says. `discovery_interview` is ADMIN (it drafts things only owner/admin
+ * can decide), so a first-login `tenant_user` would otherwise be dropped onto a
+ * screen the nav says they cannot open. Asking canAccessPage keeps the landing
+ * inside the same policy every other navigation obeys, and it can only ever
+ * narrow: the fallback is the dashboard, which is ALL_TENANT.
+ *
+ * ⚠ AND IT REPLACES `company_setup`, DELIBERATELY BUT NOT DESTRUCTIVELY. The
+ * old wizard is NOT retired here — it keeps its route, its nav entry and its
+ * tier, because it still does things the interview does not (industry,
+ * workspace vocabulary, pipeline stages, customer-record fields, branding and
+ * brand identity). Retiring it is Plan 4 of the design spec, after this
+ * replacement is proven. What changes today is only which of the two a new
+ * customer meets first — the founder's item 1 was that setup asked the wrong
+ * questions, not that setup should vanish.
+ */
+export function firstLoginLanding(
+  firstLogin: boolean,
+  role: UserRole,
+  layer?: 'platform' | 'tenant' | 'end_user',
+): Page {
+  if (!firstLogin) return 'dashboard';
+  return canAccessPage(role, 'discovery_interview', layer) ? 'discovery_interview' : 'dashboard';
+}
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 
@@ -243,7 +289,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (isPlatform) {
         setCurrentPage('platform_home');
       } else {
-        // First login for this tenant user → land on Company Setup once.
+        // First login for this tenant user → land on the setup interview once.
         let firstLogin = false;
         try {
           if (au.id && !localStorage.getItem('dt_onboarded_' + au.id)) {
@@ -251,7 +297,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             localStorage.setItem('dt_onboarded_' + au.id, '1');
           }
         } catch (e) {}
-        setCurrentPage(firstLogin ? 'company_setup' : 'dashboard');
+        setCurrentPage(firstLoginLanding(firstLogin, au.role, layer));
       }
     };
     (async () => {
@@ -573,7 +619,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           localStorage.setItem('dt_onboarded_' + u.id, '1');
         }
       } catch (e) {}
-      setCurrentPage(firstLogin ? 'company_setup' : 'dashboard');
+      setCurrentPage(firstLoginLanding(firstLogin, u.role, u.layer));
     }
   };
 
@@ -632,8 +678,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Called by the org-setup screen right after complete_signup() succeeds.
-  // Re-pulls the (now-linked) profile and tenant, clears needsOrgSetup, and
-  // lands the user on their brand-new, empty live dashboard.
+  // Re-pulls the (now-linked) profile and tenant and clears needsOrgSetup.
+  //
+  // ⚠ THIS IS THE THIRD FIRST-LOGIN LANDING, AND IT IS THE ONE A BRAND-NEW
+  // CUSTOMER ACTUALLY TAKES. It landed on 'dashboard' and the interview was
+  // therefore never offered at first login to the only person it was built
+  // for. Traced end to end, and every hop is real:
+  //
+  //   sign-up creates an auth user with NO tenant (LoginPage.tsx:100-125)
+  //   → first sign-in BURNS the dt_onboarded_<id> flag and picks
+  //     discovery_interview (this file, :293 / :615)
+  //   → App.tsx:294 renders <OrgSetupScreen /> instead, because
+  //     profileHasNoTenant is true — so that landing is never rendered
+  //   → complete_signup → completeOrgSetup → 'dashboard'
+  //   → the flag is already spent, so every later sign-in is
+  //     firstLogin === false and the landing never comes back.
+  //
+  // Invited users reach the same shape through App.tsx:303. The gap PREDATES
+  // the interview — the old landing was equally unrendered on this path — but
+  // src/types/index.ts and the Sidebar now ASSERT "offered at first login",
+  // and a false claim in the code is worse than the gap it describes.
+  //
+  // ⚠ `true` IS NOT A GUESS. This function is called from exactly one place,
+  // once per workspace, immediately after complete_signup creates it. There is
+  // no earlier moment for this account to have been onboarded, so the
+  // localStorage probe the other two call sites need has nothing to tell us
+  // here. The role is passed as 'tenant_owner' because the line below sets it
+  // — complete_signup (migration 115) has already made it true in the
+  // database, and firstLoginLanding's canAccessPage check would otherwise be
+  // asked about the stale signup-metadata role.
   const completeOrgSetup = async (tenantId: string) => {
     setProfileHasNoTenant(false);
     // complete_signup just set profiles.role = 'tenant_owner' (migration
@@ -644,7 +717,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthedUser(prev => (prev ? { ...prev, tenantId, role: 'tenant_owner' } : prev));
     const t = await fetchTenantById(tenantId);
     setDbCurrentTenant(t);
-    setCurrentPage('dashboard');
+    setCurrentPage(firstLoginLanding(true, 'tenant_owner', authedUser?.layer ?? 'tenant'));
   };
 
   const handleLogout = async () => {

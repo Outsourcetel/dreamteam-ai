@@ -46,6 +46,7 @@ import HireEmployeeWizard from './components/HireEmployeeWizard';
 import MobileShell, { useNeedsBiggerScreen, BiggerScreenTakeover } from './pages/tenant/mobile/MobileShell';
 import CompanySetupPage from './pages/tenant/CompanySetupPage';
 import OnboardingArchitectPage from './pages/tenant/OnboardingArchitectPage';
+import DiscoveryInterviewPage from './pages/tenant/DiscoveryInterviewPage';
 import DiscoveryProposalsPage from './pages/tenant/DiscoveryProposalsPage';
 import { WorkforceChatHubPage } from './pages/tenant/WorkforceChatHubPage';
 import CustomersHubPage from './pages/tenant/entity/CustomersHubPage';
@@ -473,10 +474,13 @@ function AppShell() {
         return <CompanySetupPage setPage={handleSetPage} />;
       case 'onboarding_architect':
         return <OnboardingArchitectPage setPage={handleSetPage} />;
-      // Discovery interview proposals ("what we recommend" — Task 2 of
-      // .superpowers/sdd/2026-08-13-discovery-proposals-and-creation). A
-      // route only, deliberately: this plan does not wire the interview to
-      // first login, so nothing links here yet except a direct URL.
+      // The discovery interview, and what it drafts. Both are now REACHABLE:
+      // the interview is offered at first login (AuthContext) and from the
+      // Setup section of the nav, and the proposals screen is linked from the
+      // end of the interview. Until this change the engine had no caller in the
+      // product at all and the proposals page was denied to every role.
+      case 'discovery_interview':
+        return <DiscoveryInterviewPage setPage={handleSetPage} />;
       case 'discovery_proposals':
         return <DiscoveryProposalsPage setPage={handleSetPage} />;
       default:

@@ -99,10 +99,23 @@ export default function GettingStartedGuide({
 
   const steps: Step[] = state ? [
     {
+      // ⚠ THE PRIMARY NOW POINTS AT THE INTERVIEW. This step is the only
+      // "start here" affordance on an empty dashboard, and it went on pointing
+      // at Quick Start — the surface the discovery interview replaces — after
+      // the founder's ruling ("Both: offered at first login, re-openable
+      // later"). A customer who skipped the first-login landing met a guide
+      // still sending them the old way, which is how a replacement quietly
+      // fails to replace anything.
+      //
+      // Quick Start is kept as the secondary rather than removed: it is a
+      // one-sentence path for somebody who already knows which roles they
+      // want, and retiring it is Plan 4, not today. Company Setup keeps its
+      // own nav entry under Setup for the things the conversation does not
+      // cover (industry, vocabulary, pipeline stages, branding).
       done: state.hired, title: 'Hire your first Digital Employee',
-      body: 'Tell Ada about your business in a sentence — she proposes the team; you approve. Or pick roles yourself with the wizard.',
-      primary: { label: 'Hire with Ada →', run: go('onboarding_architect' as Page) },
-      secondary: { label: 'Use the setup wizard', run: go('company_setup' as Page) },
+      body: 'A short conversation in plain English about what your business actually does — we draft the team, the procedures and the limits that fit it, and you approve them one by one.',
+      primary: { label: 'Tell us about your business →', run: go('discovery_interview' as Page) },
+      secondary: { label: 'Hire with Ada instead', run: go('onboarding_architect' as Page) },
     },
     {
       // This step used to hand the user off to the Knowledge Library, whose

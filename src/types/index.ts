@@ -89,7 +89,8 @@ export type TenantPage =
   // ── Company Setup ─────────────────────────────────
   | 'company_setup'
   | 'onboarding_architect'   // Quick Start — Ada proposes your DreamTeam setup
-  | 'discovery_proposals'    // "What we recommend" — discovery interview proposals (Task 2, not yet wired to first login)
+  | 'discovery_interview'    // The plain-English setup conversation — offered at first login, re-openable from Setup
+  | 'discovery_proposals'    // "What we recommend" — what that conversation drafted, accepted item by item
 
   // ── Admin ─────────────────────────────────────────
   | 'settings'
