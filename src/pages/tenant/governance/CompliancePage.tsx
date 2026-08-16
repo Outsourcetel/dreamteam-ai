@@ -15,6 +15,8 @@ import {
 import type { GuardrailRule, GuardrailRuleType, GuardrailScope, EnforcementStatus } from '../../../lib/guardrailApi'
 import { listDigitalEmployees } from '../../../lib/digitalEmployeesApi'
 import type { DigitalEmployee } from '../../../lib/digitalEmployeesApi'
+import { getTenantCompliancePacks, detachCompliancePack } from '../../../lib/deWorkbenchApi'
+import type { CompliancePackRow } from '../../../lib/deWorkbenchApi'
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates'
 import GovernanceAIPanel from '../../../components/GovernanceAIPanel'
 import GuardrailAdjudicationPanel from '../../../components/GuardrailAdjudicationPanel'
@@ -130,6 +132,16 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
   const [showRetired, setShowRetired] = useState(false)
   const [confirmRetire, setConfirmRetire] = useState<GuardrailRule | null>(null)
   const [retireReason, setRetireReason] = useState('')
+  // ── Compliance packs (migration 747) ────────────────────────────────────
+  // A pack is a shared catalogue of BLOCKING rules that a hire can switch on
+  // for the WHOLE workspace without anyone deciding to. Until 747 the product
+  // had an attach control and no detach control at all — the rows were
+  // undeletable by design (trg_guard_compliance_guardrails), the per-rule
+  // Retire button correctly refuses them, and the thing it points at
+  // ("detach the pack instead") had no caller anywhere in src/. This is that
+  // caller.
+  const [packs, setPacks] = useState<CompliancePackRow[]>([])
+  const [confirmDetach, setConfirmDetach] = useState<CompliancePackRow | null>(null)
   // What is actually switched on, read from config rather than asserted.
   // `checked` separates "not back yet" from "came back empty", which is the
   // difference between a spinner and a claim.
@@ -153,7 +165,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
     setLoading(true)
     setError(null)
     try {
-      const [r, d, b, e] = await Promise.all([
+      const [r, d, b, e, cp] = await Promise.all([
         listGuardrailRules(),
         listDigitalEmployees().catch(() => []),
         getGuardrailBlockCounts().catch(() => ({})),
@@ -161,11 +173,15 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
         // answer: it resolves to null when it could not be established, and the
         // tile renders that as "Unknown".
         getEnforcementStatus(),
+        // Additive strip — a workspace with no packs is the common case and a
+        // failure here must not cost anyone their guardrail list.
+        getTenantCompliancePacks().catch(() => [] as CompliancePackRow[]),
       ])
       setRules(r)
       setDes(d)
       setBlocks(b)
       setEnforcement(e)
+      setPacks(cp)
       setEnforcementChecked(true)
       setMissingTables(false)
     } catch (err) {
@@ -263,6 +279,20 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
 
   const active = rules.filter(r => r.active)
 
+  // What each attached pack is ENFORCING right now, counted from the real rows
+  // rather than from the shared catalogue. listGuardrailRules already excludes
+  // retired rows, so a pack detached and re-attached reports what is live today
+  // rather than what the catalogue says it should be.
+  const packRules = (packKey: string) => rules.filter(r => r.compliance_pack_key === packKey && r.active)
+
+  const submitDetach = (p: CompliancePackRow) => run(async () => {
+    await detachCompliancePack(p.pack_key)
+    setConfirmDetach(null)
+    // The rules do not disappear — they are retired, so they move to the shelf.
+    // Reloading it here means the person can see where they went.
+    if (showRetired) await loadRetired()
+  })
+
   // Governance rebuild: focus the central cockpit on any level. When
   // focused on a DE or department, workspace-wide rules are included too
   // (they also apply there), matching what the DE's own tab shows.
@@ -343,6 +373,88 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
 
           {/* GI-10: the human grant + the receipt, next to the rules they govern. */}
           <GuardrailAdjudicationPanel rules={rules} />
+
+          {/* ── Compliance packs ────────────────────────────────────────────
+              ⚠ THE CONTROL THAT DID NOT EXIST. Accepting a hire — from the
+              wizard or from a discovery recommendation — can switch on a whole
+              pack of BLOCKING rules that apply to every employee in the
+              workspace. 7 of 15 active role archetypes do exactly that. The
+              individual rules correctly refuse to be retired one at a time, and
+              the thing that refusal points at ("detach the pack instead") had
+              no button, no API call and no caller anywhere. A control the
+              customer cannot reach is not a control.
+
+              Only rendered when a pack is actually attached: an empty section
+              explaining a mechanism that is not running is noise on a page
+              whose whole job is telling live rules from dead ones. */}
+          {packs.length > 0 && (
+            <div className="rounded-2xl border border-dt-border bg-dt-card p-6 mb-6">
+              <h3 className="text-base font-semibold text-white">Compliance packs</h3>
+              <p className="text-xs text-dt-muted mt-0.5 mb-4">
+                A pack is a ready-made set of blocking rules for a regulated activity. Hiring certain
+                roles switches one on automatically, and it applies to <span className="text-dt-support">every</span> Digital
+                Employee in this workspace — not just the one that brought it. Its rules cannot be edited or
+                switched off one at a time; the pack comes off as a whole.
+              </p>
+              <div className="overflow-x-auto rounded-xl border border-dt-border">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="border-b border-dt-border text-left">
+                      {['Pack', 'What it blocks', 'In force since', ''].map(h => (
+                        <th key={h} className={th}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {packs.map(p => {
+                      const prs = packRules(p.pack_key)
+                      return (
+                        <tr key={p.pack_key} className="border-b border-dt-border last:border-b-0 align-top">
+                          <td className={`${td} text-dt-body text-xs`}>
+                            {p.name || p.pack_key}
+                            {p.domain && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support">{p.domain}</span>}
+                          </td>
+                          <td className={`${td} text-xs text-dt-support`}>
+                            {/* The rules themselves, verbatim. A count alone
+                                ("2 blocking rules") is exactly the sentence
+                                nobody can consent to. */}
+                            {prs.length === 0
+                              ? <span className="text-dt-muted">Nothing is in force from this pack right now.</span>
+                              : (
+                                <ul className="space-y-1">
+                                  {prs.map(r => (
+                                    <li key={r.id} className="leading-snug">
+                                      <span className="text-dt-warn mr-1">blocks</span>{r.rule}
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                          </td>
+                          <td className={`${td} text-[11px] text-dt-muted whitespace-nowrap`}>
+                            {p.attached_at ? new Date(p.attached_at).toLocaleDateString() : '—'}
+                          </td>
+                          <td className={`${td} text-right whitespace-nowrap`}>
+                            {/* Gated on the SAME bar as every other write on
+                                this page (owner/admin), because that is the bar
+                                detach_compliance_pack itself enforces — a button
+                                a manager can press and the database refuses is
+                                the defect this page has been fixed for twice. */}
+                            {canEditGuardrails && (
+                              <Button kind="ghost" size="sm" disabled={busy}
+                                onClick={() => setConfirmDetach(p)}
+                                title="Take this pack off. Its rules stop applying to every employee; they are kept, not deleted.">
+                                Take this pack off
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           <div className="rounded-2xl border border-dt-border bg-dt-card p-6 mb-6">
             <div className="flex items-center justify-between mb-2 gap-3 flex-wrap">
@@ -495,8 +607,12 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
             {/* ── The retired shelf ──────────────────────────────────────────
                 Retiring is not deleting: the row survives so a block recorded
                 months ago still has something to point at, and so the decision
-                is reversible. This is where it goes, and where it comes back
-                from. */}
+                is reversible. This is where a hand-written rule goes, and where
+                it comes back from.
+                ⚠ A COMPLIANCE-PACK RULE ALSO LANDS HERE NOW (migration 747 made
+                detach retire rather than delete) AND DOES NOT COME BACK FROM
+                HERE — it comes back with its pack. The Restore column below
+                branches on that; see its own note. */}
             <div className="mt-5 pt-4 border-t border-dt-border">
               <Button kind="ghost" size="sm"
                 onClick={() => { const next = !showRetired; setShowRetired(next); if (next) void loadRetired() }}>
@@ -540,8 +656,30 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                             <td className={`${td} text-[11px] text-dt-muted`}>
                               {r.retired_at ? new Date(r.retired_at).toLocaleDateString() : '—'}
                             </td>
+                            {/* ⚠ A PACK RULE HAS NO RESTORE, AND THAT IS NOT A
+                                STYLE CHOICE — restore_guardrail_rule writes
+                                `active = false`, and
+                                trg_guard_compliance_guardrails refuses exactly
+                                that on any row carrying a compliance_pack_key.
+                                The button would error every single time it was
+                                pressed. It could never be pressed on a pack rule
+                                before migration 747, because detach DELETED the
+                                rows and they never reached this shelf; 747
+                                retires them instead, which is what puts them
+                                here — so the shelf has to grow the branch in the
+                                same change. The way back for a pack is the pack,
+                                whole (attach revives the same rows, live), and
+                                that is what the cell says instead of offering a
+                                control the database refuses. The database also
+                                refuses it in words now, because a control that
+                                is only hidden is not gated. */}
                             <td className={`${td} text-right whitespace-nowrap`}>
-                              {canEditGuardrails && (
+                              {r.compliance_pack_key ? (
+                                <span className="text-[11px] text-dt-muted"
+                                  title={`These rules came from the "${r.compliance_pack_key}" compliance pack and come back together. Put the pack back on above, or hire a role that needs it.`}>
+                                  From the {r.compliance_pack_key} pack — put the pack back
+                                </span>
+                              ) : canEditGuardrails && (
                                 <Button kind="ghost" size="sm" disabled={busy}
                                   title="Put it back in the list. It returns switched off — turning it back on is a separate decision."
                                   onClick={() => void run(async () => { await restoreGuardrailRule(r); await loadRetired() })}>
@@ -710,6 +848,55 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
             <Button kind="danger" size="sm" disabled={busy || !canEditGuardrails}
               onClick={() => void submitRetire(confirmRetire, retireReason)}>
               {busy ? 'Retiring…' : 'Retire rule'}
+            </Button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Detach a compliance pack, confirmed — and the confirmation SAYS WHAT IS
+          LOST. This is the one control on this page that removes protection
+          rather than adding it, so the dialog names the rules that stop
+          applying, says they apply to every employee, and does not describe
+          itself as a delete: migration 747 made detach retire the rows, and a
+          dialog claiming to delete something that survives would be the same
+          untrue label the Enforcement tile stopped being. */}
+      {confirmDetach && (
+        <Modal size="md" onClose={() => setConfirmDetach(null)} title={`Take the ${confirmDetach.name || confirmDetach.pack_key} pack off?`}>
+          <div className="space-y-3">
+            <p className="text-sm text-dt-body leading-relaxed">
+              These blocking rules stop applying to <span className="text-white">every Digital Employee</span> in
+              this workspace:
+            </p>
+            {packRules(confirmDetach.pack_key).length === 0 ? (
+              <p className="text-xs text-dt-muted">Nothing from this pack is currently in force.</p>
+            ) : (
+              <ul className="space-y-1.5 rounded-xl border border-rose-800/40 bg-rose-500/5 px-4 py-3">
+                {packRules(confirmDetach.pack_key).map(r => (
+                  <li key={r.id} className="text-xs text-dt-body leading-snug">{r.rule}</li>
+                ))}
+              </ul>
+            )}
+            {/* ⚠ THE PROMISE HAS TO MATCH WHAT THE SHELF ACTUALLY OFFERS. This
+                said the rules "move to Retired rules" and stopped there, which
+                sent people to a Restore button the database refuses for every
+                pack rule (guard_compliance_guardrails rejects the active=false
+                that restore writes). They do move there — for the record — and
+                the way back is the pack, whole. Both halves, in that order. */}
+            <p className="text-xs text-dt-support leading-relaxed">
+              Removing the pack removes that protection. The rules are kept, not deleted — they move to
+              &ldquo;Retired rules&rdquo; as a record, so a block one of them caused months ago can still be
+              explained. They cannot be switched back on one at a time: putting this pack back on, or hiring a
+              role that needs it, brings the same rules back together.
+            </p>
+          </div>
+          <div className="flex justify-end gap-2 mt-5">
+            <Button kind="secondary" size="sm" onClick={() => setConfirmDetach(null)}>Cancel</Button>
+            {/* The gate is repeated here on purpose, for the reason the retire
+                dialog gives: "you can only get here through a gate" is exactly
+                the reasoning that has let ungated confirm buttons ship here. */}
+            <Button kind="danger" size="sm" disabled={busy || !canEditGuardrails}
+              onClick={() => void submitDetach(confirmDetach)}>
+              {busy ? 'Removing…' : 'Take the pack off'}
             </Button>
           </div>
         </Modal>

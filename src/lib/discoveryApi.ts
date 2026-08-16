@@ -57,7 +57,7 @@ import type { ConnectorProvider } from './connectorApi';
 import { CATEGORIES } from './categoryContracts';
 import type { SystemCategory } from './categoryContracts';
 import { KIND_LABELS, PROPOSAL_KINDS } from './discoveryProposalPresentation';
-import type { ProposalKind, ProposalState } from './discoveryProposalPresentation';
+import type { AcceptCompliancePack, ProposalKind, ProposalState } from './discoveryProposalPresentation';
 
 export type { ProposalKind, ProposalState };
 
@@ -265,6 +265,25 @@ export interface DecisionOutcome {
    *  fact about a connector accept. */
   systemsInstalled?: number;
   watchersSkipped?: number;
+  /** ACCEPT ONLY, employee kind, migration 747.
+   *
+   *  ⚠ A HIRE CAN SWITCH ON WORKSPACE-WIDE BLOCKING RULES AND USED TO SAY
+   *  NOTHING. instantiate_role_archetype attaches the archetype's mandatory
+   *  compliance packs, materialising guardrail_rules with applies_to='all' and
+   *  severity='blocking'. Those rows appeared in no counter, no audit detail
+   *  and on no card — `guardrails_created` is install_role_kit's
+   *  EMPLOYEE-SCOPED count and never included them.
+   *
+   *  THREE numbers rather than one, for the reason systemsInstalled has its own
+   *  paragraph above: `created: 0` and "this workspace enforces no compliance
+   *  rules at all" are opposite facts that read identically as a bare zero.
+   *  `inForce` is what separates them, and `packs` names WHICH controls, since
+   *  a rule the customer cannot name is a rule they cannot consent to.
+   *
+   *  `undefined` for every other kind — never `?? 0`. */
+  compliancePacksAttached?: string[];
+  complianceRulesCreated?: number;
+  complianceRulesInForce?: number;
 }
 
 /** One kind's accept writer: its ordinary validated writer, wrapped to return
@@ -504,6 +523,10 @@ export async function decideDiscoveryProposal(
         created_object_id?: string | null;
         // Migration 746, employee accepts only. Absent for every other kind.
         systems_installed?: number; watchers_skipped?: number;
+        // Migration 747, employee accepts only. Same rule: absent stays absent.
+        compliance_packs_attached?: string[];
+        compliance_rules_created?: number;
+        compliance_rules_in_force?: number;
       }
     | null;
 
@@ -538,7 +561,79 @@ export async function decideDiscoveryProposal(
     createdObjectId: res.created_object_id ?? null,
     systemsInstalled: typeof res.systems_installed === 'number' ? res.systems_installed : undefined,
     watchersSkipped: typeof res.watchers_skipped === 'number' ? res.watchers_skipped : undefined,
+    compliancePacksAttached: Array.isArray(res.compliance_packs_attached)
+      ? res.compliance_packs_attached.map(String)
+      : undefined,
+    complianceRulesCreated: typeof res.compliance_rules_created === 'number' ? res.compliance_rules_created : undefined,
+    complianceRulesInForce: typeof res.compliance_rules_in_force === 'number' ? res.compliance_rules_in_force : undefined,
   };
+}
+
+/**
+ * Which compliance packs each of these archetypes would switch on, and whether
+ * this workspace already holds them.
+ *
+ * ⚠ WHY THE CARD NEEDS THIS AT ALL. The proposal payload carries an
+ * archetype_key and nothing else about compliance, so the drawer cannot say
+ * what accepting attaches without looking it up. Until it did, accepting an
+ * `accounting`, `billing_ar`, `fpa`, `bdr`, `google_ads`, `marketing` or `sdr`
+ * recommendation silently switched on two BLOCKING rules that apply to every
+ * employee in the workspace — measured live, 7 of 15 active archetypes.
+ *
+ * ⚠ `already_attached` IS NOT DECORATION. It is the difference between "this
+ * adds two blocking rules" and "this adds none, you already have them", and
+ * getting it wrong in either direction is an overclaim on a consent screen.
+ * tenant_compliance_packs is RLS-scoped to the reader's own workspace, so this
+ * needs no tenant parameter — and passing one would be the tenant-id-as-
+ * authorisation shape migrations 662-664 exist to stop.
+ *
+ * Every table read here is SELECT-able by `authenticated`: role_archetypes,
+ * compliance_packs and compliance_pack_rules are shared catalogues (RLS
+ * `auth.uid() is not null`), tenant_compliance_packs is member-scoped.
+ *
+ * Returns an EMPTY MAP on any read failure rather than throwing: the drawer
+ * treats "no entry" as not-established and says so, which is honest, whereas a
+ * throw would take the proposals page down over a decorative sentence.
+ */
+export async function listCompliancePacksForArchetypes(
+  archetypeKeys: readonly string[],
+): Promise<Map<string, AcceptCompliancePack[]>> {
+  const out = new Map<string, AcceptCompliancePack[]>();
+  const keys = Array.from(new Set(archetypeKeys.filter(Boolean)));
+  if (keys.length === 0) return out;
+
+  const [archRes, packRes, ruleRes, mineRes] = await Promise.all([
+    supabase.from('role_archetypes').select('key, compliance_pack_keys').in('key', keys),
+    supabase.from('compliance_packs').select('key, name'),
+    supabase.from('compliance_pack_rules').select('pack_key'),
+    supabase.from('tenant_compliance_packs').select('pack_key'),
+  ]);
+  if (archRes.error || packRes.error || ruleRes.error) return out;
+
+  const nameOf = new Map<string, string>();
+  for (const p of (packRes.data ?? []) as { key: string; name: string }[]) nameOf.set(p.key, p.name);
+
+  const ruleCount = new Map<string, number>();
+  for (const r of (ruleRes.data ?? []) as { pack_key: string }[]) {
+    ruleCount.set(r.pack_key, (ruleCount.get(r.pack_key) ?? 0) + 1);
+  }
+
+  // ⚠ A FAILED READ IS NOT "NOT ATTACHED". If the member-scoped read errored we
+  // cannot tell, and defaulting to false would claim the accept adds rules it
+  // may not. Reporting nothing at all makes the card say "not checked yet",
+  // which is the true statement.
+  if (mineRes.error) return out;
+  const mine = new Set(((mineRes.data ?? []) as { pack_key: string }[]).map((r) => r.pack_key));
+
+  for (const a of (archRes.data ?? []) as { key: string; compliance_pack_keys: string[] | null }[]) {
+    out.set(a.key, (a.compliance_pack_keys ?? []).map((pk) => ({
+      pack_key: pk,
+      name: nameOf.get(pk) ?? pk,
+      rule_count: ruleCount.get(pk) ?? 0,
+      already_attached: mine.has(pk),
+    })));
+  }
+  return out;
 }
 
 /**

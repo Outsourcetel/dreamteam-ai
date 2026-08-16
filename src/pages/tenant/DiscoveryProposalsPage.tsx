@@ -68,6 +68,7 @@ import {
   getDiscoverySession, getLatestSessionWithProposals, listDiscoveryProposals,
   listDiscoveryDimensions, listCapabilityGapsForHeardDimensions,
   acceptProposal, decideDiscoveryProposal, isDecidableKind, decidableKindsSentence,
+  listCompliancePacksForArchetypes,
 } from '../../lib/discoveryApi';
 import type {
   DiscoveryProposal, DiscoverySession, DiscoveryDimension, DiscoveryCapabilityGap,
@@ -75,9 +76,9 @@ import type {
 } from '../../lib/discoveryApi';
 import {
   SECTION_ORDER, KIND_LABELS, batchModeFor, cardCopyFor, whatAcceptingWrites, trustRuleBlockReason,
-  itemsForBatchMode,
+  itemsForBatchMode, needsAcceptConfirmation,
 } from '../../lib/discoveryProposalPresentation';
-import type { ProposalKind } from '../../lib/discoveryProposalPresentation';
+import type { AcceptCompliancePack, ProposalKind } from '../../lib/discoveryProposalPresentation';
 import type { Page } from '../../types';
 
 // Fix round 1 (review, Important): this used to live ONLY in a title= on a
@@ -117,7 +118,10 @@ const NOTHING_LIVE_EXPLANATION =
  *  DecisionOutcome's own note on why `?? 0` would manufacture a fact. */
 function hireConfirmation(
   title: string,
-  outcome: { systemsInstalled?: number; watchersSkipped?: number },
+  outcome: {
+    systemsInstalled?: number; watchersSkipped?: number;
+    complianceRulesCreated?: number; compliancePacksAttached?: string[];
+  },
 ): string {
   const parts = [`${title} — hired. They start supervised and send nothing until you say so.`];
   if (outcome.systemsInstalled === 0) {
@@ -127,6 +131,17 @@ function hireConfirmation(
   }
   if (typeof outcome.watchersSkipped === 'number' && outcome.watchersSkipped > 0) {
     parts.push(`${outcome.watchersSkipped} of the things they were meant to watch could not be set up — their Book of Work will be short until that is looked at.`);
+  }
+  // ⚠ SAID AFTER THE FACT AS WELL AS BEFORE IT. The drawer warns that a hire
+  // switches on workspace-wide blocking rules; this is the receipt that it
+  // actually did. Migration 747 reports the delta, so a second finance hire —
+  // which attaches nothing because the pack is already on — correctly says
+  // nothing here rather than claiming two more rules. A zero is silence, not a
+  // sentence: there is nothing to tell anyone about.
+  if (typeof outcome.complianceRulesCreated === 'number' && outcome.complianceRulesCreated > 0) {
+    const n = outcome.complianceRulesCreated;
+    const packs = (outcome.compliancePacksAttached ?? []).join(', ');
+    parts.push(`This role also switched on ${n} blocking compliance rule${n === 1 ? '' : 's'}${packs ? ` (${packs})` : ''} that now apply to every employee in this workspace — you can review or remove them under Compliance & Guardrails.`);
   }
   return parts.join(' ');
 }
@@ -152,6 +167,11 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
   // Decline and Park collect a sentence first — see the modal at the bottom.
   const [noteTarget, setNoteTarget] = useState<{ proposal: DiscoveryProposal; decision: DiscoveryDecision } | null>(null);
   const [noteText, setNoteText] = useState('');
+  // ⚠ AND SO DOES ACCEPT, when accepting switches on blocking rules this
+  // workspace does not already have. See needsAcceptConfirmation for why this
+  // is conditional rather than universal, and the modal at the bottom for what
+  // it shows.
+  const [acceptTarget, setAcceptTarget] = useState<DiscoveryProposal | null>(null);
   /** Every proposal id this page has ever rendered. Lets load() tell "the
    *  person unchecked this" apart from "this is new", which a Set of the
    *  currently-checked ids alone cannot. */
@@ -217,6 +237,46 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
     }
     return m;
   }, [employeeProposals]);
+
+  // ⚠ WHAT ACCEPTING A HIRE ALSO SWITCHES ON, looked up because the payload
+  // does not carry it. 7 of the 15 active archetypes attach a compliance pack,
+  // and a pack materialises BLOCKING rules with applies_to='all' — controls on
+  // every employee in the workspace, arriving as a side effect of one hire.
+  // Nothing showed them before migration 747, and a rule the customer was never
+  // shown is a rule they cannot have consented to (§11b).
+  //
+  // ⚠ null, NOT an empty Map, until the read comes back. The drawer says "not
+  // checked yet" for an archetype it has no entry for, so an empty Map here
+  // would turn "we haven't looked" into "there are none" — the exact
+  // manufactured fact this page refuses elsewhere with `?? 0`.
+  const [packsByArchetype, setPacksByArchetype] = useState<Map<string, AcceptCompliancePack[]> | null>(null);
+  useEffect(() => {
+    const keys = employeeProposals.map((e) => String(e.payload.archetype_key ?? '')).filter(Boolean);
+    if (keys.length === 0) { setPacksByArchetype(new Map()); return; }
+    let live = true;
+    void listCompliancePacksForArchetypes(keys).then((m) => { if (live) setPacksByArchetype(m); });
+    return () => { live = false; };
+  }, [employeeProposals]);
+
+  /** The pack facts for ONE proposal, in the shape every disclosure point takes.
+   *
+   *  ⚠ ONE BUILDER, THREE READERS — the card face, the accept confirmation and
+   *  the Details drawer. Before this, only the drawer had it, and the drawer is
+   *  the one place a person does not have to go before clicking Accept. Three
+   *  hand-built objects would be three chances for the card and the confirmation
+   *  to say different things about the same hire.
+   *
+   *  ⚠ `undefined` propagates deliberately, twice over: the Map is null until
+   *  the lookup lands, and a Map with no entry for this archetype means the read
+   *  came back empty (listCompliancePacksForArchetypes returns an EMPTY map on
+   *  any failure, precisely so a failed read cannot read as "no packs"). Both
+   *  reach the copy functions as `undefined`, which they render as "not checked
+   *  yet" and which needsAcceptConfirmation treats as a reason TO confirm. */
+  const acceptContextFor = useCallback((p: DiscoveryProposal) => (
+    p.kind === 'employee'
+      ? { compliancePacks: packsByArchetype?.get(String(p.payload.archetype_key ?? '')) }
+      : undefined
+  ), [packsByArchetype]);
 
   // Every proposal still awaiting a decision, kind-mixed on purpose: the
   // three renderers below each route their slice of this through
@@ -387,7 +447,9 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
 
   // ── one card, every kind renders through this ───────────────────────────
   const renderCard = (p: DiscoveryProposal, opts: { checkbox?: boolean; blockedReason?: string | null } = {}) => {
-    const copy = cardCopyFor(p.kind, p.payload, employeeNameByArchetype);
+    // ⚠ THE FOURTH ARGUMENT IS THE CONSENT, and it is here rather than only in
+    // the Drawer because Accept is here. See cardCopyFor's own note.
+    const copy = cardCopyFor(p.kind, p.payload, employeeNameByArchetype, acceptContextFor(p));
     const blocked = opts.blockedReason ?? null;
     const detail = blocked ?? copy.detail;
     const tone = blocked ? 'neutral' : 'warn';
@@ -415,7 +477,20 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
           <Chip tone="neutral">Blocked</Chip>
         ) : live ? (
           <>
-            <Button kind="primary" size="sm" disabled={working} onClick={() => void runDecision(p, 'accepted', null)}>
+            {/* ⚠ NOT AN UNCONDITIONAL runDecision ANY MORE. This fired on one
+                click, with no confirmation, for a decision that hires an
+                employee AND switches on workspace-wide BLOCKING rules — while
+                Decline and Park, which create nothing, both stopped to ask for
+                a sentence. needsAcceptConfirmation is the single gate: it is
+                true only when this accept adds compliance rules the workspace
+                does not already have, or when we could not establish whether it
+                does. Everything else still goes straight through, because a
+                confirmation on every accept is one nobody reads. */}
+            <Button kind="primary" size="sm" disabled={working}
+              onClick={() => {
+                if (needsAcceptConfirmation(p.kind, acceptContextFor(p))) setAcceptTarget(p);
+                else void runDecision(p, 'accepted', null);
+              }}>
               {busy.has(p.id) ? 'Setting up…' : 'Accept'}
             </Button>
             <Button kind="secondary" size="sm" disabled={working} onClick={() => { setNoteText(''); setNoteTarget({ proposal: p, decision: 'declined' }); }}>
@@ -693,6 +768,59 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
         </Modal>
       )}
 
+      {/* ⚠ THE ONE THING THIS WHOLE MIGRATION EXISTS FOR, PUT WHERE THE DECISION
+          IS TAKEN. The pack disclosure used to render only inside the Drawer,
+          behind a "Details" button, while Accept sat on the card and fired
+          immediately — so the ordinary path through this screen was: read a
+          job title, click Accept, and have two blocking rules start applying to
+          every employee in the workspace, with the sentence explaining that
+          never rendered on screen at all. Measured: 4 of 18 workspaces held a
+          pack, so 14 were exposed on their first such hire.
+
+          It asks ONLY when there is something new to disclose (see
+          needsAcceptConfirmation), and it shows the SAME sentence the drawer
+          shows, from the same function and the same context object, so the two
+          cannot drift. The Cancel is the real default: a person who opened this
+          by accident loses nothing by closing it. */}
+      {acceptTarget && (
+        <Modal
+          size="md"
+          title="This hire also switches on compliance rules"
+          onClose={() => setAcceptTarget(null)}
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-dt-body leading-relaxed">
+              {cardCopyFor(acceptTarget.kind, acceptTarget.payload, employeeNameByArchetype, acceptContextFor(acceptTarget)).title}
+            </p>
+            <p className="text-sm text-dt-support leading-relaxed">
+              {whatAcceptingWrites(acceptTarget.kind, acceptTarget.payload, acceptContextFor(acceptTarget))}
+            </p>
+            {/* The rules themselves are not on the payload and are not fetched
+                here — the pack's rule TEXT lives on the Compliance page, which
+                this names rather than paraphrases. Naming the pack and counting
+                its rules is what the customer needs to decide; reading them is
+                one link away and always available afterwards. */}
+            <p className="text-xs text-dt-muted leading-relaxed">
+              You can see exactly what a pack blocks, and take it back off, under Compliance &amp; Guardrails.
+            </p>
+          </div>
+          <div className="flex items-center justify-end gap-2 mt-5">
+            <Button kind="ghost" size="sm" onClick={() => setAcceptTarget(null)}>Cancel</Button>
+            <Button
+              kind="primary"
+              size="sm"
+              onClick={() => {
+                const target = acceptTarget;
+                setAcceptTarget(null);
+                void runDecision(target, 'accepted', null);
+              }}
+            >
+              Hire them
+            </Button>
+          </div>
+        </Modal>
+      )}
+
       {openProposal && (
         <Drawer title="Why we're proposing this" onClose={() => setOpenProposal(null)}>
           <div className="space-y-4 text-sm text-dt-body">
@@ -706,7 +834,20 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
             </div>
             <div>
               <div className="text-xs uppercase tracking-wide text-dt-muted mb-1">If you accept</div>
-              <p className="text-dt-support">{whatAcceptingWrites(openProposal.kind, openProposal.payload)}</p>
+              {/* ⚠ THE THIRD ARGUMENT IS THE CONSENT. For an employee, this is
+                  where the drawer names the compliance pack the hire switches on
+                  and how many BLOCKING, workspace-wide rules that is. Passing
+                  `undefined` while the lookup is still in flight is deliberate:
+                  the sentence then says it has not been checked, rather than
+                  implying there is nothing to check.
+                  ⚠ AND IT IS NO LONGER THE ONLY PLACE THIS RENDERS. The same
+                  context object, from the same builder, now reaches the card
+                  face and the accept confirmation — this drawer used to be the
+                  only one, which meant the disclosure was optional reading for
+                  a decision that was one click away. */}
+              <p className="text-dt-support">
+                {whatAcceptingWrites(openProposal.kind, openProposal.payload, acceptContextFor(openProposal))}
+              </p>
             </div>
           </div>
         </Drawer>

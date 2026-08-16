@@ -278,11 +278,24 @@ export interface ProposalCardCopy {
 /** The one function every card in the screen calls for its copy. Takes only
  *  data — kind + payload + an employee-name lookup for the two kinds
  *  (conversation_type's owner_ref, trust_rule's de_ref) that reference an
- *  employee by "archetype:<key>" rather than carrying a name of their own. */
+ *  employee by "archetype:<key>" rather than carrying a name of their own.
+ *
+ *  ⚠ `context` IS THE CONSENT, AND IT IS ON THE CARD BECAUSE ACCEPT IS ON THE
+ *  CARD. Until this parameter existed, the entire compliance-pack disclosure
+ *  lived in whatAcceptingWrites, which renders ONLY inside the Details drawer —
+ *  while Accept sat on the card face and fired with no confirmation at all. One
+ *  click hired an employee and switched on two workspace-wide BLOCKING rules
+ *  with the sentence never rendered on screen. §11b already requires this card
+ *  to carry the systems the role will touch; rules that apply to EVERY employee
+ *  in the workspace are not a smaller fact than that. Optional, because it
+ *  arrives from an async lookup and the card must render before it does — and
+ *  compliancePackCardClause SAYS "not checked yet" rather than treating
+ *  not-yet-arrived as "there is none". */
 export function cardCopyFor(
   kind: ProposalKind,
   payload: Record<string, unknown>,
   employeeNameByArchetype: ReadonlyMap<string, string>,
+  context?: AcceptContext,
 ): ProposalCardCopy {
   const archetypeOf = (ref: string) => (ref.startsWith('archetype:') ? ref.slice('archetype:'.length) : ref);
 
@@ -393,9 +406,19 @@ export function cardCopyFor(
           : null;
       return {
         title: `Add ${name} to your team`,
-        detail: fit
+        detail: (fit
           ? `${fit} Starts supervised, drafts everything, sends nothing until you say so.`
-          : 'Comes with a published SOP. Starts supervised, drafts everything, sends nothing until you say so.',
+          : 'Comes with a published SOP. Starts supervised, drafts everything, sends nothing until you say so.')
+          // ⚠ THE PACK CLAUSE IS PART OF THE CONSEQUENCE SENTENCE, not an
+          // extra line. `detail` is "one sentence of consequence — what
+          // accepting actually changes", and switching on blocking rules for
+          // every employee in the workspace is the largest thing accepting this
+          // card changes. It is deliberately SHORT here (the full sentence,
+          // with what happens later and where to remove it, is
+          // whatAcceptingWrites, which the drawer and the accept confirmation
+          // both render) — §11b's card budget is one disclosure level, not no
+          // disclosure.
+          + compliancePackCardClause(context),
         meta: [
           heard,
           systems.length ? `Systems: ${systems.join(', ')}` : 'No systems requested yet.',
@@ -452,9 +475,125 @@ export function cardCopyFor(
   }
 }
 
+/** A compliance pack an employee proposal's archetype would switch on.
+ *
+ *  `rule_count` is the number of BLOCKING rules in the shared catalogue for
+ *  that pack; `already_attached` is whether this workspace already holds it,
+ *  which is the difference between "accepting adds two blocking rules" and
+ *  "accepting adds none, they are already on". */
+export interface AcceptCompliancePack {
+  pack_key: string;
+  name: string;
+  rule_count: number;
+  already_attached: boolean;
+}
+
+/** Facts the drawer knows that the proposal payload does not carry. Optional
+ *  by construction: the page loads them asynchronously, and a card must be able
+ *  to render before they arrive — but see compliancePackSentence for why
+ *  "haven't arrived" is SAID rather than rendered as "there are none". */
+export interface AcceptContext {
+  /** 'employee' only. `undefined` means NOT YET ESTABLISHED. An empty array
+   *  means established and there are none — a distinction this file already
+   *  pays for elsewhere (`?? 0` on systems_installed manufactures a fact). */
+  compliancePacks?: readonly AcceptCompliancePack[];
+}
+
+/** ⚠ THE SENTENCE THE HIRE NEVER SAID.
+ *
+ *  instantiate_role_archetype auto-attaches its archetype's mandatory
+ *  compliance packs, which materialise as guardrail_rules with
+ *  applies_to='all' and severity='blocking' — WORKSPACE-WIDE controls on every
+ *  employee, not just the one being hired. Measured 2026-08-16: 7 of 15 active
+ *  archetypes carry one. None of that appeared on the card, in a counter, or in
+ *  the audit detail, so a customer accepted blocking rules they were never
+ *  shown. That is the same §11b principle the guardrail card already follows:
+ *  you cannot consent to a rule nobody told you about.
+ *
+ *  Three branches, and the first one is the point:
+ *   · undefined       — not established yet. SAID, never silently treated as
+ *                       "none": a card that stays quiet about a pack it simply
+ *                       hasn't looked up reads exactly like a card confirming
+ *                       there is no pack.
+ *   · [] or all known — established, nothing to add.
+ *   · already on      — the pack exists here already, so accepting adds NO new
+ *                       blocking rules. Claiming two would be the overclaim
+ *                       this function was rewritten once already to remove. */
+function compliancePackSentence(context?: AcceptContext): string {
+  const packs = context?.compliancePacks;
+  if (packs === undefined) return ' Whether this role also switches on a compliance pack has not been checked yet.';
+  if (packs.length === 0) return ' It switches on no compliance pack, so no new workspace-wide rules.';
+
+  const names = packs.map((p) => p.name || p.pack_key).join(' and ');
+  const fresh = packs.filter((p) => !p.already_attached);
+  const newRules = fresh.reduce((n, p) => n + p.rule_count, 0);
+
+  if (fresh.length === 0 || newRules === 0) {
+    return ` It also requires the ${names} compliance pack, which this workspace already has on — so accepting adds no new blocking rules.`;
+  }
+  return ` It also switches on the ${names} compliance pack: ${newRules} blocking rule${newRules === 1 ? '' : 's'} that appl${newRules === 1 ? 'ies' : 'y'} to every employee in this workspace, not just this one. You can take the pack off later in Compliance & Guardrails.`;
+}
+
+/** ⚠ THE SAME FACT, CARD-SIZED. compliancePackSentence is the full disclosure
+ *  and belongs where there is room for it — the Details drawer and the accept
+ *  confirmation. This is the clause that goes on the card face, next to the
+ *  button that fires, because that is where the decision is taken.
+ *
+ *  Four branches, and two of them are silence-with-a-reason:
+ *   · undefined  — not established. SAID. A card that is quiet about a pack it
+ *                  simply has not looked up reads exactly like a card
+ *                  confirming there is no pack, and the two are opposite facts.
+ *   · []         — established, there is none. SILENT, deliberately: nothing
+ *                  happened, and a card that narrates non-events is a card
+ *                  nobody finishes reading. The undefined branch above is what
+ *                  keeps this silence honest.
+ *   · already on — named, with the fact that accepting adds nothing. Claiming
+ *                  new blocking rules here would be the overclaim this file
+ *                  refuses everywhere else.
+ *   · fresh      — named, counted, and scoped: EVERY employee, not just this
+ *                  one. That last word is the whole disclosure. */
+export function compliancePackCardClause(context?: AcceptContext): string {
+  const packs = context?.compliancePacks;
+  if (packs === undefined) return ' Whether it also switches on a compliance pack has not been checked yet.';
+  if (packs.length === 0) return '';
+
+  const names = packs.map((p) => p.name || p.pack_key).join(' and ');
+  const fresh = packs.filter((p) => !p.already_attached);
+  const newRules = fresh.reduce((n, p) => n + p.rule_count, 0);
+
+  if (fresh.length === 0 || newRules === 0) {
+    return ` Needs the ${names} compliance pack, which this workspace already has on.`;
+  }
+  return ` It also switches on the ${names} compliance pack — ${newRules} blocking rule${newRules === 1 ? '' : 's'} that appl${newRules === 1 ? 'ies' : 'y'} to every employee in this workspace, not just this one.`;
+}
+
+/** Does accepting THIS proposal need a confirmation step before it fires?
+ *
+ *  ⚠ THE ARGUMENT FOR HAVING ONE AT ALL. Decline and Park already collect a
+ *  sentence in a modal; Accept — the only one of the three that creates an
+ *  employee AND switches on workspace-wide blocking rules, and the only one
+ *  that cannot be undone from this screen — had none. That asymmetry is
+ *  backwards. The card clause makes the deck honest at a glance; a confirm is
+ *  what makes the irreversible half deliberate, and the two do different jobs.
+ *
+ *  ⚠ AND THE ARGUMENT FOR NOT HAVING ONE ALWAYS, which matters just as much: a
+ *  confirmation on every accept is trained away inside a week, and then it is
+ *  worse than nothing because it looks like a control. This returns true ONLY
+ *  when there is something the customer has not already got — a pack this
+ *  workspace does not hold, carrying at least one rule — or when we could not
+ *  establish whether there is (undefined), because "we did not check" is not a
+ *  reason to skip the step. A second finance hire into a workspace that already
+ *  has financial_controls attaches nothing new and goes straight through. */
+export function needsAcceptConfirmation(kind: ProposalKind, context?: AcceptContext): boolean {
+  if (kind !== 'employee') return false;
+  const packs = context?.compliancePacks;
+  if (packs === undefined) return true;
+  return packs.some((p) => !p.already_attached && p.rule_count > 0);
+}
+
 /** What accepting a proposal of this kind actually creates — the Drawer's
- *  "what accepting writes" line. Deliberately plain, not a repeat of the
- *  card's own detail sentence.
+ *  "what accepting writes" line, and the body of the accept confirmation.
+ *  Deliberately plain, not a repeat of the card's own detail sentence.
  *
  *  `payload` is required (fix round 1, Critical 2): the old single-string
  *  version claimed "Creates an ENFORCED guardrail rule with this exact
@@ -465,9 +604,13 @@ export function cardCopyFor(
  *  content, so this parameter is unused for them — kept required anyway so
  *  a future kind that DOES need to branch can't be added without a payload
  *  already in scope. */
-export function whatAcceptingWrites(kind: ProposalKind, payload: Record<string, unknown>): string {
+export function whatAcceptingWrites(
+  kind: ProposalKind,
+  payload: Record<string, unknown>,
+  context?: AcceptContext,
+): string {
   switch (kind) {
-    case 'employee': return 'Creates a digital employee — draft, supervised — with its SOP and requested systems attached.';
+    case 'employee': return `Creates a digital employee — draft, supervised — with its SOP and requested systems attached.${compliancePackSentence(context)}`;
     case 'connector': return 'Creates a connector record for this system, waiting on your credential.';
     case 'procedure': return 'Creates a draft procedure definition. It will not run until you publish it.';
     case 'conversation_type': return 'Adds this as a routable conversation topic.';

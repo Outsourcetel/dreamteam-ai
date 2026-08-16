@@ -13,11 +13,12 @@
 //
 // Each block below states the exact data that would turn it red, per the
 // "name the data that turns it red" standard this programme holds itself to.
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
   PROPOSAL_KINDS, SECTION_ORDER, batchModeFor, cardCopyFor, guardrailLiteral, guardrailKindOf,
   formatCap, formatBareNumber, humanizeToken, humanizeSystem, humanizeConnectorTouch,
-  whatAcceptingWrites, trustRuleBlockReason, itemsForBatchMode,
+  whatAcceptingWrites, trustRuleBlockReason, itemsForBatchMode, needsAcceptConfirmation,
   __looksLikeEnforceablePattern_forDriftTestOnly as looksLikeEnforceablePattern,
 } from '../src/lib/discoveryProposalPresentation';
 import type { ProposalKind } from '../src/lib/discoveryProposalPresentation';
@@ -349,6 +350,251 @@ describe('whatAcceptingWrites — every kind states what its acceptance creates'
     expect(thresholdSentence).not.toMatch(/block/i);
     expect(thresholdSentence).toMatch(/approval/i);
     expect(patternSentence).not.toBe(thresholdSentence);
+  });
+
+  // ── migration 747: the hire says what it switches on for the WHOLE workspace ──
+  //
+  // instantiate_role_archetype auto-attaches its archetype's mandatory
+  // compliance packs, which materialise guardrail_rules with applies_to='all'
+  // and severity='blocking'. Measured live 2026-08-16: 7 of 15 active
+  // archetypes carry one, 2 rules each. None of it reached the card, so a
+  // customer accepted blocking rules covering every employee they had never
+  // been shown.
+  describe('employee — the compliance pack a hire attaches', () => {
+    const PACK = { pack_key: 'financial_controls', name: 'Financial Controls', rule_count: 2, already_attached: false };
+
+    it('names the pack and counts the blocking rules — RED if accepting can attach workspace-wide blocking rules the card never mentions', () => {
+      const s = whatAcceptingWrites('employee', {}, { compliancePacks: [PACK] });
+      expect(s).toContain('Financial Controls');
+      expect(s).toMatch(/2 blocking rules/);
+      expect(s).toMatch(/every employee/i);
+    });
+
+    it('a pack the workspace ALREADY has adds no new rules — RED if the card claims 2 more blocking rules for an accept that creates none', () => {
+      const s = whatAcceptingWrites('employee', {}, { compliancePacks: [{ ...PACK, already_attached: true }] });
+      expect(s).toMatch(/already has/i);
+      expect(s).not.toMatch(/2 blocking rules/);
+    });
+
+    it('an archetype with no pack says so — RED if silence has to be read as "none"', () => {
+      const s = whatAcceptingWrites('employee', {}, { compliancePacks: [] });
+      expect(s).toMatch(/no compliance pack/i);
+    });
+
+    // ⚠ THE ONE THAT MATTERS MOST. `undefined` means the lookup has not come
+    // back. Treating it as "there are none" is the `?? 0` defect this codebase
+    // keeps paying for: the card would confidently confirm the absence of a
+    // control it never looked for.
+    it('an unestablished lookup says it has not been checked — RED if not-yet-known is rendered as none', () => {
+      const s = whatAcceptingWrites('employee', {});
+      expect(s).toMatch(/not been checked/i);
+      expect(s).not.toMatch(/no compliance pack/i);
+    });
+
+    it('the four states produce four different sentences — RED if two of them collapse into one', () => {
+      const sentences = [
+        whatAcceptingWrites('employee', {}),
+        whatAcceptingWrites('employee', {}, { compliancePacks: [] }),
+        whatAcceptingWrites('employee', {}, { compliancePacks: [PACK] }),
+        whatAcceptingWrites('employee', {}, { compliancePacks: [{ ...PACK, already_attached: true }] }),
+      ];
+      expect(new Set(sentences).size).toBe(4);
+    });
+
+    // ══════════════════════════════════════════════════════════════════
+    // ⚠⚠ THE DISCLOSURE HAS TO BE WHERE THE DECISION IS.
+    //
+    // Every test above proves whatAcceptingWrites says the right thing — and
+    // whatAcceptingWrites renders ONLY inside the Details drawer
+    // (DiscoveryProposalsPage.tsx). Accept sits on the CARD FACE and used to
+    // fire on one click with no confirmation. So all of it could be true and a
+    // customer could still hire an employee, switch on two workspace-wide
+    // blocking rules, and never have the sentence rendered on their screen.
+    // Measured: 4 of 18 workspaces held a pack, 14 exposed on the first such
+    // hire. These cases are about the card and the confirm gate.
+    // ══════════════════════════════════════════════════════════════════
+    describe('the card face — cardCopyFor carries the pack, not just the drawer', () => {
+      const noOwners = new Map<string, string>();
+
+      it('names the pack and counts the rules ON THE CARD — RED if the whole disclosure is behind "Details" while Accept is not', () => {
+        const copy = cardCopyFor('employee', { name: 'Accounts Payable Clerk' }, noOwners, { compliancePacks: [PACK] });
+        expect(copy.detail).toContain('Financial Controls');
+        expect(copy.detail).toMatch(/2 blocking rules/);
+        expect(copy.detail).toMatch(/every employee/i);
+      });
+
+      it('says WHOSE employees — RED if the card lets a workspace-wide rule read as a rule about this one hire', () => {
+        const copy = cardCopyFor('employee', { name: 'Accounts Payable Clerk' }, noOwners, { compliancePacks: [PACK] });
+        expect(copy.detail).toMatch(/not just this one/i);
+      });
+
+      it('a pack already on claims no new rules — RED if the card overclaims on a second finance hire', () => {
+        const copy = cardCopyFor('employee', { name: 'Second Clerk' }, noOwners,
+          { compliancePacks: [{ ...PACK, already_attached: true }] });
+        expect(copy.detail).toMatch(/already has on/i);
+        expect(copy.detail).not.toMatch(/2 blocking rules/);
+      });
+
+      it('an unestablished lookup says so on the card — RED if not-yet-known renders as silence, which reads as "there is none"', () => {
+        const copy = cardCopyFor('employee', { name: 'Someone' }, noOwners);
+        expect(copy.detail).toMatch(/not been checked yet/i);
+      });
+
+      it('an archetype with NO pack adds nothing to the card — RED if the card starts narrating non-events (and the not-checked branch is what keeps this silence honest)', () => {
+        const withNone = cardCopyFor('employee', { name: 'Someone' }, noOwners, { compliancePacks: [] });
+        const unknown = cardCopyFor('employee', { name: 'Someone' }, noOwners);
+        expect(withNone.detail).not.toMatch(/compliance pack/i);
+        expect(withNone.detail).not.toBe(unknown.detail);
+      });
+
+      it('no other kind grows a pack clause — RED if a connector card starts talking about compliance packs', () => {
+        for (const k of PROPOSAL_KINDS) {
+          if (k === 'employee') continue;
+          const copy = cardCopyFor(k, { rule: 'r', pattern: 'x', label: 'l', name: 'n' }, noOwners,
+            { compliancePacks: [PACK] });
+          expect(copy.detail).not.toMatch(/compliance pack/i);
+        }
+      });
+    });
+
+    describe('needsAcceptConfirmation — the gate between one click and a hire', () => {
+      it('a NEW pack with rules asks first — RED if Accept fires straight through on the one decision that switches on blocking rules', () => {
+        expect(needsAcceptConfirmation('employee', { compliancePacks: [PACK] })).toBe(true);
+      });
+
+      it('an unestablished lookup asks first — RED if "we could not check" is treated as "there is nothing to disclose"', () => {
+        expect(needsAcceptConfirmation('employee')).toBe(true);
+        expect(needsAcceptConfirmation('employee', {})).toBe(true);
+      });
+
+      it('a pack already on goes straight through — RED if every accept gets a confirmation, because one nobody can avoid is one nobody reads', () => {
+        expect(needsAcceptConfirmation('employee', { compliancePacks: [{ ...PACK, already_attached: true }] })).toBe(false);
+      });
+
+      it('an archetype with no pack goes straight through', () => {
+        expect(needsAcceptConfirmation('employee', { compliancePacks: [] })).toBe(false);
+      });
+
+      it('a pack carrying ZERO rules goes straight through — RED if the gate fires on a pack that changes nothing', () => {
+        expect(needsAcceptConfirmation('employee', { compliancePacks: [{ ...PACK, rule_count: 0 }] })).toBe(false);
+      });
+
+      it('one fresh pack among several already-attached ones still asks — RED if the check reads only the first pack', () => {
+        expect(needsAcceptConfirmation('employee', {
+          compliancePacks: [{ ...PACK, already_attached: true }, { ...PACK, pack_key: 'tcpa_dnc', name: 'TCPA / DNC' }],
+        })).toBe(true);
+      });
+
+      it('never fires for a kind that attaches no pack — RED if a connector accept grows a modal it has nothing to say in', () => {
+        for (const k of PROPOSAL_KINDS) {
+          if (k === 'employee') continue;
+          expect(needsAcceptConfirmation(k, { compliancePacks: [PACK] })).toBe(false);
+        }
+      });
+    });
+
+    // ⚠⚠ THE GATE IS NOT THE WIRING, AND THIS PROGRAMME HAS PAID FOR THAT
+    // DISTINCTION BEFORE. Everything above proves compliancePackCardClause and
+    // needsAcceptConfirmation return the right answers. None of it proves the
+    // page ASKS them — and the defect being fixed here was precisely that: the
+    // disclosure function was correct, complete, well-tested, and rendered only
+    // inside a drawer nobody had to open, while the Accept button next to it
+    // called runDecision directly. A pure-function suite that is entirely green
+    // is exactly what that looked like from in here.
+    //
+    // So this reads the page. It is a coarse instrument and it is deliberately
+    // coarse: it does not care how the wiring is written, only that a card's
+    // Accept cannot reach runDecision without the gate being consulted first.
+    describe('the page actually asks — DiscoveryProposalsPage wiring', () => {
+      const page = readFileSync('src/pages/tenant/DiscoveryProposalsPage.tsx', 'utf8');
+
+      /** The Accept handler's OWN BODY, not the whole file.
+       *
+       *  ⚠⚠ THIS EXTRACTION IS THE POINT, AND IT IS HERE BECAUSE THE TWO TESTS
+       *  IT REPLACES WERE PROVEN UNABLE TO FAIL — against a bypass that was
+       *  briefly REAL ON DISK, not a hypothetical one:
+       *
+       *      onClick={() => {
+       *        void needsAcceptConfirmation(p.kind, acceptContextFor(p));  // discarded
+       *        void runDecision(p, 'accepted', null);                      // unconditional
+       *      }}
+       *
+       *  Every accept goes straight through and the confirm modal is dead
+       *  code. Both old tests stayed green, and so did the other 69:
+       *    · `toMatch(/needsAcceptConfirmation.*\n?.*setAcceptTarget/s)` — the
+       *      `s` flag makes `.` match newlines, so `.*` spans the ENTIRE FILE.
+       *      The call at the card and the `setAcceptTarget(null)` in the
+       *      modal's onClose, 300 lines apart and unrelated, satisfied it.
+       *    · `not.toMatch(/onClick=\{\(\)\s*=>\s*void runDecision/)` — pinned
+       *      one exact spelling. A braced block body never matches it.
+       *  A test that reads the whole file cannot tell a gate from two
+       *  statements that happen to mention it. */
+      const acceptHandlerBody = (() => {
+        const at = page.indexOf("{busy.has(p.id) ? 'Setting up…' : 'Accept'}");
+        if (at === -1) return null;
+        const open = page.lastIndexOf('onClick={', at);
+        if (open === -1) return null;
+        // Walk braces from the arrow body so nested blocks are included whole.
+        let depth = 0; let i = page.indexOf('{', open + 'onClick='.length);
+        const start = i;
+        for (; i < page.length; i++) {
+          if (page[i] === '{') depth++;
+          else if (page[i] === '}') { depth--; if (depth === 0) break; }
+        }
+        return page.slice(start, i + 1);
+      })();
+
+      it('the Accept handler exists and could be isolated — RED if the card stops being findable, which would make every assertion below vacuous', () => {
+        expect(acceptHandlerBody, 'could not locate the card Accept onClick body — the assertions below would silently pass over nothing').toBeTruthy();
+        expect(acceptHandlerBody!.length).toBeGreaterThan(20);
+      });
+
+      it('Accept is GATED, not merely gate-adjacent — RED if the confirmation result is computed and discarded', () => {
+        const body = acceptHandlerBody!;
+        // The decision must BRANCH on the gate, and the true side must open
+        // the confirmation. `[^;]*` rather than `[^)]*` because the condition
+        // contains a nested call — acceptContextFor(p) — so a paren-excluding
+        // span stops inside it. (That was a real mistake in the first draft of
+        // this test, and the test failing on the CORRECT handler is how it was
+        // found: an assertion that cannot be wrong about the good case cannot
+        // be trusted about the bad one.) A semicolon still bounds it to this
+        // one statement.
+        expect(body, 'the handler does not branch on needsAcceptConfirmation').toMatch(
+          /if\s*\([^;]*needsAcceptConfirmation[^;]*\)/,
+        );
+        expect(body, 'the true branch does not open the confirmation').toMatch(
+          /if\s*\([^;]*needsAcceptConfirmation[^;]*\)\s*setAcceptTarget/,
+        );
+        // ...and reach the decision ONLY through else.
+        expect(body, "runDecision('accepted') is reachable without passing the gate").toMatch(
+          /else[\s\S]*runDecision\(\s*p,\s*'accepted'/,
+        );
+        // And the result must never be thrown away — this is the exact bypass.
+        expect(body, 'needsAcceptConfirmation is called and its answer discarded').not.toMatch(
+          /void\s+needsAcceptConfirmation/,
+        );
+      });
+
+      it('there is exactly ONE way to accept from a card — RED if a second, ungated call is added anywhere on the page', () => {
+        // Counting, not spelling. Any bypass ADDS an occurrence, whatever
+        // shape it takes, and the batch path uses acceptProposal rather than
+        // this call so it does not inflate the count.
+        const accepts = page.match(/runDecision\(\s*p,\s*'accepted'/g) ?? [];
+        expect(accepts, `expected exactly one runDecision(p,'accepted') on the page, found ${accepts.length}`).toHaveLength(1);
+        expect(acceptHandlerBody!).toContain("runDecision(p, 'accepted'");
+      });
+
+      it('the card copy is built WITH the pack context — RED if cardCopyFor loses its fourth argument and the clause silently disappears from every card', () => {
+        expect(page).toMatch(/cardCopyFor\(p\.kind,\s*p\.payload,\s*employeeNameByArchetype,\s*acceptContextFor\(p\)\)/);
+      });
+
+      it('the confirmation renders the same sentence the drawer does — RED if the two disclosures become two different claims about one hire', () => {
+        // whatAcceptingWrites must appear at least twice: once in the confirm,
+        // once in the drawer, both fed by acceptContextFor.
+        expect(page.match(/whatAcceptingWrites\(/g) ?? []).toHaveLength(2);
+        expect(page.match(/acceptContextFor\(/g) ?? []).not.toHaveLength(0);
+      });
+    });
   });
 });
 

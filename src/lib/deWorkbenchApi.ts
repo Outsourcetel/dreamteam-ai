@@ -274,6 +274,36 @@ export const attachCompliancePack = async (packKey: string): Promise<void> => {
   if (error) throw error;
 };
 
+/**
+ * Take a compliance pack off this workspace.
+ *
+ * ⚠ THE COUNTERPART THAT NEVER EXISTED. `detach_compliance_pack` has shipped in
+ * Postgres since the packs did, and until migration 747 NOTHING in src/ or
+ * supabase/functions/ called it — so the escape hatch that
+ * retire_guardrail_rule's own refusal points at ("detach the pack instead of
+ * retiring one of its rules") was unreachable from the product. A customer
+ * whose hire attached financial_controls or tcpa_dnc had two blocking,
+ * workspace-wide rules they could not switch off and could not remove.
+ *
+ * ⚠ `.rpc()` RESOLVES ON A POSTGRES ERROR — the promise does not reject, the
+ * refusal arrives in `error`. Checking it is the whole of the error handling
+ * here; a bare `await` would report a governed refusal as a success.
+ *
+ * Migration 747 made this RETIRE rather than delete, so the rules survive with
+ * retired_at set (they still explain a block recorded months ago, and a later
+ * re-attach revives the same rows), and it made both directions write a
+ * config_change audit event carrying the pack key and the rules verbatim.
+ */
+export const detachCompliancePack = async (packKey: string): Promise<{ rulesRetired: number; packName: string | null }> => {
+  const { data: prof } = await supabase.auth.getUser();
+  const { data: p } = await supabase.from('profiles').select('tenant_id').eq('user_id', prof.user?.id ?? '').maybeSingle();
+  if (!p?.tenant_id) throw new Error('No workspace.');
+  const { data, error } = await supabase.rpc('detach_compliance_pack', { p_tenant_id: p.tenant_id, p_pack_key: packKey });
+  if (error) throw error;
+  const r = (data ?? {}) as { rules_retired?: number; pack_name?: string | null };
+  return { rulesRetired: Number(r.rules_retired ?? 0), packName: r.pack_name ?? null };
+};
+
 export const getDeCertStatus = async (deId: string): Promise<CertStatus | null> => {
   const { data, error } = await supabase.rpc('de_certification_status', { p_de_id: deId });
   if (error) throw error;
