@@ -1068,10 +1068,17 @@ begin
       -- `?` is a parameter placeholder to several client drivers and this file
       -- has to survive being replayed through whichever one a future rebuild
       -- uses; the two are equivalent here because nothing writes a null-valued
-      -- `kind` or `proposal_id`.
+      -- `proposal_id`.
       v_checks := v_checks + 1;
-      if (v_p2_detail ->> 'kind') is not null or (v_p2_detail ->> 'proposal_id') is not null then
-        v_bad := array_append(v_bad, 'the hire audit detail carries a `kind` or `proposal_id` key — verify_decide_discovery_proposal probe 12 counts "exactly one audit row for this decision" on those two keys, so this would turn its 1 into a 2 and take the certify behaviour section red for every tenant');
+      -- ⚠ ONLY proposal_id. An earlier draft banned `kind` too, on a claim that
+      -- turned out to be false: probe 12 counts
+      -- `detail->>'kind' = 'discovery_proposal_decision'`, a VALUE match, so a
+      -- row keyed 'digital_employee_hired' cannot satisfy it. `kind` is the
+      -- ledger's own vocabulary — 3,063 live rows across 104 values, against 0
+      -- using anything else — and banning it here is what would have made a
+      -- hire invisible to every reader that filters on it.
+      if (v_p2_detail ->> 'proposal_id') is not null then
+        v_bad := array_append(v_bad, 'the hire audit detail carries a `proposal_id` key — verify_decide_discovery_proposal reads a decision back with `detail->>''proposal_id''` UNQUALIFIED by kind, so a hire carrying it is picked up as a second decision row and the certify behaviour section goes red for every tenant');
       end if;
     end if;
     v_checks := v_checks + 1;
@@ -1185,8 +1192,8 @@ begin
           coalesce(v_p3_kit_det ->> 'watchers_created', 'NULL'), coalesce(v_p3_kit_det ->> 'guardrails_created', 'NULL'), coalesce(v_p3_kit_det ->> 'watchers_skipped', 'NULL')));
       end if;
       v_checks := v_checks + 1;
-      if (v_p3_kit_det ->> 'kind') is not null or (v_p3_kit_det ->> 'proposal_id') is not null then
-        v_bad := array_append(v_bad, 'the role-kit audit detail carries a `kind` or `proposal_id` key — see probe 2: it would be counted as a second decision row by verify_decide_discovery_proposal probe 12');
+      if (v_p3_kit_det ->> 'proposal_id') is not null then
+        v_bad := array_append(v_bad, 'the role-kit audit detail carries a `proposal_id` key — see probe 2: it would be read back as a second decision row by verify_decide_discovery_proposal');
       end if;
     end if;
   end if;
