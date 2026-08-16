@@ -1,6 +1,6 @@
 {
-  "pinned_at": "2026-08-12T14:13:05.724Z",
-  "note": "The EXECUTE surface for anon/authenticated. certify fails on ANY diff. Re-pin only after a DELIBERATE perimeter change. mig 722 removed 48 trigger-returning functions from this surface by REVOKE, and those entries were pruned BY HAND (scripts/certify.mjs --pin-allowlist was deliberately NOT used: it rewrites from live state and would bless any unrelated breach that landed in the same window — the near miss recorded in certify.mjs's header). Trigger functions are additionally held by the NON-PINNABLE probe trigger-functions-hold-no-ambient-execute, so re-pinning cannot put one back on this surface unnoticed.",
+  "pinned_at": "2026-08-16T08:09:36.611Z",
+  "note": "The EXECUTE surface for anon/authenticated. certify fails on ANY diff. Re-pin only after a DELIBERATE perimeter change. ⚠ mig 722 removed 48 trigger-returning functions from this surface by REVOKE, and those entries were pruned BY HAND: scripts/certify.mjs --pin-allowlist was deliberately NOT used, because it rewrites from LIVE STATE and would bless any unrelated breach that landed in the same window — the near miss recorded in certify.mjs own header. Trigger functions are additionally held by the NON-PINNABLE probe trigger-functions-hold-no-ambient-execute, so re-pinning cannot put one back on this surface unnoticed. ⚠ 2026-08-16: --pin-allowlist WAS used, once, to add decide_discovery_proposal (migration 741, authenticated only, service_role deliberately excluded because auth.uid() is null under it and two writers then SKIP their authority check rather than fail it). It was made safe the only way it can be: the resulting diff was inspected and contained EXACTLY that one routine and nothing else. If you reach for this command again, diff it before you commit it — that inspection is the whole safeguard, and this note is here because the run that added it also erased this warning and had to restore it.",
   "routines": [
     {
       "sig": "_assert_caller_tenant(p_tenant_id uuid)",
@@ -529,6 +529,11 @@
     },
     {
       "sig": "decide_de_exception(p_exception_id uuid, p_decision text, p_outcome text, p_learned boolean)",
+      "anon": false,
+      "authed": true
+    },
+    {
+      "sig": "decide_discovery_proposal(p_proposal_id uuid, p_decision text, p_note text, p_created_object_id uuid)",
       "anon": false,
       "authed": true
     },
