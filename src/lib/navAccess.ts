@@ -63,6 +63,16 @@ const PAGE_ACCESS: Partial<Record<Page, UserRole[]>> = {
   platform_revenue: [],
   platform_security: [],
   platform_ai_engine: [],
+  // Cross-tenant capability demand (migrations 744 + 750). `[]` means platform
+  // operators only — and here that tier is not merely conventional: the page
+  // pools what EVERY workspace asked for and could not get, so a customer role
+  // reaching it would be a disclosure. The real bound is in the database
+  // (platform_capability_demand() gates on `tenants.manage`, and the underlying
+  // table grants `authenticated` nothing at all) — this line only keeps the tab
+  // out of a customer's nav. ⚠ The database is STRICTER than this list: a
+  // platform_support or platform_billing account passes here and is refused by
+  // the RPC, on purpose. See migration 750's header for why that key.
+  platform_demand: [],
   // Trust & Architecture is an internal transparency doc ("how DreamTeam is
   // built · what we haven't done yet"), not a tenant feature.
   gov_trust: [],

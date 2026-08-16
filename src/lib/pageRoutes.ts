@@ -18,6 +18,7 @@ export const PAGE_TO_URL: Record<Page, string> = {
   platform_health:              '/platform/health',
   platform_revenue:             '/platform/revenue',
   platform_ai_engine:           '/platform/ai-engine',
+  platform_demand:              '/platform/demand',
   dashboard:              '/dashboard',
   users:                  '/users',
   organisation:                 '/organisation',

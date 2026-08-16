@@ -14,6 +14,7 @@ import MfaEnrollmentPanel from '../../components/MfaEnrollmentPanel';
 import PlatformEmailKeyPanel from '../../components/PlatformEmailKeyPanel';
 import PlatformAIEnginePanel from '../../components/PlatformAIEnginePanel';
 import PlatformTeamPage from './PlatformTeamPage';
+import PlatformDemandPage from './PlatformDemandPage';
 
 const dbTenantToTenant = (t: DBTenant): Tenant => ({
   id: t.id,
@@ -104,7 +105,13 @@ const PlatformConsolePage = ({
   // Tenants power every tab except Team & Permissions and Security, which
   // don't depend on the tenant list — only gate on the fetch for tabs that
   // actually need it, so those two stay usable even if it's slow.
-  const tenantsGatedPage = page !== 'platform_team' && page !== 'platform_security';
+  // ⚠ platform_demand joins the exclusion list. It reads no tenant row at all —
+  // its data comes from platform_capability_demand(), and the workspace names it
+  // shows are DENORMALISED snapshots that deliberately outlive `tenants`. Gating
+  // it on the tenant fetch would hold a screen that needs nothing from it, and
+  // would break outright the day a demand row's workspace no longer exists.
+  const tenantsGatedPage = page !== 'platform_team' && page !== 'platform_security'
+    && page !== 'platform_demand';
   if (tenantsGatedPage && !dbTenantsLoaded) {
     return (
       <div className="p-6 flex items-center justify-center">
@@ -678,6 +685,14 @@ const PlatformConsolePage = ({
         <PlatformAIEnginePanel />
       </div>
     );
+  }
+
+  if (page === 'platform_demand') {
+    // Cross-tenant capability demand (migrations 744 + 750). Ungated by the
+    // tenant list above — it reads nothing from `tenants`, so it must stay
+    // usable even when that fetch is slow (same reasoning as platform_team and
+    // platform_security, whose exclusion from tenantsGatedPage is on line 107).
+    return <PlatformDemandPage />;
   }
 
   if (page === 'platform_security') {

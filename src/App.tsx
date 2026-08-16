@@ -174,6 +174,7 @@ const PLATFORM_TABS: { page: PlatformPage; label: string }[] = [
   { page: 'platform_revenue', label: 'Revenue' },
   { page: 'platform_security', label: 'Security' },
   { page: 'platform_ai_engine', label: 'AI Engine' },
+  { page: 'platform_demand', label: 'Customer Demand' },
 ];
 
 // Two rows instead of one: the badge previously fought the tabs for

@@ -9,7 +9,9 @@ export type PlatformPage =
   | 'platform_health'
   | 'platform_revenue'
   | 'platform_security'
-  | 'platform_ai_engine';
+  | 'platform_ai_engine'
+  // What customers asked for that we cannot staff (migrations 744 + 750).
+  | 'platform_demand';
 
 export type TenantPage =
   // ── Home ──────────────────────────────────────────
