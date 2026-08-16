@@ -23,10 +23,26 @@
 // calls verify_decide_discovery_proposal(), which DRIVES THE REAL RPC against
 // production: it inserts sessions, proposals and connectors in a live workspace
 // and deactivates a real owner's profile, because refusals that are never fired
-// prove nothing. Every one of its 39 writes sits inside a probe sub-block that
-// ends in an unconditional raise, so all of it rolls back — enumerated, not
-// assumed. It is the only section that writes, it is deliberate, and it is
-// named here so nobody has to discover it from a diff.
+// prove nothing.
+//
+// ⚠ AND SINCE MIGRATION 746 IT ALSO HIRES DIGITAL EMPLOYEES THERE. Probes 12-14
+// drive the employee accept, so each run creates digital_employees rows in a
+// real workspace — with their watchers, their published SOP and their role
+// guardrails — and inserts TWO role_archetypes rows, which is the only write
+// this section makes to a PLATFORM-WIDE table rather than a tenant-scoped one.
+// They are keyed `vddp_` and named `vddp probe employee…`, and the function's
+// own leak checks name any survivor. Naming this here rather than leaving it in
+// the migration is the point of the paragraph.
+//
+// The exact count moved with it: 51 writes, not the 39 this header used to
+// claim (which was itself one short of 745's real 40 — recounted rather than
+// carried). Every one of them sits inside a probe sub-block that ends in an
+// unconditional raise, so all of it rolls back — enumerated, not assumed, and
+// asserted afterwards against row-count baselines AND per-row tags for
+// discovery_proposals, discovery_sessions, connectors, audit_events,
+// digital_employees, playbook_definitions, guardrail_rules and role_archetypes.
+// It is the only section that writes, it is deliberate, and it is named here so
+// nobody has to discover it from a diff.
 //
 // The probe style is violations-only: every check returns rows ONLY when the
 // invariant is broken, so a probe that returns nothing is a proof and a probe
@@ -1158,6 +1174,33 @@ const sections = [
     const probes = Number(/probes_completed=(\d+)/.exec(note)?.[1] ?? NaN);
     const asserts = Number(/assertions=(\d+)/.exec(note)?.[1] ?? NaN);
 
+    // ⚠⚠ THE GATE MUST HOLD ITS OWN DENOMINATOR, not delegate it to the thing
+    // it is checking. Refusing only `0` left 7-of-11-with-no-findings GREEN —
+    // proven by mutant, not argued. The function happens to emit its own
+    // "only N of 14 probes completed" finding today, so that case is red in
+    // practice; one edit to that single line disarms the gate silently. Same
+    // for the assertion count: it was PARSED AND PRINTED and never compared,
+    // so hollowing out the probe bodies while leaving the sub-blocks standing
+    // kept probes_completed at its full value forever. That is exactly the
+    // one-shot-versus-standing distinction migration 745 exists to fix,
+    // reproduced one level up in its own gate.
+    //
+    // ⚠ THESE TWO MOVE WITH THE FUNCTION, IN THE SAME COMMIT, OR THIS GOES RED.
+    // That is the intended coupling: migration 746 added probes 12/13/14 (the
+    // employee hire, the nested-sub-block asymmetry driven in both directions,
+    // and "the router did not swing open for procedure/trust_rule"), so 11
+    // becomes 14 and 98 becomes 138. The floor is the count on a CLEAN run —
+    // every `v_checks := v_checks + 1` is reached when every probe completes —
+    // so it goes red the moment a probe is skipped, which is the whole point.
+    //
+    // Declared HERE, above the zero-probe branch, so every message below counts
+    // against the same number. They used to be declared halfway down and three
+    // sentences said "11" as a string literal; when the count moved, those three
+    // would have kept telling a person the wrong denominator while the gate
+    // itself was right.
+    const EXPECTED_PROBES = 14;
+    const ASSERTION_FLOOR = 138; // 741 shipped 95; 745 ported them plus 3 ctid arms (98); 746 adds 40 across probes 12/13/14 and the hire's own rollback arm.
+
     // The denominator is checked BEFORE the findings, on purpose: "no
     // findings" is only meaningful once something was compared.
     if (!Number.isFinite(probes)) {
@@ -1171,22 +1214,10 @@ const sections = [
     if (probes === 0) {
       return {
         ok: false,
-        detail: `the function ran ZERO of 11 probes and therefore proved nothing. This is a REFUSAL, not a pass.\n${note}`
+        detail: `the function ran ZERO of ${EXPECTED_PROBES} probes and therefore proved nothing. This is a REFUSAL, not a pass.\n${note}`
           + (findings.length ? `\n${findings.map((f) => `  ✗ ${f}`).join('\n')}` : ''),
       };
     }
-    // ⚠⚠ THE GATE MUST HOLD ITS OWN DENOMINATOR, not delegate it to the thing
-    // it is checking. Refusing only `0` left 7-of-11-with-no-findings GREEN —
-    // proven by mutant, not argued. The function happens to emit its own
-    // "only N of 11 probes completed" finding today, so that case is red in
-    // practice; one edit to that single line disarms the gate silently. Same
-    // for the assertion count: it was PARSED AND PRINTED and never compared,
-    // so hollowing out the probe bodies while leaving the eleven sub-blocks
-    // standing kept probes_completed=11 forever. That is exactly the
-    // one-shot-versus-standing distinction migration 745 exists to fix,
-    // reproduced one level up in its own gate.
-    const EXPECTED_PROBES = 11;
-    const ASSERTION_FLOOR = 95; // 741 shipped 95; 745 ports them plus 3 ctid arms.
     if (probes !== EXPECTED_PROBES) {
       return {
         ok: false,
@@ -1199,14 +1230,14 @@ const sections = [
       return {
         ok: false,
         detail: `${EXPECTED_PROBES} probes ran but only ${Number.isFinite(asserts) ? asserts : 'an unreadable number of'} `
-          + `assertion(s) were made, below the floor of ${ASSERTION_FLOOR}. Eleven empty sub-blocks would report eleven `
-          + `probes. If assertions were deliberately removed, move this floor and say why.\n${note}`,
+          + `assertion(s) were made, below the floor of ${ASSERTION_FLOOR}. ${EXPECTED_PROBES} empty sub-blocks would `
+          + `report ${EXPECTED_PROBES} probes. If assertions were deliberately removed, move this floor and say why.\n${note}`,
       };
     }
     if (findings.length > 0) {
       return {
         ok: false,
-        detail: `${findings.length} finding(s) from ${probes}/11 probe(s), ${asserts} assertion(s):\n`
+        detail: `${findings.length} finding(s) from ${probes}/${EXPECTED_PROBES} probe(s), ${asserts} assertion(s):\n`
           + findings.map((f) => `  ✗ ${f}`).join('\n') + `\n${note}`,
       };
     }

@@ -5,12 +5,26 @@
 // discovery_capability_gaps (migrations 733-737, plus 740's last_error /
 // last_error_at / attempts).
 //
-// WRITES, as of Task 3, exactly one kind: 'connector', through Path B. Every
-// other kind is still read-only here. ACCEPT_WRITERS below is the ONE table
-// that says so: isDecidableKind asks whether a kind has an entry and
-// acceptProposal runs the entry it finds, so a kind gains Accept, Decline and
-// Park together or gains none of them. It carries the named reason each of the
-// other five is not wired.
+// WRITES two kinds: 'connector' through Path B, and — since migration 746 —
+// 'employee' through Path A. Every other kind is still read-only here.
+// ACCEPT_WRITERS below is the ONE table that says so: isDecidableKind asks
+// whether a kind has an entry and acceptProposal runs the entry it finds, so a
+// kind gains Accept, Decline and Park together or gains none of them. It
+// carries the named reason each of the other four is not wired.
+//
+// ── PATH A, and why 'employee' has no browser half ───────────────────────
+// The contract (task-3-contract.md §0/§4.4) splits the six kinds by whether
+// their ordinary writer is reachable from SQL. 'employee' is: it is
+// instantiate_role_archetype + install_role_kit + install_role_systems, all
+// three of them Postgres functions, and `authenticated` holds only SELECT on
+// digital_employees — so the browser could not insert the row even if it
+// wanted to. decide_discovery_proposal therefore hires the employee ITSELF, in
+// ONE transaction, and the client's job is a single call with a null object id.
+//
+// That is strictly better than the ordinary hire path, which is three RPCs in
+// three transactions (hireApi.ts:104-149) and has already stranded half-hired
+// employees; there is no window here in which an employee exists without its
+// watchers, its SOP and its guardrails.
 //
 // ── PATH B, and why the browser does the writing ─────────────────────────
 // The contract (task-3-contract.md §0) settles that "one RPC that calls the
@@ -30,16 +44,19 @@
 // (contract §8.3), which is why the split exists rather than being tidied
 // away.
 //
-// ⚠ Never reads or writes a digital_employees row at all (discovery_proposals
-// is deliberately uncoupled from digital_employees — an 'employee' kind's
-// payload is a jsonb DRAFT, not a foreign key), so is_workforce_assistant is
-// trivially out of scope, the same way it was for Task 1's discoveryProposals.ts.
+// ⚠ Never reads or writes a digital_employees row FROM THE BROWSER. The
+// employee accept creates one, but it does so entirely inside
+// decide_discovery_proposal: nothing in this file selects, inserts or updates
+// that table, and instantiate_role_archetype does not set
+// is_workforce_assistant (live body), so the row it makes takes the column's
+// default of false. The Workspace Assistant stays out of reach on both sides.
 import { supabase } from '../supabase';
 import { getSessionTenantId, CustomerApiError, isMissingTableError } from './customerApi';
 import { connectProvider, PROVIDERS } from './connectorApi';
 import type { ConnectorProvider } from './connectorApi';
 import { CATEGORIES } from './categoryContracts';
 import type { SystemCategory } from './categoryContracts';
+import { KIND_LABELS, PROPOSAL_KINDS } from './discoveryProposalPresentation';
 import type { ProposalKind, ProposalState } from './discoveryProposalPresentation';
 
 export type { ProposalKind, ProposalState };
@@ -231,6 +248,23 @@ export interface DecisionOutcome {
    *  RPC; see the ADDENDUM in task-3-contract.md. Do not fake it by writing it
    *  into p_note — the note is the customer's sentence, not a flag channel. */
   reusedExisting?: boolean;
+  /** ACCEPT ONLY, and only for kinds the RPC creates itself (today: employee).
+   *
+   *  ⚠ A SILENT ZERO IS THE DEFECT THESE EXIST TO END. The hire wizard prints
+   *  "0 connected systems" identically for "this archetype has none" and "the
+   *  systems step refused", and there is no way from the outside to tell which
+   *  happened. Migration 746 makes decide_discovery_proposal return
+   *  systems_installed and watchers_skipped from install_role_systems' and
+   *  install_role_kit's own return values, and writes the same two numbers into
+   *  the audit detail — so the screen can say "it could not be connected to any
+   *  of your systems" instead of saying nothing, and a person can check the
+   *  sentence against the ledger.
+   *
+   *  `undefined` for kinds that do not report them (connector), which is
+   *  different from 0 and must stay different: `?? 0` here would manufacture a
+   *  fact about a connector accept. */
+  systemsInstalled?: number;
+  watchersSkipped?: number;
 }
 
 /** One kind's accept writer: its ordinary validated writer, wrapped to return
@@ -265,7 +299,31 @@ const ACCEPT_WRITERS: Partial<Record<ProposalKind, AcceptWriter>> = {
   // file and the indirection resolves at call time, so the table can sit next
   // to the gate it feeds instead of at the bottom of the module.
   connector: (proposal, note) => acceptConnectorProposal(proposal, note),
+  employee: (proposal, note) => acceptEmployeeProposal(proposal, note),
 };
+
+/** The kinds this screen can decide, derived from the ONE table above and
+ *  never written out a second time.
+ *
+ *  ⚠ It exists because the page's banner used to name them in prose —
+ *  "Systems to connect are ready to decide. The rest of these are still just
+ *  for reading" — and that sentence became false the minute a second kind was
+ *  wired, in a file that says of itself "when that banner and isDecidableKind
+ *  disagree, the banner is the lie". A sentence built from the table cannot
+ *  disagree with the table. */
+export function decidableKinds(): ProposalKind[] {
+  return PROPOSAL_KINDS.filter((k) => acceptWriterFor(k) !== null);
+}
+
+/** ...and the same list as something a person reads, in the screen's own
+ *  words. Oxford-comma-free plain English, lower-cased from KIND_LABELS so the
+ *  label and the button can never drift apart either. */
+export function decidableKindsSentence(): string {
+  const labels = decidableKinds().map((k) => KIND_LABELS[k].toLowerCase());
+  if (labels.length === 0) return 'nothing';
+  if (labels.length === 1) return labels[0];
+  return `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+}
 
 /** The one lookup. isDecidableKind and acceptProposal both go through it, so
  *  "can this be decided?" and "what writes it?" are answered by the same
@@ -277,15 +335,17 @@ function acceptWriterFor(kind: ProposalKind): AcceptWriter | null {
 /** Which kinds this screen can actually decide today — derived from
  *  ACCEPT_WRITERS, never a list of its own.
  *
- *  Only 'connector' — deliberately, and each omission has a named reason:
+ *  'connector' and 'employee' — deliberately, and each omission has a named
+ *  reason:
  *   - 'guardrail'  — Path B, next in the contract's risk order (§9 #2); the
- *                    accept path is not written yet.
- *   - 'employee'   — Path A, and gated on BLOCKER 2: the card names systems
- *                    from required_connector_categories while the writer binds
- *                    system_templates, and they disagree for every archetype
- *                    sampled.
+ *                    accept path is not written yet, and BLOCKER 3 restricts
+ *                    it to pattern-bearing rules when it is.
  *   - 'procedure'  — Path B via the playbook-draft edge function; not written.
- *   - 'trust_rule' — Path A, last by the contract's own ordering.
+ *   - 'trust_rule' — Path A, last by the contract's own ordering, and blocked
+ *                    on BLOCKER 4: 90 trust_policies rows exist with 0 ladders
+ *                    and 0 above level 0, so accepting one today writes a
+ *                    policy nothing consults while the card says a human has
+ *                    been taken out of the loop.
  *   - 'conversation_type' — no table and no writer (to_regclass(
  *                    'public.conversation_types') is null), and nothing routes
  *                    on it today. A topic axis DOES exist and is live
@@ -317,9 +377,13 @@ export async function acceptProposal(
 ): Promise<DecisionOutcome> {
   const writer = acceptWriterFor(proposal.kind);
   if (!writer) {
+    // ⚠ The list of what IS switched on is read from the table, not typed out.
+    // This sentence used to end "only systems to connect are", which stopped
+    // being true the moment employee was wired — in the function whose whole
+    // job is to be the single source of that answer.
     return {
       ok: false,
-      error: `Accepting a "${proposal.kind}" recommendation is not switched on yet — only systems to connect are. Nothing was changed.`,
+      error: `Accepting a "${proposal.kind}" recommendation is not switched on yet — ${decidableKindsSentence()} are. Nothing was changed.`,
     };
   }
   return writer(proposal, note);
@@ -355,6 +419,21 @@ function friendlyDecisionError(raw: string, attempted?: DiscoveryDecision, state
   }
   if (raw.includes('row-level security') || raw.includes('violates row-level')) {
     return 'Your workspace role does not allow adding a system. Nothing was changed.';
+  }
+  // ── the two refusals the employee accept can meet ────────────────────────
+  // ⚠ HONEST ABOUT WHAT THIS FIXES AND WHAT IT DOES NOT. These translate the
+  // IN-SESSION message only. When the RPC's Zone-3 sub-block refuses, it also
+  // writes the RAW sqlerrm into discovery_proposals.last_error, and the card
+  // reads THAT back on the next load (errorFor in DiscoveryProposalsPage) — so
+  // a person who reloads still sees `unknown archetype renewal_manager`. Fixing
+  // that properly means the RPC phrasing its own refusals, which is why the two
+  // it CAN phrase (no archetype_key, no name) are written in words there rather
+  // than left to a NOT NULL violation.
+  if (raw.includes('unknown archetype')) {
+    return 'The role this recommendation wanted to hire is no longer available to hire, so nobody was created. Nothing else was changed.';
+  }
+  if (raw.includes('kind not yet routable')) {
+    return 'Accepting this kind of recommendation is not switched on yet, so nothing was created. It is still waiting for a decision.';
   }
   return raw;
 }
@@ -420,7 +499,12 @@ export async function decideDiscoveryProposal(
   if (error) return { ok: false, error: friendlyDecisionError(error.message) };
 
   const res = (data ?? null) as
-    | { ok?: boolean; state?: ProposalState; error?: string; created_object_id?: string | null }
+    | {
+        ok?: boolean; state?: ProposalState; error?: string;
+        created_object_id?: string | null;
+        // Migration 746, employee accepts only. Absent for every other kind.
+        systems_installed?: number; watchers_skipped?: number;
+      }
     | null;
 
   // `!== true` rather than `=== false`: an absent or reshaped `ok` is a
@@ -445,7 +529,56 @@ export async function decideDiscoveryProposal(
       ),
     };
   }
-  return { ok: true, state: res.state, createdObjectId: res.created_object_id ?? null };
+  // ⚠ `typeof … === 'number'`, never `?? 0`. A connector accept does not report
+  // these at all, and a defaulted 0 would tell a person their connector reached
+  // zero systems — a fact nobody measured. Absent stays absent.
+  return {
+    ok: true,
+    state: res.state,
+    createdObjectId: res.created_object_id ?? null,
+    systemsInstalled: typeof res.systems_installed === 'number' ? res.systems_installed : undefined,
+    watchersSkipped: typeof res.watchers_skipped === 'number' ? res.watchers_skipped : undefined,
+  };
+}
+
+/**
+ * Accept an 'employee' proposal — the whole of Path A, which is one call.
+ *
+ * There is no browser half. `authenticated` holds only SELECT on
+ * digital_employees, so the client could not create the row under RLS even if
+ * the split-path shape were wanted here; and the three ordinary writers
+ * (instantiate_role_archetype, install_role_kit, install_role_systems) are all
+ * Postgres functions, so decide_discovery_proposal calls them itself inside a
+ * single transaction. `createdObjectId` is passed as NULL deliberately: the RPC
+ * refuses to be told what it created, and returns the id it made.
+ *
+ * ⚠ NO CLIENT-SIDE PRE-CHECKS. The payload's archetype_key and name are
+ * validated inside the RPC, in words, before anything is written — and
+ * instantiate_role_archetype refuses an unknown or non-active archetype on its
+ * own. Re-implementing either here would be a second validator that can
+ * disagree with the one that actually guards the write, which is the shape the
+ * connector writer's own header warns about.
+ *
+ * ⚠ NO "have we already hired this archetype?" LOOKUP either, and that is a
+ * deliberate difference from acceptConnectorProposal's find-then-insert. Path B
+ * needs one because the browser writes first and stamps second, so a crash
+ * between the two leaves an orphan. Here the create and the stamp are the same
+ * transaction: the compare-and-swap's row lock is held to COMMIT, so an
+ * employee cannot exist without the proposal that made it being decided. A
+ * second click gets `already_decided` and hires nobody — driven, not argued, by
+ * migration 746's probe 12.
+ */
+async function acceptEmployeeProposal(
+  proposal: DiscoveryProposal,
+  note: string | null,
+): Promise<DecisionOutcome> {
+  if (proposal.kind !== 'employee') {
+    return {
+      ok: false,
+      error: `That is a "${proposal.kind}" recommendation, not somebody to hire. Nothing was changed.`,
+    };
+  }
+  return decideDiscoveryProposal(proposal.id, 'accepted', note, null);
 }
 
 /**

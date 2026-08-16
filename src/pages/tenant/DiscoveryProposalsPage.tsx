@@ -3,12 +3,24 @@
 // Task 2). Reads discovery_proposals + discovery_capability_gaps and lets a
 // person SELECT what they mean to accept, decline or park.
 //
-// TASK 3 — DECISIONS ARE LIVE, FOR ONE KIND. 'connector' now writes: its
-// Accept runs the full Path B sequence (create the connector through the
-// ordinary writer as the signed-in human under RLS, then stamp the proposal
-// with the id it produced), and its Decline/Park call the same RPC with no
-// object. The other five kinds are still read-only, and their controls stay
-// disabled rather than becoming buttons that quietly do nothing.
+// TASK 3 — DECISIONS ARE LIVE, FOR TWO KINDS.
+//   'connector' writes through Path B: its Accept creates the connector via the
+//   ordinary writer as the signed-in human under RLS, then stamps the proposal
+//   with the id it produced.
+//   'employee' writes through Path A (migration 746): its Accept is ONE call —
+//   decide_discovery_proposal hires the employee itself, in one transaction,
+//   because all three of its ordinary writers are SQL and `authenticated` holds
+//   only SELECT on digital_employees.
+// Decline and Park call the same RPC with no object for both. The other three
+// kinds are still read-only, and their controls stay disabled rather than
+// becoming buttons that quietly do nothing.
+//
+// ⚠ THE HIRE'S CONFIRMATION SAYS WHAT ACTUALLY HAPPENED, INCLUDING A ZERO.
+// The RPC returns systems_installed and watchers_skipped from the writers' own
+// return values, and this screen prints them. "0 connected systems" printed
+// with no explanation is the existing hire wizard's defect — it reads the same
+// for "this role has none" and for "the systems step refused" — so the sentence
+// here names the outcome instead of the number alone.
 //
 // ⚠ WHAT DECIDES THAT, precisely — because this comment used to say
 // "isDecidableKind is the single gate" and that was not true. The gate and the
@@ -55,7 +67,7 @@ import { LiveLoadingSkeleton } from '../../components/LiveDataStates';
 import {
   getDiscoverySession, getLatestSessionWithProposals, listDiscoveryProposals,
   listDiscoveryDimensions, listCapabilityGapsForHeardDimensions,
-  acceptProposal, decideDiscoveryProposal, isDecidableKind,
+  acceptProposal, decideDiscoveryProposal, isDecidableKind, decidableKindsSentence,
 } from '../../lib/discoveryApi';
 import type {
   DiscoveryProposal, DiscoverySession, DiscoveryDimension, DiscoveryCapabilityGap,
@@ -76,10 +88,48 @@ import type { Page } from '../../types';
 // Task 3 rewrote it, because the old wording ("Accept, Decline and Park don't
 // do anything on this screen") became false the moment connector decisions
 // went live. A banner that is stale in the safe direction is still a lie.
-const PARTLY_LIVE_EXPLANATION =
-  "Systems to connect are ready to decide. The rest of these are still just for reading — we're finishing what accepting them does, so their buttons stay switched off until it's real.";
+//
+// ⚠ AND IT WENT STALE AGAIN, WHICH IS WHY IT IS NO LONGER A LITERAL. The Task 3
+// wording was "Systems to connect are ready to decide. The rest of these are
+// still just for reading" — true for exactly as long as 'connector' was the
+// only wired kind, and false the minute migration 746 wired 'employee', in a
+// file that says three lines further down that when this banner and
+// isDecidableKind disagree, the banner is the lie. Now it is BUILT from
+// ACCEPT_WRITERS via decidableKindsSentence(), so it cannot disagree with the
+// buttons: adding a kind to that table rewrites this sentence in the same edit.
+const partlyLiveExplanation = () =>
+  `You can decide ${decidableKindsSentence()} now. The rest of these are still just for reading — we're finishing what accepting them does, so their buttons stay switched off until it's real.`;
 const NOTHING_LIVE_EXPLANATION =
   "You're looking these over, not deciding yet. Accept, Decline and Park don't do anything on this screen — you'll make the real call once this is turned on for you.";
+
+/** What a customer is told after a hire actually goes through.
+ *
+ *  ⚠ THREE SENTENCES, AND THE MIDDLE ONE IS THE POINT. `systems_installed`
+ *  comes back from install_role_systems' own return value (migration 746), and
+ *  a ZERO there is a fact this screen has to say out loud rather than round off.
+ *  The existing hire wizard prints "0 connected systems" identically for "this
+ *  role has none to connect" and "the systems step refused" — indistinguishable
+ *  from the outside, so the person is never told the difference and never fixes
+ *  it. Here the zero gets a sentence and somewhere to go.
+ *
+ *  ⚠ `undefined` is NOT zero. A kind that does not report the counter says
+ *  nothing about systems at all, rather than claiming none — see
+ *  DecisionOutcome's own note on why `?? 0` would manufacture a fact. */
+function hireConfirmation(
+  title: string,
+  outcome: { systemsInstalled?: number; watchersSkipped?: number },
+): string {
+  const parts = [`${title} — hired. They start supervised and send nothing until you say so.`];
+  if (outcome.systemsInstalled === 0) {
+    parts.push('They could not be connected to any of your systems yet — you can wire those up on their Employee File.');
+  } else if (typeof outcome.systemsInstalled === 'number') {
+    parts.push(`Connected to ${outcome.systemsInstalled} of your systems.`);
+  }
+  if (typeof outcome.watchersSkipped === 'number' && outcome.watchersSkipped > 0) {
+    parts.push(`${outcome.watchersSkipped} of the things they were meant to watch could not be set up — their Book of Work will be short until that is looked at.`);
+  }
+  return parts.join(' ');
+}
 
 export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?: (p: Page) => void }) {
   const [loading, setLoading] = useState(true);
@@ -241,14 +291,16 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
         recordOutcome(p, null);
         setFlash(
           decision === 'accepted'
-            // ⚠ TWO different true things, not one convenient one. An accept
-            // that RE-USED a connector the workspace already had inserted
-            // nothing — telling that person to go and enter a credential sends
-            // them to fix a system that is very possibly already connected and
-            // working. acceptProposal reports which branch it took.
-            ? (outcome.reusedExisting
-              ? `${title} — you already had this one, so nothing new was created. It's recorded as accepted, and it's under Systems.`
-              : `${title} — set up and waiting for your credential. You'll find it under Systems.`)
+            ? (p.kind === 'employee'
+              ? hireConfirmation(title, outcome)
+              // ⚠ TWO different true things, not one convenient one. An accept
+              // that RE-USED a connector the workspace already had inserted
+              // nothing — telling that person to go and enter a credential sends
+              // them to fix a system that is very possibly already connected and
+              // working. acceptProposal reports which branch it took.
+              : outcome.reusedExisting
+                ? `${title} — you already had this one, so nothing new was created. It's recorded as accepted, and it's under Systems.`
+                : `${title} — set up and waiting for your credential. You'll find it under Systems.`)
             : decision === 'declined'
               ? `${title} — turned down. Nothing was created.`
               : `${title} — set aside. You can come back to it.`,
@@ -547,7 +599,7 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
 
       {!loading && !error && session && (sections.length > 0 || gaps.length > 0 || parkedProposals.length > 0) && (
         <div className="space-y-6">
-          <Banner tone="neutral">{anyDecidable ? PARTLY_LIVE_EXPLANATION : NOTHING_LIVE_EXPLANATION}</Banner>
+          <Banner tone="neutral">{anyDecidable ? partlyLiveExplanation() : NOTHING_LIVE_EXPLANATION}</Banner>
 
           {/* tone="info", not a success green: Banner offers info/warn/danger/
               neutral on purpose ("one recipe per severity"), and a

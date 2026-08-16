@@ -417,4 +417,33 @@ describe('itemsForBatchMode — fix round 1, Important ("batching is structural 
   it('even with the right mode, only that kind is returned from a mixed list — RED if a guardrail leaks into an employee department section', () => {
     expect(itemsForBatchMode('employee', 'department', items)).not.toContainEqual(expect.objectContaining({ kind: 'guardrail' }));
   });
+
+  // ── migration 746: employee accepts went LIVE ────────────────────────────
+  // §11b's batching rule and the accept gate are two different things, and
+  // until 746 nothing distinguished them for 'employee' because the kind could
+  // not be accepted at all — an "Accept all N selected" button for a kind whose
+  // controls were disabled was not a hazard anyone could reach.
+  //
+  // It is reachable now. renderAcceptAllSection is the ONLY renderer that draws
+  // a bulk-accept control, it calls acceptSelected on everything checked, and
+  // its confirmation sentence is written about connectors ("each waiting for
+  // your credential"). An employee reaching it would be bulk-hired — real
+  // people on the payroll, each with an SOP, watchers and guardrails — behind
+  // one click, with a confirmation about credentials. §11b puts employees in a
+  // DEPARTMENT batch precisely because that is a grouping device and not a
+  // bulk-decide one: every card keeps its own Accept.
+  //
+  // So this is the same bypass as the guardrail case above, asserted for the
+  // kind that just gained the ability to be harmed by it. RED if e1 appears.
+  it('employee cannot be dragged into a bulk-accept batch now that hiring is LIVE — RED if e1 appears', () => {
+    expect(itemsForBatchMode('employee', 'accept_all', items)).toEqual([]);
+  });
+
+  it('...and its real mode is still department, which draws no bulk-accept control at all — RED if batchModeFor(employee) moves', () => {
+    expect(batchModeFor('employee')).toBe('department');
+    // The two kinds §11b says may never batch, restated here so that "employee
+    // is a department batch" cannot be read as "batching got looser".
+    expect(batchModeFor('guardrail')).toBe('never');
+    expect(batchModeFor('trust_rule')).toBe('never');
+  });
 });
