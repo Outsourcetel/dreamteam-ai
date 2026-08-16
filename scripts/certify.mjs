@@ -707,7 +707,7 @@ function shell(name, cmd, args) {
 // gate on every push instead of waiting for someone to remember. It is a SUBSET,
 // never a substitute — the banner says which mode ran, because a bar that does
 // not say what it skipped is the false-green this whole exercise exists to kill.
-const OFFLINE_SECTIONS = new Set(['typecheck', 'edge-typecheck', 'design-drift', 'suite']);
+const OFFLINE_SECTIONS = new Set(['typecheck', 'edge-typecheck', 'design-drift', 'migration-append', 'suite']);
 
 const sections = [
   shell('typecheck', 'npx', ['tsc', '--noEmit']),
@@ -1143,6 +1143,16 @@ const sections = [
     // calls to the deployed function plus a create/delete round trip.
     shell('branch-parity', 'node', ['scripts/playbook-branch-parity.mjs']),
     shell('design-drift', 'node', ['scripts/design-drift.mjs']),
+    // `v_bad := v_bad || 'a sentence'` is ambiguous — anyarray||anyarray wins
+    // over anyarray||anyelement for an unknown literal, so it raises 22P02
+    // instead of appending. PL/pgSQL resolves types at FIRST EXECUTION, so the
+    // statement only fails WHEN THE BRANCH FIRES: a verification block whose
+    // error path breaks exactly when it has something to report. Migration 685
+    // already fixed this in the live validate_onboarding_items and wrote the
+    // reason down; migration 741 reintroduced it 36 times anyway, which is why
+    // the knowledge needed to live somewhere a person cannot fail to read.
+    // Credential-free, so it runs in --offline too.
+    shell('migration-append', 'node', ['scripts/migration-append-check.mjs']),
     // OFFLINE runs only the credential-free test files. `npx vitest run` sweeps
     // ALL of tests/**, and two of those hard-throw at module load without
     // credentials — knowledge-acl-invariants.test.ts:29 (adminTokenAvailable)
