@@ -412,7 +412,16 @@ export interface PlaybookDefinition {
   /** mig 712 — partial publish is an explicit per-playbook opt-in, DEFAULT
    *  OFF (founder question pending). Nothing publishes gapped by default. */
   partial_publish_enabled?: boolean;
+  /** mig 715 — WHICH ENGINE OWNS THIS ROW. Derived from the steps by trigger,
+   *  never declared, so it cannot drift from what the row actually holds.
+   *    'procedure' → run by playbook-execute (this builder's Run button).
+   *    'sop'       → compiled into de_work_items by the employee's own work
+   *                  engine (de-work compileSopToWorkItems). Not runnable
+   *                  here, and offering Run on one only produces a 409. */
+  kind?: PlaybookDefinitionKind;
 }
+
+export type PlaybookDefinitionKind = 'sop' | 'procedure';
 
 import { raise, requireTenantId, listTenantRows } from './liveShared';
 

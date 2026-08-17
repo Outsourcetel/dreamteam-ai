@@ -632,10 +632,22 @@ async function validateSubPlaybookRefs(
     visited.add(id);
 
     const { data: def } = await admin.from('playbook_definitions')
-      .select('id, status').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
+      .select('id, status, kind').eq('id', id).eq('tenant_id', tenantId).maybeSingle();
     if (!def) {
       if (!checkedUnpublished.has(id)) {
         errs.push({ index: -1, code: 'sub_playbook_not_found', message: 'A "Run another playbook" step points at a playbook that no longer exists.' });
+        checkedUnpublished.add(id);
+      }
+      continue;
+    }
+    // mig 715: a sub_playbook step hands its child to THIS executor, so the
+    // child must be a procedure. An SOP is compiled into work items by the
+    // employee's own work engine and has no runnable snapshot — pointing at
+    // one would fail at the child's run door instead of here, where it can
+    // still be explained.
+    if (def.kind === 'sop') {
+      if (!checkedUnpublished.has(id)) {
+        errs.push({ index: -1, code: 'sub_playbook_is_an_sop', message: 'A "Run another playbook" step points at a standard operating procedure, which the employee follows as work rather than something this engine runs. Point it at a playbook instead.' });
         checkedUnpublished.add(id);
       }
       continue;
@@ -2415,6 +2427,18 @@ async function startDefinitionRunServer(
   if (!def) return { status: 'error', error: 'definition_not_found', http: 404 };
   if (def.status !== 'published') return { status: 'error', error: 'definition_not_published', http: 400 };
 
+  // ── THE KIND DOOR (mig 715) ──
+  // playbook_definitions holds two kinds of object. This engine owns
+  // 'procedure'; de-work's compileSopToWorkItems owns 'sop' and turns it into
+  // de_work_items. Before typing, an SOP reaching this line was refused three
+  // lines later as invalid_definition/422 — technically true, and useless: it
+  // named a validation failure rather than the fact that a different engine
+  // owns this object. `kind` is derived from the steps by trigger, so this
+  // cannot drift from what the row actually holds.
+  if (def.kind === 'sop') {
+    return { status: 'error', error: 'definition_is_an_sop', http: 409 };
+  }
+
   // LIFECYCLE GATE (DE-B4, migration 126): a playbook assigned to a
   // paused/retired employee does not run — the constitution's "paused
   // = scheduled Workflows are paused" made real. Definitions with no
@@ -2805,6 +2829,16 @@ serve(async (req) => {
         .select('*').eq('id', defId).eq('tenant_id', tenantId).maybeSingle();
       if (!def) return json({ error: 'definition_not_found' }, 404);
       if (def.status === 'archived') return json({ error: 'definition_archived' }, 400);
+      // mig 715: publishing means "snapshot it for THIS executor". An SOP has
+      // no runnable snapshot by design — mig 713's table gate would refuse the
+      // playbook_versions insert anyway, but with a floor-error message that
+      // describes the symptom rather than the reason.
+      if (def.kind === 'sop') {
+        return json({
+          published: false, error: 'definition_is_an_sop',
+          detail: 'This is a standard operating procedure — the employee follows it as work, compiled into its own queue. It has no runnable version to publish, and it already reaches the employee through its briefing.',
+        }, 409);
+      }
 
       // ── Typed-gaps build: PARTIAL publish (explicit, per-playbook opt-in,
       // DEFAULT OFF — founder question pending). Steps carrying open
