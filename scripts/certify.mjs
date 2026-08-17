@@ -1236,8 +1236,26 @@ const sections = [
     // sentences said "11" as a string literal; when the count moved, those three
     // would have kept telling a person the wrong denominator while the gate
     // itself was right.
-    const EXPECTED_PROBES = 15;
-    const ASSERTION_FLOOR = 169; // 741 shipped 95; 745 ported them plus 3 ctid arms (98); 746 adds 40 across probes 12/13/14 and the hire's own rollback arm (138); 751 adds 26 across probe 15 and the guardrail leak arm (164), then 5 more from the review fixes (scope decoy, metacharacter screen, empty-alternative screen, whitespace-padded accept, prose-word alternation).
+    // Migration 752 adds probe 16 (the whole procedure path — the drafter's two
+    // writes performed as the role it uses, the browser's key+name stamp under
+    // RLS, the accept, the REACHABILITY of what it created measured against all
+    // three executor selectors and inverted by publishing the same row,
+    // ARCHIVING it as the owner, the 740 identity-key model driven both ways,
+    // and sixteen refusals) plus a playbook leak arm, so 15 becomes 16 and 169
+    // becomes 202. It also REPOINTS probe 14 off `procedure` — routing the kind
+    // would have left half of that probe asserting that the procedure branch
+    // refuses a procedure, running and comparing nothing.
+    //
+    // ⚠ 202 IS COUNTED. It was 201 for one round: counting
+    // `v_checks := v_checks + 1` in the shipped function body gave 32 new ones
+    // on top of 751's 169. The review of 752 then added the long-name case
+    // (probe 16 (e11) — a 228-character procedure name driven through the
+    // provenance refusal, proving `left(v_err, 500)` no longer cuts the closing
+    // sentence off the card), which is one more: 33, so 202. The same count run
+    // against 751 returns exactly 169 — its own floor — which is what makes the
+    // method trustworthy rather than merely self-consistent.
+    const EXPECTED_PROBES = 16;
+    const ASSERTION_FLOOR = 202; // 741 shipped 95; 745 ported them plus 3 ctid arms (98); 746 adds 40 across probes 12/13/14 and the hire's own rollback arm (138); 751 adds 26 across probe 15 and the guardrail leak arm (164), then 5 more from the review fixes (169); 752 adds 33, all of them probe 16's (202) — the playbook leak arm extends an existing check rather than adding one.
 
     // The denominator is checked BEFORE the findings, on purpose: "no
     // findings" is only meaningful once something was compared.

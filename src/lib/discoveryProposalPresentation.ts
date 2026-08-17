@@ -535,6 +535,112 @@ export function guardrailLiteral(payload: Record<string, unknown>): string {
   }
 }
 
+// ── procedure: the composed SOP text, and the gate the card shares ────────
+// (migration 752)
+
+/** The steps a procedure payload really carries: trimmed, blanks dropped.
+ *
+ *  ⚠ NOT `strArray`. That one filters on `x.trim().length > 0` and then keeps
+ *  the UNTRIMMED string, which is right for display and wrong here: every one
+ *  of these goes into the composed SOP text, and that text is compared BYTE FOR
+ *  BYTE by decide_discovery_proposal against what the drafter recorded it was
+ *  given. A step arriving as "  Send the reminder" would be written into
+ *  `sop_text` with its padding by this side and trimmed away by the SQL side,
+ *  and the accept would then refuse a perfectly correct draft — permanently,
+ *  with the draft sitting in the workspace. */
+function trimmedSteps(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter((x): x is string => typeof x === 'string')
+    .map((x) => x.trim())
+    .filter((x) => x.length > 0);
+}
+
+/**
+ * THE SOP TEXT A PROCEDURE PROPOSAL COMPOSES TO — the string sent to the
+ * `playbook-draft` edge function, and this kind's CONSENTED LITERAL.
+ *
+ * ⚠ IT EXISTS TWICE, and the second copy is SQL, inside
+ * decide_discovery_proposal's `procedure` branch (migration 752). That branch
+ * re-composes this text from the payload and requires a `playbook_studies` row
+ * whose `sop_text` matches it byte for byte, because `key` and `name` — the
+ * other two things it checks — are both written by this browser, and a function
+ * that verified only those would be verifying the caller's own claims.
+ *
+ * ⚠ AND THE DRIFT IS ASYMMETRIC, exactly as 751's pattern predicate is. The
+ * ordering is: this gate runs, the browser DRAFTS (a model call and a real
+ * row), and only then is the RPC called.
+ *   · SQL looser than this — safe; the client refused first and drafted nothing.
+ *   · SQL stricter than this — the draft exists, the stamp refuses, and every
+ *     retry re-finds the same draft and re-refuses. Milder than 751's stuck
+ *     guardrail (an inert draft, not a live blocking rule) but the same shape.
+ * tests/discovery-proposal-batching.test.ts pins the two against each other.
+ *
+ * Deliberately dull: three fixed labels, one bullet per step, no conditional
+ * shape. Every branch would be a way for the two copies to disagree.
+ */
+export function sopTextForProcedure(payload: Record<string, unknown>): string {
+  const name = str(payload.name);
+  const trigger = str(payload.trigger);
+  const steps = trimmedSteps(payload.steps);
+  if (!name || !trigger || steps.length === 0) return '';
+  return `${name}\n\nRuns when: ${trigger}\n\nSteps:\n${steps.map((s) => `- ${s}`).join('\n')}`;
+}
+
+export interface ProcedureAcceptability {
+  /** Can a draft be made from this payload today? */
+  ok: boolean;
+  /** The composed SOP text to send the drafter. '' when !ok. */
+  sopText: string;
+  /** The name the draft must carry, trimmed and verbatim. '' when !ok. */
+  name: string;
+  /** Why not, in a sentence for a business owner. '' when ok. */
+  reason: string;
+}
+
+/** playbook-draft's own floor, restated where a person can be told about it
+ *  before anything is spent:
+ *    supabase/functions/playbook-draft/index.ts:364
+ *    if (!recompileDefId && sopText.length < 40) return json({ error: … }, 400)
+ *  and its ceiling, MAX_SOP_CHARS, which it applies by SLICING — so a longer
+ *  text would be stored truncated and the byte-for-byte provenance check would
+ *  never match. Refusing above it here is the strict-client direction, which is
+ *  the safe one. */
+const SOP_MIN_CHARS = 40;
+const SOP_MAX_CHARS = 24_000;
+
+/**
+ * THE ONE GATE for a procedure — read by the card copy AND by the accept
+ * writer, for the reason guardrailAcceptability's header gives: "what this
+ * button will do" and "what the card says it will do" have to be one
+ * expression rather than two that agree today.
+ *
+ * Everything it refuses, decide_discovery_proposal refuses too, in its own
+ * words and onto `discovery_proposals.last_error` — so the reason is still on
+ * the card tomorrow rather than only in this tab's React state.
+ */
+export function procedureAcceptability(payload: Record<string, unknown>): ProcedureAcceptability {
+  const no = (reason: string): ProcedureAcceptability => ({ ok: false, sopText: '', name: '', reason });
+  const name = str(payload.name);
+  if (!name) {
+    return no('This one does not say what the procedure is called yet, so there is nothing to draft it as.');
+  }
+  if (!str(payload.trigger)) {
+    return no(`This one does not say when "${name}" should run, and that is the first thing a procedure needs.`);
+  }
+  if (trimmedSteps(payload.steps).length === 0) {
+    return no(`This one has no steps written down for "${name}", so there is nothing to draft from.`);
+  }
+  const sopText = sopTextForProcedure(payload);
+  if (sopText.length < SOP_MIN_CHARS) {
+    return no(`There is not enough written down about "${name}" to draft from — a sentence or two more about what happens, and when, is enough.`);
+  }
+  if (sopText.length > SOP_MAX_CHARS) {
+    return no(`What was recorded for "${name}" is longer than the drafter can take in one go. Shortening it to the essential steps will let this through.`);
+  }
+  return { ok: true, sopText, name, reason: '' };
+}
+
 // ── card copy ────────────────────────────────────────────────────────────
 
 export interface ProposalCardCopy {
@@ -606,14 +712,56 @@ export function cardCopyFor(
       };
     }
 
+    // ⚠ 752: FOUR CLAIMS WERE ON THIS CARD AND TWO OF THEM WERE NOT TRUE.
+    // Checked one at a time against what the accept actually produces:
+    //
+    //  1. `Draft the "<name>" procedure` — WAS FALSE, and is true now only
+    //     because the accept was built to make it so. playbook-draft:622 takes
+    //     `compiled.name` — the COMPILING model's own title — in preference to
+    //     what it was asked for, so the card named one procedure and the
+    //     customer would have got one called something else. The writer now
+    //     re-stamps the payload's name and the RPC refuses any row where it did
+    //     not take.
+    //  2. "nothing runs until you publish it" — TRUE, and measured rather than
+    //     assumed. Every path that RUNS a definition filters on `published` —
+    //     eight gates across five callers, enumerated in migration 752's header:
+    //     playbook-execute:2428, :655 and :2952, de-work:215, de-mission:108,
+    //     dispatch_due_triggers twice (the scheduler, which starts a run with
+    //     nobody clicking) and emit_tenant_event. Three paths READ a definition
+    //     without that filter — the Builder's preview, `validate`, and
+    //     playbook-amend — and none of them runs one. This is the sentence the
+    //     whole kind rests on and it holds end to end.
+    //  3. `Trigger: <trigger>` — WAS MISLEADING, and this is the one the review
+    //     of this card found. It read as a property of the thing being made.
+    //     It is not: playbook-draft writes `trigger_type: 'manual'` on every
+    //     draft it creates, so the customer's sentence survives only as PROSE
+    //     inside the SOP text the compiler reads. Nothing schedules it and
+    //     nothing fires it. It now says whose words they are and that setting
+    //     the trigger is part of publishing — "when you said it should run",
+    //     not "when it will run".
+    //  4. "Every step is editable before you publish it" — TRUE but INCOMPLETE,
+    //     and the missing half is the one a person would want. The steps on the
+    //     draft are NOT the sentences on this card: playbook-draft compiles
+    //     them into the engine's typed primitives with a model, and it may
+    //     merge, split or reorder them. A card promising editable steps without
+    //     saying a model wrote them invites someone to skim a draft they
+    //     believe is a transcription of their own words.
     case 'procedure': {
-      const name = str(payload.name) || 'this procedure';
-      const trigger = str(payload.trigger) || 'a trigger you will confirm';
+      const gate = procedureAcceptability(payload);
+      if (!gate.ok) {
+        const name = str(payload.name);
+        return {
+          title: name ? `Draft the "${name}" procedure` : 'A procedure we could not draft yet',
+          detail: `${gate.reason} Accepting it records that against this recommendation and leaves it here for you.`,
+          meta: str(payload.trigger) ? `When you said it should run: ${str(payload.trigger)}` : 'Nothing recorded about when it runs',
+          nudge: 'Nothing is created, and nothing is lost — it stays on this screen.',
+        };
+      }
       return {
-        title: `Draft the "${name}" procedure`,
-        detail: 'This becomes a draft — nothing runs until you publish it.',
-        meta: `Trigger: ${trigger}`,
-        nudge: 'Every step is editable before you publish it.',
+        title: `Draft the "${gate.name}" procedure`,
+        detail: 'We write it up as a draft you can read over. Nothing runs until you publish it.',
+        meta: `When you said it should run: ${str(payload.trigger)}`,
+        nudge: 'The steps are drafted from your words, not copied from them — read them over, change anything, and set the trigger when you publish.',
       };
     }
 
@@ -897,7 +1045,21 @@ export function whatAcceptingWrites(
   switch (kind) {
     case 'employee': return `Creates a digital employee — draft, supervised — with its SOP and requested systems attached.${compliancePackSentence(context)}`;
     case 'connector': return 'Creates a connector record for this system, waiting on your credential.';
-    case 'procedure': return 'Creates a draft procedure definition. It will not run until you publish it.';
+    // ⚠ 752: this said "Creates a draft procedure definition. It will not run
+    // until you publish it." Both halves are true and it left out the two facts
+    // a person would actually want before pressing the button: that a MODEL
+    // writes the draft (this is the only accept on this screen that spends the
+    // workspace's AI budget), and where the thing it makes turns up. The
+    // sentence a drawer shows before a button fires has to be the sentence that
+    // turns out to be true — and "creates a definition" is not the whole of
+    // what happens here.
+    case 'procedure': {
+      const gate = procedureAcceptability(payload);
+      if (!gate.ok) {
+        return `Creates nothing. ${gate.reason} Accepting it records that reason against this recommendation and leaves it here for you.`;
+      }
+      return 'Sends what you described to the drafter, which writes it up as a DRAFT procedure under Playbooks — a model does the writing, so this uses some of your AI budget. Nothing runs it: a draft is not published, and only publishing makes it live. You can read it, change it, or archive it.';
+    }
     case 'conversation_type': return 'Adds this as a routable conversation topic.';
     case 'guardrail': {
       // ⚠ 751: the threshold branch used to say "Creates a guardrail that

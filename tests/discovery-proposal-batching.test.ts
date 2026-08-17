@@ -23,7 +23,11 @@ import {
   whatAcceptingWrites, trustRuleBlockReason, itemsForBatchMode, needsAcceptConfirmation,
   __looksLikeEnforceablePattern_forDriftTestOnly,
   __looksLikeEnforceablePattern_forDriftTestOnly as looksLikeEnforceablePattern,
+  sopTextForProcedure, procedureAcceptability,
 } from '../src/lib/discoveryProposalPresentation';
+// migration 752: the deterministic key lives with the writer, and the drift
+// guard below pins it against the SQL construction that enforces it.
+import { procedureDraftKey } from '../src/lib/discoveryApi';
 // The WRITERS, imported for real — all three of them. Their screen runs before
 // requireTenantId() and before the write, so a screened refusal throws without
 // ever touching the network, which is what makes the cases below behavioural
@@ -2066,5 +2070,187 @@ describe('the live predicate differential exists and is run (round 4, G3)', () =
   it('certify runs it — RED if the section is removed, which would leave the only real comparison unrun', () => {
     expect(certify, 'certify no longer names the differential section').toContain("section('guardrail-pattern-differential'");
     expect(certify).toContain('guardrail-predicate-differential.mjs');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+describe('THE SOP-TEXT COMPOSER EXISTS TWICE — the SQL copy in migration 752 must not drift from sopTextForProcedure', () => {
+  // ⚠ WHY THERE ARE TWO, and why the drift is asymmetric.
+  //
+  // decide_discovery_proposal's `procedure` branch re-composes the SOP text
+  // from the payload and requires a `playbook_studies` row whose `sop_text`
+  // matches it BYTE FOR BYTE. That check is what stops the accept verifying
+  // only the caller's own claims: `key` and `name` are both written by the
+  // browser, and the study is written by the drafter's own service-role client
+  // from the text it was handed, so it is the one field on that path the
+  // browser cannot choose.
+  //
+  // The ordering makes the two copies asymmetric, exactly as 751's pattern
+  // predicate is:
+  //     acceptProcedureProposal (src/lib/discoveryApi.ts)
+  //        1. procedureAcceptability + sopTextForProcedure   <- this copy
+  //        2. draftPlaybookFromSop  -> a MODEL CALL and a real draft row
+  //        3. decide_discovery_proposal                      <- the SQL copy
+  //   SQL LOOSER than TS   -> the client refused first and drafted nothing. Safe.
+  //   SQL STRICTER than TS -> the draft exists, the stamp refuses, the proposal
+  //                           reverts to pending, and every retry re-finds the
+  //                           same draft and re-refuses. Milder than 751's stuck
+  //                           guardrail — an inert draft, not a live blocking
+  //                           rule — but the same permanent shape.
+  //
+  // This is a SOURCE-TEXT comparison, not a behavioural one: vitest cannot
+  // reach Postgres. What it proves is that the two copies say the same thing.
+  // Migration 752's probe 16 drives the SQL copy against a payload whose
+  // expected SOP text is written out as a literal, so the composer has an
+  // independent oracle in production as well as this structural one here.
+  const MIGRATION = 'supabase/migrations/752_a_procedure_the_customer_described.sql';
+  const file = readFileSync(MIGRATION, 'utf8');
+
+  /** The `procedure` branch, comment-stripped. Same discipline as
+   *  guardrailBranch: these are assertions about CODE, and the branch's own
+   *  prose quotes every one of its checks, so a toContain against the raw file
+   *  would be satisfiable by a paragraph. */
+  const start = file.indexOf("      when 'procedure' then");
+  const end = file.indexOf('      -- ---- every other kind', start);
+  const sql = start >= 0 && end > start
+    ? file.slice(start, end).replace(/--[^\n]*/g, '')
+    : '';
+
+  it('the branch was isolated and stripped before anything below compared against it — RED if the extractor stops finding it, which would make every assertion here vacuous', () => {
+    expect(sql.length, 'the procedure branch could not be isolated from the migration').toBeGreaterThan(1500);
+    expect(sql, 'comment stripping took the code with it').toContain('v_sop :=');
+    expect(sql, 'the header prose survived the strip, so these are not code assertions').not.toContain('THE CONSENTED LITERAL, COMPOSED');
+  });
+
+  it('the SQL composes name / "Runs when: " / "Steps:" / "- " in that order — RED the moment either copy changes shape, because the two are compared byte for byte', () => {
+    expect(sql, 'the trigger label').toContain("'Runs when: ' || v_proc_trig");
+    expect(sql, 'the steps label').toContain("'Steps:'");
+    expect(sql, 'the bullet').toContain("'- ' || x");
+    const out = sopTextForProcedure({
+      name: 'Chase an overdue invoice',
+      trigger: 'an invoice goes 14 days past due',
+      steps: ['Check the account', 'Send the first reminder'],
+    });
+    expect(out).toBe(
+      'Chase an overdue invoice\n\nRuns when: an invoice goes 14 days past due\n\nSteps:\n- Check the account\n- Send the first reminder',
+    );
+    // the blank-line separators, which are the easiest thing to lose silently
+    expect(sql, 'the two blank-line separators').toContain("E'\\n\\n'");
+    expect(out.split('\n\n').length, 'three sections separated by blank lines').toBe(3);
+  });
+
+  it('the SQL trims name, trigger and every step with an EXPLICIT whitespace set, not one-argument btrim — RED the moment the one-argument form comes back', () => {
+    // One-argument btrim strips SPACES ONLY. Against a byte-for-byte
+    // comparison that is not a mismatched literal, it is a draft that can never
+    // be stamped: the client trims a tab away, the SQL keeps it, and the
+    // provenance check refuses a perfectly correct draft on every retry.
+    expect(sql).not.toContain("btrim(v_p.payload ->> 'name')");
+    expect(sql).not.toContain("btrim(v_p.payload ->> 'trigger')");
+    expect(sql).toContain("btrim(v_p.payload ->> 'name',");
+    expect(sql).toContain("btrim(v_p.payload ->> 'trigger',");
+    expect(sql, 'the steps are trimmed with the same set').toContain('btrim(s,');
+  });
+
+  it('the SQL whitespace set on the composer is the SAME one 751 uses on the pattern — RED if the two migrations ever carry different sets', () => {
+    const here = /btrim\(v_p\.payload ->> 'name',\s*E'([^']+)'\)/.exec(sql)?.[1];
+    const there = /btrim\(v_p\.payload ->> 'pattern', E'([^']+)'\)/
+      .exec(readFileSync('supabase/migrations/751_a_hard_line_the_customer_wrote.sql', 'utf8'))?.[1];
+    expect(here, 'the explicit whitespace set on the name trim').toBeTruthy();
+    expect(there, "751's set, for comparison").toBeTruthy();
+    expect(String(here).length, 'vacuity: a set this short is not the real one').toBeGreaterThan(20);
+    expect(here, 'the two migrations carry different whitespace sets').toBe(there);
+  });
+
+  it('a whitespace-padded payload composes to the SAME text the SQL will compare against — RED if the two trims ever disagree', () => {
+    for (const pad of ['\t', '\n', '\r', '\f', '\v', '\u00a0', '\u2003', '\u3000', '\ufeff', ' ']) {
+      const out = sopTextForProcedure({
+        name: `${pad}Chase an overdue invoice${pad}`,
+        trigger: `${pad}an invoice goes 14 days past due${pad}`,
+        steps: [`${pad}Check the account${pad}`, `${pad}Send the first reminder${pad}`],
+      });
+      expect(out, `padded with ${JSON.stringify(pad)}`).toBe(
+        'Chase an overdue invoice\n\nRuns when: an invoice goes 14 days past due\n\nSteps:\n- Check the account\n- Send the first reminder',
+      );
+    }
+  });
+
+  it('blank and non-string steps are DROPPED on both sides — RED if one copy keeps a bullet the other does not', () => {
+    expect(sql, 'the SQL drops entries that trim to empty').toContain('is not null)');
+    const out = sopTextForProcedure({
+      name: 'Chase an overdue invoice',
+      trigger: 'an invoice goes 14 days past due',
+      steps: ['Check the account', '   ', '', null as unknown as string, 42 as unknown as string, 'Log it'],
+    });
+    expect(out).toBe(
+      'Chase an overdue invoice\n\nRuns when: an invoice goes 14 days past due\n\nSteps:\n- Check the account\n- Log it',
+    );
+  });
+
+  it("the 40-character floor is in BOTH copies and is the drafter's own — RED if either side stops refusing a description playbook-draft rejects with an HTTP 400", () => {
+    expect(sql, 'the SQL floor').toContain('length(v_sop) < 40');
+    const shortPayload = { name: 'Do it', trigger: 'now', steps: ['go'] };
+    expect(sopTextForProcedure(shortPayload).length).toBeLessThan(40);
+    const short = procedureAcceptability(shortPayload);
+    expect(short.ok, 'a 34-character description').toBe(false);
+    expect(short.reason).toMatch(/not enough written down/i);
+    // THE INVERSION: over the floor is accepted, so the refusal above is about
+    // the length and not about the shape of the payload.
+    const longPayload = {
+      name: 'Chase an overdue invoice',
+      trigger: 'an invoice goes 14 days past due',
+      steps: ['Check the account'],
+    };
+    expect(sopTextForProcedure(longPayload).length).toBeGreaterThanOrEqual(40);
+    expect(procedureAcceptability(longPayload).ok).toBe(true);
+  });
+
+  it('the deterministic key is derived from the proposal id and matches the SQL construction — RED if a retry could mint a SECOND playbook', () => {
+    expect(sql, 'the SQL key construction').toContain("'discovery_' || replace(v_p.id::text, '-', '')");
+    // 10 + 32 = 42 characters, all [a-z0-9_] — the shape every other key in
+    // playbook_definitions uses, and short of any length limit on the column.
+    expect(procedureDraftKey('a1b2c3d4-1111-2222-3333-444455556666'))
+      .toBe('discovery_a1b2c3d4111122223333444455556666');
+    expect(procedureDraftKey('a1b2c3d4-1111-2222-3333-444455556666')).toHaveLength(42);
+    expect(procedureDraftKey('a1b2c3d4-1111-2222-3333-444455556666')).toMatch(/^discovery_[0-9a-f]{32}$/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+describe('the procedure CARD says only things the accept makes true (migration 752)', () => {
+  const payload = {
+    name: 'Chase an overdue invoice',
+    trigger: 'an invoice goes 14 days past due',
+    steps: ['Check the account', 'Send the first reminder'],
+  };
+
+  it('names the procedure the customer agreed to — RED if the title stops carrying the payload name, which is the only handle they are given for it', () => {
+    expect(cardCopyFor('procedure', payload).title).toBe('Draft the "Chase an overdue invoice" procedure');
+  });
+
+  it("does not present the trigger as something that will fire — RED if 'Trigger:' comes back, because playbook-draft writes trigger_type='manual' on every draft and nothing schedules the customer's sentence", () => {
+    const copy = cardCopyFor('procedure', payload);
+    expect(copy.meta, 'the card must not claim a trigger the row does not carry').not.toMatch(/^Trigger:/);
+    expect(copy.meta).toContain('an invoice goes 14 days past due');
+    expect(copy.meta).toMatch(/when you said it should run/i);
+  });
+
+  it('says the steps are DRAFTED from the words rather than copied — RED if that disappears, because the compiler may merge, split or reorder them and a person would skim a draft they believed was a transcription', () => {
+    expect(cardCopyFor('procedure', payload).nudge).toMatch(/drafted from your words, not copied/i);
+  });
+
+  it('keeps the publish gate, which is the whole safety argument — RED if the detail sentence stops saying nothing runs until publish', () => {
+    expect(cardCopyFor('procedure', payload).detail).toMatch(/nothing runs until you publish/i);
+    expect(whatAcceptingWrites('procedure', payload)).toMatch(/only publishing makes it live/i);
+  });
+
+  it('warns that a model does the writing — RED if the accept sentence stops saying so, because this is the ONE accept on this screen that spends the workspace AI budget', () => {
+    expect(whatAcceptingWrites('procedure', payload)).toMatch(/AI budget/i);
+  });
+
+  it('a payload that cannot be drafted from says CREATES NOTHING — RED if it ever promises a draft it will not produce (the overclaim 751 had to fix on the guardrail card)', () => {
+    const empty = { name: 'Chase an overdue invoice', trigger: '', steps: [] };
+    expect(whatAcceptingWrites('procedure', empty)).toMatch(/^Creates nothing\./);
+    expect(cardCopyFor('procedure', empty).detail).not.toMatch(/nothing runs until you publish/i);
+    expect(cardCopyFor('procedure', empty).nudge).toMatch(/Nothing is created/i);
   });
 });

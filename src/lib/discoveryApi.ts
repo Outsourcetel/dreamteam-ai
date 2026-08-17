@@ -5,9 +5,18 @@
 // discovery_capability_gaps (migrations 733-737, plus 740's last_error /
 // last_error_at / attempts).
 //
-// WRITES three kinds: 'connector' through Path B, 'employee' through Path A
-// (migration 746), and — since migration 751 — 'guardrail' through Path B, for
-// PATTERN-bearing rules only. Every other kind is still read-only here.
+// WRITES four kinds: 'connector' through Path B, 'employee' through Path A
+// (migration 746), 'guardrail' through Path B for PATTERN-bearing rules only
+// (751), and — since migration 752 — 'procedure' through Path B via the
+// playbook-draft EDGE FUNCTION. Every other kind is still read-only here.
+//
+// ⚠ 'procedure' IS THE ONE ACCEPT ON THIS SCREEN THAT SPENDS MONEY AND THE ONE
+// WHOSE OBJECT A NON-ADMIN COULD OTHERWISE CREATE. Its writer is an edge
+// function that authenticates the JWT and then writes with the SERVICE-ROLE
+// client, checking tenant membership and never role — unlike connectors and
+// guardrail_rules, whose RLS policies are at least as strict as the RPC's own
+// role bar. acceptProcedureProposal therefore pre-flights the role before
+// spending anything; its header says why that is not a second authority check.
 // ACCEPT_WRITERS below is the ONE table that says so: isDecidableKind asks
 // whether a kind has an entry and acceptProposal runs the entry it finds, so a
 // kind gains Accept, Decline and Park together or gains none of them. It
@@ -58,7 +67,8 @@ import type { ConnectorProvider } from './connectorApi';
 import { addGuardrailRule } from './guardrailApi';
 import { CATEGORIES } from './categoryContracts';
 import type { SystemCategory } from './categoryContracts';
-import { KIND_LABELS, PROPOSAL_KINDS, guardrailAcceptability } from './discoveryProposalPresentation';
+import { draftPlaybookFromSop } from './playbookBuilderApi';
+import { KIND_LABELS, PROPOSAL_KINDS, guardrailAcceptability, procedureAcceptability } from './discoveryProposalPresentation';
 import type { AcceptCompliancePack, ProposalKind, ProposalState } from './discoveryProposalPresentation';
 
 export type { ProposalKind, ProposalState };
@@ -328,6 +338,13 @@ const ACCEPT_WRITERS: Partial<Record<ProposalKind, AcceptWriter>> = {
   // "what this button will do" and "what the card says it will do" are one
   // expression rather than two that agree today.
   guardrail: (proposal, note) => acceptGuardrailProposal(proposal, note),
+  // Migration 752. Path B again, but for a different reason than the two above:
+  // this kind's ordinary writer is the playbook-draft EDGE FUNCTION, and no SQL
+  // function can call it and read the reply — pg_net returns a request id whose
+  // response arrives after COMMIT. So the split is a mechanical necessity here
+  // rather than an RLS argument. The restriction to payloads that can actually
+  // be drafted from lives in procedureAcceptability, which the CARD reads too.
+  procedure: (proposal, note) => acceptProcedureProposal(proposal, note),
 };
 
 /** The kinds this screen can decide, derived from the ONE table above and
@@ -363,9 +380,8 @@ function acceptWriterFor(kind: ProposalKind): AcceptWriter | null {
 /** Which kinds this screen can actually decide today — derived from
  *  ACCEPT_WRITERS, never a list of its own.
  *
- *  'connector', 'employee' and 'guardrail' — deliberately, and each omission
- *  has a named reason:
- *   - 'procedure'  — Path B via the playbook-draft edge function; not written.
+ *  'connector', 'employee', 'guardrail' and 'procedure' — deliberately, and
+ *  each omission has a named reason:
  *   - 'trust_rule' — Path A, last by the contract's own ordering, and blocked
  *                    on BLOCKER 4: 90 trust_policies rows exist with 0 ladders
  *                    and 0 above level 0, so accepting one today writes a
@@ -899,6 +915,310 @@ async function acceptGuardrailProposal(
   // added a blocking rule" and "you already had this exact rule" are different
   // facts, and only the find at the top of this function knows which.
   return { ...outcome, reusedExisting: found !== null };
+}
+
+/**
+ * The DETERMINISTIC key a discovery-drafted procedure is filed under, derived
+ * from the proposal id and nothing else.
+ *
+ * ⚠ THIS IS THE ANTI-DUPLICATION MECHANISM, and the failure mode it exists for
+ * is not the orphan — it is the SECOND playbook. playbook-draft names what it
+ * creates `${slugify(name)}_${crypto.randomUUID().slice(0, 6)}` (:623), random
+ * on purpose, because two hand-written SOPs with the same title are two
+ * different playbooks. On this path they are not: one proposal is one
+ * procedure, and a customer who clicks Accept twice must end up with one draft.
+ * `playbook_definitions` carries UNIQUE (tenant_id, key), so stamping this key
+ * makes a duplicate impossible rather than unlikely, and
+ * decide_discovery_proposal refuses any other key.
+ *
+ * ⚠ THE PREFIX IS LOAD-BEARING. Two live SQL functions upsert into this table
+ * ON CONFLICT (tenant_id, key) DO UPDATE … SET status = 'published' — the
+ * archetype SOP installer (`<archetype_key>_sop`) and the starter-DE
+ * provisioner. A collision with either would not fail; it would PUBLISH this
+ * draft and overwrite its steps, turning the card's one promise into a lie by
+ * mechanism. Measured 2026-08-17: 0 of 107 rows across 17 tenants carry a key
+ * beginning `discovery_`, and neither upsert can produce one.
+ *
+ * Dashes are removed so the key stays inside the [a-z0-9_] shape every other
+ * key in the table uses.
+ */
+export function procedureDraftKey(proposalId: string): string {
+  return `discovery_${proposalId.replace(/-/g, '')}`;
+}
+
+/**
+ * Accept a 'procedure' proposal — Path B, and for this kind Path B is a
+ * MECHANICAL NECESSITY rather than an RLS argument (migration 752).
+ *
+ * ── WHY THE BROWSER DOES THE WRITING ─────────────────────────────────────
+ * A procedure's ordinary writer is `draftPlaybookFromSop`
+ * (src/lib/playbookBuilderApi.ts) over the `playbook-draft` EDGE FUNCTION,
+ * which compiles prose into the engine's typed step primitives with a live
+ * model and validates them against the real engine validator. For `connector`
+ * and `guardrail`, inlining the write into the SECURITY DEFINER RPC would
+ * merely bypass RLS. Here there is nothing to inline: `pg_net` returns a
+ * REQUEST ID, the request is not dispatched until COMMIT, and the reply lands
+ * later in `net._http_response` — so no SQL function can call the drafter and
+ * read the `playbook_id` it would need to stamp.
+ *
+ * ── WHAT IS DELIBERATELY NOT PASSED ──────────────────────────────────────
+ * ⚠ `de_id` is left absent, and that is the load-bearing omission — the
+ * equivalent of the guardrail writer's null `compliance_pack_key`. `de-work`'s
+ * compileSopToWorkItems (:213-216) and `de-mission` (:108) both select on
+ * `de_id`, so a draft bound to an employee is one publish away from becoming
+ * that employee's queue. The card offers a draft to read over, not work handed
+ * to somebody. The RPC refuses a row carrying one.
+ *
+ * ⚠ THE PAYLOAD'S PROSE STEPS ARE NEVER WRITTEN AS `steps`. They are the
+ * customer's sentences; `playbook_steps_guard` raises `invalid_step_shape` for
+ * anything that is not an array of objects with a `key` naming an engine
+ * primitive, so writing them there does not degrade — it aborts. The prose is
+ * SOP TEXT, which the drafter compiles; the typed steps are its output. The
+ * only write this function makes to `playbook_definitions` is a `key` + `name`
+ * update, and `playbook_steps_guard` returns early when `steps` is untouched,
+ * so it neither trips the guard nor double-logs a steps-changed audit event.
+ *
+ * ── THE ROLE PRE-FLIGHT, AND WHY IT IS NOT A SECOND AUTHORITY CHECK ──────
+ * ⚠ THIS IS THE FIRST KIND WHERE A MEMBER WITH NO AUTHORITY CAN CAUSE A REAL
+ * OBJECT TO BE CREATED. For connector and guardrail the browser's own write is
+ * guarded by an RLS policy at least as strict as the RPC's Zone 1 bar, so a
+ * `tenant_user` never gets as far as making anything. `playbook-draft`
+ * authenticates the JWT and then writes with the SERVICE-ROLE client, checking
+ * tenant membership only (:375-379) and never role — so without the check
+ * below, a tenant_user clicking Accept spends a model call, creates a draft,
+ * and is only then refused by Zone 1, which raises BEFORE the compare-and-swap
+ * and therefore writes no `last_error` at all.
+ *
+ * It decides whether to SPEND, never whether to permit: the RPC's Zone 1 bar
+ * remains the only authority, and it runs afterwards regardless. Both drift
+ * directions are safe — looser and we are back to today's inert orphan;
+ * stricter and nothing is created and the person is told which roles can. It
+ * deliberately does NOT reuse useRoleGate, whose predicate is
+ * `isDTUser || owner || admin`: that platform-layer disjunct is exactly the one
+ * migration 741's Zone 1 refuses, so borrowing it would drift LOOSE on the one
+ * case that matters.
+ *
+ * ── THE CRASH WINDOW, AND WHAT IS DIFFERENT ABOUT IT HERE ────────────────
+ * Path B writes in one round trip and stamps in a second. In 751 that window
+ * left a live, workspace-wide, BLOCKING guardrail rule. Here it leaves a DRAFT,
+ * and a draft is filtered out by everything that would run one — eight
+ * `published` gates across five callers, enumerated in migration 752's
+ * header, the scheduler's two among them. The
+ * reuse-find below closes it in two tiers rather than one, so the common
+ * retries cost neither a second playbook nor a second model call:
+ *
+ *   TIER 1, by the deterministic key — the accept already got as far as
+ *   stamping. Re-use it; draft nothing.
+ *   TIER 2, by PROVENANCE — a draft whose study carries exactly this SOP text,
+ *   still under the drafter's own random key. That is the orphan of a browser
+ *   that died between drafting and stamping, and it is ADOPTED rather than
+ *   abandoned. Rows already adopted by another proposal are excluded by their
+ *   `discovery_` prefix, so two proposals that happen to describe the same
+ *   procedure cannot end up pointing at one draft.
+ *
+ * ⚠ NOT EXPORTED, same as the other two writers. The only way here is
+ * acceptProposal, through ACCEPT_WRITERS.
+ */
+async function acceptProcedureProposal(
+  proposal: DiscoveryProposal,
+  note: string | null,
+): Promise<DecisionOutcome> {
+  if (proposal.kind !== 'procedure') {
+    return {
+      ok: false,
+      error: `That is a "${proposal.kind}" recommendation, not a procedure to draft. Nothing was changed.`,
+    };
+  }
+
+  // THE ONE GATE, and the card reads the same function — see
+  // procedureAcceptability's header for why it is not two.
+  const gate = procedureAcceptability(proposal.payload);
+  if (!gate.ok) {
+    // Nothing is drafted. The RPC refuses in its own words and writes them to
+    // the row, so the reason is still on the card after a reload rather than
+    // only in this tab's React state.
+    return decideDiscoveryProposal(proposal.id, 'accepted', note, null);
+  }
+
+  const tenantId = await requireTenantId();
+
+  // ── THE PRE-FLIGHT. Same predicate as the RPC's Zone 1 bar, read from the
+  // same table, with no platform-layer disjunct. See the header. ──────────
+  const { data: sessionUser } = await supabase.auth.getUser();
+  const uid = sessionUser?.user?.id ?? null;
+  if (!uid) {
+    return { ok: false, error: 'Your sign-in has expired, so we could not check who is accepting this. Reload the page and try again. Nothing was changed.' };
+  }
+  const { data: prof, error: profErr } = await supabase
+    .from('profiles')
+    .select('role, is_active')
+    .eq('user_id', uid)
+    .eq('tenant_id', tenantId)
+    .maybeSingle();
+  if (profErr) {
+    return { ok: false, error: `We could not check whether you can set up a procedure: ${friendlyDecisionError(profErr.message)}` };
+  }
+  const role = String((prof as { role?: string } | null)?.role ?? '');
+  const active = (prof as { is_active?: boolean } | null)?.is_active !== false;
+  if (!active || (role !== 'tenant_owner' && role !== 'tenant_admin')) {
+    return {
+      ok: false,
+      error: 'Only workspace owners and admins can set up a procedure. Nothing was drafted, and this is still waiting for a decision — turning it down or setting it aside is open to you.',
+    };
+  }
+
+  // ── TIER 1: has this exact proposal already been drafted? ───────────────
+  // ⚠ `.order('created_at').order('id')` for the reason connectorSelection
+  // states: created_at ties to the millisecond in this database, and a total
+  // order has to be total. The unique index means at most one row can match,
+  // so this is belt rather than buckle — and it stays, because the day the
+  // index is dropped this is what stops the accept stamping a different id
+  // each time in the one field the audit contract makes load-bearing.
+  const draftKey = procedureDraftKey(proposal.id);
+  const { data: byKey, error: keyErr } = await supabase
+    .from('playbook_definitions')
+    .select('id, status')
+    .eq('tenant_id', tenantId)
+    .eq('key', draftKey)
+    .order('created_at', { ascending: true })
+    .order('id', { ascending: true })
+    .limit(1);
+  if (keyErr) {
+    return { ok: false, error: `We could not check whether this procedure has already been drafted: ${friendlyDecisionError(keyErr.message)}` };
+  }
+  let playbookId = byKey && byKey.length > 0 ? String((byKey[0] as { id: string }).id) : null;
+  let reused = playbookId !== null;
+
+  // ── TIER 2: an orphan from a browser that died between the two calls ────
+  // Keyed on the study's `sop_text`, which the drafter writes from the text it
+  // was handed — the one field on this path this browser does not choose.
+  // Two queries rather than an embed, so the filter that matters (the key has
+  // not already been claimed by ANOTHER proposal) is applied in plain sight.
+  if (!playbookId) {
+    const { data: studies, error: studyErr } = await supabase
+      .from('playbook_studies')
+      .select('definition_id, created_at')
+      .eq('tenant_id', tenantId)
+      .eq('sop_text', gate.sopText)
+      .order('created_at', { ascending: true })
+      .limit(20);
+    if (studyErr) {
+      return { ok: false, error: `We could not check whether this procedure has already been drafted: ${friendlyDecisionError(studyErr.message)}` };
+    }
+    const ids = (studies ?? []).map((s) => String((s as { definition_id: string }).definition_id));
+    if (ids.length > 0) {
+      const { data: defs, error: defErr } = await supabase
+        .from('playbook_definitions')
+        .select('id, key, status, kind, de_id')
+        .eq('tenant_id', tenantId)
+        .in('id', ids)
+        .eq('status', 'draft')
+        .eq('kind', 'procedure')
+        .is('de_id', null)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true });
+      if (defErr) {
+        return { ok: false, error: `We could not check whether this procedure has already been drafted: ${friendlyDecisionError(defErr.message)}` };
+      }
+      const orphan = (defs ?? []).find((d) => !String((d as { key: string }).key).startsWith('discovery_'));
+      if (orphan) {
+        playbookId = String((orphan as { id: string }).id);
+        reused = true;
+      }
+    }
+  }
+
+  // ── THE DRAFT ITSELF, only when neither tier found one ──────────────────
+  if (!playbookId) {
+    try {
+      const draft = await draftPlaybookFromSop({ sopText: gate.sopText });
+      playbookId = draft?.playbook_id ? String(draft.playbook_id) : null;
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : String(err);
+      // The two the drafter refuses for that a person can act on, said in their
+      // own terms rather than as an error code. Both are states of the
+      // workspace, not of this recommendation, and neither has created
+      // anything.
+      if (raw.includes('ai_budget_exceeded')) {
+        return { ok: false, error: 'This workspace has used up its AI budget for now, and drafting a procedure needs a model. Nothing was drafted, and this is still waiting for a decision — it will go through once the budget resets or is raised.' };
+      }
+      if (raw.includes('llm_not_configured')) {
+        return { ok: false, error: 'The drafter is not switched on in this workspace yet, so there is nothing to write the procedure up with. Nothing was drafted, and this is still waiting for a decision.' };
+      }
+      return { ok: false, error: `This procedure could not be drafted: ${friendlyDecisionError(raw)}` };
+    }
+    if (!playbookId) {
+      return {
+        ok: false,
+        error: 'The drafter did not return a procedure, so there is nothing to link. Nothing was changed, and this is still waiting for a decision.',
+      };
+    }
+  }
+
+  // ── THE STAMP: the deterministic key and the agreed name, in ONE update ──
+  // ⚠ `name` is re-stamped rather than trusted. playbook-draft:622 prefers
+  // `compiled.name` — the COMPILING model's own title — over what it was asked
+  // for, so without this the card says Draft the "X" procedure and the customer
+  // gets one called something else. The RPC refuses any row where this did not
+  // take, so the two halves check the same fact.
+  const { data: stamped, error: stampErr } = await supabase
+    .from('playbook_definitions')
+    .update({ key: draftKey, name: gate.name })
+    .eq('id', playbookId)
+    .eq('tenant_id', tenantId)
+    .select('id')
+    .maybeSingle();
+  if (stampErr) {
+    // 23505 here is the genuinely concurrent double-click: another accept of
+    // this same proposal claimed the key first. Say what happened to the draft,
+    // because one of the two is now an orphan and the customer is the only one
+    // who can decide what to do with it.
+    const raw = stampErr.message ?? '';
+    if (raw.includes('duplicate key') || (stampErr as { code?: string }).code === '23505') {
+      return {
+        ok: false,
+        error: 'This one was being set up in another tab or window at the same time, and that one got there first. Reload the page to see where it landed. A second draft may have been written under Playbooks — it is a draft, so it runs nothing, and you can archive it.',
+      };
+    }
+    return { ok: false, error: `The procedure was drafted, but we could not file it against this recommendation: ${friendlyDecisionError(raw)} It is under Playbooks as a draft, so it runs nothing.` };
+  }
+  if (!stamped) {
+    // The RLS policy on this table is a USING clause on ALL, so an update that
+    // matches no row returns zero rows rather than raising — the exact shape
+    // migration 634 records as "RLS-denied write = PostgREST success, 0 rows".
+    return {
+      ok: false,
+      error: 'The procedure was drafted, but your workspace role does not allow filing it. It is under Playbooks as a draft, so it runs nothing, and this recommendation is still waiting for a decision.',
+    };
+  }
+
+  const outcome = await decideDiscoveryProposal(proposal.id, 'accepted', note, playbookId);
+  if (!outcome.ok) {
+    // THREE sentences, each true, in this order — what happened to the
+    // playbook, why the stamp did not land, and what to do next. The first one
+    // matters differently here than it does for a guardrail: a guardrail that
+    // exists is ALREADY BLOCKING, and a procedure that exists is inert. Saying
+    // so is what stops "we could not record your decision" being read as
+    // "something is now running".
+    const reason = stripNothingChanged(outcome.error ?? '');
+    const whatHappened = reused
+      ? 'This procedure had already been drafted, and that draft is still there — as a draft, so it runs nothing.'
+      : 'The procedure was drafted and is under Playbooks now — as a draft, so it runs nothing until you publish it.';
+    if (outcome.code === 'already_decided') {
+      return {
+        ...outcome,
+        error: `${whatHappened} But this recommendation had already been decided${outcome.state ? ` — it is ${outcome.state} now` : ''}, so your decision was not recorded and it will not take another one. Reload the page to see where it landed, and archive the draft under Playbooks if you did not want it.`,
+      };
+    }
+    return {
+      ...outcome,
+      error: `${whatHappened} We could not record your decision: ${reason} Accepting again is safe — it will re-use the draft that now exists rather than writing a second one. If you would rather it were not there at all, archive it under Playbooks.`,
+    };
+  }
+  // Which branch this was, for the same reason the connector and guardrail
+  // writers carry it: "we drafted this for you" and "you already had this
+  // draft" are different facts, and only the two find tiers know which.
+  return { ...outcome, reusedExisting: reused };
 }
 
 /**

@@ -363,6 +363,19 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
                 ? (outcome.reusedExisting
                   ? `${title} — you already had exactly this rule, so nothing new was created. It is switched on, under Compliance & Guardrails.`
                   : `${title} — switched on now. It applies to every employee in this workspace, and you can take it off again under Compliance & Guardrails.`)
+              // ⚠ 752: a procedure accept is the OPPOSITE of a guardrail's, and
+              // saying so is the point. A guardrail is live the instant it
+              // lands; a procedure is a DRAFT and every path that RUNS a
+              // definition filters on `published` — eight gates across five
+              // callers, enumerated in migration 752's header — so nothing runs
+              // it until the customer says so.
+              // Neither "waiting for your credential" nor "switched on now" is
+              // true of it, and this card's whole safety argument is the second
+              // gate — so the sentence names it.
+              : p.kind === 'procedure'
+                ? (outcome.reusedExisting
+                  ? `${title} — this one had already been drafted, so nothing new was written. It is under Playbooks as a draft, and it runs nothing until you publish it.`
+                  : `${title} — drafted. You'll find it under Playbooks as a draft: read it over, change anything, and it runs nothing until you publish it.`)
               // ⚠ TWO different true things, not one convenient one. An accept
               // that RE-USED a connector the workspace already had inserted
               // nothing — telling that person to go and enter a credential sends
@@ -421,14 +434,31 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
     // batch the moment one accept re-used a connector the workspace already
     // had. Two counts said separately beats one tidy sentence that is wrong
     // about some of the rows it covers.
+    //
+    // ⚠⚠ 752: AND IT WAS ABOUT TO BE FALSE ABOUT AN ENTIRE BATCH. This sentence
+    // was written when `connector` was the only kind in an accept-all section;
+    // `procedure` joins that section the moment it becomes decidable
+    // (batchModeFor returns 'accept_all' for anything outside NEVER_BATCH and
+    // DEPARTMENT_BATCH), and a procedure has no credential and never will. The
+    // batch is always ONE kind — renderAcceptAllSection is per-kind and
+    // itemsForBatchMode filters to it — so the noun comes off the batch rather
+    // than being assumed.
+    const batchKind = targets[0]?.kind;
+    const outcomeNoun = batchKind === 'procedure' ? 'drafted' : 'set up';
+    const outcomeTail = batchKind === 'procedure'
+      ? ', each a draft under Playbooks that runs nothing until you publish it'
+      : ', each waiting for your credential';
+    const alreadyHad = batchKind === 'procedure'
+      ? 'you already had every one of them drafted, so nothing new was written'
+      : 'you already had every one of them, so nothing new was created';
     const newlyCreated = accepted - reused;
     const setUpPhrase = accepted === 0
-      ? 'Nothing was set up.'
+      ? `Nothing was ${outcomeNoun}.`
       : reused === 0
-        ? `${accepted} set up, each waiting for your credential.`
+        ? `${accepted} ${outcomeNoun}${outcomeTail}.`
         : newlyCreated === 0
-          ? `${accepted} accepted — you already had every one of them, so nothing new was created.`
-          : `${newlyCreated} set up and waiting for your credential; ${reused} you already had, so nothing new was created for those.`;
+          ? `${accepted} accepted — ${alreadyHad}.`
+          : `${newlyCreated} ${outcomeNoun}${outcomeTail}; ${reused} you already had, so nothing new was ${batchKind === 'procedure' ? 'written' : 'created'} for those.`;
     setFlash(
       failed.size === 0
         ? setUpPhrase
