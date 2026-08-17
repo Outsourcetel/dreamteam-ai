@@ -107,6 +107,8 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
     const isMoney = meta.input === 'money';
     const isPct = meta.input === 'pct';
     void run(async () => {
+      // 'hand_authored': typed into this panel by a person, same reasoning as
+      // CompliancePage's add branch. The empty-alternative screen still runs.
       await addGuardrailRule({
         rule: name.trim(),
         rule_type: ruleType,
@@ -118,7 +120,7 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
         scope_ref: scopeRef,
         applies_to: 'all',
         active: true,
-      });
+      }, 'hand_authored');
       setAdding(false); setName(''); setValue('');
     });
   };
@@ -199,7 +201,7 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
                 <span className="text-dt-muted">— {describe(r)}</span>
                 {inherited
                   ? <span className="ml-auto text-[10px] text-dt-faint">workspace-wide</span>
-                  : <button onClick={() => void run(() => updateGuardrailRule(r, { active: !r.active }))} disabled={busy || !canEditGuardrails}
+                  : <button onClick={() => void run(() => updateGuardrailRule(r, { active: !r.active }, 'hand_authored'))} disabled={busy || !canEditGuardrails}
                       className={`ml-auto text-[10px] ${r.active ? 'text-dt-muted hover:text-amber-300' : 'text-emerald-400 hover:text-emerald-300'}`}>
                       {r.active ? 'pause' : 'resume'}
                     </button>}

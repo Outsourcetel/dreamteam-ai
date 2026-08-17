@@ -228,16 +228,24 @@ export { looksLikeEnforceablePattern as __looksLikeEnforceablePattern_forDriftTe
 /** Which of the two real guardrail behaviours this payload actually
  *  describes, derived from what's PRESENT and VALID on the payload — never
  *  from a rule_type field, because Task 1 never collects one (see
- *  formatBareNumber's header). This is a closed inference, not a guess:
- *  public.guardrail_rules.rule_type (src/lib/guardrailApi.ts) has exactly
- *  four values, and the two that carry a threshold at all
- *  (require_approval_over_cents, max_discount_pct) are BOTH approval gates —
- *  there is no threshold-bearing BLOCKING rule_type in the whole union. So
- *  "this payload has a valid threshold and no valid pattern" reliably means
- *  "approval gate", regardless of which specific rule_type Task 3 eventually
- *  assigns it. findBlockingMatch (supabase/functions/_shared/
- *  guardrailMatch.ts) is pattern-only — nothing in this codebase blocks
- *  outbound text on a bare number. */
+ *  formatBareNumber's header).
+ *
+ *  ⚠ CORRECTED 2026-08-17 (migration 751). This comment used to say
+ *  "public.guardrail_rules.rule_type has exactly four values". It does not, and
+ *  it had not for some time: the LIVE CHECK constraint
+ *  (guardrail_rules_rule_type_check, read from pg_constraint) admits NINE —
+ *  blocked_topic, blocked_phrase, require_approval_over_cents,
+ *  max_discount_pct, frustration_signal, require_computed_number,
+ *  require_citation, spend_cap_daily_cents, spend_cap_monthly_cents. The union
+ *  in src/lib/guardrailApi.ts is a subset the browser happens to write, not the
+ *  vocabulary. What survives the correction is the part that mattered:
+ *  findBlockingMatch (supabase/functions/_shared/guardrailMatch.ts) is
+ *  PATTERN-ONLY, so nothing in this codebase blocks outbound text on a bare
+ *  number, whichever of the nine a threshold ended up as.
+ *
+ *  What the writer actually does with each answer is now settled and narrow
+ *  (see guardrailAcceptability): 'pattern' is written as `blocked_phrase`;
+ *  'threshold' and 'none' are refused. */
 export type GuardrailKind = 'pattern' | 'threshold' | 'none';
 export function guardrailKindOf(payload: Record<string, unknown>): GuardrailKind {
   const patternRaw = str(payload.pattern);
@@ -246,16 +254,282 @@ export function guardrailKindOf(payload: Record<string, unknown>): GuardrailKind
   return 'none';
 }
 
+/** CAN THIS GUARDRAIL BE SWITCHED ON AT ALL — the ONE gate, shared by the card
+ *  copy and by the accept writer.
+ *
+ *  ⚠ IT IS ONE FUNCTION BECAUSE IT USED TO BE A SENTENCE. Before migration 751
+ *  the card said, for a threshold-only guardrail, "Above this, it needs your
+ *  approval before it goes ahead" — a promise, in the present tense, about
+ *  something no accept path existed to do. The founder's ruling of 2026-08-15
+ *  (patterns now, thresholds held) makes that sentence false in a new way:
+ *  accepting one is REFUSED. A card that keeps promising an approval gate while
+ *  the button behind it declines is worse than the original overclaim, because
+ *  the customer now has evidence the screen is lying to them.
+ *
+ *  So the card's consequence sentence, the drawer's "what accepting writes",
+ *  and discoveryApi's decision whether to create a rule at all are all read from
+ *  HERE. `reason` is written for a business owner and is deliberately close to
+ *  the wording decide_discovery_proposal itself raises — the RPC is what writes
+ *  the refusal onto the row (migration 740's last_error), and a card that
+ *  predicted the refusal in different words than the one it then displays reads
+ *  like two different systems disagreeing.
+ *
+ *  ⚠ WHAT THIS IS NOT: it is not the authority. The RPC re-derives all of it in
+ *  SQL, including its own copy of looksLikeEnforceablePattern, and refuses
+ *  independently — because the browser is not a safe place to keep a promise.
+ *
+ *  ⚠ A FLAT SHAPE, NOT A DISCRIMINATED UNION, and that is a fact about this
+ *  repo rather than a preference: tsconfig.json sets `"strict": false`, and
+ *  with strictNullChecks off TypeScript will not narrow `{ok:true;pattern} |
+ *  {ok:false;reason}` on `gate.ok` — every read of `.reason` errors. Both
+ *  fields are therefore always present, and their emptiness is the contract:
+ *  `pattern` is '' when !ok, `reason` is '' when ok. */
+export interface GuardrailAcceptability {
+  /** Can a rule be created from this payload today? */
+  ok: boolean;
+  /** The literal to write as `guardrail_rules.pattern`, trimmed. '' when !ok. */
+  pattern: string;
+  /** Why not, in a sentence for a business owner. '' when ok. */
+  reason: string;
+}
+
+/** ── THE CONSENTED LITERAL IS COMPILED AS A REGULAR EXPRESSION ──────────────
+ *  matchPattern (supabase/functions/_shared/guardrailMatch.ts:65-79) does
+ *  `text.match(new RegExp(pattern, 'i'))` and only falls back to literal
+ *  fragment matching when that compilation THROWS. Its header rests the safety
+ *  argument on an audit of 85 HAND-AUTHORED patterns.
+ *
+ *  ⚠ CORRECTED 2026-08-17. This paragraph used to say migration 751 "is the
+ *  FIRST path that lets a MODEL-authored literal reach that compiler". That was
+ *  false about the code and true only about the data. `approveProposal`
+ *  (src/lib/governanceAiApi.ts) has always passed `governance_proposals.pattern`
+ *  — a column the Workspace Assistant writes — straight into `addGuardrailRule`
+ *  with no screen of any kind: not this one, not the empty-alternative one, not
+ *  even looksLikeEnforceablePattern. A human clicks Approve, but the bytes are
+ *  the model's, and "refund|" through that door mutes every outbound message on
+ *  all four enforcement paths exactly as it would through this one. It had never
+ *  been used — `governance_proposals` holds 0 rows, measured 2026-08-17 — which
+ *  is why the sentence read as true.
+ *
+ *  So the screen no longer lives only on this gate: it lives on
+ *  `addGuardrailRule`, the writer every door goes through, and this gate calls
+ *  the same function (`screenGuardrailPattern`) so the card's refusal sentence
+ *  and the writer's refusal sentence are one expression.
+ *
+ *  Replicated in node against the real matcher — every one of these passes
+ *  looksLikeEnforceablePattern above:
+ *
+ *    "$500 off"     on "we can do $500 off for you"  -> null, BLOCKS NOTHING
+ *    "(free) month" on "have a (free) month"         -> null, BLOCKS NOTHING
+ *    "3.5% fee"     on "our 3x5% fee applies"        -> matches, BLOCKS WIDER
+ *    "refund|"      on "we will ship it tomorrow"    -> "",   BLOCKS EVERYTHING
+ *
+ *  The last one is the worst: an empty alternative compiles to a regex that
+ *  matches the empty string, matchPattern returns '' and findBlockingMatch
+ *  tests `!== null`, so one trailing pipe withholds EVERY outbound message on
+ *  all four enforcement paths.
+ *
+ *  ⚠ THE SCREEN IS HERE, NOT IN THE MATCHER, and that is the decision. Changing
+ *  matchPattern would change enforcement for the 85 live hand-authored rules,
+ *  including the one that legitimately uses grouping — a different migration
+ *  with a different argument. Screening at the acceptance gate narrows only what
+ *  a customer can be asked to consent to, and narrows it to the shape where the
+ *  compiled regex and a plain reading of the words agree. §11b is about being
+ *  able to PREDICT the block; a card that instead disclosed "this may match more
+ *  or less than it says" would satisfy nothing.
+ *
+ *  ⚠ NOT folded into looksLikeEnforceablePattern. That predicate answers "is
+ *  this a literal rather than prose", it has two other copies, and Task 1's
+ *  validatePayload uses it at EMISSION — tightening it there would DROP the
+ *  proposal instead of showing the customer a card that says why it cannot be
+ *  switched on. The literal still reaches the card (guardrailLiteral renders
+ *  "matches: $500 off" as before); only the accept refuses.
+ *
+ *  Mirrored in SQL in migration 751's guardrail branch, character for
+ *  character, and pinned against it by
+ *  tests/discovery-proposal-batching.test.ts. */
+const PATTERN_REGEX_METACHARS = /[\\^$.?*+(){}[\]]/;
+const PATTERN_NOT_METACHAR_G = /[^\\^$.?*+(){}[\]]/g;
+const PATTERN_EMPTY_ALTERNATIVE = /(^\||\|\||\|$)/;
+
+/** ⚠ FIVE CODE POINTS THAT ARE WHITESPACE TO POSTGRES AND ARE NOT WHITESPACE TO
+ *  JAVASCRIPT, AND THE DIFFERENCE IS ON THE UNSAFE SIDE OF THE ONE INVARIANT.
+ *
+ *  U+001C U+001D U+001E U+001F (the C0 file/group/record/unit separators) and
+ *  U+0085 (NEL) are all matched by Postgres's `\s` and by none of JS's `\s`,
+ *  `.trim()` or the explicit btrim set migration 751 uses. Measured against the
+ *  live database, not assumed:
+ *
+ *      select array_length(regexp_split_to_array('a'||chr(28)||'b','\s+'),1)  -> 2
+ *      /\s/.test('\u001c')                                              -> false
+ *
+ *  So `a<US>b<US>c<US>d<US>e<US>f` is ONE word to looksLikeEnforceablePattern
+ *  and SIX to `array_length(regexp_split_to_array(v_pattern,'\s+'),1) <= 5`; a
+ *  LEADING U+0085 additionally produces an empty leading element Postgres counts
+ *  and JS's `.filter(Boolean)` drops, turning five JS tokens into six. Run
+ *  against LIVE POSTGRES, that class produced TEN patterns the client accepted
+ *  and the database refused — and because the client INSERTS FIRST, every one of
+ *  them leaves a live, blocking, workspace-wide rule behind a proposal that can
+ *  never be stamped and re-refuses on every retry.
+ *
+ *  ⚠ REFUSED OUTRIGHT RATHER THAN COUNTED DIFFERENTLY, and that is the choice.
+ *  Mirroring Postgres's word-splitting in JS would mean re-deriving its ctype in
+ *  the browser — a fourth transcription of a database behaviour, which is the
+ *  exact failure this whole area keeps paying for. Refusing the characters makes
+ *  the client STRICTER than the database on the entire class, which is the only
+ *  safe direction, and it costs nothing real: they are C0 control characters and
+ *  a line separator, 0 of the 168 live active patterned rules carry one, and 0
+ *  of the 20 industry templates do (both measured 2026-08-17).
+ *
+ *  ⚠ THE DATABASE IS DELIBERATELY LEFT LOOSER. Adding the same refusal to the
+ *  SQL would be SQL-stricter drift for the window in which only one copy has
+ *  shipped, and SQL-looser is the arm that is safe by construction: the client
+ *  refuses first and creates nothing. */
+const PATTERN_PG_ONLY_WHITESPACE = /[\u001c\u001d\u001e\u001f\u0085]/;
+
+/** Which screen refused, so a caller can apply them separately.
+ *  `'metachar'` is the one a HAND-AUTHORED pattern is let through — see
+ *  `addGuardrailRule`'s header for the measured reason and the count.
+ *  `'empty_alternative'` and `'pg_only_whitespace'` are refused for every
+ *  provenance: 0 live rules and 0 shipped templates carry either, neither is
+ *  ever intentional, and each one on its own is a silent outage. */
+export type PatternScreenFailure = 'metachar' | 'empty_alternative' | 'pg_only_whitespace';
+
+/** ⚠ THE SCREENS THAT RUN NO MATTER WHO WROTE THE BYTES, named HERE rather than
+ *  at the writer. When this set lived as an inline condition at the writer
+ *  (`provenance === 'model_authored' || screen.failure === 'empty_alternative'`)
+ *  it was one expression away from being wrong, and it was wrong: see
+ *  `screenGuardrailPattern` on why reporting only the FIRST failure let
+ *  `"refund.|"` through a hand-authored door. */
+export const UNIVERSAL_PATTERN_SCREENS: readonly PatternScreenFailure[] =
+  ['empty_alternative', 'pg_only_whitespace'];
+
+export interface PatternScreen {
+  ok: boolean;
+  /** The FIRST screen that refused — what the card copy quotes. `null` when ok. */
+  failure: PatternScreenFailure | null;
+  /** Why, in a sentence for a business owner. '' when ok. */
+  reason: string;
+  /** ⚠ EVERY SCREEN THAT REFUSED, EACH WITH ITS OWN SENTENCE — and this field
+   *  exists because returning only the first one was a live hole.
+   *
+   *  `"refund.|"` and `"$500 off|"` trip BOTH the metacharacter screen and the
+   *  empty-alternative screen. The single `failure` field reported `'metachar'`,
+   *  the writer's hand-authored branch skips the metacharacter screen by design
+   *  (13 of 20 industry templates use regex deliberately), and so a literal that
+   *  compiles to a regex matching the EMPTY STRING was accepted through the
+   *  ordinary Add dialog — muting every outbound message on all four enforcement
+   *  paths. A caller that must apply the universal screens has to be able to see
+   *  them even when a provenance-exempt one fired first. */
+  failures: Array<{ failure: PatternScreenFailure; reason: string }>;
+}
+
+/** ⚠ THE SCREEN ITSELF, AS ONE FUNCTION, BECAUSE IT IS ON THE WRITER NOW.
+ *
+ *  It used to be two `if` blocks inside `guardrailAcceptability` — i.e. on ONE
+ *  caller, the discovery accept path — while `approveProposal` handed the same
+ *  compiler a model-authored pattern through `addGuardrailRule` with nothing in
+ *  front of it at all. `addGuardrailRule` now calls this, so a door that is
+ *  added later gets the screen without anybody remembering to add it, and this
+ *  gate calls it too so the sentence on the card is the sentence the writer
+ *  would raise.
+ *
+ *  Flat shape, not a discriminated union, for the same `"strict": false` reason
+ *  GuardrailAcceptability states. */
+export function screenGuardrailPattern(literal: string): PatternScreen {
+  // ⚠ EVERY SCREEN RUNS, AND ALL OF THEM ARE REPORTED. This used to be three
+  // early returns, so only the first failure was ever visible — and the writer's
+  // hand-authored branch, which is allowed to skip the metacharacter screen,
+  // therefore skipped the EMPTY-ALTERNATIVE screen too whenever both fired.
+  // `"refund.|"` typed into the ordinary Add dialog was accepted: `.` reported
+  // first, `metachar` is provenance-exempt, and the trailing `|` compiles to a
+  // regex matching the empty string. `failures` is the list a caller filters;
+  // `failure`/`reason` stay the first one, because the card quotes one sentence.
+  const failures: Array<{ failure: PatternScreenFailure; reason: string }> = [];
+  if (PATTERN_REGEX_METACHARS.test(literal)) {
+    failures.push({
+      failure: 'metachar',
+      reason: `This one cannot be switched on as written: "${literal}" contains ${literal.replace(PATTERN_NOT_METACHAR_G, '')} — a blocking rule is read as a search expression, so those characters mean something other than themselves and it would block something other than the words shown here. A phrase of plain words, with "|" between alternatives, is one we can promise.`,
+    });
+  }
+  if (PATTERN_EMPTY_ALTERNATIVE.test(literal)) {
+    failures.push({
+      failure: 'empty_alternative',
+      reason: `This one cannot be switched on as written: "${literal}" has a "|" with nothing beside it, and a rule written that way matches every message rather than these words — every answer this workspace sends would be withheld.`,
+    });
+  }
+  if (PATTERN_PG_ONLY_WHITESPACE.test(literal)) {
+    failures.push({
+      failure: 'pg_only_whitespace',
+      // No literal is quoted back here, deliberately: the offending characters
+      // are invisible, so printing the phrase would show the reader something
+      // that looks exactly like what they typed and explain nothing.
+      reason: 'This one cannot be switched on as written: it contains an invisible separator character that different parts of the system count differently, so the rule that got saved would not be the rule that was checked. Retyping the phrase as plain words fixes it.',
+    });
+  }
+  const first = failures[0];
+  return {
+    ok: failures.length === 0,
+    failure: first ? first.failure : null,
+    reason: first ? first.reason : '',
+    failures,
+  };
+}
+
+export function guardrailAcceptability(payload: Record<string, unknown>): GuardrailAcceptability {
+  switch (guardrailKindOf(payload)) {
+    case 'pattern': {
+      const literal = str(payload.pattern);
+      const screen = screenGuardrailPattern(literal);
+      if (!screen.ok) return { ok: false, pattern: '', reason: screen.reason };
+      return { ok: true, pattern: literal, reason: '' };
+    }
+    case 'threshold':
+      return {
+        ok: false,
+        pattern: '',
+        reason: `This one is a bare number with no unit, so it cannot be switched on yet: ${formatBareNumber(payload.threshold)} could be that many dollars or that many per cent, and those are two different rules. We would rather ask than guess by a factor of a hundred.`,
+      };
+    case 'none':
+      return {
+        ok: false,
+        pattern: '',
+        reason: 'This one has no phrase to match on, and a blocking rule only stops the exact words it is given — so there is nothing here to switch on yet.',
+      };
+  }
+}
+
 /** guardrail's enforceable literal, verbatim per §11b — but "verbatim" means
  *  exactly what's on the payload, never a unit invented to make it read
  *  nicer. A pattern renders as "matches: X" ONLY when it re-passes
  *  looksLikeEnforceablePattern here (Task 1's validatePayload does not null
  *  out a prose pattern sitting beside a valid threshold — see the header
  *  above). A threshold renders as a bare, grouped number with no currency
- *  or percent sign, because the payload carries no unit to be honest about. */
+ *  or percent sign, because the payload carries no unit to be honest about.
+ *
+ *  ⚠ "matches:" IS A PROMISE, AND IT USED TO SURVIVE THE REFUSAL. This function
+ *  keyed on guardrailKindOf alone, which never consults the two screens, so a
+ *  card for "$500 off" rendered
+ *
+ *      meta   : matches: $500 off
+ *      detail : This one cannot be switched on as written: "$500 off" contains $ …
+ *
+ *  — the promise and its withdrawal, side by side, about the same four words.
+ *  That is the same defect shape whatAcceptingWrites already had fixed once
+ *  ("Creates a guardrail that requires your approval…" → "Creates nothing").
+ *  §11b requires the literal to be SHOWN; it does not require the word
+ *  "matches", and a refused literal has not been promised anything. So a
+ *  screened-out pattern renders as "phrase as written: X" — the four words are
+ *  still on the card verbatim, which is what makes "we could not act on this"
+ *  checkable, and nothing next to them claims they will be matched. */
 export function guardrailLiteral(payload: Record<string, unknown>): string {
   switch (guardrailKindOf(payload)) {
-    case 'pattern': return `matches: ${str(payload.pattern)}`;
+    case 'pattern': {
+      const literal = str(payload.pattern);
+      return screenGuardrailPattern(literal).ok
+        ? `matches: ${literal}`
+        : `phrase as written: ${literal}`;
+    }
     case 'threshold': return `threshold: ${formatBareNumber(payload.threshold)}`;
     case 'none': return 'no literal recorded yet';
   }
@@ -434,20 +708,31 @@ export function cardCopyFor(
       // was hardcoded for every guardrail, but it is only true for a
       // PATTERN rule — findBlockingMatch (guardrailMatch.ts) is pattern-
       // only, and nothing in this codebase blocks outbound text on a bare
-      // number. A threshold-only guardrail is an approval gate, not a
-      // block — guardrailKindOf's own header explains why that's a safe
-      // inference even without a rule_type field on the payload.
-      const kindOfRule = guardrailKindOf(payload);
-      const detail = kindOfRule === 'pattern'
-        ? 'Anything matching this is blocked before it reaches a customer.'
-        : kindOfRule === 'threshold'
-          ? 'Above this, it needs your approval before it goes ahead.'
-          : 'This guardrail has no enforceable literal yet.';
+      // number.
+      //
+      // ⚠ AND THE SECOND HALF WAS STILL WRONG, until migration 751. "Above
+      // this, it needs your approval before it goes ahead" described an
+      // approval gate this product does not build from a discovery proposal —
+      // and now actively REFUSES to. `detail` is "one sentence of consequence:
+      // what accepting actually changes", and for a threshold guardrail the
+      // honest answer is "nothing, and here is why". guardrailAcceptability is
+      // the one gate; discoveryApi's accept writer reads the same function, so
+      // the sentence on the card and the behaviour of the button behind it
+      // cannot come apart.
+      const gate = guardrailAcceptability(payload);
       return {
         title: rule,
-        detail,
+        detail: gate.ok
+          ? 'Anything matching this is blocked before it reaches a customer, for every employee in this workspace.'
+          : `${gate.reason} Accepting it will say so and change nothing.`,
+        // The literal stays on the card either way — §11b requires the
+        // threshold be shown VERBATIM even though it is the reason we are
+        // refusing, because "we could not act on this" is only checkable
+        // against the thing we could not act on.
         meta: guardrailLiteral(payload),
-        nudge: 'You can edit or remove this rule later in Governance.',
+        // ⚠ No nudge on the refused branch. "You can edit or remove this rule
+        // later" describes a rule that will not exist.
+        nudge: gate.ok ? 'You can remove this rule later in Compliance & Guardrails.' : undefined,
       };
     }
 
@@ -615,10 +900,19 @@ export function whatAcceptingWrites(
     case 'procedure': return 'Creates a draft procedure definition. It will not run until you publish it.';
     case 'conversation_type': return 'Adds this as a routable conversation topic.';
     case 'guardrail': {
-      const kindOfRule = guardrailKindOf(payload);
-      if (kindOfRule === 'pattern') return 'Creates a guardrail that blocks anything matching this pattern before it reaches a customer.';
-      if (kindOfRule === 'threshold') return 'Creates a guardrail that requires your approval above this threshold — nothing about it stops a message from going out.';
-      return 'Creates a guardrail rule — it has no enforceable literal yet, so it will not do anything until one is added.';
+      // ⚠ 751: the threshold branch used to say "Creates a guardrail that
+      // requires your approval above this threshold". It creates NOTHING —
+      // decide_discovery_proposal refuses it, in words, and leaves the card
+      // where it is. Two measured reasons, both in that migration's header: the
+      // number has no unit (require_approval_over_cents reads CENTS,
+      // max_discount_pct reads PERCENT, and a payload that carries neither
+      // makes "10,000" a hundred-fold guess), and max_discount_pct has no
+      // enforcement path at all — its only readers interpolate it into a
+      // prompt. The sentence a drawer shows before a button fires has to be the
+      // sentence that turns out to be true.
+      const gate = guardrailAcceptability(payload);
+      if (gate.ok) return 'Adds a blocking rule to this workspace: anything matching this pattern is withheld before it reaches a customer, for every employee, not just one. You can take it off again in Compliance & Guardrails.';
+      return `Creates nothing. ${gate.reason} Accepting it records that reason against this recommendation and leaves it here for you.`;
     }
     case 'trust_rule': return 'Creates or raises this employee’s trust policy, up to the stated cap.';
   }

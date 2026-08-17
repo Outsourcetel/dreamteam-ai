@@ -1219,17 +1219,25 @@ const sections = [
     // That is the intended coupling: migration 746 added probes 12/13/14 (the
     // employee hire, the nested-sub-block asymmetry driven in both directions,
     // and "the router did not swing open for procedure/trust_rule"), so 11
-    // becomes 14 and 98 becomes 138. The floor is the count on a CLEAN run —
-    // every `v_checks := v_checks + 1` is reached when every probe completes —
-    // so it goes red the moment a probe is skipped, which is the whole point.
+    // becomes 14 and 98 becomes 138. Migration 751 adds probe 15 (the whole
+    // guardrail path — the browser's own insert under RLS, the accept, the shape
+    // of the rule that now exists, RETIRING it, and ten refusals) plus a
+    // guardrail leak arm, so 14 becomes 15 and 138 becomes 164 — and then the
+    // review fixes add five more (the prose-word alternation's only behavioural
+    // case, the regex-metacharacter screen, the empty-alternative screen, the
+    // whitespace-padded accept that proves the trim, and the employee-scope
+    // decoy), so 164 becomes 169. The floor is the
+    // count on a CLEAN run — every `v_checks := v_checks + 1` is reached when
+    // every probe completes — so it goes red the moment a probe is skipped,
+    // which is the whole point.
     //
     // Declared HERE, above the zero-probe branch, so every message below counts
     // against the same number. They used to be declared halfway down and three
     // sentences said "11" as a string literal; when the count moved, those three
     // would have kept telling a person the wrong denominator while the gate
     // itself was right.
-    const EXPECTED_PROBES = 14;
-    const ASSERTION_FLOOR = 138; // 741 shipped 95; 745 ported them plus 3 ctid arms (98); 746 adds 40 across probes 12/13/14 and the hire's own rollback arm.
+    const EXPECTED_PROBES = 15;
+    const ASSERTION_FLOOR = 169; // 741 shipped 95; 745 ported them plus 3 ctid arms (98); 746 adds 40 across probes 12/13/14 and the hire's own rollback arm (138); 751 adds 26 across probe 15 and the guardrail leak arm (164), then 5 more from the review fixes (scope decoy, metacharacter screen, empty-alternative screen, whitespace-padded accept, prose-word alternation).
 
     // The denominator is checked BEFORE the findings, on purpose: "no
     // findings" is only meaningful once something was compared.
@@ -1273,6 +1281,45 @@ const sections = [
     }
     // Count the comparisons, not just the findings — printed on green runs too.
     console.log(`        decide-discovery-proposal-behaviour: ${note}`);
+    return { ok: true, detail: '' };
+  }),
+  // ⚠⚠ THE ONLY PLACE THE TWO COPIES OF THE GUARDRAIL PATTERN PREDICATE ARE
+  // ACTUALLY COMPARED. `guardrail_rules.pattern` is screened in TypeScript
+  // (src/lib/discoveryProposalPresentation.ts) and again in SQL (migration 751's
+  // guardrail branch), and the ordering makes the pair ASYMMETRIC: the browser
+  // INSERTS a live, blocking, workspace-wide rule between the two, so SQL
+  // STRICTER THAN THE CLIENT leaves that rule in force behind a proposal that
+  // reverts to pending and re-refuses on every retry, forever.
+  //
+  // tests/discovery-proposal-batching.test.ts used to assert that invariant
+  // against a JavaScript re-implementation of the SQL predicate. It passed. Run
+  // against the real database with the predicate lifted out of the migration, it
+  // was FALSE — 10 unsafe patterns, because five code points are `\s` to
+  // Postgres and not to JavaScript. A transcription can only prove it agrees
+  // with itself, which is why this section exists and why it is HERE and not in
+  // vitest: the suite has no database, and a differential that skips when it
+  // cannot reach one is a checker that cannot fail.
+  //
+  // The script hard-fails on an unreachable database and on a battery that has
+  // lost its teeth (no acceptances, no refusals, no disagreements, too few
+  // comparisons), so a green here is a green over a real comparison.
+  section('guardrail-pattern-differential', async () => {
+    const { runDifferential, verdict } = await import('./guardrail-predicate-differential.mjs');
+    let r;
+    try {
+      r = await runDifferential();
+    } catch (e) {
+      // A check that cannot run is a failure, never a skip.
+      return {
+        ok: false,
+        detail: `the guardrail pattern differential could not run, so NOTHING about the client/database agreement was verified this run — ${String(e).slice(0, 400)}`,
+      };
+    }
+    const v = verdict(r);
+    // Count the comparisons, not just the findings — printed on green runs too.
+    const denom = `compared ${r.compared} patterns against live Postgres: client accepts ${r.tsAccepted}, database accepts ${r.sqlAccepted}, disagreements ${r.disagreements} (${r.safeDisagreements.length} on the safe side)`;
+    if (!v.ok) return { ok: false, detail: `${v.problems.map((p) => `  ✗ ${p}`).join('\n')}\n        ${denom}` };
+    console.log(`        guardrail-pattern-differential: ${denom}`);
     return { ok: true, detail: '' };
   }),
   section('edge-typecheck', () => {

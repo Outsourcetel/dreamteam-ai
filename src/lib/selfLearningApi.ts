@@ -20,6 +20,7 @@
 // ============================================================
 import { supabase } from '../supabase';
 import { raise, requireTenantId } from './liveShared';
+import { screenPatternForWrite } from './guardrailApi';
 
 export interface LearningPolicy {
   id: string;
@@ -118,12 +119,45 @@ export async function getLearnedBehaviorClusterDetail(cluster: LearnedBehaviorCl
 
 /** Approve a proposed learned behavior — REALLY inserts (correction) or
  *  loosens/deactivates (overcaution) a guardrail_rules row. A human may
- *  override the suggested pattern/threshold before approving. */
+ *  override the suggested pattern/threshold before approving.
+ *
+ *  ⚠⚠ THE FOURTH DOOR ONTO `guardrail_rules.pattern`, AND THE ONLY ONE THAT IS
+ *  NOT PostgREST. `p_final_pattern` is SelfLearningPage's free-text input
+ *  ("Pattern to block (edit before approving)"), and migration 487's
+ *  `approve_learned_behavior` uses it two ways: it INSERTs a new rule with it,
+ *  and — on the overcaution branch — it UPDATEs an EXISTING rule's `pattern`.
+ *  The INSERT branch checks `coalesce(btrim(v_pattern), '') = ''` and nothing
+ *  else; the UPDATE branch (487:227-228) checks nothing at all.
+ *
+ *  WHAT THAT COSTS TODAY, MEASURED 2026-08-17 rather than asserted: the INSERT
+ *  writes severity='warning', and both deterministic readers keep
+ *  severity='blocking' only (answerGuardrails.ts:56, guardrailJudge.ts:74), so
+ *  a trailing pipe down THAT branch mutes nothing. The UPDATE is the dangerous
+ *  one — the row it overwrites can be blocking — but production holds 3
+ *  de_learned_behavior_clusters rows, all 3 with guardrail_rule_id NULL and 0
+ *  in status 'proposed', so today the RPC returns 'not_proposed' before it
+ *  reaches either branch. A code-level hole of exactly the shape round 4 closed
+ *  on the three PostgREST writers, not a live outage — and screened here for
+ *  the same reason those were: the next row of data is not a code review.
+ *
+ *  'hand_authored' — a PERSON edits this field before approving, which is what
+ *  the input's own label says. So the metacharacter screen is skipped (it would
+ *  refuse the same regexes Company Setup ships) and the universal screens —
+ *  empty alternative, Postgres-only separators — run. The rule itself is not
+ *  restated here: `screenPatternForWrite` is imported from the writer that owns
+ *  it, so this door and the other three cannot come to disagree about what
+ *  'hand_authored' means.
+ *
+ *  A refusal THROWS before the RPC is reached, so nothing is written and the
+ *  cluster stays 'proposed'. SelfLearningPage's `decide` already catches and
+ *  renders `e.message` into its error banner — read at
+ *  src/pages/tenant/intelligence/SelfLearningPage.tsx, not assumed. */
 export async function approveLearnedBehavior(
   clusterId: string,
   finalPattern?: string,
   finalThreshold?: number,
 ): Promise<{ ok: boolean; guardrail_rule_id?: string; error?: string }> {
+  screenPatternForWrite(finalPattern, 'hand_authored');
   const { data, error } = await supabase.rpc('approve_learned_behavior', {
     p_cluster_id: clusterId,
     p_final_pattern: finalPattern ?? null,

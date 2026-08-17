@@ -110,13 +110,19 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
       //    they exist.
       for (const g of template.guardrails) {
         if (!pickedRules.has(g.rule) || existingRules.has(g.rule.toLowerCase())) continue;
+        // 'hand_authored': these patterns are INDUSTRY_TEMPLATES in
+        // src/lib/industries.ts, written into this repository by hand, and 13
+        // of the 20 use regex on purpose — `.{0,12}`, `(plan|recommend)`,
+        // `[d]?`. Sending them through the model screen would refuse Company
+        // Setup for 13 of 20 industries. The empty-alternative screen still
+        // applies and none of the 20 trips it.
         await addGuardrailRule({
           rule: g.rule,
           rule_type: g.rule_type,
           pattern: g.pattern ?? null,
           threshold: g.threshold ?? null,
           severity: 'blocking',
-        });
+        }, 'hand_authored');
         rulesMade.push(g.rule);
       }
       // 4. Durable record of what setup did.

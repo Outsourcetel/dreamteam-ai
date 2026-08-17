@@ -250,10 +250,23 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
     const threshold = isMoney ? Math.round(Number(form.threshold) * 100) || null
       : isPct ? Math.round(Number(form.threshold)) || null : null
     if (editing) {
+      // ⚠ THE SAME FREE-TEXT FIELD, THE OTHER WRITER — and until 2026-08-17 the
+      // other writer had no screen. `refund|` typed into Add was refused; saved
+      // as `refund` and then changed to `refund|` HERE it was accepted, live and
+      // blocking, muting every outbound message on all four enforcement paths.
+      // Two clicks apart, one dialog, opposite answers. `updateGuardrailRule`
+      // now runs the same screen with the same provenance, so re-saving one of
+      // the 35 live rules that carry a metacharacter still works and a trailing
+      // pipe does not.
       await updateGuardrailRule(editing, {
         rule: form.rule.trim(), pattern, threshold, severity: form.severity,
-      })
+      }, 'hand_authored')
     } else {
+      // 'hand_authored': `pattern` here is what a person typed into this form.
+      // 35 of the 168 live active patterned rules carry a regex metacharacter,
+      // so refusing them would take away a capability this page already has;
+      // the empty-alternative and invisible-separator screens still run, and 0
+      // live rules trip either.
       await addGuardrailRule({
         rule: form.rule.trim(),
         rule_type: form.rule_type,
@@ -262,7 +275,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
         severity: form.severity,
         scope: form.scope,
         scope_ref: form.scope === 'workspace' ? null : (form.scope_ref || null),
-      })
+      }, 'hand_authored')
     }
     closeComposer()
   })
@@ -572,7 +585,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                       <td className={`${td} text-xs text-indigo-400 font-mono`}>v{r.version}</td>
                       <td className={td}>
                         <Toggle enabled={r.active} disabled={busy || !canEditGuardrails}
-                          onChange={(v) => void run(() => updateGuardrailRule(r, { active: v }))} />
+                          onChange={(v) => void run(() => updateGuardrailRule(r, { active: v }, 'hand_authored'))} />
                       </td>
                       {/* Edit and Retire. Both were missing entirely: the row
                           had one mutation (the toggle) even though the API

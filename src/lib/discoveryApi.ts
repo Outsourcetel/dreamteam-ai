@@ -5,8 +5,9 @@
 // discovery_capability_gaps (migrations 733-737, plus 740's last_error /
 // last_error_at / attempts).
 //
-// WRITES two kinds: 'connector' through Path B, and — since migration 746 —
-// 'employee' through Path A. Every other kind is still read-only here.
+// WRITES three kinds: 'connector' through Path B, 'employee' through Path A
+// (migration 746), and — since migration 751 — 'guardrail' through Path B, for
+// PATTERN-bearing rules only. Every other kind is still read-only here.
 // ACCEPT_WRITERS below is the ONE table that says so: isDecidableKind asks
 // whether a kind has an entry and acceptProposal runs the entry it finds, so a
 // kind gains Accept, Decline and Park together or gains none of them. It
@@ -54,9 +55,10 @@ import { supabase } from '../supabase';
 import { getSessionTenantId, CustomerApiError, isMissingTableError } from './customerApi';
 import { connectProvider, PROVIDERS } from './connectorApi';
 import type { ConnectorProvider } from './connectorApi';
+import { addGuardrailRule } from './guardrailApi';
 import { CATEGORIES } from './categoryContracts';
 import type { SystemCategory } from './categoryContracts';
-import { KIND_LABELS, PROPOSAL_KINDS } from './discoveryProposalPresentation';
+import { KIND_LABELS, PROPOSAL_KINDS, guardrailAcceptability } from './discoveryProposalPresentation';
 import type { AcceptCompliancePack, ProposalKind, ProposalState } from './discoveryProposalPresentation';
 
 export type { ProposalKind, ProposalState };
@@ -319,6 +321,13 @@ const ACCEPT_WRITERS: Partial<Record<ProposalKind, AcceptWriter>> = {
   // to the gate it feeds instead of at the bottom of the module.
   connector: (proposal, note) => acceptConnectorProposal(proposal, note),
   employee: (proposal, note) => acceptEmployeeProposal(proposal, note),
+  // Migration 751. Path B, exactly like connector: addGuardrailRule writes the
+  // row under RLS as the signed-in human, then the RPC stamps it. Restricted to
+  // PATTERN-bearing rules by the founder's ruling of 2026-08-15 — and the
+  // restriction lives in guardrailAcceptability, which the CARD reads too, so
+  // "what this button will do" and "what the card says it will do" are one
+  // expression rather than two that agree today.
+  guardrail: (proposal, note) => acceptGuardrailProposal(proposal, note),
 };
 
 /** The kinds this screen can decide, derived from the ONE table above and
@@ -354,11 +363,8 @@ function acceptWriterFor(kind: ProposalKind): AcceptWriter | null {
 /** Which kinds this screen can actually decide today — derived from
  *  ACCEPT_WRITERS, never a list of its own.
  *
- *  'connector' and 'employee' — deliberately, and each omission has a named
- *  reason:
- *   - 'guardrail'  — Path B, next in the contract's risk order (§9 #2); the
- *                    accept path is not written yet, and BLOCKER 3 restricts
- *                    it to pattern-bearing rules when it is.
+ *  'connector', 'employee' and 'guardrail' — deliberately, and each omission
+ *  has a named reason:
  *   - 'procedure'  — Path B via the playbook-draft edge function; not written.
  *   - 'trust_rule' — Path A, last by the contract's own ordering, and blocked
  *                    on BLOCKER 4: 90 trust_policies rows exist with 0 ladders
@@ -437,7 +443,15 @@ function friendlyDecisionError(raw: string, attempted?: DiscoveryDecision, state
     return 'Deciding is not switched on in this workspace yet — the step that records your decision has not been installed. Nothing was changed.';
   }
   if (raw.includes('row-level security') || raw.includes('violates row-level')) {
-    return 'Your workspace role does not allow adding a system. Nothing was changed.';
+    // ⚠ NOT "adding a system" any more (751). This branch is reached by every
+    // Path B writer, and there are two of them now: connectors_tenant_write and
+    // guardrail_rules_tenant_write raise the same 42501 with the same words.
+    // Telling someone their role does not allow "adding a system" when they
+    // clicked Accept on a guardrail names the wrong thing, and both callers
+    // already prefix this sentence with what they were actually doing
+    // ("<name> could not be set up: …", "This rule could not be set up: …") —
+    // so the noun belongs to the caller and never to this line.
+    return 'Your workspace role does not allow that. Nothing was changed.';
   }
   // ── the two refusals the employee accept can meet ────────────────────────
   // ⚠ HONEST ABOUT WHAT THIS FIXES AND WHAT IT DOES NOT. These translate the
@@ -677,6 +691,217 @@ async function acceptEmployeeProposal(
 }
 
 /**
+ * Accept a 'guardrail' proposal — Path B, the same shape as the connector,
+ * restricted to PATTERN-bearing rules (migration 751; founder ruling
+ * 2026-08-15).
+ *
+ * ── WHY THE BROWSER WRITES IT ────────────────────────────────────────────
+ * A guardrail's ordinary writer is addGuardrailRule (src/lib/guardrailApi.ts),
+ * a PostgREST insert made by the signed-in human under RLS — `authenticated`
+ * holds INSERT on guardrail_rules and `guardrail_rules_tenant_write` reads
+ * `tenant_id = auth_tenant_id() AND auth_has_tenant_role(['tenant_owner',
+ * 'tenant_admin'])`. Inlining that insert inside the SECURITY DEFINER RPC would
+ * run it as postgres and bypass the policy the human path depends on: a second
+ * creation engine, which contract §8.3 forbids. So the browser creates, and
+ * decide_discovery_proposal stamps.
+ *
+ * ── WHAT IS DELIBERATELY NOT PASSED ──────────────────────────────────────
+ * ⚠ `compliance_pack_key` is left NULL, and that is the load-bearing omission.
+ * retire_guardrail_rule refuses a pack rule BY NAME ("it belongs to a pack —
+ * detach the pack instead") and trg_guard_compliance_guardrails blocks
+ * deactivating one, so a discovery guardrail carrying a pack key would be a rule
+ * the customer agreed to and then could not take off. The RPC refuses one too,
+ * and migration 751's probe 15 retires the rule it creates to prove the
+ * omission is doing its job rather than merely being described.
+ *
+ * ⚠ `scope` IS THE COLUMN THAT DECIDES BLAST RADIUS, and this comment used to
+ * credit `applies_to` with it. Measured live from pg_get_functiondef:
+ * `guardrail_rules_for_de` — the sole resolver behind loadBlockingRules and
+ * loadBlockingRulesForJudge, and so behind all four enforcement paths — does not
+ * contain the string `applies_to` anywhere in its body. Its scope predicate has
+ * FOUR arms, and this comment named two (corrected 2026-08-17; the behaviour it
+ * described was right, but describing a four-arm resolver as a two-arm one is
+ * exactly the class of error that produced B1):
+ *
+ *      g.scope = 'workspace'
+ *   or g.scope = 'employee'   and g.scope_ref = p_de_id::text
+ *   or g.scope = 'department' and g.scope_ref = (that employee's department)
+ *   or g.scope = 'playbook'   and g.scope_ref = p_playbook_def_id::text
+ *
+ * In supabase/functions/_shared, `applies_to` is only ever carried onto a block
+ * record, never filtered on. So `scope` left at its column default of
+ * 'workspace' is what makes this the workspace's rule rather than one
+ * employee's, one department's or one playbook's — exactly what the card says
+ * ("for every employee in this workspace") — and `applies_to: 'all'` is written
+ * because every reader that displays a rule shows it, not because anything
+ * gates on it. The RPC checks both. `rule_type` is chosen here, not carried:
+ * the payload is exactly {rule, pattern, threshold, severity} and has no
+ * rule_type field at all.
+ *
+ * ── THE THRESHOLD HALF, AND WHY IT CALLS THE RPC ANYWAY ───────────────────
+ * A threshold-only payload creates NOTHING here, and then calls the RPC with a
+ * null object id ON PURPOSE. The refusal has to be written by the server, into
+ * `discovery_proposals.last_error` (migration 740), or it lives only in this
+ * tab's React state and a reload turns "we refused this and told you why" back
+ * into "nobody has decided this yet" — the invisible pile the whole surface
+ * exists to prevent. The RPC's own sentence is what the card shows tomorrow, so
+ * this function does not invent a competing one.
+ *
+ * ⚠ NOT EXPORTED, same as the connector writer. The only way here is
+ * acceptProposal, through ACCEPT_WRITERS.
+ */
+async function acceptGuardrailProposal(
+  proposal: DiscoveryProposal,
+  note: string | null,
+): Promise<DecisionOutcome> {
+  if (proposal.kind !== 'guardrail') {
+    return {
+      ok: false,
+      error: `That is a "${proposal.kind}" recommendation, not a rule to enforce. Nothing was changed.`,
+    };
+  }
+
+  // THE ONE GATE, and the card reads the same function — see
+  // guardrailAcceptability's header for why it is not two.
+  const gate = guardrailAcceptability(proposal.payload);
+  if (!gate.ok) {
+    // Nothing is created. The RPC refuses in its own words and writes them to
+    // the row; we return its outcome unchanged rather than adding a second
+    // sentence that would then disagree with the one on the card after a
+    // reload.
+    return decideDiscoveryProposal(proposal.id, 'accepted', note, null);
+  }
+
+  const ruleSentence = String(proposal.payload.rule ?? '').trim();
+  if (!ruleSentence) {
+    // validatePayload refuses a guardrail with no rule sentence at emission, so
+    // this is unreachable through the interview — but guardrail_rules.rule is
+    // NOT NULL, and inventing "New guardrail" here would put a sentence the
+    // customer never said into a workspace-wide blocking rule.
+    return {
+      ok: false,
+      error: 'This recommendation has no rule sentence, so there is nothing to write down as the reason for the block. Nothing was changed.',
+    };
+  }
+  // The payload's severity is hardcoded 'blocking' at emission and is not in
+  // FILL_WHITELIST, so a model cannot change it — but if one ever arrives
+  // saying otherwise, refuse rather than quietly writing 'blocking' anyway. The
+  // card's sentence ("blocked before it reaches a customer") is only true for a
+  // blocking rule: loadBlockingRules keeps `severity === 'blocking'` and
+  // nothing else.
+  const severity = String(proposal.payload.severity ?? 'blocking').trim() || 'blocking';
+  if (severity !== 'blocking') {
+    return {
+      ok: false,
+      error: `This recommendation asks for a "${severity}" rule, and this screen only sets up rules that actually stop something. Nothing was changed.`,
+    };
+  }
+
+  const tenantId = await requireTenantId();
+
+  // ── THE CRASH WINDOW, same as the connector ─────────────────────────────
+  // Path B writes the object in one round trip and stamps in a second, and
+  // `guardrail_rules` carries no unique index — so a browser that dies between
+  // them would leave an orphan rule and a naive retry would mint a second one.
+  // FIND first, on every column the RPC is about to check, so a row we reuse is
+  // one the stamp will accept: same tenant, same literal, blocked_phrase,
+  // blocking, workspace-wide, live and pack-free.
+  //
+  // ⚠ `.eq('scope', 'workspace')` IS LOAD-BEARING, AND IT WAS MISSING. Without
+  // it this find matched on `applies_to` alone — a column no enforcement path
+  // reads — so a pattern collision would hand the RPC an EMPLOYEE-SCOPED rule,
+  // the stamp would take it, and the customer would be told "it applies to every
+  // employee in this workspace" about a rule guardrail_rules_for_de returns for
+  // exactly one. Measured: in outsourcetel-hq, 12 rows match every other filter
+  // this query applies, and all 12 are scope='employee'. The RPC now refuses
+  // such a row as well; both halves check it, because a reuse the server refuses
+  // is a stuck proposal and a reuse the server accepts is a broken promise.
+  //
+  // ⚠ `.order('created_at').order('id')` for the same reason connectorSelection
+  // states: created_at ties to the millisecond in this database, and a total
+  // order has to be total or the "same" accept can stamp a different id each
+  // time — nondeterminism in the one field the audit contract makes
+  // load-bearing for reconstruction.
+  const { data: existing, error: findErr } = await supabase
+    .from('guardrail_rules')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('rule_type', 'blocked_phrase')
+    .eq('pattern', gate.pattern)
+    .eq('scope', 'workspace')
+    .eq('applies_to', 'all')
+    .eq('severity', 'blocking')
+    .eq('active', true)
+    .is('retired_at', null)
+    .is('compliance_pack_key', null)
+    .order('created_at', { ascending: true })
+    .order('id', { ascending: true })
+    .limit(1);
+  if (findErr) {
+    return { ok: false, error: `We could not check whether this rule is already set up: ${friendlyDecisionError(findErr.message)}` };
+  }
+
+  const found = existing && existing.length > 0 ? String((existing[0] as { id: string }).id) : null;
+  let ruleId = found;
+
+  if (!ruleId) {
+    try {
+      const rule = await addGuardrailRule({
+        rule: ruleSentence,
+        rule_type: 'blocked_phrase',
+        pattern: gate.pattern,     // the literal the card showed, verbatim
+        applies_to: 'all',
+        severity: 'blocking',
+        active: true,
+        // compliance_pack_key deliberately absent — see the header.
+      }, 'model_authored');   // the interview's payload; addGuardrailRule screens it again
+      ruleId = rule?.id ? String(rule.id) : null;
+    } catch (err) {
+      return { ok: false, error: `This rule could not be set up: ${friendlyDecisionError(err instanceof Error ? err.message : String(err))}` };
+    }
+    // ⚠ Belt, not buckle, and the same reasoning as the connector writer's: on
+    // INSERT the RLS policy is a WITH CHECK, which RAISES 42501 rather than
+    // returning zero rows, and addGuardrailRule ends its write with `.single()`
+    // — so an RLS refusal arrives at the catch above. This stays because the
+    // thing it guards against is the one that must never happen: stamping a
+    // proposal 'accepted' against an object we did not see come back.
+    if (!ruleId) {
+      return {
+        ok: false,
+        error: 'The rule was not created — your workspace role does not allow adding a guardrail. Nothing was changed, and this is still waiting for a decision.',
+      };
+    }
+  }
+
+  const outcome = await decideDiscoveryProposal(proposal.id, 'accepted', note, ruleId);
+  if (!outcome.ok) {
+    // THREE sentences, each true, in this order — what happened to
+    // guardrail_rules, why the stamp did not land, and what to do next. The
+    // first one matters more here than it does for a connector: a guardrail
+    // that exists is ALREADY BLOCKING, so "we could not record your decision"
+    // must never be read as "nothing is switched on".
+    const reason = stripNothingChanged(outcome.error ?? '');
+    const whatHappened = found
+      ? 'This workspace already had exactly this rule, so nothing new was created — and it is still switched on.'
+      : 'The rule was created and is switched on now — it is already blocking that phrase.';
+    if (outcome.code === 'already_decided') {
+      return {
+        ...outcome,
+        error: `${whatHappened} But this recommendation had already been decided${outcome.state ? ` — it is ${outcome.state} now` : ''}, so your decision was not recorded and it will not take another one. Reload the page to see where it landed, and take the rule off in Compliance & Guardrails if you did not want it.`,
+      };
+    }
+    const whatNext = found
+      ? 'Nothing else changed, and this is still waiting for a decision — you can try again once that is sorted out.'
+      : 'Accepting again is safe — it will re-use the rule that now exists rather than making a second one. If you would rather it were not there at all, take it off in Compliance & Guardrails.';
+    return { ...outcome, error: `${whatHappened} We could not record your decision: ${reason} ${whatNext}` };
+  }
+  // Which branch this was, for the same reason the connector carries it: "we
+  // added a blocking rule" and "you already had this exact rule" are different
+  // facts, and only the find at the top of this function knows which.
+  return { ...outcome, reusedExisting: found !== null };
+}
+
+/**
  * Accept a 'connector' proposal — the full Path B sequence.
  *
  * COLUMN MAPPING. The payload carries provider_key / label / category /
@@ -763,7 +988,13 @@ async function acceptConnectorProposal(
   if (proposal.kind !== 'connector') {
     return {
       ok: false,
-      error: `This screen can only act on systems to connect yet, and that is a "${proposal.kind}" recommendation. Nothing was changed.`,
+      // ⚠ 751: this used to read "This screen can only act on systems to
+      // connect yet" — a sentence that stopped being true when employee was
+      // wired and is now wrong about three kinds. It is only reachable if
+      // something routed a non-connector into this writer, which ACCEPT_WRITERS
+      // makes impossible; the fix is to say what is actually wrong rather than
+      // to make a claim about the screen from inside one writer.
+      error: `That is a "${proposal.kind}" recommendation, not a system to connect. Nothing was changed.`,
     };
   }
   const tenantId = await requireTenantId();

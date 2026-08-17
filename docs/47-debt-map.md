@@ -36,6 +36,14 @@ proven"* and still report **PASS**.
 
 Both audits are clean today, so this is a latent false-green, not a live lie.
 It is still the exact failure this repo's own commit messages call theatre.
+
+> **CLOSED 2026-08-17.** `package.json:23-24` now reads
+> `"audit:role-gates": "node scripts/audit-role-gates.mjs --strict"` and the
+> same for `audit:silent-refusals`. Measured the same day: `npm run -s
+> audit:role-gates` reports 4 findings and **exits 1**. The finding above is
+> left as written because this file is an audit of record and the state it
+> describes was real; this note is the correction, not an edit to the finding.
+> `golden-path.mjs:337` is NOT covered by this and remains open.
 **Three one-line fixes.**
 
 ---

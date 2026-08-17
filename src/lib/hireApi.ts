@@ -238,13 +238,16 @@ export async function applyTailoredGuardrails(deId: string, p: TailoredProposal)
   const rules = await listGuardrailRules();
   const forDe = rules.filter((r) => r.scope === 'employee' && r.scope_ref === deId);
 
+  // Both of these move a THRESHOLD and never touch `pattern`, so the pattern
+  // screen is a no-op here — but the provenance is still named, because a
+  // default is how `updateGuardrailRule` came to have no screen at all.
   if (p.discountPct != null) {
     const g = forDe.find((r) => r.rule_type === 'max_discount_pct');
-    if (g) { await updateGuardrailRule(g, { threshold: p.discountPct }); out.discountUpdated = true; }
+    if (g) { await updateGuardrailRule(g, { threshold: p.discountPct }, 'hand_authored'); out.discountUpdated = true; }
   }
   if (p.approvalCents != null) {
     const g = forDe.find((r) => r.rule_type === 'require_approval_over_cents');
-    if (g) { await updateGuardrailRule(g, { threshold: p.approvalCents }); out.approvalUpdated = true; }
+    if (g) { await updateGuardrailRule(g, { threshold: p.approvalCents }, 'hand_authored'); out.approvalUpdated = true; }
   }
   return out;
 }

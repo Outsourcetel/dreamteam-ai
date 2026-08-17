@@ -1,34 +1,34 @@
 {
-  "at": "2026-08-16T18:02:48.987Z",
+  "at": "2026-08-17T04:58:34.860Z",
   "mode": "full",
   "failed": 4,
   "results": [
     {
       "section": "typecheck",
       "ok": true,
-      "seconds": 16.2
+      "seconds": 17.2
     },
     {
       "section": "ring0-probes",
       "ok": false,
-      "seconds": 75.8,
-      "detail": "no-pending-approval-the-platform-cannot-carry-out: mismatched-pair — kinetic / Approve action — Create a specialist desk (DreamTeam AI (self)) [execution bfb462a0-1e22-48cf-a3a0-fa60edd666f4]: the row names definition 18a92cdd-ba11-4c11-8bcc-96a3b8e120b4 (create_specialist), but its status is \"disabled\" and the resolver only ever sees active definitions. connector-hub answers action_definition_not_found and nothing is sent.\nno-pending-approval-the-platform-cannot-carry-out: no-executor — outsourcetel-hq / Send a $15,600 invoice to Meridian Group — test ping [task 03aaa6dd-379b-438a-aadd-d9b8e262638b, raised 2026-08-10]: no action_executions row references this task by EITHER linkage column (task_id, resolves_task_id). There is no executor behind the approval at all: deciding it flips the task to \"approved\", hands connector-hub nothing, and sends nothing — while the queue empties and the screen reads as done. A human must withdraw or re-raise it; this probe reports, it never decides.\nonboarding-bindings-are-runnable: outsourcetel-hq / SaaS onboarding — starter / locations_configured → propose_connector — needs the \"workforce_assistant\" role, which the employee(s) this workspace gives onboarding work to (Onni) do not have"
+      "seconds": 66.8,
+      "detail": "execute-perimeter: NEW/CHANGED grant not in allowlist: platform_capability_demand()|anon=false|authed=true\nno-pending-approval-the-platform-cannot-carry-out: mismatched-pair — kinetic / Approve action — Create a specialist desk (DreamTeam AI (self)) [execution bfb462a0-1e22-48cf-a3a0-fa60edd666f4]: the row names definition 18a92cdd-ba11-4c11-8bcc-96a3b8e120b4 (create_specialist), but its status is \"disabled\" and the resolver only ever sees active definitions. connector-hub answers action_definition_not_found and nothing is sent.\nno-pending-approval-the-platform-cannot-carry-out: no-executor — outsourcetel-hq / Send a $15,600 invoice to Meridian Group — test ping [task 03aaa6dd-379b-438a-aadd-d9b8e262638b, raised 2026-08-10]: no action_executions row references this task by EITHER linkage column (task_id, resolves_task_id). There is no executor behind the approval at all: deciding it flips the task to \"approved\", hands connector-hub nothing, and sends nothing — while the queue empties and the screen reads as done. A human must withdraw or re-raise it; this probe reports, it never decides.\nonboarding-bindings-are-runnable: outsourcetel-hq / SaaS onboarding — starter / locations_configured → propose_connector — needs the \"workforce_assistant\" role, which the employee(s) this workspace gives onboarding work to (Onni) do not have"
     },
     {
       "section": "deferred-register",
-      "ok": true,
-      "seconds": 6.5
+      "ok": false,
+      "seconds": 6.3,
+      "detail": "F1 REGISTER SAYS OPEN, REALITY SAYS CLOSED — D-7 \"Debt #35 — zero component tests over roughly 73,790 lines of UI. Twenty test files, none renders a component.\". Its grep verification returned n=1, and the item is open only when n == 0. This is docs/45's 28-fail-open-guards shape: a real finding that got fixed and went on being carried as live backlog. FIX: set \"state\":\"closed\" on D-7 and record closed_by (the commit or migration that did it) — the evidence is this line."
     },
     {
       "section": "migration-ledger",
-      "ok": false,
-      "seconds": 5.9,
-      "detail": "  APPLIED    402   recorded by the runner, file unchanged\n  ASSUMED    369   predates the ledger — believed applied, never verified\n  DRIFTED      0   applied, then the FILE CHANGED\n  PENDING      0   in the repo, never applied here\n  ORPHANED     2   in the ledger, no longer in the repo\nORPHANED:\n  715_the_definition_says_which_engine_owns_it.sql\n  717_four_roles_get_a_procedure_and_intake.sql"
+      "ok": true,
+      "seconds": 5
     },
     {
       "section": "migration-files-match-ledger-checksums",
       "ok": true,
-      "seconds": 5.9
+      "seconds": 3.1
     },
     {
       "section": "migration-numbering",
@@ -38,53 +38,53 @@
     {
       "section": "provider-catalog",
       "ok": true,
-      "seconds": 8.8
+      "seconds": 8.5
     },
     {
       "section": "discovery-spine",
       "ok": true,
-      "seconds": 10.7
+      "seconds": 7.5
     },
     {
       "section": "discovery-proposal-decisions",
       "ok": true,
-      "seconds": 14.5
+      "seconds": 15
     },
     {
       "section": "decide-discovery-proposal-behaviour",
       "ok": true,
-      "seconds": 4.8
+      "seconds": 4.1
     },
     {
       "section": "edge-typecheck",
       "ok": true,
-      "seconds": 2
+      "seconds": 6.3
     },
     {
       "section": "golden-path",
       "ok": true,
-      "seconds": 43.8
+      "seconds": 37
     },
     {
       "section": "role-gates",
       "ok": false,
-      "seconds": 13.3,
-      "detail": "  guardrail_rules.update  ←  src/pages/tenant/governance/CompliancePage.tsx:795\n      needs tenant_owner/tenant_admin   ·   refuses tenant_manager\n  answer_playbook_gap  ←  src/pages/tenant/systems/LivePlaybookBuilder.tsx:1531\n      needs tenant_owner/tenant_admin   ·   refuses tenant_manager, knowledge_manager, approver, tenant_user, read_only\n  answer_playbook_gap  ←  src/pages/tenant/systems/LivePlaybookBuilder.tsx:1599\n      needs tenant_owner/tenant_admin   ·   refuses tenant_manager, knowledge_manager, approver, tenant_user, read_only\nself-test ok — 153 gated functions, self-branch detection live\npolicy reader ok — 91 role-gated table writes, open and self-policy tables correctly excluded"
+      "seconds": 8,
+      "detail": "  guardrail_rules.update  ←  src/pages/tenant/governance/CompliancePage.tsx:795\n      needs tenant_owner/tenant_admin   ·   refuses tenant_manager\n  answer_playbook_gap  ←  src/pages/tenant/systems/LivePlaybookBuilder.tsx:1531\n      needs tenant_owner/tenant_admin   ·   refuses tenant_manager, knowledge_manager, approver, tenant_user, read_only\n  answer_playbook_gap  ←  src/pages/tenant/systems/LivePlaybookBuilder.tsx:1599\n      needs tenant_owner/tenant_admin   ·   refuses tenant_manager, knowledge_manager, approver, tenant_user, read_only\nself-test ok — 154 gated functions, self-branch detection live\npolicy reader ok — 91 role-gated table writes, open and self-policy tables correctly excluded"
     },
     {
       "section": "silent-refusals",
       "ok": true,
-      "seconds": 2.8
+      "seconds": 2.6
     },
     {
       "section": "gate-parity",
       "ok": true,
-      "seconds": 15.1
+      "seconds": 10.4
     },
     {
       "section": "branch-parity",
       "ok": true,
-      "seconds": 27.7
+      "seconds": 27
     },
     {
       "section": "design-drift",
@@ -99,7 +99,7 @@
     {
       "section": "suite",
       "ok": false,
-      "seconds": 64.7,
+      "seconds": 57.2,
       "detail": " ❯ tests/tenant-isolation.test.ts:71:13\n     69|     ).filter((f): f is string => f !== null);\n     70|     if (failures.length > 0) {\n     71|       throw new Error(`teardown failed after 3 attempts each:\\n${failu…\n       |             ^\n     72|     }\n     73|   }, 60000);\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯"
     }
   ]

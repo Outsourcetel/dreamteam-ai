@@ -112,6 +112,18 @@ export async function approveProposal(p: GovernanceProposal): Promise<void> {
   let appliedRuleId: string | null = null;
 
   if (p.action === 'add') {
+    // ⚠ `p.pattern` IS THE MODEL'S BYTES, AND A HUMAN CLICKING APPROVE DOES NOT
+    // CHANGE THAT. governance_proposals.pattern is written by the Workspace
+    // Assistant through the ai-session edge function; this line has always
+    // handed it to addGuardrailRule with no screen — not the metacharacter one,
+    // not the empty-alternative one, not even looksLikeEnforceablePattern —
+    // while migration 751 and two of its comments claimed the discovery accept
+    // was "the FIRST path that lets a MODEL-authored literal reach that
+    // compiler". "refund|" through this door mutes every outbound message on all
+    // four enforcement paths. It has never been used (governance_proposals holds
+    // 0 rows, measured 2026-08-17), which is the only reason the claim read as
+    // true. The screen now lives on the writer and this argument is what asks
+    // for it.
     const rule = await addGuardrailRule({
       rule: p.rule_name || 'Guardrail',
       rule_type: (p.rule_type || 'blocked_phrase') as GuardrailRuleType,
@@ -122,7 +134,7 @@ export async function approveProposal(p: GovernanceProposal): Promise<void> {
       scope_ref: p.scope_ref,
       applies_to: 'all',
       active: true,
-    });
+    }, 'model_authored');
     appliedRuleId = rule.id;
   } else if (p.action === 'pause' || p.action === 'resume' || p.action === 'edit') {
     if (!p.target_rule_id) throw new Error('This proposal points at a rule that no longer exists.');
@@ -130,15 +142,34 @@ export async function approveProposal(p: GovernanceProposal): Promise<void> {
     const all = await listGuardrailRules();
     const target = all.find((r) => r.id === p.target_rule_id);
     if (!target) throw new Error('This proposal points at a rule that no longer exists.');
-    if (p.action === 'pause') await updateGuardrailRule(target, { active: false });
-    else if (p.action === 'resume') await updateGuardrailRule(target, { active: true });
+    // Neither of these carries a pattern; the provenance is named anyway,
+    // because the parameter is what makes the next door ask the question.
+    if (p.action === 'pause') await updateGuardrailRule(target, { active: false }, 'model_authored');
+    else if (p.action === 'resume') await updateGuardrailRule(target, { active: true }, 'model_authored');
     else {
+      // ⚠⚠ CLOSED 2026-08-17, having been NAMED AND LEFT the round before.
+      // `p.pattern` is the same Workspace-Assistant-authored column the `add`
+      // branch above uses, and `updateGuardrailRule` had NO pattern screen — so
+      // an `edit` proposal carrying "refund|" would overwrite a live rule's
+      // pattern with a regex matching the empty string, withholding EVERY
+      // outbound message on all four enforcement paths.
+      //
+      // The correction that mattered was the enumeration, not the sentence: this
+      // comment previously said `updateGuardrailRule` had "8 call sites, 5 of
+      // which pass no pattern". Re-enumerated, it is 8 sites and SIX pass no
+      // pattern — ScopedGuardrails.tsx, governanceAiApi.ts ×2 (the two lines
+      // directly above), hireApi.ts ×2, CompliancePage.tsx's row toggle — while
+      // TWO pass one: this line, and CompliancePage's edit dialog. That dialog
+      // is the reachable half; this one is still unreached, because
+      // governance_proposals holds 0 rows.
+      //
+      // 'model_authored': BOTH screens run, exactly as they do on `add`.
       await updateGuardrailRule(target, {
         rule: p.rule_name || target.rule,
         pattern: p.pattern ?? target.pattern,
         threshold: p.threshold ?? target.threshold,
         severity: p.severity || target.severity,
-      });
+      }, 'model_authored');
     }
     appliedRuleId = p.target_rule_id;
   }

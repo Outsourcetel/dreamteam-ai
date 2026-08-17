@@ -353,6 +353,16 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
           decision === 'accepted'
             ? (p.kind === 'employee'
               ? hireConfirmation(title, outcome)
+              // ⚠ 751: a guardrail accept is NOT "waiting for your credential".
+              // It is the opposite — the rule is live the moment it lands, with
+              // no second gate behind it, which is exactly why this sentence
+              // says so and says where to undo it. A connector's card can
+              // afford to be quiet about consequences because the credential
+              // step is still ahead of the customer; a guardrail's cannot.
+              : p.kind === 'guardrail'
+                ? (outcome.reusedExisting
+                  ? `${title} — you already had exactly this rule, so nothing new was created. It is switched on, under Compliance & Guardrails.`
+                  : `${title} — switched on now. It applies to every employee in this workspace, and you can take it off again under Compliance & Guardrails.`)
               // ⚠ TWO different true things, not one convenient one. An accept
               // that RE-USED a connector the workspace already had inserted
               // nothing — telling that person to go and enter a credential sends
