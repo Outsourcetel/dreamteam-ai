@@ -3463,6 +3463,18 @@ begin
     v_p15_again_err := v_res ->> 'error';
 
     -- ── (d) THE FOUNDER'S RULING: a threshold-only payload is refused ────
+    -- ⚠ A FRESH SESSION, because production can only ever hold ONE guardrail
+    -- proposal per interview. Migration 740's unique (session_id, kind,
+    -- identity_key) generates identity_key as `source_dimension` for every kind
+    -- except employee and connector, so two guardrail proposals in one session
+    -- collide on 23505 — which is exactly what aborted this probe on its first
+    -- apply, 14 of 15 probes done and 138 of 169 assertions compared.
+    -- The INDEX is right and the probe was wrong: discoveryProposals.ts's
+    -- DIMENSION_STRUCTURAL_KINDS maps exactly one dimension to guardrail
+    -- (must_never_happen) and emits exactly one draft for it. Giving each case
+    -- its own source_dimension would also dodge the index, but it would model a
+    -- shape the writer cannot emit; a separate session is the true one.
+    insert into public.discovery_sessions (tenant_id) values (v_tenant) returning id into v_session;
     insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
       values (v_session, v_tenant, 'guardrail',
               jsonb_build_object('vddp','1','rule','Anything over 10,000 needs my say-so',
@@ -3502,6 +3514,8 @@ begin
     -- ⚠ SIX WORDS, so it fails the `<= 5` arm and the prose-word alternation is
     -- never consulted. (e2) below is the ≤5-word case that gives the
     -- alternation its only behavioural coverage.
+    -- a fresh session — see the note at the first of these
+    insert into public.discovery_sessions (tenant_id) values (v_tenant) returning id into v_session;
     insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
       values (v_session, v_tenant, 'guardrail',
               jsonb_build_object('vddp','1','rule','Nothing upsetting',
@@ -3524,6 +3538,8 @@ begin
     -- alternation — the one clause the vitest drift guard compares word for word
     -- against the TypeScript list — has no behavioural coverage anywhere: (e)'s
     -- six-word payload fails the `<= 5` arm first and never reaches it.
+    -- a fresh session — see the note at the first of these
+    insert into public.discovery_sessions (tenant_id) values (v_tenant) returning id into v_session;
     insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
       values (v_session, v_tenant, 'guardrail',
               jsonb_build_object('vddp','1','rule','Nothing upsetting, briefly',
@@ -3547,6 +3563,8 @@ begin
     -- live. (The card no longer says "matches:" for a screened-out literal
     -- either — guardrailLiteral now renders "phrase as written: $500 off", so
     -- the promise and its withdrawal stopped sitting side by side on one card.)
+    -- a fresh session — see the note at the first of these
+    insert into public.discovery_sessions (tenant_id) values (v_tenant) returning id into v_session;
     insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
       values (v_session, v_tenant, 'guardrail',
               jsonb_build_object('vddp','1','rule','Never offer money off',
@@ -3568,6 +3586,8 @@ begin
     -- withheld. It passes looksLikeEnforceablePattern — one word, no trailing
     -- sentence punctuation, no prose word — so nothing before this screen
     -- stopped it.
+    -- a fresh session — see the note at the first of these
+    insert into public.discovery_sessions (tenant_id) values (v_tenant) returning id into v_session;
     insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
       values (v_session, v_tenant, 'guardrail',
               jsonb_build_object('vddp','1','rule','Never promise a refund',
@@ -3591,6 +3611,8 @@ begin
     -- rule it names STAYS LIVE AND BLOCKING. The padding here is a tab, a
     -- newline and a non-breaking space, all three of which JS `.trim()` removes
     -- and one-argument btrim does not.
+    -- a fresh session — see the note at the first of these
+    insert into public.discovery_sessions (tenant_id) values (v_tenant) returning id into v_session;
     insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
       values (v_session, v_tenant, 'guardrail',
               jsonb_build_object('vddp','1','rule','Never waive a late fee',
@@ -3609,6 +3631,8 @@ begin
     -- Every one of these uses the SAME proposal shape as (a) — the only thing
     -- that differs is the id it is handed, so a refusal cannot be about the
     -- payload.
+    -- a fresh session — see the note at the first of these
+    insert into public.discovery_sessions (tenant_id) values (v_tenant) returning id into v_session;
     insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
       values (v_session, v_tenant, 'guardrail',
               jsonb_build_object('vddp','1','rule','Never promise a refund',
@@ -3647,6 +3671,8 @@ begin
     execute format('set local role %I', v_caller);
 
     -- ── (l) the role bar, and its inversion on the SAME row ──────────────
+    -- a fresh session — see the note at the first of these
+    insert into public.discovery_sessions (tenant_id) values (v_tenant) returning id into v_session;
     insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
       values (v_session, v_tenant, 'guardrail',
               jsonb_build_object('vddp','1','rule','No free months',
