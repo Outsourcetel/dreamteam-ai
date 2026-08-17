@@ -897,12 +897,119 @@ export function cardCopyFor(
       // collected by the model fill and never shown anywhere — this is
       // where it belongs, verbatim, falling back to a generic sentence
       // only when the model didn't supply one.
+      //
+      // ⚠⚠ REWRITTEN BY MIGRATION 753, AND EVERY WORD OF THE OLD COPY WAS
+      // FALSE ABOUT WHAT ACCEPTING DOES. It read:
+      //
+      //   title:  "Let <who> act on its own up to <cap>"
+      //   detail: <above_cap> or "Above this, it stops and asks you first."
+      //   nudge:  "You can lower or raise this cap later in Trust settings."
+      //
+      // Measured live 2026-08-17: 90 trust_policies rows across 17 tenants, 0
+      // above level 0, 0 carrying a ladder — and `trust_ladder_settings`, the
+      // only consumer of that column, returns {enabled:false} for any level <= 0
+      // BEFORE it looks at a ladder at all. So nothing this accept writes lets
+      // anybody act on their own, nothing stops anything above the number, and
+      // the cap is not stored anywhere Trust settings would show it. Three
+      // sentences, three claims, none of them true.
+      //
+      // ⚠ AND `above_cap` IS NOT A PROMISE. It is the customer's own description
+      // of what they expect to happen above the limit, kept on the card because
+      // §11b requires "what happens above it" to be VISIBLE — but it is
+      // attributed rather than asserted, because nothing this accept writes
+      // makes it happen. Rendering their sentence as the product's behaviour is
+      // exactly the overclaim this file has already been rewritten twice to
+      // remove.
+      //
+      // ⚠⚠ FIX ROUND 2 — THE REPLACEMENT COPY WAS FALSE TOO, IN THE OPPOSITE
+      // DIRECTION, AND ON THIS KIND THAT IS THE WORSE ONE. It said "${who} still
+      // brings everything to you" and "everything still comes to you for
+      // approval". Those are claims about THE EMPLOYEE'S SUPERVISION, and this
+      // accept does not control that. `de_autonomy` — the table every
+      // enforcement path reads through resolve_de_autonomy — has SEVEN writers,
+      // enumerated live from pg_proc on 2026-08-17:
+      //   deprovision_starter_de_internal, instantiate_role_archetype_internal,
+      //   provision_starter_de_internal, provision_workforce_assistant_internal,
+      //   retire_digital_employee, set_de_autonomy, trust_apply_level
+      // and only the LAST is downstream of a trust level. An archetype carrying
+      // `autonomy_templates` has its dials written AT HIRE by
+      // instantiate_role_archetype_internal, before any trust card renders:
+      // `renewal_manager` carries [{action_type:'action_execute',
+      // source_category:'crm', enabled:true}], measured live.
+      // Corroborated on live rows, outside any transaction: the Renewal DE
+      // (40d688eb…, tenant 5bb802e1…) has max current_level 0 across its trust
+      // policies AND digital_employees.trust_level = 'supervised', and
+      // resolve_de_autonomy(tenant,'action_execute',de,'crm').enabled is TRUE
+      // today. So "level 0" says NOTHING about supervision, and the supervised
+      // badge does not rescue the sentence either.
+      //
+      // 751's defect was copy that OVERCLAIMED enforcement. This was copy that
+      // UNDERCLAIMED autonomy the employee already had — on the one kind whose
+      // entire purpose is oversight, which is the worse direction. So the copy
+      // below says ONLY what the accept controls: the limit is recorded, the
+      // trust setting it opens sits at level 0, and level 0 of the ladder is
+      // off. Nothing about what else this employee may already be allowed to do.
+      // tests/discovery-proposal-batching.test.ts pins the absent claim.
       const aboveCap = str(payload.above_cap);
+      // ⚠ FIX ROUND 3 (a): THE CARD MUST NOT PROMISE TO RECORD WHAT THE SERVER
+      // WILL REFUSE. 753's branch refuses a confidence cap over 100 —
+      // `if v_tr_unit = 'confidence' and v_tr_cap_n::numeric > 100 then raise`
+      // — because validate_trust_ladder admits 0-100 and "500% confidence" is
+      // consent to a setting that cannot exist. Without this arm the card
+      // rendered "Note Sam's limit for this: 500% confidence" beside "this
+      // records the limit you stated", and the accept then refused: a sentence
+      // that is false for that payload, which is the standard this file holds
+      // itself to everywhere else (guardrailAcceptability does exactly this).
+      //
+      // ⚠ THE BOUND IS DUPLICATED AND MUST NOT DRIFT. `> 100`, and the
+      // confidence/dollar split is formatCap's own (answer_dock and
+      // answer_widget confidence-gate; everything else dollar-gates) so there
+      // is ONE definition of the unit on this side, not two. The SQL is the
+      // authority: this arm only decides what the card SAYS, never what gets
+      // written — nothing is written from the browser on this kind at all
+      // (Path A), so a drift here can mislead a reader but can never create a
+      // row the server would have refused.
+      const capN = numericLiteral(payload.cap);
+      const capUnacceptable = (actionCategory === 'answer_dock' || actionCategory === 'answer_widget')
+        && capN !== null && capN > 100;
+      if (capUnacceptable) {
+        return {
+          title: `Check ${who}’s limit for this: ${cap}`,
+          detail: `This one cannot be recorded as written. Confidence runs from 0 to 100, so ${cap} is not a setting that could ever exist — accepting it will say so and record nothing. Nothing changes either way.`
+            + (aboveCap ? ` You said: “${aboveCap}”` : ''),
+          meta: `${who} · ${humanizeToken(actionCategory) || 'unnamed category'} · ${cap} · cannot be recorded`,
+          nudge: `Re-run this part of the interview, or set the limit yourself under ${who}’s Trust settings.`,
+        };
+      }
       return {
-        title: `Let ${who} act on its own up to ${cap}`,
-        detail: aboveCap || 'Above this, it stops and asks you first.',
-        meta: `${who} · ${humanizeToken(actionCategory) || 'unnamed category'} · up to ${cap}`,
-        nudge: 'You can lower or raise this cap later in Trust settings.',
+        title: `Note ${who}’s limit for this: ${cap}`,
+        // ⚠ FIX ROUND 3 (b): "recorded ALONGSIDE", not "recorded against". The
+        // accept deliberately writes NO limit into the trust setting — the
+        // drawer says so in as many words — and "the trust setting it is
+        // recorded against" reads as though the number lives there. Paired
+        // with the nudge pointing at Trust settings, where 753's header says
+        // the cap is NOT surfaced, a reader would go looking for their $500
+        // on a screen that does not show it.
+        //
+        // ⚠ FIX ROUND 3 (c): THE DAILY TIMER IS ON THE CARD FACE NOW, not only
+        // in the drawer. `needsAcceptConfirmation` is employee-only, so Accept
+        // on this card calls runDecision directly — the drawer is optional
+        // reading for a decision one click away, which is the exact defect
+        // this file already names and fixed once for the employee kind. §11b
+        // exempts trust_rule from the short-card budget ("the only kind where
+        // no card is short enough"), so there is room. It is a real
+        // consequence of accepting: the policy row this opens is what
+        // detect_trust_widening_patterns lateral-joins, and
+        // de-governance-sweep-daily runs 45 6 * * *. A human still approves.
+        detail: `Nothing changes today — this records the limit you stated and switches nothing on. The number is kept alongside this recommendation and in your audit trail, not written into the setting. The trust setting it opens sits at level 0 of ${who}’s trust ladder, and level 0 is off: the ladder grants nothing there. Moving it off level 0 is a separate, deliberate decision — one you make, or one you approve when this workspace asks: from now on a daily check can put a promotion for this employee in front of you once it has built up a record.`
+          + (aboveCap ? ` You said: “${aboveCap}”` : ''),
+        meta: `${who} · ${humanizeToken(actionCategory) || 'unnamed category'} · ${cap} · nothing changes today`,
+        // ⚠ "the setting", not "this". The antecedent of "this" was the CAP in
+        // the title, and the cap is exactly what Trust settings does not yet
+        // show next to the ladder editor — migration 753's header says so out
+        // loud under "WHAT IS NOT SHIPPED HERE". The success flash already said
+        // "the setting"; this is the same word.
+        nudge: `You’ll find the setting under ${who}’s Trust settings, at level 0 — off, and granting nothing while it stays there.`,
       };
     }
   }
@@ -1076,7 +1183,30 @@ export function whatAcceptingWrites(
       if (gate.ok) return 'Adds a blocking rule to this workspace: anything matching this pattern is withheld before it reaches a customer, for every employee, not just one. You can take it off again in Compliance & Guardrails.';
       return `Creates nothing. ${gate.reason} Accepting it records that reason against this recommendation and leaves it here for you.`;
     }
-    case 'trust_rule': return 'Creates or raises this employee’s trust policy, up to the stated cap.';
+    // ⚠ 753: this said "Creates or raises this employee's trust policy, up to
+    // the stated cap." Two false halves. It RAISES nothing — the accept refuses
+    // outright if the policy is already above level 0 — and "up to the stated
+    // cap" describes a limit the policy row does not store and nothing enforces.
+    // The sentence a drawer shows before a button fires has to be the sentence
+    // that turns out to be true, and this one is the whole of what happens.
+    //
+    // ⚠⚠ FIX ROUND 2, TWO CORRECTIONS, both for sentences that were false about
+    // things OUTSIDE this accept:
+    //  · "which is where it already effectively sits: everything it does still
+    //    comes to you for approval" — a claim about the employee's supervision
+    //    that level 0 does not support. de_autonomy has seven writers and only
+    //    trust_apply_level is downstream of a trust level; an archetype with
+    //    `autonomy_templates` has an ENABLED dial written at hire. See the
+    //    enumeration and the live corroboration on the card copy above.
+    //  · "Making it live is a separate decision you take later in Trust
+    //    settings" named only ONE of the two routes off level 0. The other is a
+    //    trust promotion, and it can arrive without the customer asking for it:
+    //    detect_trust_widening_patterns -> raise_trust_widening_proposals ->
+    //    de_governance_sweep_internal, on cron `de-governance-sweep-daily`
+    //    (45 6 * * *, active) — which INSERTs a pending trust_promotion task.
+    //    A human still decides it, so the sentence stays "a separate decision",
+    //    but it is not one the customer necessarily starts.
+    case 'trust_rule': return 'Opens this employee’s trust setting for this kind of work at level 0 — or finds the one already sitting there — and level 0 is the level at which the trust ladder is off and grants nothing. It writes NO limit into that setting, on purpose: the number you agreed to is recorded against this recommendation and in your audit trail, not switched on. Making it live is a separate decision either way: you set the ladder yourself under Trust settings, or you approve a trust promotion — which needs its own evidence and its own approval, and which this workspace can put in front of you on its own once this employee has built up a record. Accepting this changes nothing about what this employee is allowed to do today.';
   }
 }
 

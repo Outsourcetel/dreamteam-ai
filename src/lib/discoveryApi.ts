@@ -5,10 +5,20 @@
 // discovery_capability_gaps (migrations 733-737, plus 740's last_error /
 // last_error_at / attempts).
 //
-// WRITES four kinds: 'connector' through Path B, 'employee' through Path A
+// WRITES five kinds: 'connector' through Path B, 'employee' through Path A
 // (migration 746), 'guardrail' through Path B for PATTERN-bearing rules only
-// (751), and — since migration 752 — 'procedure' through Path B via the
-// playbook-draft EDGE FUNCTION. Every other kind is still read-only here.
+// (751), 'procedure' through Path B via the playbook-draft EDGE FUNCTION (752),
+// and — since migration 753 — 'trust_rule' through Path A. ONE kind is still
+// read-only here: 'conversation_type', which has no writer at all.
+//
+// ⚠ 'trust_rule' IS THE ONLY PROPOSAL THAT SUBTRACTS OVERSIGHT rather than
+// adding a capability, and the accept is correspondingly the smallest one on
+// this screen: it opens the employee's level-0 trust policy and writes NO
+// limit. The number the customer stated is recorded as consent data — in the
+// proposal payload and the audit detail — and nowhere an enforcement path
+// reads. acceptTrustRuleProposal's header carries the three measured reasons;
+// the card copy in discoveryProposalPresentation.ts no longer claims that
+// accepting lets anybody act on their own.
 //
 // ⚠ 'procedure' IS THE ONE ACCEPT ON THIS SCREEN THAT SPENDS MONEY AND THE ONE
 // WHOSE OBJECT A NON-ADMIN COULD OTHERWISE CREATE. Its writer is an edge
@@ -296,6 +306,30 @@ export interface DecisionOutcome {
   compliancePacksAttached?: string[];
   complianceRulesCreated?: number;
   complianceRulesInForce?: number;
+  /** ACCEPT ONLY, trust_rule kind, migration 753.
+   *
+   *  ⚠ THE TWO NEGATIVES ARE CARRIED AS FACTS, not left to be inferred from an
+   *  absence. `ladderWritten: false` and `enforcesToday: false` are the whole of
+   *  what this accept promises, and an absent field and a false one read
+   *  identically to anything downstream — the same reason systemsInstalled has a
+   *  paragraph of its own above. The RPC states both explicitly in its return
+   *  payload AND in the audit detail, from one object, so the screen's sentence
+   *  and the ledger's cannot disagree.
+   *
+   *  `statedCap` is the number the customer agreed to, normalised the way
+   *  isNumericLiteral normalises it, and `statedCapUnit` says which unit it is
+   *  in ('amount' or 'confidence' — the same split set_trust_ladder uses).
+   *  ⚠ THE POLICY ROW DOES NOT CARRY THE CAP, deliberately: `cap` has no unit
+   *  and the ladder's field reads CENTS. These two and the audit detail are the
+   *  only places the agreed number exists with its unit beside it.
+   *
+   *  `undefined` for every other kind — never `?? 0` and never `?? false`, which
+   *  would manufacture a fact about a connector or a hire. */
+  trustPolicyOpenedHere?: boolean;
+  statedCap?: string;
+  statedCapUnit?: string;
+  ladderWritten?: boolean;
+  enforcesToday?: boolean;
 }
 
 /** One kind's accept writer: its ordinary validated writer, wrapped to return
@@ -345,6 +379,21 @@ const ACCEPT_WRITERS: Partial<Record<ProposalKind, AcceptWriter>> = {
   // rather than an RLS argument. The restriction to payloads that can actually
   // be drafted from lives in procedureAcceptability, which the CARD reads too.
   procedure: (proposal, note) => acceptProcedureProposal(proposal, note),
+  // Migration 753. PATH A, and the argument is NOT "SQL can reach the writer" —
+  // it is that there is no browser write path to preserve. Measured live:
+  // `authenticated` holds SELECT on trust_policies and nothing else, so unlike
+  // connectors and guardrail_rules there is no RLS policy an inlined write would
+  // bypass. The ordinary writer IS an RPC (seed_de_trust_policy) whose own
+  // owner/admin/manager + can_access_de bar re-fires against the real human,
+  // because SECURITY DEFINER does not change the request GUC auth.uid() reads.
+  //
+  // ⚠ AND THE ACCEPT DELIBERATELY WRITES NO LIMIT. It opens the level-0 trust
+  // policy the customer's sentence was about and stops. The number they stated
+  // is recorded as CONSENT DATA — in the proposal payload and the audit detail —
+  // and nowhere an enforcement path reads. See acceptTrustRuleProposal's header
+  // for the three measured reasons, and the card copy in
+  // discoveryProposalPresentation.ts, which no longer claims enforcement.
+  trust_rule: (proposal, note) => acceptTrustRuleProposal(proposal, note),
 };
 
 /** The kinds this screen can decide, derived from the ONE table above and
@@ -380,13 +429,8 @@ function acceptWriterFor(kind: ProposalKind): AcceptWriter | null {
 /** Which kinds this screen can actually decide today — derived from
  *  ACCEPT_WRITERS, never a list of its own.
  *
- *  'connector', 'employee', 'guardrail' and 'procedure' — deliberately, and
- *  each omission has a named reason:
- *   - 'trust_rule' — Path A, last by the contract's own ordering, and blocked
- *                    on BLOCKER 4: 90 trust_policies rows exist with 0 ladders
- *                    and 0 above level 0, so accepting one today writes a
- *                    policy nothing consults while the card says a human has
- *                    been taken out of the loop.
+ *  'connector', 'employee', 'guardrail', 'procedure' and — since migration 753
+ *  — 'trust_rule'. ONE omission remains, and it has a named reason:
  *   - 'conversation_type' — no table and no writer (to_regclass(
  *                    'public.conversation_types') is null), and nothing routes
  *                    on it today. A topic axis DOES exist and is live
@@ -557,6 +601,15 @@ export async function decideDiscoveryProposal(
         compliance_packs_attached?: string[];
         compliance_rules_created?: number;
         compliance_rules_in_force?: number;
+        // Migration 753, trust_rule accepts only. Same rule again: absent stays
+        // absent, and the two booleans are read as booleans rather than as
+        // "missing means false" — a kind that stopped reporting them and a kind
+        // that reports false are opposite facts.
+        policy_opened_here?: boolean;
+        stated_cap?: string;
+        stated_cap_unit?: string;
+        ladder_written?: boolean;
+        enforces_today?: boolean;
       }
     | null;
 
@@ -596,6 +649,11 @@ export async function decideDiscoveryProposal(
       : undefined,
     complianceRulesCreated: typeof res.compliance_rules_created === 'number' ? res.compliance_rules_created : undefined,
     complianceRulesInForce: typeof res.compliance_rules_in_force === 'number' ? res.compliance_rules_in_force : undefined,
+    trustPolicyOpenedHere: typeof res.policy_opened_here === 'boolean' ? res.policy_opened_here : undefined,
+    statedCap: typeof res.stated_cap === 'string' ? res.stated_cap : undefined,
+    statedCapUnit: typeof res.stated_cap_unit === 'string' ? res.stated_cap_unit : undefined,
+    ladderWritten: typeof res.ladder_written === 'boolean' ? res.ladder_written : undefined,
+    enforcesToday: typeof res.enforces_today === 'boolean' ? res.enforces_today : undefined,
   };
 }
 
@@ -701,6 +759,91 @@ async function acceptEmployeeProposal(
     return {
       ok: false,
       error: `That is a "${proposal.kind}" recommendation, not somebody to hire. Nothing was changed.`,
+    };
+  }
+  return decideDiscoveryProposal(proposal.id, 'accepted', note, null);
+}
+
+/**
+ * Accept a 'trust_rule' proposal — Path A, and the SMALLEST TRUE THING
+ * (migration 753).
+ *
+ * ── WHY THERE IS NO BROWSER HALF ─────────────────────────────────────────
+ * Not a style choice and not "SQL happens to be able to reach the writer".
+ * Measured live: `authenticated` holds SELECT on public.trust_policies and
+ * NOTHING ELSE — no INSERT, no UPDATE, no DELETE. So unlike connectors and
+ * guardrail_rules there is no PostgREST write path, and therefore no RLS policy
+ * that an inlined write inside the SECURITY DEFINER RPC would bypass. The
+ * "second creation engine" objection contract §8.3 raises against Path A
+ * simply has nothing to attach to here. The ordinary writer is itself an RPC —
+ * `seed_de_trust_policy` — and its bar (owner/admin/manager plus
+ * `can_access_de`) re-fires against the real signed-in human when it is called
+ * from inside, because SECURITY DEFINER does not change the request GUC that
+ * auth.uid() and auth_tenant_id() read.
+ *
+ * ── ⚠ WHAT ACCEPTING DOES **NOT** DO, AND WHY THAT IS THE FEATURE ────────
+ * It does not write a trust ladder and it does not apply a dial. It opens the
+ * level-0 trust policy for (this employee, this action category) and stops.
+ * Three measured reasons, any one sufficient:
+ *
+ *  1. THE UNIT. The payload's `cap` carries no unit anywhere — the model fill
+ *     whitelist is ['de_ref','action_category','cap','above_cap'] and there is
+ *     no currency, no percent, no scale. The ladder's money field is
+ *     `max_amount_cents`. The card renders "$500"; the ladder would store 500
+ *     CENTS, which is $5. That is the founder's 2026-08-15 guardrail-threshold
+ *     ruling exactly ("we would rather ask than guess by a factor of a
+ *     hundred"), and the confidence branch is no safer: the built-in level-1
+ *     floor for answer_dock is 90, so a stated "60" would WIDEN the default
+ *     rather than cap it.
+ *  2. THE CONSENT. A ladder does not record a limit, it decides what a LEVEL
+ *     MEANS — apply_trust_promotion prefers it over the built-in defaults. So a
+ *     ladder written today would decide what level 1 means on the day somebody
+ *     approves a promotion for entirely different reasons, months later,
+ *     without the interview's number ever being shown to them.
+ *  3. THE DIRECTION. With no ladder, a future promotion falls through to the
+ *     built-in defaults — exactly what a workspace that never ran an interview
+ *     gets. The interview cannot change what a promotion means.
+ *
+ * Making the limit live is a separate, deliberate act: somebody opens the
+ * employee's Trust settings and sets the ladder through `set_trust_ladder`, the
+ * only function in the database that assigns trust_policies.ladder. And the
+ * LEVEL still has to rise through apply_trust_promotion, which needs evidence,
+ * a human task and an approver who is not the requester.
+ *
+ * ── ⚠ NO CLIENT-SIDE PRE-CHECKS, and this kind can afford that ───────────
+ * A deliberate difference from acceptGuardrailProposal and
+ * acceptProcedureProposal, both of which gate first because by the time the RPC
+ * refuses, the browser has already created a live blocking rule (751) or spent
+ * a model call on a draft (752) — which is why their headers carry an
+ * asymmetric "the client must be at least as strict as the server" invariant.
+ * Here the browser writes nothing and spends nothing before calling, so BOTH
+ * drift directions are safe and the server is the only validator. Duplicating
+ * its checks here would be a second gate that can disagree with the one that
+ * actually guards the write.
+ *
+ * The one thing the SCREEN still gates is ordering: trustRuleBlockReason
+ * (discoveryProposalPresentation.ts) hides the controls until the employee this
+ * rule governs has actually been accepted. That is a card-state rule, not an
+ * authority check — the RPC enforces the same ordering itself by resolving the
+ * employee from an ACCEPTED employee proposal in the same session, and refuses
+ * in words if there is none.
+ *
+ * ⚠ `createdObjectId` is passed as NULL deliberately, and the RPC REFUSES a
+ * non-null one. There is nothing for the browser to have made first, so an id
+ * arriving there would mean a caller naming the row its own decision is
+ * recorded against.
+ *
+ * ⚠ NOT EXPORTED, same as the other writers. The only way here is
+ * acceptProposal, through ACCEPT_WRITERS.
+ */
+async function acceptTrustRuleProposal(
+  proposal: DiscoveryProposal,
+  note: string | null,
+): Promise<DecisionOutcome> {
+  if (proposal.kind !== 'trust_rule') {
+    return {
+      ok: false,
+      error: `That is a "${proposal.kind}" recommendation, not a limit to record against one of your employees. Nothing was changed.`,
     };
   }
   return decideDiscoveryProposal(proposal.id, 'accepted', note, null);

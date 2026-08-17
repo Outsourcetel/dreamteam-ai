@@ -1254,8 +1254,42 @@ const sections = [
     // sentence off the card), which is one more: 33, so 202. The same count run
     // against 751 returns exactly 169 — its own floor — which is what makes the
     // method trustworthy rather than merely self-consistent.
-    const EXPECTED_PROBES = 16;
-    const ASSERTION_FLOOR = 202; // 741 shipped 95; 745 ported them plus 3 ctid arms (98); 746 adds 40 across probes 12/13/14 and the hire's own rollback arm (138); 751 adds 26 across probe 15 and the guardrail leak arm (164), then 5 more from the review fixes (169); 752 adds 33, all of them probe 16's (202) — the playbook leak arm extends an existing check rather than adding one.
+    // 753 moves both again, and the second number is COUNTED by the same method.
+    //
+    // ⚠⚠ AND THE FIRST VERSION OF THIS PARAGRAPH WAS FALSE IN TWO OF ITS THREE
+    // TERMS. It said "30 new assertions in probe 17, plus 2 net in probe 14,
+    // plus 2 in the rollback section. 202 + 34 = 236." The arithmetic held and
+    // the terms did not — the error on probe 17 (-4) and the error on probe 14
+    // (+4) cancelled exactly, which is precisely why a breakdown that only has
+    // to SUM cannot be trusted. Each term is a claim about a block of the
+    // migration and has to be counted in that block. Re-counted against the
+    // shipped bodies of 752 and 753:
+    //     probe 17           +37   its whole assertion block
+    //     probe 14, REBUILT   -2   8 arms in 752 -> 6 here. It was rebuilt
+    //                              rather than repointed: four named-kind arms
+    //                              lost, two that loop over a derived set
+    //                              gained. That is MINUS two, not plus two.
+    //     rollback section    +2   4 arms in 752 -> 6 here (trust_policies and
+    //                              de_autonomy)
+    //     202 + 37 - 2 + 2 = 239
+    // The review round that found this also added three assertions to probe 17
+    // (two for the automatic trust-widening candidate measurement, one for the
+    // confidence-cap range refusal), which is why probe 17's term is 37 and not
+    // the 34 it shipped at.
+    //
+    // ⚠ IF PROBES 7 AND 14 EVER REPORT AS MISSING, READ THE FUNCTION'S OWN
+    // FINDING BEFORE TOUCHING THESE NUMBERS. Both used to name a kind literally
+    // and both have already been fixed once by renaming it (751, then 752);
+    // routing `trust_rule` leaves exactly ONE unroutable kind, so 753 rebuilt
+    // them to DERIVE their subject from discovery_proposals_kind_check minus the
+    // router's real `when` arms. The day `conversation_type` gains a branch that
+    // set is empty, both probes decline to run, and this section goes red ON
+    // PURPOSE with a finding naming what to rebuild. Lowering EXPECTED_PROBES
+    // there would delete the only coverage of "a refusal leaves a reason",
+    // "attempts increments rather than being set" and "the router opened for
+    // exactly the kinds intended".
+    const EXPECTED_PROBES = 17;
+    const ASSERTION_FLOOR = 239; // 741 shipped 95; 745 ported them plus 3 ctid arms (98); 746 adds 40 across probes 12/13/14 and the hire's own rollback arm (138); 751 adds 26 across probe 15 and the guardrail leak arm (164), then 5 more from the review fixes (169); 752 adds 33, all of them probe 16's (202) — the playbook leak arm extends an existing check rather than adding one; 753 adds 37 net (239) = +37 probe 17, -2 probe 14 (REBUILT, 8 arms -> 6), +2 rollback (trust_policies and de_autonomy). ⚠ This line previously read "753 adds 34 (236) — 30 in probe 17, 2 net from rebuilding probe 14, and 2 rollback arms": two of the three terms were wrong and the total only survived because +4 and -4 cancelled. Count each term in its own block.
 
     // The denominator is checked BEFORE the findings, on purpose: "no
     // findings" is only meaningful once something was compared.

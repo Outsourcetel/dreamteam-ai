@@ -697,9 +697,151 @@ describe('cardCopyFor — every kind carries its literal on the card, not just i
   it('trust_rule: employee + category + cap, all three, on the meta line — RED if any one of the three is missing', () => {
     const copy = cardCopyFor('trust_rule', { de_ref: 'archetype:billing_ar', action_category: 'erp_financials', cap: 10000 },
       new Map([['billing_ar', 'Morgan']]));
-    expect(copy.meta).toBe('Morgan · Erp Financials · up to $10,000');
+    // §11b's requirement is that all three literals are ON THE CARD. Migration
+    // 753 changed the wording (the old meta read "· up to $10,000", which
+    // implied a limit that was being enforced) but not the requirement, so the
+    // three parts are asserted as parts rather than as one frozen sentence.
+    expect(copy.meta).toContain('Morgan');
+    expect(copy.meta).toContain('Erp Financials');
+    expect(copy.meta).toContain('$10,000');
     expect(copy.title).toContain('Morgan');
     expect(copy.title).toContain('$10,000');
+  });
+
+  // ⚠ ADDED BY MIGRATION 753, and it is the pin that matters most on this kind.
+  // The old copy said "Let Morgan act on its own up to $10,000" and "Above this,
+  // it stops and asks you first" — measured live, 90 trust_policies rows, 0
+  // above level 0, 0 with a ladder, and trust_ladder_settings returns
+  // {enabled:false} for any level <= 0 before it reads a ladder at all. Nothing
+  // the accept writes lets anybody act on their own and nothing stops anything.
+  // These four assertions are what stops that wording coming back.
+  it('trust_rule: the card MUST NOT claim enforcement, and MUST say nothing changes today — RED if the old "act on its own" copy returns', () => {
+    const copy = cardCopyFor('trust_rule', { de_ref: 'archetype:billing_ar', action_category: 'erp_financials', cap: 10000 },
+      new Map([['billing_ar', 'Morgan']]));
+    const all = `${copy.title} ${copy.detail} ${copy.meta} ${copy.nudge ?? ''}`;
+    expect(all).not.toMatch(/act on its own/i);
+    expect(all).not.toMatch(/without asking/i);
+    expect(all).not.toMatch(/stops and asks you first/i);
+    expect(all).toMatch(/nothing changes today/i);
+    expect(whatAcceptingWrites('trust_rule', { de_ref: 'archetype:billing_ar', action_category: 'erp_financials', cap: 10000 }))
+      .toMatch(/level 0/i);
+    expect(whatAcceptingWrites('trust_rule', { de_ref: 'archetype:billing_ar', action_category: 'erp_financials', cap: 10000 }))
+      .not.toMatch(/raises/i);
+  });
+
+  // ⚠⚠ THE SECOND FALSE CLAIM ON THIS CARD, AND IT WAS THE REPLACEMENT COPY.
+  // 753's first rewrite removed the enforcement overclaim and replaced it with
+  // a SUPERVISION claim: "Morgan still brings everything to you", "everything
+  // still comes to you for approval", "everything it does still comes to you
+  // for approval". None of those is something this accept controls.
+  //
+  // Measured live 2026-08-17, from pg_proc: `de_autonomy` — the table every
+  // enforcement path reads through resolve_de_autonomy — has SEVEN writers
+  // (deprovision_starter_de_internal, instantiate_role_archetype_internal,
+  // provision_starter_de_internal, provision_workforce_assistant_internal,
+  // retire_digital_employee, set_de_autonomy, trust_apply_level) and only the
+  // LAST is downstream of a trust level. `renewal_manager`'s autonomy_templates
+  // is [{action_type:'action_execute', source_category:'crm', enabled:true}], so
+  // instantiate_role_archetype_internal writes an ENABLED dial at HIRE, before
+  // any trust card renders. Corroborated on live rows: the Renewal DE
+  // (40d688eb…, tenant 5bb802e1…) sits at trust level 0 across its policies with
+  // digital_employees.trust_level = 'supervised', and
+  // resolve_de_autonomy(tenant,'action_execute',de,'crm').enabled is TRUE.
+  //
+  // So this is the pin. The card, the drawer and the page flash may say what
+  // the ACCEPT does; none of them may tell the owner that everything this
+  // employee does comes to them. RED if any of the three says it again.
+  it('trust_rule: NOTHING may claim the employee is fully supervised — RED if "everything comes to you" returns to the card, the drawer or the flash', () => {
+    const copy = cardCopyFor('trust_rule', { de_ref: 'archetype:billing_ar', action_category: 'erp_financials', cap: 10000 },
+      new Map([['billing_ar', 'Morgan']]));
+    const drawer = whatAcceptingWrites('trust_rule', { de_ref: 'archetype:billing_ar', action_category: 'erp_financials', cap: 10000 });
+    const flash = readFileSync('src/pages/tenant/DiscoveryProposalsPage.tsx', 'utf8');
+
+    // The three literal shapes that shipped, plus the general form. A comment
+    // explaining the ban would trip the file-level check, so the flash source is
+    // stripped of comments before it is searched — the same treatment migration
+    // 753's own fixtures block gives decide_discovery_proposal's body, and for
+    // the same reason: unstripped, the paragraph forbidding a sentence counts
+    // as the sentence.
+    const flashCode = flash.replace(/^\s*\/\/.*$/gm, '');
+    const SUPERVISION = [
+      /brings everything to you/i,
+      /everything (it does )?still comes to you/i,
+      /everything\b[^.!?]{0,40}\bcomes to you/i,
+    ];
+    for (const re of SUPERVISION) {
+      expect(`${copy.title} ${copy.detail} ${copy.meta} ${copy.nudge ?? ''}`).not.toMatch(re);
+      expect(drawer).not.toMatch(re);
+      expect(flashCode).not.toMatch(re);
+    }
+
+    // ⚠ AND THE VACUITY GUARD. Three `not.toMatch` against a string that never
+    // arrived would pass for the wrong reason, so the subjects are proven to be
+    // the real ones first.
+    expect(copy.detail.length).toBeGreaterThan(40);
+    expect(drawer).toMatch(/level 0/i);
+    expect(flashCode).toMatch(/written down\. Nothing changes today/);
+  });
+
+  // ── FIX ROUND 3: three residues the round-2 reviewers found ──────────────
+  //
+  // Each one is a sentence that was true of the code in one place and not in
+  // another. This workstream has shipped six of those; these are the pins that
+  // stop these three coming back.
+  it('trust_rule: a confidence cap over 100 is REFUSED ON THE CARD, not promised then refused by the server — RED if the card says it records a limit the accept will reject', () => {
+    // 753's branch raises on `v_tr_unit = 'confidence' and v_tr_cap_n > 100`.
+    // Before this, the card rendered "Note Sam's limit for this: 500%
+    // confidence" beside "this records the limit you stated" — and the accept
+    // then refused. guardrailAcceptability already solves exactly this shape
+    // for the guardrail kind; this is the same standard applied here.
+    const bad = cardCopyFor('trust_rule', { de_ref: 'archetype:support_lead', action_category: 'answer_dock', cap: 500 },
+      new Map([['support_lead', 'Sam']]));
+    expect(bad.detail).toMatch(/cannot be recorded as written/i);
+    expect(bad.detail).toMatch(/0 to 100/);
+    expect(bad.detail).not.toMatch(/records the limit you stated/i);
+    expect(bad.meta).toMatch(/cannot be recorded/i);
+
+    // THE BOUND, both sides of it — 100 is admissible, 101 is not. Without
+    // these two the arm above passes for a screen that refuses everything.
+    const at100 = cardCopyFor('trust_rule', { de_ref: 'archetype:support_lead', action_category: 'answer_dock', cap: 100 },
+      new Map([['support_lead', 'Sam']]));
+    expect(at100.detail).toMatch(/records the limit you stated/i);
+    expect(at100.detail).not.toMatch(/cannot be recorded/i);
+
+    // AND THE UNIT SPLIT. A money category is dollar-gated, so 500 there is an
+    // ordinary cap — RED if the screen ever widens to every category, which
+    // would refuse a legitimate $500 approval limit.
+    const money = cardCopyFor('trust_rule', { de_ref: 'archetype:billing_ar', action_category: 'erp_financials', cap: 500 },
+      new Map([['billing_ar', 'Morgan']]));
+    expect(money.detail).toMatch(/records the limit you stated/i);
+    expect(money.detail).not.toMatch(/cannot be recorded/i);
+  });
+
+  it('trust_rule: the daily promotion check is disclosed ON THE CARD FACE — RED if it is only in the drawer, which is optional reading for a one-click decision', () => {
+    // `needsAcceptConfirmation` is employee-only, so Accept on a trust_rule
+    // card calls runDecision directly. The drawer was the only string saying
+    // this workspace can raise a promotion on its own — the same defect this
+    // file already names and fixed once for the employee kind. §11b exempts
+    // trust_rule from the short-card budget, so there is room on the card.
+    const copy = cardCopyFor('trust_rule', { de_ref: 'archetype:billing_ar', action_category: 'erp_financials', cap: 10000 },
+      new Map([['billing_ar', 'Morgan']]));
+    expect(copy.detail).toMatch(/daily check/i);
+    expect(copy.detail).toMatch(/promotion/i);
+    // …and it must stay a thing the owner APPROVES, never something that
+    // happens by itself. RED if the card ever implies the promotion lands.
+    expect(copy.detail).toMatch(/in front of you/i);
+    expect(copy.detail).not.toMatch(/automatically (promot|rais|appl)/i);
+  });
+
+  it('trust_rule: the card does NOT say the number is written into the trust setting — RED if "recorded against" returns (the accept writes no limit there, and Trust settings does not show it)', () => {
+    const copy = cardCopyFor('trust_rule', { de_ref: 'archetype:billing_ar', action_category: 'erp_financials', cap: 10000 },
+      new Map([['billing_ar', 'Morgan']]));
+    const drawer = whatAcceptingWrites('trust_rule', { de_ref: 'archetype:billing_ar', action_category: 'erp_financials', cap: 10000 });
+    // The drawer is the authority and says it outright; the card must not
+    // contradict it. RED if the two ever disagree about where the number lives.
+    expect(drawer).toMatch(/writes NO limit into that setting/i);
+    expect(copy.detail).not.toMatch(/recorded against/i);
+    expect(copy.detail).toMatch(/alongside this recommendation/i);
   });
 
   it('trust_rule: above_cap, when the model supplied one, is on the CARD (not just the drawer) — RED if it never appears (fix round 1, minor)', () => {
@@ -707,7 +849,12 @@ describe('cardCopyFor — every kind carries its literal on the card, not just i
       de_ref: 'archetype:billing_ar', action_category: 'erp_financials', cap: 10000,
       above_cap: 'Above $10,000 it goes to Finance for sign-off.',
     }, new Map([['billing_ar', 'Morgan']]));
-    expect(copy.detail).toBe('Above $10,000 it goes to Finance for sign-off.');
+    // §11b still requires "what happens above it" on the card. 753 keeps it
+    // there and ATTRIBUTES it — it is the customer's own expectation, not a
+    // description of what the workspace does today — so the assertion is
+    // containment rather than equality, and the attribution is pinned too.
+    expect(copy.detail).toContain('Above $10,000 it goes to Finance for sign-off.');
+    expect(copy.detail).toMatch(/You said/i);
   });
 
   it('trust_rule: with no above_cap supplied, a generic honest fallback is used — RED if this renders empty', () => {

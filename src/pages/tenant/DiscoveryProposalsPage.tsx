@@ -376,6 +376,28 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
                 ? (outcome.reusedExisting
                   ? `${title} — this one had already been drafted, so nothing new was written. It is under Playbooks as a draft, and it runs nothing until you publish it.`
                   : `${title} — drafted. You'll find it under Playbooks as a draft: read it over, change anything, and it runs nothing until you publish it.`)
+              // ⚠ 753: a trust rule is the OPPOSITE of a guardrail in the one
+              // way that matters here — a guardrail is live the instant it
+              // lands, and this changes nothing at all. The flash says so in
+              // the founder's own framing rather than congratulating the
+              // customer on a limit that is not switched on, and it names where
+              // the setting turned up so "we wrote it down" is checkable.
+              // `enforcesToday` is read as a BOOLEAN, not for truthiness: if a
+              // future version of the RPC ever stops reporting it, this must
+              // fall back to saying less rather than to claiming false.
+              //
+              // ⚠⚠ FIX ROUND 2: this used to say "this employee still brings
+              // everything to you", which is a claim about the employee's
+              // SUPERVISION and not about what the accept did. de_autonomy has
+              // seven writers (pg_proc, live) and only trust_apply_level is
+              // downstream of a trust level — an archetype carrying
+              // `autonomy_templates` gets an ENABLED dial written at HIRE, so a
+              // level-0 employee can already be acting on its own. The
+              // enumeration and the live corroboration are on the card copy in
+              // src/lib/discoveryProposalPresentation.ts. The flash now claims
+              // only what this accept controls.
+              : p.kind === 'trust_rule'
+                ? `${title} — written down. Nothing changes today: this records the limit and switches nothing on, and you'll find the setting under its Trust settings at level 0${outcome.enforcesToday === false ? ', switched off' : ''}. Moving it off level 0 is a separate decision, and nothing here makes it for you.`
               // ⚠ TWO different true things, not one convenient one. An accept
               // that RE-USED a connector the workspace already had inserted
               // nothing — telling that person to go and enter a credential sends

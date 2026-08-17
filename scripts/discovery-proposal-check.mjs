@@ -147,9 +147,22 @@ export const KIND_ROUTES = Object.freeze({
     // statement that makes deleting it go red, in two separate arms.
     extra: 'not coalesce(_o.is_workforce_assistant, false)',
   }),
+  // ⚠ CORRECTED BY MIGRATION 753, and the correction is the whole point of this
+  // string. It read "seed_de_trust_policy + set_trust_ladder, inside
+  // decide_discovery_proposal (both in ONE sub-block)" — which describes the
+  // design that was NOT shipped. The accept calls seed_de_trust_policy and STOPS:
+  // it writes no ladder and applies no dial, because `cap` carries no unit while
+  // ladder settings read CENTS (the founder's 2026-08-15 guardrail-threshold
+  // ruling, applied to the same hazard), and because a ladder decides what a
+  // LEVEL MEANS — so one written today would silently decide what level 1 means
+  // on the day somebody approves a promotion for unrelated reasons. Setting it is
+  // a separate deliberate act in Trust settings, through set_trust_ladder, which
+  // is the only function in the database that assigns trust_policies.ladder.
+  // This string is what a later auditor reads to tell an ordinary write from an
+  // ad-hoc one, so it says what the code does rather than what a plan intended.
   trust_rule: Object.freeze({
     table: 'trust_policies',
-    writer: 'seed_de_trust_policy + set_trust_ladder, inside decide_discovery_proposal (both in ONE sub-block)',
+    writer: 'seed_de_trust_policy, inside decide_discovery_proposal — level-0 policy only, NO ladder written and NO dial applied',
   }),
 });
 
