@@ -505,7 +505,7 @@
         "date": "2026-08-12",
         "source": "certify's own edge-typecheck ratchet offer"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
@@ -518,7 +518,9 @@
           "n": 1
         },
         "note": "Reads the pin file, which is what 'not re-pinned' means. Residual, stated: this does not re-run deno check, so it verifies the ceiling is still slack — not that the four functions are still at 0. certify's edge-typecheck section is what measures that, every run, and prints the ratchet offer."
-      }
+      },
+      "closed_by": "re-pinned via certify --pin-edge: ceiling dropped from 45 total type errors to 0, so every edge function is now pinned at zero",
+      "closed_on": "2026-08-18"
     },
     {
       "id": "D-1",
