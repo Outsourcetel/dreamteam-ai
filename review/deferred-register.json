@@ -1282,6 +1282,30 @@
           "n": 0
         }
       }
+    },
+    {
+      "id": "D-14",
+      "what": "The incident runbook covers the incident type that has never happened and not the type that happens constantly. docs/INCIDENT-RESPONSE-RUNBOOK.md is breach-shaped (PHI determination, regulator notification clocks, cyber-insurance hotline) and carries 14 unfilled placeholders — all five roles are [name] and every contact is [____], including Security Officer, Privacy Officer, Counsel and the Supabase/Anthropic/Vercel support routes. It self-describes as an engineering starter. Meanwhile this review found three real operational incidents that ran for days undetected and are covered by no runbook at all: B-11 (reconcile cron dead 13 days), B-13 (only live connector dead 7 days), C-8 (133 alerts unread, one firing 20 days). None of those is a breach",
+      "where": "docs/INCIDENT-RESPONSE-RUNBOOK.md — 14 bracketed placeholders, no operational failure modes; docs/67",
+      "severity": "hygiene",
+      "why_skipped": "founder-decision",
+      "first_named": {
+        "date": "2026-08-18",
+        "source": "docs/67 Workstream R, 2026-08-18"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "grep",
+        "paths": [
+          "docs/INCIDENT-RESPONSE-RUNBOOK.md"
+        ],
+        "pattern": "\\[name\\]|\\[____\\]",
+        "count": "matches",
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        }
+      }
     }
   ]
 }
