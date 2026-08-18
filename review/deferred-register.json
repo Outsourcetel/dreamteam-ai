@@ -1153,6 +1153,26 @@
           "n": 0
         }
       }
+    },
+    {
+      "id": "A-7",
+      "what": "No per-data-subject erasure exists. Whole-tenant deletion is solid (delete_tenant: platform-capability gated, must be suspended first, exact-slug confirm, pre-counted receipt) and telemetry retention IS automated (otel-spans-prune, adjudication-retention, dispatch-log-prune run daily). But if one END USER asks to be forgotten there is no function for it — only forget_de_memory and redact_old_adjudications exist — and customer content (conversations, messages, knowledge) has no retention policy at all. Exposure is small TODAY (7 conversations carry end-user identifiers) only because the external channels are barely used; it grows with the first real pilot. docs/56 overstated this as 'cannot honour a deletion request' — the accurate claim is 'cannot honour a per-person one, and keeps content forever'",
+      "where": "pg_proc: no forget_end_user/erase_data_subject; cron has no content-retention job; docs/60",
+      "severity": "security",
+      "why_skipped": "founder-decision",
+      "first_named": {
+        "date": "2026-08-18",
+        "source": "docs/60 Workstream Q, 2026-08-18"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "sql",
+        "sql": "select count(*)::int as n from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname ~ 'forget_end_user|erase_data_subject|delete_end_user_data'",
+        "open_if": {
+          "op": "==",
+          "n": 0
+        }
+      }
     }
   ]
 }
