@@ -632,6 +632,36 @@ const PROBES = [
     why: 'the OPPOSITE question about the same surface, and a different class: of the write grants authenticated still holds, is any one of them a write RLS can only ever refuse? A table with RLS on and no PERMISSIVE policy for that command matches zero rows and PostgREST returns SUCCESS WITH NO ERROR — supabase-js sees error === null and the client reports a write that never happened. This repo has paid for that shape twice (project_role_gated_ui_audit; the four removed `tenants` writes whose comments still sit at src/lib/api.ts:97/297/675/734). docs/52 §5 measured exactly ONE live instance out of 82 kept command-grants — de_deployment_stages UPDATE, driving promoteDeploymentStage — and mig 720 closed it with a governed RPC. This is what stops instance #2. It is NOT arm 1 restated: arm 1 pins the grant surface and can be silenced by a re-pin, whereas this reads the POLICIES, so a migration that adds a grant, forgets the policy and re-pins is green there and red here. It cannot see a policy whose USING clause matches nothing in practice (docs/52 §9) — that half is not decidable from the catalogue',
     sql: silentNoopWriteSql(),
   },
+  {
+    name: 'authority-has-one-evaluator-and-no-decorative-dimension',
+    why: 'two paths measuring separately diverge — mig 755 had to unpick exactly that between list_de_trust_surface and decide_action_execution. And a dimension that can be written into a rule with nothing reading it is max_discount_pct again: configurable, zero readers, enforced by asking a model nicely. Both arms report their denominator, because zero findings from zero comparisons looks exactly like a clean result',
+    sql: `
+      with evaluators as (
+        select p.proname
+          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+         where n.nspname = 'public'
+           and regexp_replace(p.prosrc, '--[^\\n]*', '', 'g') ~ 'strictest|v_worst'
+           and p.proname <> 'evaluate_authority'
+      ),
+      readerless as (
+        select distinct ar.dimension
+          from authority_rules ar
+          join authority_dimensions ad on ad.dimension = ar.dimension
+         where ar.is_active
+           and (ad.reader_fn is null or to_regprocedure(ad.reader_fn) is null)
+      )
+      select 'a SECOND authority evaluator exists: ' || proname as violation, null::text as note
+        from evaluators
+      union all
+      select 'an active rule names a dimension nothing reads: ' || dimension, null
+        from readerless
+      union all
+      select null, format('compared %s rules across %s dimensions against %s registered readers',
+                          (select count(*) from authority_rules where is_active),
+                          (select count(distinct dimension) from authority_rules where is_active),
+                          (select count(*) from authority_dimensions where reader_fn is not null))
+    `,
+  },
 ];
 
 // ── Edge functions: a per-function type-error ratchet ──────────────────────
