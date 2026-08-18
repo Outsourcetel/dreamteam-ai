@@ -51,15 +51,22 @@ create table if not exists public.authority_rules (
 create index if not exists authority_rules_lookup
   on public.authority_rules (tenant_id, is_active, category);
 
+-- A timestamp that never moves is a stored marker that lies (docs/47's
+-- stored-marker-as-truth trap, one column over). Same trigger function
+-- approval_authority (mig 593) already uses.
+drop trigger if exists authority_rules_updated_at on public.authority_rules;
+create trigger authority_rules_updated_at before update on public.authority_rules
+  for each row execute function update_updated_at();
+
 create or replace function public.authority_rule_requires_a_reader()
 returns trigger
 language plpgsql
 security definer
 set search_path to 'public', 'pg_temp'
 as $fn$
-declare v_reader text; v_active boolean;
+declare v_reader text; v_active boolean; v_value_type text;
 begin
-  select reader_fn, is_active into v_reader, v_active
+  select reader_fn, is_active, value_type into v_reader, v_active, v_value_type
     from public.authority_dimensions where dimension = new.dimension;
   if not coalesce(v_active, false) then
     raise exception 'dimension_not_active: % is not a measure this platform offers', new.dimension;
@@ -70,6 +77,20 @@ begin
   -- Ask the catalog, never a stored boolean.
   if to_regprocedure(v_reader) is null then
     raise exception 'dimension_reader_missing: % names %, which does not exist', new.dimension, v_reader;
+  end if;
+  -- ⛔ A STORABLE RULE THAT CAN NEVER FIRE IS A CONFIGURABLE CONTROL THAT
+  -- ENFORCES NOTHING — the same disease this whole registry exists to end,
+  -- one column over. The composite FK above stops an illegal COMPARATOR from
+  -- being stored (`reversible >= 5`); nothing stopped an illegal THRESHOLD:
+  -- evaluate_authority maps a boolean measure to 1 or 0, so `reversible is 7`
+  -- can never equal either, and confidence is read as a 0..100 score, so
+  -- `confidence < -1` can never trip. Both are legal to insert today and dead
+  -- on arrival.
+  if v_value_type = 'boolean' and new.threshold not in (0, 1) then
+    raise exception 'threshold_cannot_fire: % is boolean, stored as 1 or 0, so a threshold of % can never match', new.dimension, new.threshold;
+  end if;
+  if new.dimension = 'confidence' and (new.threshold < 0 or new.threshold > 100) then
+    raise exception 'threshold_cannot_fire: % is scored 0..100, so a threshold of % can never trip a comparison', new.dimension, new.threshold;
   end if;
   return new;
 end
@@ -89,7 +110,7 @@ create policy authority_rules_read on public.authority_rules
 -- No write policy: rules are written through an RPC that arrives with the
 -- cutover in step 2. A permissive write policy plus a grant would be a second
 -- path to the same state.
-revoke all on table public.authority_rules from public, anon;
+revoke all on table public.authority_rules from public, anon, authenticated;
 grant select on table public.authority_rules to authenticated;
 
 revoke all on function public.authority_rule_requires_a_reader() from public, anon, authenticated;

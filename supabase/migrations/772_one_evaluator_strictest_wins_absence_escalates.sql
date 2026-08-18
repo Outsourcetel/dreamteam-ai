@@ -24,6 +24,20 @@
 --     doesn't check for one would treat the failure as silence.
 -- All four now escalate to require_human with a reason instead.
 --
+-- FINAL REVIEW FIX WAVE found the actor check still failed open, one layer
+-- further in than fix round 1 reached:
+--   · the actor-kind whitelist accepted 'role' and 'org_unit', which are
+--     RULE-scoping vocabulary, not actor kinds — no caller ever IS a role or
+--     a unit, and authority_rules_actor_shape (mig 770) forces actor_id null
+--     for a 'role' rule, so a caller passing ('role', <uuid>) matched
+--     nothing in the loop and fell out through v_worst's default of 0.
+--   · a well-shaped actor was never checked for EXISTING. A stale,
+--     cross-tenant, or edge-function-relayed id that names nobody in
+--     p_tenant_id silently lost every role- and unit-derived rule (their
+--     EXISTS joins just find no row) and returned the most permissive
+--     answer available.
+-- Both now escalate to require_human instead of narrowing silently.
+--
 -- STRICTEST WINS: deny > require_second_approver > require_human > allow. A
 -- rule can only ever tighten, so a customer may add one without auditing the
 -- rest — and a narrow rule can never silently cancel a broad one, which is
@@ -68,7 +82,16 @@ begin
   -- p_actor_id, would just match nothing in the loop below and fall out
   -- through v_worst's default of 0 — permission by omission, one parameter
   -- over from the bug this function exists to end.
-  if p_actor_kind is null or p_actor_kind not in ('all','role','user','org_unit','de') then
+  --
+  -- ⚠ 'role' and 'org_unit' are RULE-scoping vocabulary, not actor kinds — a
+  -- rule scopes to a role or a unit, but no caller ever IS one. authority_
+  -- rules_actor_shape (mig 770) already forces actor_id null for a 'role'
+  -- rule, so a caller that passed ('role', <uuid>) as ITS OWN kind would
+  -- match nothing in the loop below (ar.actor_kind = p_actor_kind never
+  -- holds, since no rule's actor_kind is ever 'role' paired with a live
+  -- actor_id) and silently fall out through v_worst's default of 0 — allow.
+  -- Only the two kinds a caller can actually BE, plus 'all', are accepted.
+  if p_actor_kind is null or p_actor_kind not in ('all','user','de') then
     return jsonb_build_object('outcome','require_human',
       'reasons', jsonb_build_array(jsonb_build_object(
         'why', format('unknown actor kind: %s is not a kind this evaluator recognizes', coalesce(p_actor_kind, '<null>')))));
@@ -78,6 +101,27 @@ begin
     return jsonb_build_object('outcome','require_human',
       'reasons', jsonb_build_array(jsonb_build_object(
         'why', format('unidentified actor: actor_kind %s was given with no actor_id', p_actor_kind))));
+  end if;
+
+  -- ⛔ THE ACTOR MUST RESOLVE, NOT MERELY BE WELL-SHAPED. A stale, cross-
+  -- tenant, or edge-function-relayed id that names nobody in p_tenant_id
+  -- would otherwise pass the shape check above and then silently lose every
+  -- role- and unit-derived rule below — their EXISTS joins simply find no
+  -- row — and fall out through v_worst's default of 0, returning the most
+  -- permissive answer available. Do NOT silently narrow to whatever rules
+  -- happen to still match; escalate instead.
+  if p_actor_kind = 'user' and not exists (
+       select 1 from profiles where user_id = p_actor_id and tenant_id = p_tenant_id) then
+    return jsonb_build_object('outcome','require_human',
+      'reasons', jsonb_build_array(jsonb_build_object(
+        'why', format('unidentified actor: no profile for user %s in this workspace', p_actor_id))));
+  end if;
+
+  if p_actor_kind = 'de' and not exists (
+       select 1 from digital_employees where id = p_actor_id and tenant_id = p_tenant_id) then
+    return jsonb_build_object('outcome','require_human',
+      'reasons', jsonb_build_array(jsonb_build_object(
+        'why', format('unidentified actor: no digital employee %s in this workspace', p_actor_id))));
   end if;
 
   for r in

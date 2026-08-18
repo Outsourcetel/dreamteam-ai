@@ -53,13 +53,13 @@ alter table public.authority_dimension_comparators enable row level security;
 -- rule editor can offer the legal choices, writable by nobody through the API.
 drop policy if exists authority_dimensions_read on public.authority_dimensions;
 create policy authority_dimensions_read on public.authority_dimensions
-  for select using (auth_tenant_id() is not null);
+  for select using (public.auth_tenant_id() is not null);
 drop policy if exists authority_dimension_comparators_read on public.authority_dimension_comparators;
 create policy authority_dimension_comparators_read on public.authority_dimension_comparators
-  for select using (auth_tenant_id() is not null);
+  for select using (public.auth_tenant_id() is not null);
 
-revoke all on table public.authority_dimensions            from public, anon;
-revoke all on table public.authority_dimension_comparators from public, anon;
+revoke all on table public.authority_dimensions            from public, anon, authenticated;
+revoke all on table public.authority_dimension_comparators from public, anon, authenticated;
 grant select on table public.authority_dimensions            to authenticated;
 grant select on table public.authority_dimension_comparators to authenticated;
 
