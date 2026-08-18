@@ -91,10 +91,44 @@ jobs:
       - run: npm install
       - name: Require secrets
         run: |
-          if [ -z "$VITE_TEST_SUPABASE_URL" ] || [ -z "$VITE_TEST_SUPABASE_ANON_KEY" ]; then
-            echo "::error::Tenant-isolation tests cannot run — VITE_TEST_SUPABASE_URL and VITE_TEST_SUPABASE_ANON_KEY are not set."
+          # ── WHY THIS CHECKS SHAPE, NOT JUST PRESENCE ──────────────────────
+          # This asked only "is it empty?" until 2026-08-15. That passed a
+          # secret whose value was the whole `NAME=value` line copied out of
+          # .env.test, and the run then died twenty lines later inside
+          # supabase-js with "Invalid supabaseUrl: Must be a valid HTTP or
+          # HTTPS URL" — an error naming neither the secret nor the mistake.
+          # A guard that lets the bad value through and leaves the diagnosis to
+          # a stack trace is doing half its job. Each check below names its own
+          # fix.
+          #
+          # Values are never echoed. Every test compares; none print.
+          BAD=0
+          fail() { echo "::error::$1"; BAD=1; }
+
+          [ -n "$VITE_TEST_SUPABASE_URL" ]      || fail "VITE_TEST_SUPABASE_URL is unset or empty."
+          [ -n "$VITE_TEST_SUPABASE_ANON_KEY" ] || fail "VITE_TEST_SUPABASE_ANON_KEY is unset or empty."
+
+          if [ -n "$VITE_TEST_SUPABASE_URL" ]; then
+            if ! printf '%s' "$VITE_TEST_SUPABASE_URL" | grep -qE '^https://[a-z0-9]+.supabase.co$'; then
+              fail "VITE_TEST_SUPABASE_URL is not a bare Supabase project URL. Expected exactly https://<ref>.supabase.co (the dev project is nmuntxrcdksyhsdywpan). Paste the VALUE only — no NAME= prefix, no quotes, no trailing slash or path."
+            fi
+            # ⛔ The one misconfiguration that would be WORSE than a red tick.
+            # tenant-isolation.test.ts signs up real users and creates real
+            # tenants through the public signup flow. Aimed at production it
+            # would write live data on every CI run, which is the entire reason
+            # the dev/test project exists.
+            if printf '%s' "$VITE_TEST_SUPABASE_URL" | grep -q 'rfsvmhcqeiyrxivbmpel'; then
+              fail "VITE_TEST_SUPABASE_URL points at PRODUCTION. This suite creates real users and tenants through the public signup flow and must only ever run against the isolated dev project. Refusing to run."
+            fi
+          fi
+
+          if [ -n "$VITE_TEST_SUPABASE_ANON_KEY" ]              && printf '%s' "$VITE_TEST_SUPABASE_ANON_KEY" | grep -qE '^[A-Za-z_]+=|^"|"$|[[:space:]]'; then
+            fail "VITE_TEST_SUPABASE_ANON_KEY looks like a pasted .env line rather than a bare key — it carries a NAME= prefix, quotes or whitespace."
+          fi
+
+          if [ "$BAD" = 1 ]; then
             echo "::error::This job FAILS rather than passing silently: these are the only automated proof that one tenant cannot read another's data."
-            echo "::error::Add them under Settings -> Secrets and variables -> Actions. Values are in .env.test locally."
+            echo "::error::Set them under Settings -> Secrets and variables -> Actions. Values are in .env.test locally — copy only what follows the '=' on each line."
             exit 1
           fi
       - run: npm run test:isolation
@@ -114,11 +148,23 @@ jobs:
       - run: npm install
       - name: Require token
         run: |
-          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
-            echo "::error::ACL invariant tests cannot run — SUPABASE_ACCESS_TOKEN is not set."
+          # Presence AND shape — see the isolation job above for why the
+          # emptiness test alone is not enough. A Supabase personal access
+          # token is `sbp_` followed by hex; the prefix check is what catches
+          # the whole .env.local line being pasted in instead of the value.
+          BAD=0
+          fail() { echo "::error::$1"; BAD=1; }
+
+          [ -n "$SUPABASE_ACCESS_TOKEN" ] || fail "SUPABASE_ACCESS_TOKEN is unset or empty."
+
+          if [ -n "$SUPABASE_ACCESS_TOKEN" ]              && ! printf '%s' "$SUPABASE_ACCESS_TOKEN" | grep -qE '^sbp_[A-Za-z0-9]+$'; then
+            fail "SUPABASE_ACCESS_TOKEN is not a bare Supabase personal access token (expected sbp_… with no NAME= prefix, quotes or whitespace). If Supabase has changed its token format, update this check deliberately rather than deleting it."
+          fi
+
+          if [ "$BAD" = 1 ]; then
             echo "::error::This suite asserts the SHAPE of the live security layer (no FOR ALL policies, escalation guards present, nothing anon-reachable). It found a real hole on its first run."
             echo "::error::The queries are read-only by construction — helpers/adminQuery.ts refuses anything that is not a lone SELECT/WITH."
-            echo "::error::Add SUPABASE_ACCESS_TOKEN under Settings -> Secrets and variables -> Actions."
+            echo "::error::Set it under Settings -> Secrets and variables -> Actions. The value is in .env.local — copy only what follows the '='."
             exit 1
           fi
       - run: npm run test:invariants
