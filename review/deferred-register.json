@@ -1237,6 +1237,26 @@
           "n": 1
         }
       }
+    },
+    {
+      "id": "B-14",
+      "what": "listChunkStatus silently computes knowledge badges from at most 1000 chunks. src/lib/knowledgeApi.ts selects doc_id, chunk_index AND embedding from knowledge_doc_chunks filtered only by tenant_id with NO limit; PostgREST caps the response at 1000 rows (measured), so any tenant above that gets chunk/embedded counts computed from a truncated set with no error and no warning. acme-telecom already holds 4223 chunks — its badges would be wrong by 76%. It also ships the embedding vectors themselves (1540 bytes/row) to the browser purely to count non-null values",
+      "where": "src/lib/knowledgeApi.ts listChunkStatus; docs/64",
+      "severity": "correctness",
+      "why_skipped": "walked-past",
+      "first_named": {
+        "date": "2026-08-18",
+        "source": "docs/64 Workstream J, 2026-08-18"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "sql",
+        "sql": "select count(*)::int as n from (select tenant_id from knowledge_doc_chunks group by tenant_id having count(*) > 1000) x",
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        }
+      }
     }
   ]
 }
