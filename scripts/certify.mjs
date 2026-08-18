@@ -634,14 +634,18 @@ const PROBES = [
   },
   {
     name: 'authority-has-one-evaluator-and-no-decorative-dimension',
-    why: 'two paths measuring separately diverge — mig 755 had to unpick exactly that between list_de_trust_surface and decide_action_execution. And a dimension that can be written into a rule with nothing reading it is max_discount_pct again: configurable, zero readers, enforced by asking a model nicely. Both arms report their denominator, because zero findings from zero comparisons looks exactly like a clean result',
+    why: 'two paths measuring separately diverge — mig 755 had to unpick exactly that between list_de_trust_surface and decide_action_execution. And a dimension that can be written into a rule with nothing reading it is max_discount_pct again: configurable, zero readers, enforced by asking a model nicely. Both arms report their denominator, because zero findings from zero comparisons looks exactly like a clean result. ⚠ THE FIRST VERSION OF THE EVALUATOR ARM MATCHED A VARIABLE NAME, AND THAT IS THE DEFECT THIS PARAGRAPH EXISTS TO REMEMBER: it tested comment-stripped source for `strictest|v_worst`, and public.check_idle_in_transaction_internal (mig 466 — an idle-in-transaction watchdog with nothing to do with authority) declares its own local `v_worst` (an oldest-offender tracker). That would have false-positived as a second evaluator the moment 768/770/772 reached production, before any real second evaluator was ever written — caught in dry run, not in production, but only because it was dry-run first. Renaming the watchdog\'s variable to suit this probe was considered and rejected: it makes unrelated code serve a test\'s regex, and the next function that happens to declare v_worst breaks the gate again the same way. Fixed instead by testing what a second evaluator must actually DO rather than what it happens to be named: its comment-stripped source must reference authority_rules (it has to read the table the rules live in) AND require_second_approver (it has to be able to emit the ladder\'s middle rung) — BOTH, not either. A watchdog cannot satisfy that pair by coincidence; a real evaluator cannot avoid it while doing its job. Comments are stripped before matching for the same reason mig 749 needed it: these two terms are ordinary words that this very probe\'s prose and 772\'s own comments both use, so an unstripped scan would match itself. DO NOT SIMPLIFY THIS BACK TO A SINGLE IDENTIFIER MATCH — that is exactly the version that was wrong',
     sql: `
       with evaluators as (
-        select p.proname
-          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-         where n.nspname = 'public'
-           and regexp_replace(p.prosrc, '--[^\\n]*', '', 'g') ~ 'strictest|v_worst'
-           and p.proname <> 'evaluate_authority'
+        select fn.proname
+          from (
+            select p.proname, regexp_replace(p.prosrc, '--[^\\n]*', '', 'g') as src
+              from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public'
+          ) fn
+         where fn.src ~ 'authority_rules'
+           and fn.src ~ 'require_second_approver'
+           and fn.proname <> 'evaluate_authority'
       ),
       readerless as (
         select distinct ar.dimension
