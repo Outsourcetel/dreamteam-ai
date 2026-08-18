@@ -1113,6 +1113,46 @@
           "n": 0
         }
       }
+    },
+    {
+      "id": "C-9",
+      "what": "Stated confidence is overconfident at the top of its range: answers claiming 90-100 (avg 95) actually pass online evaluation only 81% of the time — a 14-point gap. The signal is directionally sound (below 50, it passes just 14%, so it correctly knows when it does not know) but it is effectively BIMODAL: 52 judged answers sit at 90-100, 7 below 50, only 3 in between. A number shown to customers as 95% confidence should not be described as 95% accuracy",
+      "where": "de_messages.confidence vs eval_judgments.verdict (source=online); docs/58",
+      "severity": "measurement",
+      "why_skipped": "walked-past",
+      "first_named": {
+        "date": "2026-08-18",
+        "source": "docs/58 Workstream I, 2026-08-18"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "sql",
+        "sql": "select greatest(0, round(avg(m.confidence) - 100.0*count(*) filter (where e.verdict='pass')/nullif(count(*),0)))::int as n from eval_judgments e join de_messages m on m.id=e.message_id where e.source='online' and m.confidence>=90",
+        "open_if": {
+          "op": ">=",
+          "n": 5
+        }
+      }
+    },
+    {
+      "id": "C-10",
+      "what": "The guardrail layer has never blocked a production message: of 455 assistant messages ever sent, ZERO carry delivery='blocked' and guardrail_adjudications holds 2 rows. 166 guardrail_rules exist and certify's pattern differential compares 155 patterns, so the rules are real and loaded — but false-block and false-allow rates are both unmeasurable from production because the layer has never fired. Wired and untested, on the exact seam the product sells",
+      "where": "de_messages.delivery (no 'blocked' rows); guardrail_adjudications; docs/58",
+      "severity": "measurement",
+      "why_skipped": "walked-past",
+      "first_named": {
+        "date": "2026-08-18",
+        "source": "docs/58 Workstream I, 2026-08-18"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "sql",
+        "sql": "select count(*)::int as n from de_messages where role='assistant' and delivery='blocked'",
+        "open_if": {
+          "op": "==",
+          "n": 0
+        }
+      }
     }
   ]
 }
