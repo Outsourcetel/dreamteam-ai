@@ -1306,6 +1306,31 @@
           "n": 1
         }
       }
+    },
+    {
+      "id": "D-15",
+      "what": "Two foundational docs describe a system that does not exist, and neither carries the banner the corpus otherwise uses. docs/08_Database_Design.md names 53 tables of which 46 are absent from production — its names (agents, actions, approval_requests, billing_subscriptions, audit_trail, ai_token_usage) are the original v1 design, superseded by digital_employees, action_definitions, human_tasks, audit_events. docs/09_API_and_Integration_Standards.md documents 16 REST endpoints under /v1 (capabilities, capability-runs, tools, webhooks, jobs) and no /v1 surface exists in any form; the product is PostgREST plus edge functions. 76 of 177 docs (42%) now carry a '> WARNING ... HISTORY' banner, so the convention is established — these two never got one, and they are the two a new engineer or an integration partner would read first",
+      "where": "docs/08_Database_Design.md, docs/09_API_and_Integration_Standards.md; docs/68",
+      "severity": "hygiene",
+      "why_skipped": "walked-past",
+      "first_named": {
+        "date": "2026-08-18",
+        "source": "docs/68 Workstream S, 2026-08-18"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "grep",
+        "paths": [
+          "docs/08_Database_Design.md",
+          "docs/09_API_and_Integration_Standards.md"
+        ],
+        "pattern": "^> ⚠|SUPERSEDED|superseded by|no longer describes|does not reflect",
+        "count": "matches",
+        "open_if": {
+          "op": "==",
+          "n": 0
+        }
+      }
     }
   ]
 }
