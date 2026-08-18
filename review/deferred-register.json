@@ -1093,6 +1093,26 @@
           "n": 1
         }
       }
+    },
+    {
+      "id": "B-12",
+      "what": "The governance loop discards faster than it decides: on outsourcetel-hq 21 human_tasks have EXPIRED unanswered vs 13 ever decided, and 0 of 48 de_objectives have ever reached 'achieved'. The relief valve is shut — 127/127 DEs are trust_level=supervised with 11 promotion requests queued behind the same jam",
+      "where": "human_tasks / de_objectives on tenant outsourcetel-hq; docs/55 G-1,G-2,G-3",
+      "severity": "correctness",
+      "why_skipped": "founder-decision",
+      "first_named": {
+        "date": "2026-08-18",
+        "source": "docs/55 Workstream F, 2026-08-18"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "sql",
+        "sql": "select (select count(*) from human_tasks h join tenants t on t.id=h.tenant_id where t.slug='outsourcetel-hq' and h.status='expired')::int - (select count(*) from human_tasks h join tenants t on t.id=h.tenant_id where t.slug='outsourcetel-hq' and h.status in ('approved','rejected'))::int as n",
+        "open_if": {
+          "op": ">",
+          "n": 0
+        }
+      }
     }
   ]
 }
