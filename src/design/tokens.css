@@ -9,6 +9,14 @@
    variables at runtime (accent + surface family); light theme = :root.light.
    ═══════════════════════════════════════════════════════════════════════════ */
 :root {
+  /* Tell the browser this is a dark ground (register D-13). Without it the
+     surfaces below are dark while everything the BROWSER paints stays light:
+     scrollbars, native select dropdowns, date and time pickers, checkboxes and
+     autofill backgrounds — 350 raw inputs across the app inherit that. The
+     palette is founder-locked to a dark ramp, so this states what is already
+     true rather than adding a choice. */
+  color-scheme: dark;
+
   /* ── Surfaces (exactly four) ─────────────────────────────────────────── */
   --dt-page:    #0c1123;   /* navy-900 — the app canvas                     */
   --dt-panel:   #171e3966; /* navy-800/40 — grouped region on the page      */
@@ -81,4 +89,10 @@
 }
 
 /* Light theme lands here later — semantic names stay identical. */
-:root.light { /* reserved */ }
+:root.light {
+  /* Reserved for the light ramp. The one line that must live here from the
+     start: whenever this class is used, the browser-painted surfaces have to
+     flip back with it, or a light theme inherits dark scrollbars and pickers —
+     the same defect as D-13, mirrored. */
+  color-scheme: light;
+}

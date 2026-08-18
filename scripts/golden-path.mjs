@@ -28,6 +28,9 @@ import { createClient } from '@supabase/supabase-js';
 
 const KEEP = process.argv.includes('--keep');
 const DEV_REF = 'nmuntxrcdksyhsdywpan';
+// Read-only, and used for exactly one thing: the drift footer at the end of
+// this file. The loop itself never touches production (see SAFETY above).
+const PROD_REF = 'rfsvmhcqeiyrxivbmpel';
 
 // The dev anon key lives in .env.test (same file vitest uses), the management
 // token in .env.local. Reading both rather than duplicating a credential.
@@ -318,13 +321,37 @@ if (!KEEP && S.tenantId) {
 }
 
 // The environment drift is itself a finding, so it is reported every run.
-const drift = await one(`select
+// One query, asked of BOTH projects, so the two sides are always comparable —
+// a drift report built from two different questions is not a comparison.
+const DRIFT_SQL = `select
     (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
       where n.nspname='public' and p.prokind in ('f','p')) as routines,
     (select count(*) from pg_tables where schemaname='public') as tables,
-    (select count(*) from public.schema_migrations) as ledger_rows`);
+    (select count(*) from public.schema_migrations) as ledger_rows`;
+const drift = await one(DRIFT_SQL);
+// ⚠ These production figures were once a STRING LITERAL — `881 / 284 / 657`.
+// The line exists to surface dev/prod drift, and because it asserted rather
+// than measured, it kept reporting the same three numbers while dev fell 120
+// migrations behind production. Nobody saw the drift because the instrument
+// for seeing it could not change (register F-8, docs/57).
+//
+// It now measures. If production cannot be reached the line says so — an
+// unmeasured comparison must never look like a measured one.
+let prodLine = 'production: NOT MEASURED (management API unreachable)';
+try {
+  const p = (await (await fetch(`https://api.supabase.com/v1/projects/${PROD_REF}/database/query`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${MGMT_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: DRIFT_SQL }),
+  })).json())[0];
+  const behind = Number(p.ledger_rows) - Number(drift.ledger_rows);
+  prodLine = `production: ${p.routines} / ${p.tables} / ${p.ledger_rows}`
+    + (behind > 0 ? `  ⚠ dev is ${behind} migration(s) BEHIND` : behind < 0 ? `  ⚠ dev is ${-behind} AHEAD` : '  · ledgers level');
+} catch (e) {
+  prodLine += ` — ${String(e).slice(0, 60)}`;
+}
 console.log(`\n  dev environment: ${drift.routines} routines, ${drift.tables} tables, `
-  + `${drift.ledger_rows} ledger rows  (production: 881 / 284 / 657)`);
+  + `${drift.ledger_rows} ledger rows  (${prodLine})`);
 
 if (cannotProve > 0) {
   console.log(`  ${cannotProve} step(s) CANNOT be proven here — the dev project cannot exercise them.`);
