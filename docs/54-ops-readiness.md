@@ -84,3 +84,46 @@ that is the good news the debt map missed. But the control has never been exerci
 window is a full day, and the two defects above show the deeper problem: **this system fails
 quietly.** A job died 245 times and an alarm rang 77 times, and both went unseen for three weeks,
 because nothing carries a failure to a human the way it carries an approval.
+
+---
+
+## 7. RESTORE DRILL RUN — 2026-08-18, founder-authorised. **PASSED.**
+
+`node scripts/restore-drill.mjs` — regenerated the dump from production, rebuilt it into a
+throwaway schema on the **dev** project, diffed it object-for-object, dropped the scratch schema.
+Production was never touched.
+
+| Object | Production | Restored | Match |
+|---|---|---|---|
+| tables | 299 | 299 | ✅ |
+| views | 7 | 7 | ✅ |
+| functions | 840 | 840 | ✅ |
+| triggers | 291 | 291 | ✅ |
+| policies | 398 | 398 | ✅ |
+| RLS-enabled | 299 | 299 | ✅ |
+| columns | 3,431 | 3,431 | ✅ |
+
+**Exact reproduction on every class.** Two things this proves beyond the headline:
+
+* **The security perimeter survives a rebuild.** 388 functions were emitted with an explicit
+  REVOKE — a restored database comes back with its grants closed, not wide open. That is the
+  property most likely to be silently lost in a hand-rolled dump, and it held.
+* **RLS is enabled on all 299 restored tables**, matching production exactly.
+
+**Side benefit — the stale baseline is no longer stale.** Step 1 regenerates from production, so
+`supabase/baseline/full_schema.sql` went from 2.1 MB cut 08-09 (119 migrations behind) to 2.8 MB
+current. Verified present in the refreshed file: `unit_tripwires`, `push_subscriptions`,
+`tenant_brand_identity`, `conversation_checks` — the four shipped tables it previously lacked.
+Committed in 8851277.
+
+### What this does and does NOT prove
+
+| Proven | Not proven |
+|---|---|
+| The repo can rebuild production's **schema** exactly, perimeter intact | That a **data** restore works — no rows were restored |
+| The dump generator is correct today | How long a real recovery takes |
+| The baseline artifact is current | That the app boots against a restored copy |
+
+The remaining decision is unchanged and still owed: restore a physical backup into a throwaway
+project and boot the app against it. That is the only step that converts "we have backups" into
+"we can recover", and it costs money.
