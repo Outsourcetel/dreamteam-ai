@@ -28,6 +28,7 @@ import { reportEdgeError } from '../_shared/errorReport.ts';
 import { budgetBlocked, rpcLoud } from '../_shared/rpcSafety.ts';
 import { parseJsonLoose } from '../_shared/textPrep.ts';
 import { makeCallModelText } from '../_shared/modelCall.ts';
+import { serviceCaller } from '../_shared/serviceCaller.ts';
 const callModel = makeCallModelText('playbook-amend', 4096);
 
 const CORS = {
@@ -57,7 +58,7 @@ serve(async (req) => {
     // auth
     let tenantId: string | null = null;
     const bearer = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
-    if ((dispatch && req.headers.get('x-dispatch-secret') === dispatch) || bearer === svc) {
+    if ((dispatch && req.headers.get('x-dispatch-secret') === dispatch) || serviceCaller(bearer).service) {
       tenantId = typeof body.tenant_id === 'string' ? body.tenant_id : null;
       if (!tenantId) return json({ error: 'tenant_id required for service/dispatch calls' }, 400);
     } else {

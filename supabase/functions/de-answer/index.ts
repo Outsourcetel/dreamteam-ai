@@ -37,6 +37,7 @@ import { budgetBlocked } from '../_shared/rpcSafety.ts';
 import { rankDocs, parseAnswerEnvelope } from '../_shared/answerEnvelope.ts';
 import { checkAnswerGuardrails, GUARDRAIL_RESOLVER_ERROR } from '../_shared/answerGuardrails.ts';
 import { classifyAndRoute, chooseAnswerer, triageColumns, type Answerer, type RoutedTopic } from '../_shared/topicRouting.ts';
+import { serviceCaller } from '../_shared/serviceCaller.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -449,7 +450,7 @@ serve(async (req) => {
 
     const dispatchSecret = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
     const headerSecret = req.headers.get('x-dispatch-secret') ?? '';
-    const isServiceRole = jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const isServiceRole = serviceCaller(jwt).service;
     const isDispatchCron = dispatchSecret !== '' && headerSecret === dispatchSecret;
 
     let tenantId: string | null = null;

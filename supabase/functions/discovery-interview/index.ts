@@ -116,6 +116,7 @@ import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.t
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { budgetBlocked, rpcOrThrow } from '../_shared/rpcSafety.ts';
 import { makeCallModelText } from '../_shared/modelCall.ts';
+import { serviceCaller, STALE_SERVICE_KEY_DETAIL } from '../_shared/serviceCaller.ts';
 import {
   coverageAfter,
   stillOwed,
@@ -757,12 +758,24 @@ serve(async (req) => {
     // setup-time action any tenant member can run for their own workspace,
     // not a manager-only mutation like compile-trust-plan's trust ladders. ──
     const bearer = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
-    if ((dispatch && req.headers.get('x-dispatch-secret') === dispatch) || bearer === svc) {
+    if ((dispatch && req.headers.get('x-dispatch-secret') === dispatch) || serviceCaller(bearer).service) {
       tenantId = typeof body.tenant_id === 'string' ? body.tenant_id : null;
       if (!tenantId) return fail('bad_request', 'tenant_id required for service/dispatch calls', 400);
     } else {
       const { data: u } = await admin.auth.getUser(bearer);
-      if (!u?.user) return fail('unauthorized', 'user JWT required', 401);
+      if (!u?.user) {
+        // ⚠ SAY WHICH FAILURE THIS IS. A caller holding a genuine but ROTATED
+        // service key used to get "user JWT required", which reads as a caller
+        // mistake and sent someone hunting a code bug for an hour on 2026-08-18
+        // — the platform had rotated SUPABASE_SERVICE_ROLE_KEY at 08:57 that
+        // morning, without a deploy. The verdict below grants nothing; it only
+        // chooses wording.
+        const v = serviceCaller(bearer);
+        if (!v.service && v.looksLikeStaleServiceKey) {
+          return fail('unauthorized', STALE_SERVICE_KEY_DETAIL, 401);
+        }
+        return fail('unauthorized', 'user JWT required', 401);
+      }
       const { data: prof } = await admin.from('profiles').select('tenant_id, layer').eq('user_id', u.user.id).maybeSingle();
       tenantId = await resolveTenantWithRemoteAccess(admin, u.user.id, prof?.tenant_id, prof?.layer, body?.tenant_id);
       if (!tenantId) return fail('no_tenant', 'no tenant resolved for this user', 403);

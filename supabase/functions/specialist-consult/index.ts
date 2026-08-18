@@ -66,6 +66,7 @@ import { rankDocs } from '../_shared/answerEnvelope.ts';
 // playbook-execute — see that file's header for why a deny-list on
 // 'disconnected' is not the same question.
 import { orderedCallableConnectors } from '../_shared/connectorSelection.ts';
+import { serviceCaller } from '../_shared/serviceCaller.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -733,7 +734,7 @@ async function handlePollDeWorkSources(
   const dispatchSecret = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
   const headerSecret = req.headers.get('x-dispatch-secret') ?? '';
   const isCron = !!dispatchSecret && headerSecret === dispatchSecret;
-  const isServiceRole = jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  const isServiceRole = serviceCaller(jwt).service;
   if (!isCron && !isServiceRole) return json({ error: 'unauthorized' }, 401);
 
   const scopeTenant: string | null = isServiceRole ? ((body?.tenant_id as string) ?? null) : null;
@@ -1057,7 +1058,7 @@ serve(async (req) => {
     }
 
     let tenantId: string | null = null;
-    if (jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')) {
+    if (serviceCaller(jwt).service) {
       tenantId = body?.tenant_id ?? null;
       if (!tenantId) return json({ error: 'tenant_id required for service-role calls' }, 400);
     } else {
