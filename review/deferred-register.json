@@ -800,7 +800,7 @@
         "date": "2026-08-09",
         "source": "docs/47-debt-map.md; re-carried docs/50 D"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
@@ -814,7 +814,9 @@
           "n": 1
         },
         "note": "docs/53 carried the count unverified (⏸) at 68. Re-counted 2026-08-12: 71 of 133 remote imports carry no @x.y.z pin. The count moved; the class did not."
-      }
+      },
+      "closed_by": "all 70 floating supabase-js@2 imports pinned to @2.112.3 — the exact version esm.sh resolves @2 to today, so the pin is behaviour-neutral; zero floating remote imports remain and edge-typecheck passes",
+      "closed_on": "2026-08-18"
     },
     {
       "id": "E-1",

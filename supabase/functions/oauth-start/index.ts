@@ -4,7 +4,7 @@
 // then returns the provider's authorize URL for the browser to redirect to.
 // The provider later redirects to oauth-callback with code + state.
 // ============================================================
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { OAUTH_PROVIDERS, OAUTH_CALLBACK_PATH } from '../_shared/oauthProviders.ts';
 

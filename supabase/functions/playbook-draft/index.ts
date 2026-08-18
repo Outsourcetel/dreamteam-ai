@@ -44,7 +44,7 @@
  *   -> { playbook_id, name, steps, study, validation, gaps? }
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';

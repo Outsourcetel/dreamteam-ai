@@ -12,7 +12,7 @@
 // PDF text extraction uses unpdf (a serverless-friendly pdf.js build).
 // URL fetches pass the shared SSRF guard.
 // ============================================================
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { isSafeExternalUrl } from '../_shared/urlSafety.ts';
 import { browserFetch } from '../_shared/browserFetch.ts';
 import { pdfToText, MAX_PDF_BYTES } from '../_shared/pdfExtract.ts';

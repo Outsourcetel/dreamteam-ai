@@ -36,7 +36,7 @@
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';

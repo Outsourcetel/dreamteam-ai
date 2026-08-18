@@ -51,7 +51,7 @@
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { computeInquiryConfidence } from '../_shared/confidence.ts';
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';

@@ -19,7 +19,7 @@
  * Deployed verify_jwt=false — the widget key is the auth.
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { getAIKey } from '../_shared/aiKeys.ts';
 import { durableRateLimited, clientIp } from '../_shared/rateLimit.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';

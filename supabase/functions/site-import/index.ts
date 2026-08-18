@@ -37,7 +37,7 @@
 // POST { url, max_pages?, tenant_id?, wait_ms?, publish_mode?, collection_id? }
 // ============================================================================
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import {

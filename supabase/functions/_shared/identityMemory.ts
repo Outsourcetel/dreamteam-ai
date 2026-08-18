@@ -14,7 +14,7 @@
  * hash, blank ref, identity_conflict, …) recall returns [] and remember no-ops —
  * anonymous sessions keep exactly today's conversation-scoped behavior.
  */
-import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 
 // The shape verify_and_bind_widget_identity (mig 277) returns.
 export interface IdentityVerdict {

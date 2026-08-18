@@ -32,7 +32,7 @@
  *               customer's answer, but it must be visible, not swallowed.
  *   budgetBlocked  a CONTROL. An unreadable answer means "no", never "yes".
  */
-import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 
 export class RpcError extends Error {
   constructor(public fn: string, public detail: string) {

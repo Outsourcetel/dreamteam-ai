@@ -26,7 +26,7 @@
  * this function never executes anything.
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { hasLLMProvider, llmMessages, llmStream, type LlmStreamMeta } from '../_shared/llm.ts';
 import { resolveDePersona, type DePersona } from '../_shared/dePersona.ts';
 import { findBlockingMatch, type PatternHit, type PatternRule } from '../_shared/guardrailMatch.ts';
