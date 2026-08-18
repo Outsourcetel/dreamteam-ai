@@ -473,9 +473,9 @@ export function TemplateLibrary({ templates, onUse, onBuild }: {
             <div key={t.id} className="rounded-xl border border-dt-border bg-dt-page p-3 flex flex-col">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="text-xs font-semibold text-white">{t.name}</p>
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">{CATEGORY_SHORT[t.category]}</span>
-                <span className={`text-[9px] px-1.5 py-0.5 rounded ${t.scope === 'platform' ? 'bg-dt-panel text-dt-support' : 'bg-teal-500/15 text-teal-300'}`}>{t.scope === 'platform' ? 'community' : 'yours'}</span>
-                {t.status === 'draft' && <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">draft</span>}
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">{CATEGORY_SHORT[t.category]}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded ${t.scope === 'platform' ? 'bg-dt-panel text-dt-support' : 'bg-teal-500/15 text-teal-300'}`}>{t.scope === 'platform' ? 'community' : 'yours'}</span>
+                {t.status === 'draft' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">draft</span>}
               </div>
               <p className="text-[10px] text-dt-muted mt-1 flex-1">{t.scope === 'platform' ? 'Community template — verify against your account.' : (t.description || 'Custom template built in this workspace.')} {Object.keys(t.definition.ops ?? {}).length} operation(s).</p>
               {t.status === 'published' && (

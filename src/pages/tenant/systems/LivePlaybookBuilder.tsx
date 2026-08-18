@@ -1728,8 +1728,8 @@ function GapPanel({ def, isAdmin, canManage, onChanged, onToast }: {
             return (
               <li key={g.id} className="rounded-xl border border-dt-border bg-dt-card px-3 py-2">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`text-[9px] px-1.5 py-0.5 rounded border ${meta.cls}`}>{meta.icon} {meta.label}</span>
-                  <span className={`text-[9px] px-1.5 py-0.5 rounded ${GAP_STATUS_CHIP[g.status]}`}>{g.status}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded border ${meta.cls}`}>{meta.icon} {meta.label}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${GAP_STATUS_CHIP[g.status]}`}>{g.status}</span>
                   {g.step_index !== null && <span className="text-[10px] text-dt-muted">step {g.step_index + 1}</span>}
                   {canManage && isAdmin && g.status !== 'resolved' && (
                     <button onClick={() => { void dismissPlaybookGap(g.id, 'Dismissed from the gap panel').then(() => void reload()).catch(e => setErr((e as Error).message)); }}
@@ -1942,7 +1942,7 @@ function LivingDocument({ definitionId, steps, runs, publishedDefs, onDecided }:
             <li key={i} className="rounded-lg border border-dt-border bg-dt-card px-3 py-2">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[10px] text-dt-muted font-mono w-4">{i + 1}</span>
-                <span className={`text-[9px] px-1.5 py-0.5 rounded border ${g.cls}`}>{g.icon} {g.label}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded border ${g.cls}`}>{g.icon} {g.label}</span>
                 <span className="text-xs text-dt-body">{String(title).slice(0, 80)}</span>
                 {h && h.runs > 0 && (
                   <span className="ml-auto text-[10px] text-dt-muted">

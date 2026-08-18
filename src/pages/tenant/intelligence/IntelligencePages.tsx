@@ -82,7 +82,7 @@ function LiveUsageStrip() {
   return (
     <div className="bg-dt-card border border-indigo-500/25 rounded-xl px-4 py-3 mb-4">
       <div className="flex items-center gap-4 flex-wrap">
-        <span className="text-[9px] font-bold tracking-widest text-indigo-400 uppercase">Live usage (this month)</span>
+        <span className="text-[10px] font-bold tracking-widest text-indigo-400 uppercase">Live usage (this month)</span>
         {items.map(m => (
           <span key={m.label} className="text-xs text-dt-support">
             {m.label} <span className="text-dt-body font-semibold">{m.value.toLocaleString()}</span>
@@ -345,7 +345,7 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
                           ].map(x => (
                             <div key={x.label} className="bg-dt-page rounded-lg px-2 py-2 text-center">
                               <p className={`text-sm font-semibold tabular-nums ${x.color}`}>{x.value}</p>
-                              <p className="text-[9px] text-dt-muted uppercase tracking-wide">{x.label}</p>
+                              <p className="text-[10px] text-dt-muted uppercase tracking-wide">{x.label}</p>
                             </div>
                           ))}
                         </div>
@@ -374,7 +374,7 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
                         ].map(x => (
                           <div key={x.label} className="bg-dt-page rounded-lg px-2 py-2 text-center">
                             <p className={`text-sm font-semibold ${x.color}`}>{x.value}</p>
-                            <p className="text-[9px] text-dt-muted uppercase tracking-wide">{x.label}</p>
+                            <p className="text-[10px] text-dt-muted uppercase tracking-wide">{x.label}</p>
                           </div>
                         )) : (
                           <p className="col-span-3 text-[11px] text-dt-faint text-center py-1">This employee acts but hasn't answered inquiries yet.</p>
@@ -688,7 +688,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
           {actionFailures.map(f => (
             <div key={`fail-${f.de_id}`} className={`rounded-xl border p-4 ${f.severity === 'high' ? 'border-red-500/30 bg-red-500/5' : 'border-amber-500/25 bg-amber-500/5'}`}>
               <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-300">ACTION FAILED</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-300">ACTION FAILED</span>
                 <span className="text-sm font-medium text-white">{f.name}: {f.failed} action{f.failed === 1 ? '' : 's'} failed</span>
                 <span className={`ml-auto text-[10px] uppercase px-1.5 py-0.5 rounded ${f.severity === 'high' ? 'bg-red-500/15 text-red-300' : 'bg-amber-500/15 text-amber-300'}`}>{f.severity}</span>
               </div>
@@ -703,7 +703,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
           {approvalBottlenecks.map(b => (
             <div key={`bottleneck-${b.de_id}`} className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-4">
               <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">OPPORTUNITY</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">OPPORTUNITY</span>
                 <span className="text-sm font-medium text-white">{b.name} routed {b.sent} action{b.sent === 1 ? '' : 's'} for approval</span>
               </div>
               <p className="text-xs text-dt-support leading-relaxed">
@@ -717,7 +717,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
           {anomalies.map(a => (
             <div key={a.deName} className="rounded-xl border border-red-500/30 bg-red-500/5 p-4">
               <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-300">ANOMALY</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-300">ANOMALY</span>
                 <span className="text-sm font-medium text-white">{a.deName} escalation rate spiked</span>
               </div>
               <p className="text-xs text-dt-support leading-relaxed">{a.detail}</p>
@@ -727,7 +727,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
           {guardrails.map((g, i) => (
             <div key={g.de_id ?? `tenant-${i}`} className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4">
               <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">CONFIG DRIFT</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">CONFIG DRIFT</span>
                 <span className="text-sm font-medium text-white">
                   {g.de_name ? `${g.de_name}: ${g.gated_count + g.blocked_count} guardrail event(s)` : 'Guardrail activity recorded'}
                 </span>
@@ -746,7 +746,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
           {evalFailures.map(e => (
             <div key={e.id} className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-4">
               <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300">PROVING GROUND</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300">PROVING GROUND</span>
                 <span className="text-sm font-medium text-white">{e.failed} of {e.total} scenarios failed</span>
               </div>
               <p className="text-xs text-dt-support leading-relaxed">

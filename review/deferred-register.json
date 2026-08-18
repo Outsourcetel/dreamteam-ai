@@ -610,7 +610,7 @@
         "date": "2026-08-07",
         "source": "commits 7c24a42b / b90db57e / e29348cd"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
@@ -622,7 +622,9 @@
           "op": ">=",
           "n": 1
         }
-      }
+      },
+      "closed_by": "all 25 text-[9px] uses across 12 files raised to text-[10px], the micro-label size docs/design-system.md defines as the floor; typecheck clean, no design-drift regressions",
+      "closed_on": "2026-08-18"
     },
     {
       "id": "D-5",

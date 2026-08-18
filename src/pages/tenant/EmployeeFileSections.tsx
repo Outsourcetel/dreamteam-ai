@@ -212,9 +212,9 @@ export function DeIncidentsPanel({ de, setPage }: { de: DigitalEmployee; setPage
                 className="w-full flex items-center gap-3 text-left px-3 py-2 text-xs">
                 <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${sevDot(inc.severity)}`} />
                 <span className="flex-1 text-dt-support truncate">{inc.title}</span>
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted flex-shrink-0">{INCIDENT_KIND_LABELS[inc.kind] ?? inc.kind}</span>
-                {inc.de_id === null && <span className="text-[9px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted flex-shrink-0">workspace-wide</span>}
-                <span className={`text-[9px] px-1.5 py-0.5 rounded flex-shrink-0 ${statusChip(inc.status)}`}>{inc.status}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted flex-shrink-0">{INCIDENT_KIND_LABELS[inc.kind] ?? inc.kind}</span>
+                {inc.de_id === null && <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted flex-shrink-0">workspace-wide</span>}
+                <span className={`text-[10px] px-1.5 py-0.5 rounded flex-shrink-0 ${statusChip(inc.status)}`}>{inc.status}</span>
                 <span className="text-dt-faint flex-shrink-0">{new Date(inc.occurred_at).toLocaleDateString()}</span>
               </button>
               {openId === inc.id && (
