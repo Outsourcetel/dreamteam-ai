@@ -22,10 +22,14 @@
 //   model call, no I/O):
 //     connector         — from matchProvider() over the dimension's evidence
 //                          text against the live connector_providers catalog
-//     conversation_type — ⚠ NOT EMITTED. Removed 2026-08-15; returns with a
-//                          real payload (match_pattern + set_category) and a
-//                          real writer (support_triage_rules) in the
-//                          follow-up task. See DIMENSION_STRUCTURAL_KINDS.
+//                          ⚠ conversation_type IS NO LONGER PURE. It sat here
+//                          until 2026-08-15, was switched off entirely, and
+//                          came back MODEL-FILLED on 2026-08-18 (migration
+//                          754) — see the NOT PURE list below. What made it
+//                          impure is the same fact that made the pure version
+//                          worthless: nothing about a real topic is derivable
+//                          from the dimension, so the old payload could only
+//                          carry the dimension's own title.
 //
 //   NOT PURE — proposalsFrom emits the SHAPE only, with needs_model_fill:
 //   true and a payload that is DELIBERATELY incomplete. A model fills the
@@ -38,6 +42,14 @@
 //     procedure  — needs a trigger and at least one step
 //     trust_rule — needs a cap — §11b: "the only kind where no card is short
 //                  enough — it is the one proposal that removes a human"
+//     conversation_type — needs a label, a set_category the inbox filter can
+//                  use, and a non-empty match_pattern (754). ⚠ THE ONLY KIND
+//                  THAT EMITS MANY SHAPES FROM ONE DIMENSION: ten blank slots
+//                  per heard how_customers_reach_us, because the founder's
+//                  instruction was that a customer may name ten different
+//                  things and every other structural kind emits exactly one.
+//                  An unfilled slot fails validatePayload and is dropped with
+//                  its reason logged, the same as any other declined fill.
 //
 // ── EMPLOYEE IS MODEL-FILLED — 2026-08-15, and why ────────────────────────
 // Until this date `employee` sat in the PURE column above, and the defect
@@ -856,13 +868,49 @@ export function validatePayload(
 
   switch (kind) {
     case 'conversation_type': {
-      // §11b: "label + owner — one line. A label acts on nothing." Demanding
-      // more here is the theatre the design doc explicitly warns against.
-      if (!str(payload.label)) {
-        throw new Error('validatePayload: conversation_type proposal has no label');
+      // ⚠ REWRITTEN BY 754, AND THE OLD CONTRACT WAS THE DEFECT. It read
+      // "label + owner — one line", quoting §11b, and demanded `owner_ref`
+      // because "a topic nobody owns is not something a person can decide to
+      // route". Measured 2026-08-17: NOTHING ROUTES ON A TOPIC. de_id is stamped
+      // when the conversation row is inserted (widget-ask:338,
+      // email-inbound:190), the category is written afterwards by
+      // trg_triage_support_conversation on the first user message, and no reader
+      // of de_conversations.category picks an employee. So `owner_ref` was a
+      // required field whose only purpose was to satisfy a promise the platform
+      // does not keep, and it is GONE rather than made optional — an owner on
+      // this card could only ever be decoration.
+      //
+      // What replaces it is the shape support_triage_rules actually needs. All
+      // three are re-checked in SQL at accept time; this is the emission gate,
+      // and it is deliberately the LOOSER of the two (a refusal here silently
+      // drops the draft and the customer never learns why, whereas the accept
+      // can write its reason onto the card — migration 740).
+      const label = str(payload.label);
+      if (!label) {
+        throw new Error('validatePayload: conversation_type proposal has no label — the customer has to be able to read what the topic is called');
       }
-      if (!str(payload.owner_ref)) {
-        throw new Error('validatePayload: conversation_type proposal names no owner — a topic nobody owns is not something a person can decide to route');
+      const category = str(payload.set_category);
+      if (!category) {
+        throw new Error(`validatePayload: conversation_type "${label}" does not say what to file conversations under, and a topic with no category writes nothing into de_conversations.category`);
+      }
+      // The token the inbox filter compares as an exact string and the history
+      // report renders with `replace(/_/g, ' ')`. Same predicate as the SQL
+      // branch, restated here for the reason every other kind restates its own:
+      // this is the only gate that runs before a card is ever shown.
+      if (!/^[a-z0-9]+(_[a-z0-9]+)*$/.test(category) || category.length > 40) {
+        throw new Error(`validatePayload: conversation_type "${label}" wants to file conversations under "${category}", which is not a token the inbox filter and the history report can use — lower-case words joined by underscores, at most 40 characters`);
+      }
+      // ⚠ A MISSING PATTERN IS NOT AN EMPTY RULE, IT IS A CATCH-ALL.
+      // classify_support_text returns IMMEDIATELY on the first rule whose
+      // match_pattern is null or blank. All 18 live tenants already carry
+      // exactly one such rule, at rule_order 9999. A second one from an
+      // interview would silently swallow every topic ordered after it.
+      const pattern = str(payload.match_pattern);
+      if (!pattern) {
+        throw new Error(`validatePayload: conversation_type "${label}" carries no phrases to match on — a triage rule with no pattern is a CATCH-ALL that claims every conversation, not a topic`);
+      }
+      if (/(^\||\|\||\|$)/.test(pattern)) {
+        throw new Error(`validatePayload: conversation_type "${label}" has a "|" with nothing beside it in "${pattern}" — the blank between the bars is skipped rather than matched, so the card would show a phrase nothing ever looks for`);
       }
       return;
     }
@@ -1025,9 +1073,9 @@ export function validatePayload(
 
 /** The kinds a model fill runs for at all. `employee` joined the three on
  *  2026-08-15 — see the module header's "EMPLOYEE IS MODEL-FILLED". */
-export type FilledKind = 'employee' | 'guardrail' | 'procedure' | 'trust_rule';
+export type FilledKind = 'employee' | 'guardrail' | 'procedure' | 'trust_rule' | 'conversation_type';
 
-const FILLED_KINDS: ReadonlySet<string> = new Set<FilledKind>(['employee', 'guardrail', 'procedure', 'trust_rule']);
+const FILLED_KINDS: ReadonlySet<string> = new Set<FilledKind>(['employee', 'guardrail', 'procedure', 'trust_rule', 'conversation_type']);
 
 /** Exactly which keys a model fill is allowed to write, per kind. Everything
  *  else in a model's response is discarded before it ever touches a draft's
@@ -1053,6 +1101,22 @@ export const FILL_WHITELIST: Readonly<Record<FilledKind, readonly string[]>> = {
   guardrail: ['pattern', 'threshold'],
   procedure: ['name', 'trigger', 'steps'],
   trust_rule: ['de_ref', 'action_category', 'cap', 'above_cap'],
+  // ⚠ 754. ALL THREE fields are the model's, and this is the only kind where
+  // that is true — because all three ARE the customer's own words and none of
+  // them is derivable. The dimension's title is not a topic ("How customers
+  // reach us" is a question heading, and emitting it as a label is exactly the
+  // defect that got this kind switched off on 2026-08-15); the evidence text is
+  // prose, not a set of match phrases; and there is no catalogue of topics to
+  // look anything up in, the way connector has connector_providers.
+  //
+  // What bounds it instead is the ACCEPT, not the whitelist: set_category must
+  // be a lower-case underscore token the inbox filter can use, match_pattern
+  // must be non-empty (a pattern-less rule is a catch-all that swallows every
+  // topic below it) with no empty alternative, and all three are compared byte
+  // for byte against the row the browser created. A model cannot choose the
+  // rule_order, the priority, the severity or the tenant — the four fields that
+  // decide what the rule DOES to traffic.
+  conversation_type: ['label', 'set_category', 'match_pattern'],
 };
 
 /**
@@ -1297,33 +1361,90 @@ export interface ProposalsFromOptions {
  *  contacts and KPI targets — §11b lists both under "Safely deferred",
  *  no proposal kind among the six fits either).
  *
- *  ⚠ `how_customers_reach_us` PRODUCES NOTHING STRUCTURAL TODAY, and its
- *  absence from this table is a deliberate, dated decision — not an
- *  oversight, and not a removal of the kind.
- *  Until 2026-08-15 this table read `how_customers_reach_us:
- *  ['conversation_type']` and the loop below emitted a complete draft whose
- *  payload was `{ label: dim.title, owner_ref }`. Two measured facts killed
- *  it: `dim.title` for this dimension is literally "How customers reach us"
- *  — the interview's own question heading — so every tenant, every session,
- *  produced the SAME card; and there is no `conversation_types` table, no
- *  writer, and nothing that routes on the label, so accepting it could only
- *  ever have been a no-op wearing an accept button.
- *  ⚠ The topic axis it was pretending to be IS REAL and IS LIVE: it is
- *  `de_conversations.category`, driven by `support_triage_rules`
- *  (match_pattern -> set_category), tenant-editable with full CRUD UI. The
- *  founder's 2026-08-15 ruling is that the interview will write REAL triage
- *  rules, and `conversation_type` returns here WITH THAT PAYLOAD
- *  (match_pattern + set_category) AND WITH ITS WRITER — the follow-up task,
- *  not this one. Do NOT re-add the key here without that writer: a card that
- *  offers a decision no writer can carry out is the thing this whole module
- *  exists to refuse. The kind stays in ProposalKind, in
- *  discovery_proposals_kind_check and in the presentation module precisely so
- *  it can come back whole.
- *  Standing rule, unchanged: a kind absent from scripts/discovery-proposal-
- *  check.mjs's KIND_ROUTES makes certify go RED on any row carrying it, and
- *  that stays true for conversation_type. The fix was always to stop the
- *  emitter, never to add a route. */
+ *  ⚠ `how_customers_reach_us` IS BACK, WITH ITS WRITER, ON 2026-08-18
+ *  (migration 754) — and it came back under exactly the condition the removal
+ *  note set: the key and the writer in the same edit, never the key first.
+ *
+ *  WHAT WAS REMOVED ON 2026-08-15 and why it deserved to be: the loop below
+ *  emitted ONE complete draft whose payload was `{ label: dim.title,
+ *  owner_ref }`. `dim.title` for this dimension is literally "How customers
+ *  reach us" — the interview's own question heading — so every tenant, every
+ *  session produced the SAME card; and there was no writer at all, so
+ *  accepting it could only ever have been a no-op wearing an accept button.
+ *
+ *  WHAT COMES BACK IS A DIFFERENT SHAPE, in three ways, each of which was one
+ *  of the reasons for the removal:
+ *   · the payload is {label, set_category, match_pattern} — the customer's own
+ *     words, all three model-filled, none of them the dimension's title;
+ *   · the writer is real: createTriageRuleFromProposal under RLS, then
+ *     decide_discovery_proposal's `when 'conversation_type'` arm verifies every
+ *     literal and stamps the row in `support_triage_rules` — the table the LIVE
+ *     topic axis already runs on (de_conversations.category, written by
+ *     trg_triage_support_conversation from classify_support_text);
+ *   · it emits MANY drafts rather than one — TOPIC_SLOTS blank shapes — because
+ *     the founder's instruction was that a customer may name ten different
+ *     things, and one dimension offering one topic was the other half of the
+ *     original defect.
+ *
+ *  ⚠ WHAT DID NOT COME BACK IS THE ROUTING CLAIM. Enumerated 2026-08-17:
+ *  de_conversations.de_id is stamped when the conversation row is INSERTED
+ *  (widget-ask:338, email-inbound:190), the category is written afterwards by
+ *  an AFTER INSERT trigger on the first user message, and no reader of
+ *  category selects an employee. So the card says the conversation is
+ *  LABELLED, never routed, and the accept records routes_to_employee: false.
+ *  Standing rule, unchanged and now satisfied the ordinary way: a kind absent
+ *  from scripts/discovery-proposal-check.mjs's KIND_ROUTES makes certify go RED
+ *  on any row carrying it. conversation_type is in KIND_ROUTES and in
+ *  EXPECTED_KIND_TABLES as of the same edit as this line. */
+/** How many blank conversation_type shapes one heard `how_customers_reach_us`
+ *  emits. See the emission arm for why it is a ceiling rather than a target, and
+ *  why an unfilled slot is a logged refusal rather than an empty card. 10 is the
+ *  founder's own number, from the instruction this kind was rebuilt against. */
+const TOPIC_SLOTS = 10;
+
+/**
+ * IS THIS DRAFT AN UNUSED SLOT — a shape the model never wrote a word into?
+ *
+ * ⚠⚠ THE COUNTING DEFECT THIS EXISTS TO FIX, measured through the real
+ * proposalsFrom + validatePayload on 2026-08-18:
+ *     1 topic named  -> 10 slots, 10 drafts, 1 proposed, 9 "refused"
+ *     3 topics named -> 10 slots, 10 drafts, 3 proposed, 7 "refused"
+ * and `outcomeReport` then told that customer, verbatim, "We dropped 9 drafts
+ * because we could not point at something you said to justify them." Nine of
+ * them were never drafted from anything. Before this kind came back, `refused`
+ * only ever counted a draft a model actually attempted — one per derived
+ * candidate — so this change silently redefined a number the customer reads as
+ * a quality signal, in the direction that makes us look like we discard most of
+ * what we hear.
+ *
+ * ⚠ WHY NOT EMIT LAZILY INSTEAD, which is the obvious other fix. The fill
+ * machinery matches model responses to drafts BY ARRAY INDEX, so the drafts
+ * have to exist before the model runs; emitting "as many as the customer named"
+ * would mean asking the model how many first and then creating drafts from its
+ * answer. That hands a model the power to ADD drafts, which is precisely the
+ * property the employee arm is built to deny ("a model may only DECLINE a
+ * candidate; it can never ADD one" — see the module header). Trading a
+ * structural guarantee for a tidier integer is the wrong way round. TOPIC_SLOTS
+ * stays a CEILING and the unused headroom stops being reported as a loss.
+ *
+ * ⚠ AN ATTEMPT IS STILL A REFUSAL. A slot the model filled with a label and a
+ * category the inbox cannot use, or a label and no pattern, IS a draft we would
+ * not stand behind and counts exactly as a guardrail with no pattern does. Only
+ * a slot with nothing in ANY of its three model-owned fields is an unused one —
+ * which is byte-identical to what proposalsFrom emitted.
+ *
+ * ⚠ AND IT IS COUNTED, NEVER SILENT. emitProposals reports these separately
+ * (`unused_topic_slots`); a second drop path that increments nothing is how a
+ * filter stops being auditable, which this repo has already paid for once.
+ */
+export function isUnusedTopicSlot(kind: string, payload: Record<string, unknown> | null | undefined): boolean {
+  if (kind !== 'conversation_type') return false;
+  if (!payload || typeof payload !== 'object') return false;
+  return !str(payload.label) && !str(payload.set_category) && !str(payload.match_pattern);
+}
+
 const DIMENSION_STRUCTURAL_KINDS: Readonly<Record<string, readonly ProposalKind[]>> = {
+  how_customers_reach_us: ['conversation_type'],
   money_in: ['procedure'],
   how_work_gets_delivered: ['procedure'],
   repetitive_work: ['procedure'],
@@ -1514,13 +1635,13 @@ export function proposalsFrom(
     }
 
     // ---- this dimension's own structural kind(s) --------------------------
-    // ⚠ There is deliberately NO `conversation_type` arm here. It was removed
-    // on 2026-08-15 together with the DIMENSION_STRUCTURAL_KINDS entry that
-    // reached it — see that table's header for the measured reasons and for
-    // the exact shape it returns in with (match_pattern + set_category,
-    // writing support_triage_rules). Re-adding this arm without that writer
-    // puts an un-routable card in front of a customer and turns
-    // scripts/discovery-proposal-check.mjs red on the first real interview.
+    // ⚠ THE `conversation_type` ARM IS BACK (migration 754), and it is the ONLY
+    // arm here that pushes more than one draft. See DIMENSION_STRUCTURAL_KINDS'
+    // header for what changed since the 2026-08-15 removal — the short version
+    // is that the key and its writer landed in the same edit, which is the
+    // condition that removal note set — and the arm itself for why ten blank
+    // shapes is the right construction and an unfilled one is a logged refusal
+    // rather than an empty card.
     for (const kind of DIMENSION_STRUCTURAL_KINDS[dim.key] ?? []) {
       if (kind === 'procedure') {
         drafts.push({
@@ -1549,6 +1670,52 @@ export function proposalsFrom(
           source_dimension: dim.key,
           needs_model_fill: true,
         });
+      } else if (kind === 'conversation_type') {
+        // ⚠ THE ONLY KIND THAT EMITS MANY DRAFTS FROM ONE DIMENSION, and that
+        // is the founder's requirement rather than a convenience: "a customer
+        // might ask for 10 different things". Every other structural kind emits
+        // exactly one shape per dimension, so `how_customers_reach_us` would
+        // otherwise offer one topic however many the customer named.
+        //
+        // TOPIC_SLOTS BLANK SHAPES, filled independently. The fill machinery
+        // matches responses to drafts BY ARRAY INDEX (fillProposalLiterals), and
+        // that is safe here in a way it is not for `employee`: these slots are
+        // byte-identical to each other before the fill, carry the same kind and
+        // the same dimension, and every field on the finished card is one the
+        // model wrote — so a misindexed fill lands a complete, self-consistent
+        // topic in a different slot, which is a re-ordering of an unordered set
+        // and not a mismatch anyone could be misled by. fillIdentityProblem's
+        // kind/dimension checks still apply and still catch a fill written for
+        // a different KIND.
+        //
+        // A slot the model does not fill fails validatePayload (no
+        // set_category) and is dropped with its reason logged — the same
+        // "omit rather than guess" contract procedure, guardrail and trust_rule
+        // already run on, and it counts in `refused` exactly as theirs do. So a
+        // customer who names three topics gets three cards and seven logged
+        // refusals, never seven empty ones.
+        //
+        // ⚠ 10 IS A CEILING, NOT A TARGET, and it is the founder's own number.
+        // It is also bounded by something real: identity_key for this kind is
+        // payload->>'set_category' (migration 754), so two slots the model fills
+        // with the same category collide on migration 740's unique index and the
+        // emitter's `ignoreDuplicates` upsert keeps the first. One rule per
+        // topic per session is enforced by the database, not by this loop.
+        for (let slot = 0; slot < TOPIC_SLOTS; slot++) {
+          drafts.push({
+            kind: 'conversation_type',
+            payload: {
+              label: null,
+              set_category: null,
+              match_pattern: null,
+              evidence,
+              note: 'labels conversations; it does not choose who answers them',
+            },
+            rationale: `Heard evidence for "${dim.title}": ${evidenceLine}`,
+            source_dimension: dim.key,
+            needs_model_fill: true,
+          });
+        }
       } else if (kind === 'trust_rule') {
         drafts.push({
           kind: 'trust_rule',

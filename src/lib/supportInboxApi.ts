@@ -351,6 +351,101 @@ export async function upsertTriageRule(r: Partial<TriageRule> & { name: string; 
   }
 }
 
+/** The DISCOVERY writer: create the triage rule a conversation_type proposal
+ *  describes, as the signed-in human under RLS, linked to the proposal that
+ *  proposed it. Migration 754's Path B — decide_discovery_proposal verifies this
+ *  row and stamps it, and refuses it unless every field below matches the card.
+ *
+ *  ⚠ SEPARATE FROM upsertTriageRule, and not a flag on it, for two reasons that
+ *  both matter. (1) upsertTriageRule defaults rule_order to 100, which COLLIDES
+ *  with the baseline "How-to" rule every one of the 18 live workspaces carries
+ *  at exactly 100 — classify_support_text orders by (rule_order, created_at) and
+ *  returns on the first match, so a defaulted discovery rule loses that tie to a
+ *  timestamp no screen shows. This function places the rule in the reserved
+ *  200..9998 band instead, which is the band the RPC refuses anything outside
+ *  of. (2) source_proposal_id must never be settable from the ordinary editor:
+ *  it is the partial-unique key that makes an accept idempotent, and letting the
+ *  CRUD form write it would let a hand-edited rule adopt a proposal.
+ *
+ *  ⚠ FIND-FIRST IS A COURTESY, NOT THE GUARANTEE. The guarantee is
+ *  `support_triage_rules_source_proposal_uq` (migration 754), which is what
+ *  makes a second insert for the same proposal fail rather than duplicate. This
+ *  read turns that failure into a re-use for the ordinary retry — a browser that
+ *  died after the insert and before the stamp — the way the guardrail writer's
+ *  find does, and unlike that one it can key on an id rather than on a literal.
+ *
+ *  ⚠ THE POSITION IS CHOSEN, NEVER DEFAULTED, and it is chosen deterministically
+ *  from what is already there: one past the highest discovery-sourced rule in
+ *  this workspace, floored at 200. Ties between two of the customer's own topics
+ *  are possible under a concurrent double-accept and are not refused — the RPC
+ *  counts them and the card reports the count. What is refused is landing
+ *  outside the band, which is the only ordering fact with a safety consequence:
+ *  below 200 a topic from an interview could outrank Safety (10) or Security
+ *  (20); at 9999 or above it would sit behind the pattern-less catch-all, which
+ *  returns immediately, and could never fire at all. */
+export async function createTriageRuleFromProposal(input: {
+  proposalId: string;
+  name: string;
+  matchPattern: string;
+  setCategory: string;
+}): Promise<{ id: string; rule_order: number; reused: boolean }> {
+  const tid = await requireTenantId();
+
+  const { data: existing, error: findErr } = await supabase
+    .from('support_triage_rules')
+    .select('id, rule_order')
+    .eq('tenant_id', tid)
+    .eq('source_proposal_id', input.proposalId)
+    .limit(1);
+  if (findErr) throw new Error(findErr.message);
+  if (existing && existing.length > 0) {
+    const row = existing[0] as { id: string; rule_order: number };
+    return { id: String(row.id), rule_order: Number(row.rule_order), reused: true };
+  }
+
+  // ⚠ `.not('source_proposal_id', 'is', null)` is what confines the scan to
+  // DISCOVERY rules. Reading max(rule_order) over the whole table would find the
+  // 9999 catch-all every workspace has and place the new rule at 10000, behind
+  // it — where a pattern-less rule has already returned and nothing below is
+  // ever consulted. That is the silent version of the bug this whole band
+  // exists to prevent.
+  const { data: highest, error: maxErr } = await supabase
+    .from('support_triage_rules')
+    .select('rule_order')
+    .eq('tenant_id', tid)
+    .not('source_proposal_id', 'is', null)
+    .lte('rule_order', 9998)
+    .order('rule_order', { ascending: false })
+    .limit(1);
+  if (maxErr) throw new Error(maxErr.message);
+  const top = highest && highest.length > 0 ? Number((highest[0] as { rule_order: number }).rule_order) : 199;
+  const ruleOrder = Math.min(Math.max(200, top + 1), 9998);
+
+  const { data, error } = await supabase
+    .from('support_triage_rules')
+    .insert({
+      tenant_id: tid,
+      rule_order: ruleOrder,
+      name: input.name,
+      match_pattern: input.matchPattern,
+      set_category: input.setCategory,
+      // ⚠ Priority and severity are NOT the model's and NOT on the card, so they
+      // take the column defaults a hand-written rule would take. A topic from an
+      // interview must not silently mark a class of traffic urgent: `priority`
+      // drives the inbox's own ordering and `severity` is read by the support
+      // reports. Nothing the customer consented to on this card said anything
+      // about either.
+      set_priority: 'normal',
+      set_severity: 'sev3',
+      active: true,
+      source_proposal_id: input.proposalId,
+    })
+    .select('id, rule_order')
+    .single();
+  if (error) throw new Error(error.message);
+  return { id: String(data.id), rule_order: Number(data.rule_order), reused: false };
+}
+
 export async function deleteTriageRule(id: string): Promise<void> {
   const tid = await requireTenantId();
   const { error } = await supabase.from('support_triage_rules').delete().eq('id', id).eq('tenant_id', tid);

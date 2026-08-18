@@ -76,7 +76,7 @@ import type {
 } from '../../lib/discoveryApi';
 import {
   SECTION_ORDER, KIND_LABELS, batchModeFor, cardCopyFor, whatAcceptingWrites, trustRuleBlockReason,
-  itemsForBatchMode, needsAcceptConfirmation,
+  itemsForBatchMode, needsAcceptConfirmation, acceptAllSectionBlurb, topicAcceptability,
 } from '../../lib/discoveryProposalPresentation';
 import type { AcceptCompliancePack, ProposalKind } from '../../lib/discoveryProposalPresentation';
 import type { Page } from '../../types';
@@ -398,6 +398,33 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
               // only what this accept controls.
               : p.kind === 'trust_rule'
                 ? `${title} — written down. Nothing changes today: this records the limit and switches nothing on, and you'll find the setting under its Trust settings at level 0${outcome.enforcesToday === false ? ', switched off' : ''}. Moving it off level 0 is a separate decision, and nothing here makes it for you.`
+              // ⚠ 754: THE FOURTH KIND TO JOIN THIS CHAIN, and the first one
+              // that had to be ADDED rather than adjusted. Until this arm
+              // existed a conversation topic fell through to the CONNECTOR
+              // sentence below and was told "set up and waiting for your
+              // credential … under Systems" — three things wrong at once:
+              // there is no credential, there is no second gate at all, and the
+              // rule is not under Systems.
+              // What the accept really does is INSERT a row into
+              // support_triage_rules under RLS (createTriageRuleFromProposal),
+              // and classify_support_text reads EVERY active rule in the
+              // workspace on the first user message of every support
+              // conversation — so the rule is labelling traffic before this
+              // sentence has finished rendering. That makes it a guardrail-shaped
+              // card, not a connector-shaped one: 751's rule applies, and the
+              // sentence has to say it is live and where the off switch is.
+              // ⚠ LABELLED, NEVER ROUTED. de_conversations.de_id is stamped at
+              // INSERT by widget-ask and email-inbound, before the first message
+              // exists, and no reader of `category` picks an employee — which is
+              // the promise the OLD version of this card made and 754 removed.
+              // ⚠ AND THE ORDER, because it is the one thing that bounds the
+              // change: an accepted topic lands in the 200..9998 band, behind
+              // every built-in category, so Safety (10) and Security (20) still
+              // win where the words overlap. Probe 18(c3) drives that collision.
+              : p.kind === 'conversation_type'
+                ? (outcome.reusedExisting
+                  ? `${title} — you already had exactly this topic, so nothing new was created. It is switched on and filing conversations under "${topicAcceptability(p.payload).category}", and it is under Support › Triage rules.`
+                  : `${title} — switched on now. From this moment a new conversation whose first message uses those words is filed under "${topicAcceptability(p.payload).category}"; your built-in categories like Safety and Security still come first, and this does not change who answers. You can reword it or take it off under Support › Triage rules.`)
               // ⚠ TWO different true things, not one convenient one. An accept
               // that RE-USED a connector the workspace already had inserted
               // nothing — telling that person to go and enter a credential sends
@@ -465,14 +492,27 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
     // batch is always ONE kind — renderAcceptAllSection is per-kind and
     // itemsForBatchMode filters to it — so the noun comes off the batch rather
     // than being assumed.
+    //
+    // ⚠⚠⚠ 754: AND IT WAS ABOUT TO BE FALSE ABOUT AN ENTIRE BATCH AGAIN, in the
+    // one kind that arrives ten at a time. batchModeFor('conversation_type')
+    // is 'accept_all', so ten accepted topics replayed the connector sentence
+    // verbatim — "10 set up, each waiting for your credential" — about ten
+    // triage rules that are live, have no credential and are not under Systems.
+    // The mode is right (ten cards is exactly what it is for); the noun was not.
     const batchKind = targets[0]?.kind;
-    const outcomeNoun = batchKind === 'procedure' ? 'drafted' : 'set up';
+    const outcomeNoun = batchKind === 'procedure' ? 'drafted'
+      : batchKind === 'conversation_type' ? 'switched on'
+      : 'set up';
     const outcomeTail = batchKind === 'procedure'
       ? ', each a draft under Playbooks that runs nothing until you publish it'
-      : ', each waiting for your credential';
+      : batchKind === 'conversation_type'
+        ? ', each filing new conversations under its own topic from now on — they are under Support › Triage rules, where you can reword or remove any of them'
+        : ', each waiting for your credential';
     const alreadyHad = batchKind === 'procedure'
       ? 'you already had every one of them drafted, so nothing new was written'
-      : 'you already had every one of them, so nothing new was created';
+      : batchKind === 'conversation_type'
+        ? 'you already had every one of them, so nothing new was created — and every one of them is still switched on'
+        : 'you already had every one of them, so nothing new was created';
     const newlyCreated = accepted - reused;
     const setUpPhrase = accepted === 0
       ? `Nothing was ${outcomeNoun}.`
@@ -641,10 +681,13 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
           </Button>
         }
       >
-        <p className="text-xs text-dt-muted mb-3">
-          The real consent step for {KIND_LABELS[kind].toLowerCase()} comes later — publishing a procedure, or
-          entering a credential for a connector. Uncheck anything you don't want proposed at all.
-        </p>
+        {/* ⚠ PER KIND, and read from the presentation module rather than
+            written here. The literal that used to sit inline promised "the real
+            consent step comes later" for every kind in this section — true of a
+            connector's credential and a procedure's publish, and false of a
+            conversation topic, which is live the instant it lands. See
+            acceptAllSectionBlurb's own header. */}
+        <p className="text-xs text-dt-muted mb-3">{acceptAllSectionBlurb(kind)}</p>
         <div className="space-y-3">{items.map((p) => renderCard(p, { checkbox: true }))}</div>
       </PanelCard>
     );

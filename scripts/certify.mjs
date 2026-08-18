@@ -905,6 +905,29 @@ const sections = [
       // ledger at claim time, not at apply time — a real change to
       // migrate:next, recorded here rather than attempted in passing.
       '715', '717',
+      // 2026-08-18 — the SAME defeat a fourth time, and it widens the gap the
+      // 715/717 note left open. Two agents, one repo:
+      //   754_a_trust_level_cannot_hide_a_live_grant     applied 01:29:28
+      //   754_conversation_topics_the_customer_named     applied 01:40:52
+      //
+      // `npm run migrate:next` answered correctly for mine: at claim time the
+      // other 754 was not in the local tree, not on origin/MAIN, and not in
+      // the production ledger. It was on an UNMERGED BRANCH —
+      // claude/docs54-stage-c — a source the union does not read, and one the
+      // 715/717 note did not name because that pair never sat on a branch.
+      //
+      // ⚠ CORRECTED SAME DAY, because the first version of this note pointed
+      // at the wrong fix. It said the gap was that migrate:next cannot read
+      // unmerged branches. It reads the PRODUCTION LEDGER — verified by
+      // running it: `local 755 · origin 755 · prod ledger 757`. So the branch
+      // is only why the number was invisible BEFORE their apply; the reason it
+      // was still invisible AT MY CLAIM is that they had not applied yet. That
+      // is the SAME claim-to-apply gap as 669 and 715/717, for the fourth time.
+      //
+      // Reading branches would narrow the window; only taking the claim in the
+      // ledger AT CLAIM TIME closes it. Do not let this list grow a fifth entry
+      // that re-diagnoses the same hole. Recorded, not attempted in passing.
+      '754',
     ]);
     const names = readdirSync('supabase/migrations').filter((f) => f.endsWith('.sql'));
     const byNum = new Map();
@@ -1288,8 +1311,8 @@ const sections = [
     // there would delete the only coverage of "a refusal leaves a reason",
     // "attempts increments rather than being set" and "the router opened for
     // exactly the kinds intended".
-    const EXPECTED_PROBES = 17;
-    const ASSERTION_FLOOR = 239; // 741 shipped 95; 745 ported them plus 3 ctid arms (98); 746 adds 40 across probes 12/13/14 and the hire's own rollback arm (138); 751 adds 26 across probe 15 and the guardrail leak arm (164), then 5 more from the review fixes (169); 752 adds 33, all of them probe 16's (202) — the playbook leak arm extends an existing check rather than adding one; 753 adds 37 net (239) = +37 probe 17, -2 probe 14 (REBUILT, 8 arms -> 6), +2 rollback (trust_policies and de_autonomy). ⚠ This line previously read "753 adds 34 (236) — 30 in probe 17, 2 net from rebuilding probe 14, and 2 rollback arms": two of the three terms were wrong and the total only survived because +4 and -4 cancelled. Count each term in its own block.
+    const EXPECTED_PROBES = 18;
+    const ASSERTION_FLOOR = 265; // 754 adds 26 (265) = 23 when it was written, plus 3 from its fix round: probe 18(d2) pins support_triage_rules_source_proposal_uq itself (a second row claiming one proposal must raise 23505; that proposal must own exactly 1 rule; a NULL-carrying rule must still insert, which is the arm proving the index is still PARTIAL). It was pinned by NOTHING before — a reviewer dropped the index and got 18/18 probes, 262 assertions and zero findings, because every other arm reads that column through the RPC's stamp rather than through the database refusing a second row. The 23 original: 3 denominator/counter arms, 3 classifier arms (fires, does not fire for everything, and loses to the baseline where the patterns overlap), 2 identity-index arms, 1 removability, 1 provenance, 10 refusal arms (g1-g8 plus the rule_order-default fact and the band), 2 role-bar arms — plus 1 rollback arm for support_triage_rules, minus 0. Measured from a real aborting run: 239 -> 262 -> 265. ⚠ Probes 7 and 14 are UNCHANGED and still run: 754 keeps them drivable with the `__unrouted_probe__` sentinel rather than by lowering this floor. // 741 shipped 95; 745 ported them plus 3 ctid arms (98); 746 adds 40 across probes 12/13/14 and the hire's own rollback arm (138); 751 adds 26 across probe 15 and the guardrail leak arm (164), then 5 more from the review fixes (169); 752 adds 33, all of them probe 16's (202) — the playbook leak arm extends an existing check rather than adding one; 753 adds 37 net (239) = +37 probe 17, -2 probe 14 (REBUILT, 8 arms -> 6), +2 rollback (trust_policies and de_autonomy). ⚠ This line previously read "753 adds 34 (236) — 30 in probe 17, 2 net from rebuilding probe 14, and 2 rollback arms": two of the three terms were wrong and the total only survived because +4 and -4 cancelled. Count each term in its own block.
 
     // The denominator is checked BEFORE the findings, on purpose: "no
     // findings" is only meaningful once something was compared.

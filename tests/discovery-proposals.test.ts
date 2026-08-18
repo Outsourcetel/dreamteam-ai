@@ -51,6 +51,7 @@ import { runQuery, adminTokenAvailable } from './helpers/adminQuery';
 import {
   proposalsFrom,
   validatePayload,
+  isUnusedTopicSlot,
   matchProvider,
   applyModelFill,
   applyFillToDraft,
@@ -100,9 +101,16 @@ describe('a proposal must be decidable', () => {
       .toThrow(/cap|threshold|amount|confidence/i);
   });
 
-  it('accepts a conversation type with just a label and an owner', () => {
-    // A label acts on nothing. Demanding more here is theatre.
-    expect(() => validatePayload('conversation_type', { label: 'Billing question', owner_ref: 'de:x' })).not.toThrow();
+  // ⚠ REWRITTEN BY 754. This read "accepts a conversation type with just a
+  // label and an owner — a label acts on nothing, demanding more here is
+  // theatre." Both halves stopped being true on the same day: the accept now
+  // writes a real support_triage_rules row, so a label DOES act on something,
+  // and `owner_ref` is gone because nothing routes on a topic (de_id is stamped
+  // at conversation INSERT, before any message exists).
+  it('accepts a conversation type carrying a label, a usable category and a pattern', () => {
+    expect(() => validatePayload('conversation_type', {
+      label: 'Billing question', set_category: 'billing_question', match_pattern: 'invoice query|billing question',
+    })).not.toThrow();
   });
 });
 
@@ -180,11 +188,31 @@ describe('validatePayload — every kind, both directions', () => {
       .not.toThrow();
   });
 
-  // Red if: a conversation_type with a label but no owner is accepted — an
-  // unowned conversation type routes to nobody.
-  it('refuses a conversation type with no owner', () => {
-    expect(() => validatePayload('conversation_type', { label: 'Billing question' }))
-      .toThrow(/owner/i);
+  // ⚠ REWRITTEN BY 754, and the replacement is a stronger test than the one it
+  // replaces. The old case demanded an OWNER ("an unowned conversation type
+  // routes to nobody") — a field whose only purpose was to satisfy a promise
+  // this platform does not keep. These three refusals each guard a measured
+  // failure in the live triage path instead.
+  it('refuses a conversation type with no category — nothing would be labelled', () => {
+    expect(() => validatePayload('conversation_type', { label: 'Billing question', match_pattern: 'invoice' }))
+      .toThrow(/category|file conversations under/i);
+  });
+
+  // ⚠ THE CATCH-ALL. classify_support_text returns IMMEDIATELY on the first
+  // rule whose match_pattern is null or blank, and all 18 live tenants already
+  // carry exactly one (rule_order 9999, "Default"). A second one from an
+  // interview would silently swallow every topic ordered after it.
+  it('refuses a conversation type with no pattern — a pattern-less rule is a catch-all, not a topic', () => {
+    expect(() => validatePayload('conversation_type', { label: 'Billing question', set_category: 'billing_question' }))
+      .toThrow(/catch-all|no phrases/i);
+  });
+
+  // The token the inbox filter compares as an exact string and the History
+  // report renders with replace(/_/g, ' ').
+  it('refuses a set_category the inbox filter cannot use', () => {
+    expect(() => validatePayload('conversation_type', {
+      label: 'Billing question', set_category: 'Billing Question!', match_pattern: 'invoice',
+    })).toThrow(/lower-case|token/i);
   });
 });
 
@@ -1771,38 +1799,65 @@ describe('proposalsFrom — connector (pure, via matchProvider)', () => {
   });
 });
 
-describe('proposalsFrom — conversation_type is NOT emitted (2026-08-15)', () => {
-  // This test used to assert the OPPOSITE — that a heard
-  // how_customers_reach_us derives "a complete, self-validating
-  // conversation_type draft". It was inverted, not deleted, on 2026-08-15,
-  // and the inversion is the point: a kind with no writer and no target
-  // table must not reach a customer's screen wearing an accept button.
+describe('proposalsFrom — conversation_type emits MANY shapes (2026-08-18, migration 754)', () => {
+  // This block has now been written three times, and the history is the test.
+  // It first asserted that a heard how_customers_reach_us derives "a complete,
+  // self-validating conversation_type draft" — which it did, and the draft was
+  // the dimension's own question heading, identical in every workspace. On
+  // 2026-08-15 it was INVERTED to assert the emitter was off, because a kind
+  // with no writer must not reach a customer wearing an accept button. It is
+  // now rewritten a third time, under the condition that inversion set: the
+  // emitter is back WITH its writer (createTriageRuleFromProposal under RLS,
+  // then decide_discovery_proposal's own arm), and the payload is the real one.
   //
-  // Red if: the emitter comes back WITHOUT its writer. The kind returns in
-  // the follow-up task carrying a real payload (match_pattern +
-  // set_category) that writes support_triage_rules — the live topic axis on
-  // de_conversations.category. When that lands, this test is rewritten to
-  // assert the NEW payload shape. Until then, re-adding the old emitter
-  // makes this go red on the same run that
-  // scripts/discovery-proposal-check.mjs goes red on the row it produces.
-  it('emits NO conversation_type draft for a heard how_customers_reach_us', () => {
+  // ⚠ THE COUNT IS THE FOUNDER'S REQUIREMENT, not an implementation detail:
+  // "a customer might ask for 10 different things". Every OTHER structural kind
+  // emits exactly one shape per dimension, so a single draft here is the defect
+  // this rebuild exists to fix, and > 1 is what the test pins.
+  it('emits MANY conversation_type shapes for one heard how_customers_reach_us', () => {
     const drafts = proposalsFrom(DIMS, {
       how_customers_reach_us: { state: 'heard', evidence: 'they call and email' },
     }, ARCHETYPES);
-    expect(drafts.filter((d) => d.kind === 'conversation_type')).toHaveLength(0);
-    // ⚠ Vacuity guard. Asserting only an absence would also pass on a
-    // proposalsFrom that emits nothing at all for any input, which is not
-    // what was changed. That dimension still produces its employee drafts.
+    const topics = drafts.filter((d) => d.kind === 'conversation_type');
+    expect(topics.length).toBeGreaterThan(1);
+    // ⚠ Vacuity guard, kept from the previous version for the same reason: an
+    // assertion about this kind alone would also pass on a proposalsFrom that
+    // emits nothing else. That dimension still produces its employee drafts.
     expect(drafts.filter((d) => d.kind === 'employee').length).toBeGreaterThan(0);
   });
 
-  // The KIND itself is untouched — validatePayload still knows its shape, so
-  // the follow-up task re-enables an emitter rather than rebuilding a kind.
-  // Red if: someone "cleans up" conversation_type out of the validator while
-  // the emitter is off, which would make the return a much bigger change
-  // than the ruling describes.
-  it('still validates a conversation_type payload — the kind is dormant, not deleted', () => {
-    expect(() => validatePayload('conversation_type', { label: 'Billing question', owner_ref: 'archetype:billing_ar' })).not.toThrow();
+  // ⚠ EVERY SHAPE IS INCOMPLETE AND SAYS SO. The whole point of the rebuild is
+  // that the topics are the CUSTOMER'S, not the dimension's title — so nothing
+  // derivable may be pre-filled, and validatePayload must refuse the raw shape.
+  // Red if: someone "helpfully" defaults set_category to the dimension key,
+  // which is the 2026-08-15 defect returning in a new coat.
+  it('every emitted shape needs a model fill and is REFUSED unfilled', () => {
+    const drafts = proposalsFrom(DIMS, {
+      how_customers_reach_us: { state: 'heard', evidence: 'they call and email' },
+    }, ARCHETYPES);
+    const topics = drafts.filter((d) => d.kind === 'conversation_type');
+    for (const t of topics) {
+      expect(t.needs_model_fill).toBe(true);
+      expect(t.payload.set_category).toBeNull();
+      expect(t.payload.match_pattern).toBeNull();
+      expect(() => validatePayload('conversation_type', t.payload)).toThrow();
+    }
+  });
+
+  // ⚠ AND NO SHAPE CARRIES THE DIMENSION'S TITLE. This is the specific,
+  // measured defect that got the kind switched off: `label: dim.title` made
+  // every tenant, every session, produce the same card reading "How customers
+  // reach us". An emitter that reintroduced it would satisfy every other
+  // assertion in this file.
+  it('no emitted shape carries the dimension title as its label', () => {
+    const drafts = proposalsFrom(DIMS, {
+      how_customers_reach_us: { state: 'heard', evidence: 'they call and email' },
+    }, ARCHETYPES);
+    const dimTitle = DIMS.find((d) => d.key === 'how_customers_reach_us')?.title;
+    expect(dimTitle).toBeTruthy();
+    for (const t of drafts.filter((d) => d.kind === 'conversation_type')) {
+      expect(t.payload.label).not.toBe(dimTitle);
+    }
   });
 });
 
@@ -2166,4 +2221,125 @@ describe('discovery proposals — the card shows the whole recorded note, not th
       expect(() => validatePayload('employee', payload)).not.toThrow();
     });
   }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AN UNFILLED SLOT IS NOT A REFUSAL (754 FIX ROUND, C2)
+//
+// ⚠⚠ THE DEFECT, MEASURED THROUGH THIS EXACT DRIVER BEFORE THE FIX:
+//     1 topic named  -> {slots:10, drafts:10, proposed:1,  refused:9}
+//     3 topics named -> {slots:10, drafts:10, proposed:3,  refused:7}
+//    10 topics named -> {slots:10, drafts:10, proposed:10, refused:0}
+// and src/lib/discoveryInterviewMachine.ts then told the customer who named one
+// topic, verbatim: "1 recommendation ready — and 9 we would not stand behind" /
+// "We dropped 9 drafts because we could not point at something you said to
+// justify them." Nine of those were never drafted from anything.
+//
+// `refused` is a number the customer reads as a quality signal, and until this
+// kind came back it only ever counted a draft a model actually ATTEMPTED — one
+// per derived candidate. conversation_type is the only kind that emits a fixed
+// CEILING of blank shapes from one dimension, so it is the only kind where the
+// count could be inflated by nothing at all.
+//
+// This block drives the REAL proposalsFrom, the REAL applyFillToDraft (so
+// FILL_WHITELIST is the thing deciding what a model may write), the REAL
+// validatePayload and the REAL isUnusedTopicSlot — the same four the emitter
+// runs — and pins all three counts.
+describe('conversation_type slots: an unfilled one is not a refusal (754 fix round)', () => {
+  const TOPICS = [
+    { label: 'Where is my order', set_category: 'delivery_delay', match_pattern: 'where is my order|late delivery' },
+    { label: 'Returns', set_category: 'returns', match_pattern: 'send it back|return label' },
+    { label: 'Sizing', set_category: 'sizing', match_pattern: 'what size|runs small' },
+    { label: 'Warranty', set_category: 'warranty', match_pattern: 'under warranty|warranty claim' },
+    { label: 'Installation', set_category: 'installation', match_pattern: 'who installs|fitting' },
+    { label: 'Spares', set_category: 'spares', match_pattern: 'spare part|replacement part' },
+    { label: 'Trade accounts', set_category: 'trade_account', match_pattern: 'trade account|bulk order' },
+    { label: 'Quotes', set_category: 'quotes', match_pattern: 'can you quote|send me a quote' },
+    { label: 'Appointments', set_category: 'appointments', match_pattern: 'move my appointment|reschedule' },
+    { label: 'Damaged on arrival', set_category: 'damaged', match_pattern: 'arrived damaged|broken on arrival' },
+  ];
+
+  /** The emitter's own loop, over the topic drafts only: fill the first
+   *  `named` slots the way a model that named that many topics would, then run
+   *  every slot through the one gate and classify what comes out. */
+  const drive = (named: number) => {
+    const drafts = proposalsFrom(DIMS, {
+      how_customers_reach_us: { state: 'heard', evidence: 'they ask about delivery, returns, sizing and about ten other things' },
+    }, ARCHETYPES);
+    const slots = drafts.filter((d) => d.kind === 'conversation_type');
+    for (let i = 0; i < named; i++) {
+      const problem = applyFillToDraft(slots[i], TOPICS[i]);
+      expect(problem, `fill ${i} was rejected outright: ${problem}`).toBeNull();
+    }
+    let proposed = 0;
+    let refused = 0;
+    let unused = 0;
+    for (const d of slots) {
+      try {
+        validatePayload(d.kind, d.payload);
+        proposed++;
+      } catch {
+        if (isUnusedTopicSlot(d.kind, d.payload)) unused++;
+        else refused++;
+      }
+    }
+    return { slots: slots.length, drafts: slots.length, proposed, refused, unused };
+  };
+
+  it('ONE named topic is one recommendation and NINE untouched slots — RED if nine of them are counted as drafts we would not stand behind', () => {
+    expect(drive(1)).toEqual({ slots: 10, drafts: 10, proposed: 1, refused: 0, unused: 9 });
+  });
+
+  it('THREE named topics: three through, seven never drafted from anything', () => {
+    expect(drive(3)).toEqual({ slots: 10, drafts: 10, proposed: 3, refused: 0, unused: 7 });
+  });
+
+  it('TEN named topics fill the ceiling exactly — RED if the founder’s "ten different things" stops fitting', () => {
+    expect(drive(10)).toEqual({ slots: 10, drafts: 10, proposed: 10, refused: 0, unused: 0 });
+  });
+
+  // ⚠⚠ THE INVERSION, AND IT IS THE ONE THAT MATTERS. If isUnusedTopicSlot
+  // returned true for anything the model touched, this fix would have converted
+  // real refusals into silence — the opposite defect, and a worse one. A slot
+  // the model wrote a label into and nothing else IS a draft we would not stand
+  // behind, and it must still count in `refused`.
+  it('a slot the model PARTLY filled is still a refusal — RED if the exclusion widens into a silent drop path', () => {
+    const drafts = proposalsFrom(DIMS, {
+      how_customers_reach_us: { state: 'heard', evidence: 'they ask about delivery' },
+    }, ARCHETYPES);
+    const slots = drafts.filter((d) => d.kind === 'conversation_type');
+    // label only — no category, no pattern.
+    expect(applyFillToDraft(slots[0], { label: 'Where is my order' })).toBeNull();
+    // a category the inbox filter cannot use, with a real label and pattern.
+    expect(applyFillToDraft(slots[1], { label: 'Returns', set_category: 'Returns Please!', match_pattern: 'send it back' })).toBeNull();
+
+    expect(() => validatePayload('conversation_type', slots[0].payload)).toThrow();
+    expect(() => validatePayload('conversation_type', slots[1].payload)).toThrow();
+    expect(isUnusedTopicSlot('conversation_type', slots[0].payload), 'a label alone is an ATTEMPT').toBe(false);
+    expect(isUnusedTopicSlot('conversation_type', slots[1].payload), 'a bad category is an ATTEMPT').toBe(false);
+    // and the untouched ones, on the same run, still are not.
+    expect(isUnusedTopicSlot('conversation_type', slots[2].payload)).toBe(true);
+  });
+
+  // ⚠ AND THE EXCLUSION IS CONFINED TO THIS KIND. Every other structural kind
+  // emits exactly ONE shape per derived thing, so its blank shape IS a real
+  // refusal — "we tried to draft a procedure from what you told us and could
+  // not". If this predicate ever answered true for those, an interview that
+  // grounded nothing would report a clean run.
+  it('no other kind can be an "unused slot" — RED if the exclusion leaks and a whole failed interview reports zero refusals', () => {
+    const drafts = proposalsFrom(DIMS, {
+      must_never_happen: { state: 'heard', evidence: 'never promise a refund without a manager sign-off' },
+      who_signs_off: { state: 'heard', evidence: 'journal entries over ten thousand need a second approver' },
+      money_in: { state: 'heard', evidence: 'we invoice monthly and chase overdue accounts every week' },
+    }, ARCHETYPES);
+    let compared = 0;
+    for (const d of drafts) {
+      if (d.kind === 'conversation_type') continue;
+      expect(isUnusedTopicSlot(d.kind, d.payload), `${d.kind} must never be excluded from the refusal count`).toBe(false);
+      compared++;
+    }
+    expect(compared, 'this run produced no non-topic drafts — nothing was compared').toBeGreaterThan(2);
+    // the emitter reads it as (kind, payload); a null payload is not a slot either
+    expect(isUnusedTopicSlot('conversation_type', null)).toBe(false);
+  });
 });

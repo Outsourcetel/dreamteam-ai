@@ -125,6 +125,7 @@ import {
 import {
   proposalsFrom,
   validatePayload,
+  isUnusedTopicSlot,
   applyFillToDraft,
   vocabularyOrUndefined,
   ROLE_ARCHETYPE_SELECT,
@@ -497,6 +498,16 @@ type ModelFillOutcome = 'not_needed' | 'ran' | 'skipped_no_llm' | 'skipped_ai_bu
 interface EmitProposalsResult {
   proposed: number;
   refused: number;
+  /** ⚠ 754/FIX ROUND: conversation_type is the ONE kind that emits a fixed
+   *  CEILING of blank shapes (TOPIC_SLOTS = 10) from a single dimension rather
+   *  than one shape per derived candidate. A customer who names three topics
+   *  leaves seven of those never written into, and counting them in `refused`
+   *  made the screen say "we dropped 7 drafts because we could not point at
+   *  something you said" about seven things that were never drafted from
+   *  anything. They are counted HERE instead — separately, so the drop is
+   *  auditable rather than silent, and so no customer-facing sentence adds them
+   *  to a loss. See isUnusedTopicSlot for the argument and the measurements. */
+  unused_topic_slots: number;
   skipped_already_proposed: boolean;
   model_fill: ModelFillOutcome;
 }
@@ -513,7 +524,7 @@ async function emitProposals(
     .select('id', { count: 'exact', head: true })
     .eq('session_id', sessionId);
   if ((existing ?? 0) > 0) {
-    return { proposed: 0, refused: 0, skipped_already_proposed: true, model_fill: 'not_needed' };
+    return { proposed: 0, refused: 0, unused_topic_slots: 0, skipped_already_proposed: true, model_fill: 'not_needed' };
   }
 
   // REVIEW ROUND 1, Important 2: read the REAL, live action_category
@@ -575,7 +586,7 @@ async function emitProposals(
   const validActionCategoriesOrUndefined = vocabularyOrUndefined(validActionCategories);
 
   const drafts = proposalsFrom(dimensions, coverage, archetypes, { providerCatalog });
-  if (drafts.length === 0) return { proposed: 0, refused: 0, skipped_already_proposed: false, model_fill: 'not_needed' };
+  if (drafts.length === 0) return { proposed: 0, refused: 0, unused_topic_slots: 0, skipped_already_proposed: false, model_fill: 'not_needed' };
 
   // The employee CANDIDATES — every one of which may still be declined by
   // the fill below. This list is what the fill prompt offers a trust_rule's
@@ -619,6 +630,7 @@ async function emitProposals(
 
   const rows: Record<string, unknown>[] = [];
   let refused = 0;
+  let unusedTopicSlots = 0;
   const keepOrRefuse = (d: ProposalDraft, options: ValidatePayloadOptions): boolean => {
     try {
       validatePayload(d.kind, d.payload, options);
@@ -633,6 +645,23 @@ async function emitProposals(
       });
       return true;
     } catch (e) {
+      // ⚠⚠ AN UNUSED SLOT IS NOT A REFUSAL, and this is the ONE place the two
+      // are told apart. conversation_type emits TOPIC_SLOTS blank shapes from
+      // one dimension — a ceiling, not a derivation — so a customer who names
+      // three topics leaves seven shapes the model never wrote a word into.
+      // Counting those as refusals made outcomeReport say "we dropped 7 drafts
+      // because we could not point at something you said to justify them" about
+      // seven things that were never drafted from anything, and `refused` is a
+      // number the customer reads as a quality signal.
+      // It is COUNTED, not skipped: a second drop path that increments nothing
+      // is exactly how a filter stops being auditable. isUnusedTopicSlot is
+      // deliberately narrow — any slot the model touched at all is a real
+      // refusal below, on the same path as everything else.
+      if (isUnusedTopicSlot(d.kind, d.payload)) {
+        unusedTopicSlots++;
+        console.error(`[discovery-interview] conversation_type slot UNUSED, not refused (source_dimension=${d.source_dimension}): the customer named fewer topics than the ceiling of blank slots this dimension emits, so nothing was ever drafted into this one. Counted in unused_topic_slots.`);
+        return false;
+      }
       refused++;
       // Named, not silent: the refusal IS the feature (§11b) — a guardrail
       // with no pattern, a trust rule with no cap, an employee the customer's
@@ -688,7 +717,7 @@ async function emitProposals(
     if (insErr) throw new Error(`discovery_proposals upsert failed: ${insErr.message}`);
   }
 
-  return { proposed: rows.length, refused, skipped_already_proposed: false, model_fill: modelFill };
+  return { proposed: rows.length, refused, unused_topic_slots: unusedTopicSlots, skipped_already_proposed: false, model_fill: modelFill };
 }
 
 serve(async (req) => {
@@ -828,7 +857,7 @@ serve(async (req) => {
       // VISIBLE, in `proposals.model_fill` below.
       const proposals: EmitProposalsResult = wasRunning
         ? await emitProposals(admin, tenantId, sessionId, dimensions, endCoverage)
-        : { proposed: 0, refused: 0, skipped_already_proposed: true, model_fill: 'not_needed' };
+        : { proposed: 0, refused: 0, unused_topic_slots: 0, skipped_already_proposed: true, model_fill: 'not_needed' };
 
       return json({
         session_id: sessionId,
