@@ -1257,6 +1257,31 @@
           "n": 1
         }
       }
+    },
+    {
+      "id": "D-13",
+      "what": "The app is dark-themed (ground rgb(12,17,35)) but declares color-scheme nowhere, so the computed value stays 'normal' and every browser-painted surface renders in light mode against it: scrollbars, native select dropdowns, date and time pickers, checkboxes, and autofill backgrounds. There are 350 raw input elements across the app that inherit this. Fix is one declaration (color-scheme: dark on :root). Separately and more minor: 465 transition/animate classes exist and prefers-reduced-motion is handled nowhere in style.css or tokens.css",
+      "where": "src/design/tokens.css / src/style.css — no color-scheme declaration; docs/65",
+      "severity": "hygiene",
+      "why_skipped": "walked-past",
+      "first_named": {
+        "date": "2026-08-18",
+        "source": "docs/65 Workstream K, 2026-08-18"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "grep",
+        "paths": [
+          "src/design/tokens.css",
+          "src/style.css"
+        ],
+        "pattern": "color-scheme",
+        "count": "matches",
+        "open_if": {
+          "op": "==",
+          "n": 0
+        }
+      }
     }
   ]
 }
