@@ -1,137 +1,171 @@
-# 57 — Workstream H: review synthesis & go/no-go (2026-08-18)
+# 57 — Review synthesis & go/no-go (v2, 2026-08-18)
 
-## What this rests on — and what it does not
+> **v2 supersedes the 7-workstream draft.** All **19 workstreams are now complete** (docs 49–69).
+> Six of them changed conclusions in the first version, including the go/no-go rationale. Changes
+> are listed in §8.
 
-Seven of nineteen workstreams have run: **A** inventory · **B** functional truth (5 live-drive
-sessions) · **C** security & tenancy · **D** code health (opened) · **E** ops readiness ·
-**F** gap analysis · **G** pilot readiness. Parallel sessions contributed **docs 51** (measurement
-organs), **52** (write perimeter — audit only, nothing applied) and **53** (deferred-work census).
+## 1. The finding, in one paragraph
 
-**Not yet examined:** AI answer quality (I), performance at scale (J), UX/accessibility (K), unit
-economics (L), compliance/legal depth (N), dependencies & secrets (O), connector reality (P),
-tenant lifecycle (Q), incident readiness (R), documentation accuracy (S), voice-of-user (T).
+The governed core is real, provable, and better built than its own documentation claims. **Every
+detection organ in the product works and not one of them reaches a person**, which is why three
+real incidents ran for a combined 40 days unnoticed. And the single feature that would fix the
+economics, the scaling limit and the founder's own observed behaviour is the same feature: **the
+trust ladder, which has never been opened.** Every remaining commercial blocker is a decision or
+a configuration, not a build.
 
-Everything below is measured against live production. Where a claim is inferred, it says so.
+## 2. Scorecard — 19 workstreams
 
----
+### Proven strengths (measured, not claimed)
 
-## 1. The one-sentence finding
+| Area | Evidence |
+|---|---|
+| **Tenant isolation** | 21 attack probes from a real second tenant — **0 holes** (C) |
+| **Support pipeline** | intake → grounded answer → draft gate → approve → delivered (B) |
+| **Answer quality** | **83% pass**, avg 90 when passing; workhorse employee **91%** (I) |
+| **Lifecycle** | 8/8 transitions; suspension *actively refuses* (HTTP 402), not just silence (Q) |
+| **Schema recoverability** | restore drill exact on all 7 object classes, REVOKEs intact (E) |
+| **Backups** | 7/7 daily snapshots verified against the API, not the dashboard (E) |
+| **Error detection** | Sentry proven end-to-end by a deliberate probe (R) |
+| **Supply chain (npm)** | **zero production-reachable vulnerabilities**; 134 packages; 5/5 MIT (O) |
+| **Secrets history** | **no credential has ever been committed** — every commit tree checked (O) |
+| **Accessibility** | **0 contrast failures** / 104 elements; 0 unnamed icon buttons (K) |
+| **Customer manual** | **65 live, embedded, well-written KB articles** (S) |
+| **Performance** | no pressure anywhere; vector search correctly HNSW-indexed (J) |
+| **Mission rail** | compiles a plan that **writes its own human gates** (B) |
 
-**The governed core is real and provable; the loop that turns governed work into finished work is
-jammed, and every commercial blocker is a decision rather than a build.**
+### Broken or dark
 
-## 2. Scorecard
+| Area | Evidence |
+|---|---|
+| **Completion** | **0 of 48 objectives ever achieved** (F) |
+| **Decision loop** | **21 expired vs 13 decided** on the live tenant (F) |
+| **Trust ladder** | 127/127 supervised, never opened; 11 requests queued (F) |
+| **Notification** | ops alerts, connector health and Sentry all reach **only a dashboard** (E, P, R) |
+| **Reconcile job** | dead since 08-05, 245 failures/7d — blocked work cannot unblock (E) |
+| **Only real integration** | ERPNext dead 7 days, `http_402`, 6,714 retries, no circuit breaker (P) |
+| **Billing** | 0 rows configured — nobody can be charged (G) |
+| **Email** | 0 conversations ever; one secret unset (B) |
+| **Guardrails** | never fired in production — precision unmeasurable (I) |
+| **Per-person erasure** | no function exists (Q, N) |
 
-| Module | Verdict | Evidence |
+## 3. Three findings that arrived from multiple directions
+
+Findings that independent workstreams converged on carry more weight than any single measurement.
+
+**① Nothing reaches a human — found four times.** Ops alerts → in-app banner only (E). Connector
+failure → a derived UI badge only (P). Sentry issues → the Sentry dashboard only, 4 issues
+unresolved for up to 29 days (R). And the founder's phone, which *does* work, is used only for
+approvals (B). **This is one problem with four faces.**
+
+**② The trust ladder is the answer to three different questions.**
+
+* **Margin** — moving escalations to earned autonomy is worth ~50 points of gross margin at a
+  $500 price; without it the business goes *underwater as the customer succeeds* (L).
+* **Scale** — it is the built relief valve for a queue jammed at 66-in / 5-answered per week (F).
+* **Behaviour** — the founder answers governance decisions at 50–67% within the hour and routine
+  ones at 5%. They already behave like someone who wants policy calls, not per-item calls (T).
+
+**③ The system fails quietly, and always has.** A cron dead 13 days, a connector dead 7, an alarm
+ringing 20, four Sentry issues aging a month. Every one was detected correctly. None was
+announced.
+
+## 4. The register — 60 items, 57 open
+
+**security 9 · correctness 14 · measurement 12 · hygiene 22.** Authoritative state lives in
+`review/deferred-register.json`; every item carries a live query and re-verifies on each `certify`
+run. This review filed 13 of them.
+
+**The five that decide a pilot:**
+
+| # | Item | Why |
 |---|---|---|
-| Provisioning / onboarding | 🟢 proven-live | real signup path, baseline parity |
-| Support pipeline | 🟢 proven-live | intake → grounded 95% answer → draft gate → approve → delivered |
-| Knowledge ingest & retrieval | 🟢 proven-live | doc → chunk → embed → grounded the answer same minute |
-| Hosted chat / widget | 🟢 proven-live | key auth, rate limit, poll, CSAT path |
-| Mission rail (keystone) | 🟢 proven-live | compiles plan, **writes its own human gates**, plan-gate held |
-| Park / snooze | 🟢 proven-live | 7/7 incl. the last_message_at invariant |
-| Cross-tenant isolation | 🟢 proven-live | 21 attack probes, **0 holes** |
-| Schema recoverability | 🟢 proven-live | restore drill exact on all 7 object classes, REVOKEs intact |
-| Backups | 🟢 verified | 7/7 daily snapshots, no gaps (debt-map claim was stale) |
-| Approvals spine | 🟡 works, was lying | F-6 fixed + gated; 3 dead approvals remain in live queues |
-| Mobile `/m` | 🟡 works | renders, decides, delivers — since the F-6 fix |
-| DE runtime | 🟡 alive, starved | 5,695 invocations/30d, only ~700 externally valuable |
-| Objectives / completion | 🔴 **0 of 48 ever achieved** | and cannot unblock while B-11 is broken |
-| Decision loop | 🔴 **expiry > service** | 21 expired vs 13 decided on the live tenant |
-| Trust ladder | 🔴 never opened | 127/127 supervised; 11 requests queued |
-| Billing | 🔴 cannot charge | `tenant_billing_config` = 0 rows |
-| Email channel | 🔴 dark | 0 conversations ever; secret unset |
-| Voice | 🔴 zero traffic | 3 edge fns, 0 rows ever |
-| Alerting to humans | 🔴 reaches nobody | 133 unresolved; 77 firing 20 days |
-| Data restore | ⚪ unproven | never performed; PITR off = 24h loss window |
-| Legal / contracts | ⚪ honest drafts | jurisdiction, liability cap, retention all unset |
-
-## 3. The trajectory is up, and that matters
-
-`certify` had **10 sections** when this review opened on 08-11. It has **20 today** — the harness
-doubled in a week, including a probe (`no-approval-that-said-sent-and-sent-nothing`) written
-directly against a finding this review produced, and a `deferred-register` section that
-re-verifies every open item against live production on every run.
-
-Today's run: **14 pass, 6 fail.** Attribution matters more than the count —
-
-* `discovery-proposal-decisions`, `decide-discovery-proposal-behaviour` — a parallel session's
-  **in-flight** feature, not decay
-* `deferred-register` — fails *by design* while debt is open. This is the gate working
-* `ring0-probes` — the three dead approvals (F-1/F-2/F-3), known and listed
-* `role-gates` — **real**: 3 UI writes refuse `tenant_manager`/`knowledge_manager` who should pass
-* `suite` — one failing test in `write-bindings.test.ts`
-
-**A project whose gates double in a week while it finds its own defects is not decaying. It is
-becoming measurable.** That is the single most encouraging fact in this review.
-
-## 4. Ranked register — 50 items, 47 open
-
-By severity: **security 7 · correctness 12 · measurement 9 · hygiene 19.**
-Authoritative state lives in `review/deferred-register.json` (`npm run defer -- --list`); every
-item carries a live query so none can quietly go stale.
-
-**The five that decide whether a pilot succeeds:**
-
-| # | Item | Why it is top-five |
-|---|---|---|
-| 1 | **B-12** — expiries exceed decisions | The product's core loop discards work. Ship this to a customer and it buries them in week two |
-| 2 | **B-11** — reconcile job dead since 08-05 | 245 failures/7d; blocked objectives can never unblock; explains 0-of-48 |
-| 3 | **C-8** — alerts reach no human | B-11 alarmed 77 times for 20 days and nobody knew. Push exists and is unused |
-| 4 | **G-3** — trust ladder never opened | The built relief valve for #1, queued behind #1 |
-| 5 | **Billing unconfigured** | Zero rows. A signed pilot cannot be invoiced |
+| 1 | **B-12** — expiries exceed decisions | the core loop discards work; ship it and it buries the customer in week two |
+| 2 | **B-11** — reconcile job dead | 245 failures/7d; explains 0-of-48 completion |
+| 3 | **C-8** — nothing reaches a human | the multiplier on every other failure |
+| 4 | **G-3** — trust ladder shut | margin, scale and behaviour all point here |
+| 5 | **Billing unconfigured** | a signed pilot cannot be invoiced |
 
 ## 5. 30 / 60 / 90
 
-**Next 30 days — make the loop finish work.**
+**First 30 days — make the loop finish work, and make failure visible.**
 
-1. Fix **B-11** (one CHECK constraint vs one written value — hours).
-2. Route **C-8** alerts into the push channel that already works.
-3. Ship **batch decision** UX — one operator clears dozens, not one at a time.
-4. Clear the three dead approvals (**F-1/F-2/F-3**); F-1 is one founder tap.
-5. Fix **role-gates** — 3 gates refuse roles that should pass.
+1. Fix **B-11** — one CHECK constraint against one written value.
+2. **Route detection to a person** — ops alerts, connector health and Sentry into the push channel
+   that already works (**C-8**). One job, three systems; would have caught B-11 and B-13 on day one.
+3. Ship **batch decisions** — the founder answers in 2–3 hours when they engage; give them a way
+   to clear dozens at once.
+4. Restore **ERPNext** and add a **circuit breaker** (**B-13**).
+5. Clear the three dead approvals (F-1/F-2/F-3) and fix **role-gates** (3 gates refuse the wrong roles).
+6. Two one-liners: **`color-scheme: dark`** (D-13) and **rotate the Resend key** (A-6).
 
 **Days 30–60 — make it sellable.**
 
-6. Open the **trust ladder** on the single highest-volume, lowest-risk class (the 186 escalations),
-   measured, one class at a time.
-7. **Set a price, enable billing.** AI cost is $12/mo across all tenants — pick per-seat or
+7. **Open the trust ladder** on the 186 escalations, measured, one class at a time — and start
+   **capturing decision rationale**, which is the evidence a promotion needs and which 33 of 33
+   approvals lack (T).
+8. **Set a price and switch billing on.** AI costs **$12/month across all tenants**; per-seat or
    per-outcome, never per-message.
-8. **Wire email** (one secret, one domain).
-9. Contracts to counsel: jurisdiction, liability cap, **retention/deletion**.
+9. **Wire email** — one secret, one domain.
+10. **Counsel**: jurisdiction, liability cap, retention — plus name all four possible AI
+    subprocessors (**A-8**) and write `forget_end_user()` (**A-7**).
 
 **Days 60–90 — make it provable at scale.**
 
-10. **Prove a data restore** into a throwaway project (the one control still untested).
-11. Bring **dev to parity** with production (120 migrations behind) so golden-path proves today's
-    schema; fix the hardcoded drift footer (**F-8**).
-12. Run the workstreams this review has not: **I** (answer quality), **L** (unit economics),
-    **P** (connector reality), **Q** (lifecycle incl. deletion), **N** (compliance).
+11. **Prove a data restore** into a throwaway project — the last untested control.
+12. Bring **dev to parity** (120 migrations behind) and fix the **hardcoded drift footer** (F-8).
+13. **Pin the 71 floating edge imports** (D-12) — the privileged half of the system has the weaker
+    supply chain.
+14. One **guardrail red-team** (C-10) and one **rehearsed incident** (D-14).
 
 ## 6. Go / no-go
 
-**Opening a pilot beyond Outsourcetel today: NO-GO.** Not because the product is weak — the
-demo is strong and the isolation, gating and audit properties are genuinely rare — but because
-three commitments cannot currently be honoured: **we cannot invoice them, we cannot promise their
-decision queue will be answered, and we cannot honour a deletion request.**
+**Opening a pilot beyond Outsourcetel today: NO-GO** — on two commitments, not three.
 
-**Conditional GO** once four things are true, none of which is a large build:
+1. **We cannot invoice them.** `tenant_billing_config` is empty; no price exists.
+2. **We cannot promise their decisions get answered.** On our own tenant, more decisions expire
+   than are ever made.
 
-1. Decision throughput demonstrably exceeds arrival on our own tenant for two consecutive weeks
-   (B-12 green, B-11 fixed, batch UX shipped).
-2. A price exists and one tenant is successfully billed end to end.
+> **Corrected from v1.** The first synthesis listed a third blocker — *"we cannot honour a deletion
+> request"*. Workstream Q found that too strong and withdrew it: **whole-tenant deletion exists,
+> is well-guarded and writes a receipt from pre-counted rows.** What is genuinely missing is
+> **per-person erasure** and a content retention policy (A-7). That is a real compliance gap and a
+> counsel item — it is not a reason a pilot cannot start.
+
+**Conditional GO** when four things are true:
+
+1. Decision throughput exceeds arrival on our own tenant, two weeks running.
+2. A price exists and one tenant is billed end to end.
 3. Email is live and has carried a real thread.
-4. Counsel has cleared jurisdiction, liability and retention.
+4. Counsel has cleared jurisdiction, liability and retention, and A-7/A-8 are closed.
 
 Items 2–4 are days of work. Item 1 is the product question — and it is the one worth solving,
-because it is also the thing that makes the pitch true: **"digital employees that cannot act
-behind your back"** only sells if the work still gets done.
+because **"digital employees that cannot act behind your back" only sells if the work still gets
+done.**
 
-## 7. What could still change this verdict
+## 7. The trajectory is the most encouraging fact
 
-The twelve unexamined workstreams contain real risk. In descending order of what could most
-change the picture: **I** (if answer quality is poor, the demo's 95%-confidence moment is
-hollow) · **L** (whether human-review cost destroys the margin) · **Q** (whether deletion and
-suspension actually work) · **P** (whether the 2 integrations survive contact) · **J** (whether
-any of it holds at 10×). None is likely to overturn the *governance* findings, which are the
-product's differentiator and are proven.
+When this review opened on 11 August, `certify` had **10 sections**. It now has **20** — including
+a probe written directly against a defect this review produced, and a `deferred-register` section
+that re-verifies all 57 open items against live production on every run.
+
+That register **refused one of my own filings** during Workstream S, because the verification I
+wrote was sloppy enough to contradict its own claim. A control that catches the reviewer is
+working better than one that merely catches the code.
+
+**A project whose gates double in a week while it finds its own defects is not decaying. It is
+becoming measurable.**
+
+## 8. What changed since v1
+
+| Change | Workstream |
+|---|---|
+| **Deletion blocker withdrawn** from the go/no-go — tenant deletion works; per-person erasure is the real gap | Q |
+| **"No customer manual" withdrawn** — 65 live, embedded, well-written KB articles exist | S |
+| **"Legacy docs presumed stale" withdrawn** — 7 of 10 are marked and current | S |
+| Answer quality confirmed **good**, so the demo's confident moment is not hollow | I |
+| Integration count corrected from 2 to **1** — Stripe has never executed anything | P |
+| Unit economics quantified: human review is **19–56× AI cost** | L |
+| Notification gap escalated to the **most-repeated finding** in the review | R |
+| UX and accessibility reclassified as a **strength** | K |
+| Supply chain reclassified as a **strength** (npm) with the risk isolated to edge imports | O |
+| The bottleneck reframed: **selection, not latency** | T |
