@@ -1173,6 +1173,26 @@
           "n": 0
         }
       }
+    },
+    {
+      "id": "B-13",
+      "what": "The only real external integration has been dead for a week and nobody noticed: ERPNext last succeeded 2026-08-11 21:30, has failed continuously since with http_402 (the dev Frappe Cloud instance hit a payment wall), and has accumulated 6714 consecutive failures — roughly 43 retries an hour against a dead endpoint for 7 days, with no circuit breaker. The connectors.status column still reads 'connected' (stale stored marker; the UI derives health correctly and would show 'Not working', so the display is honest). This is C-8 again: the failure alarmed nowhere a human reads",
+      "where": "connectors.provider='erpnext' on outsourcetel-hq; docs/61",
+      "severity": "correctness",
+      "why_skipped": "walked-past",
+      "first_named": {
+        "date": "2026-08-18",
+        "source": "docs/61 Workstream P, 2026-08-18"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "sql",
+        "sql": "select coalesce(max(consecutive_failures),0)::int as n from connectors where provider='erpnext'",
+        "open_if": {
+          "op": ">=",
+          "n": 3
+        }
+      }
     }
   ]
 }
