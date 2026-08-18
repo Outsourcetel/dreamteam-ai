@@ -1317,7 +1317,7 @@
         "date": "2026-08-18",
         "source": "docs/68 Workstream S, 2026-08-18"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
@@ -1330,7 +1330,9 @@
           "op": "==",
           "n": 0
         }
-      }
+      },
+      "closed_by": "docs commit: superseded banners added to docs/08 and docs/09, each stating the measured gap (46 of 53 tables absent; 16 endpoints and no /v1 surface)",
+      "closed_on": "2026-08-18"
     }
   ]
 }

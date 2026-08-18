@@ -1,5 +1,16 @@
 # 08 — Database Design
 
+> ⚠ **SUPERSEDED — this describes a schema that was designed and then replaced.**
+> Measured against production on 2026-08-18: of the **53 tables named below, 46 do
+> not exist**. The vocabulary here (`agents`, `actions`, `approval_requests`,
+> `billing_subscriptions`, `audit_trail`, `ai_token_usage`) is the v1 design; the
+> system actually shipped `digital_employees`, `action_definitions`,
+> `human_tasks`, `audit_events`, `de_token_usage`. Read this as the original
+> intent, never as a description of the database. For what is really there, query
+> `information_schema` or read `supabase/baseline/full_schema.sql`, which the
+> restore drill regenerates from production. (register D-15, docs/68)
+
+
 **DreamTeam AI — Enterprise Database Blueprint**
 Version 1.0 | 2026-07-01
 
