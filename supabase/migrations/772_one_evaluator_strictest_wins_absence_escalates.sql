@@ -5,11 +5,24 @@
 -- separately diverge — mig 755 had to unpick exactly that between
 -- list_de_trust_surface and decide_action_execution.
 --
--- ⛔ ABSENCE ESCALATES. The clause this replaces reads
---     `p_amount_cents is null or (...)`
--- which is why 115 declared money limits bind on 0.6% of approvals: a missing
--- measure was treated as permission. Here a rule whose dimension is absent
--- from p_measures returns require_human, reason 'unmeasured'.
+-- ⛔ ABSENCE ESCALATES — AT EVERY LAYER THIS FUNCTION TOUCHES, not only the
+-- measures. The clause this replaces reads `p_amount_cents is null or (...)`,
+-- which is why 115 declared money limits bind on 0.6% of approvals: a
+-- missing measure was treated as permission. Fix round 1 found the same
+-- disease one level down, three more times:
+--   · a JSON-null measure value (`{"amount_cents": null}`) still satisfies
+--     `?` — the key is PRESENT — so a null was reaching the comparison and
+--     tripping `false` (numeric) or `coalesce(...,false)` (boolean) instead
+--     of escalating. 74% of pending approvals carry no amount this way.
+--   · every input except p_tenant_id was trusted: an unrecognised
+--     p_actor_kind, a scoped kind with no p_actor_id, or a null p_category
+--     each silently NARROWED the matching rule set and returned a MORE
+--     permissive verdict than "I don't know" warrants.
+--   · a measure that fails to parse (`{"amount_cents":"n/a"}`) used to abort
+--     the whole function with a Postgres exception — worse than permissive,
+--     because `.rpc()` resolves on a Postgres error and a caller that
+--     doesn't check for one would treat the failure as silence.
+-- All four now escalate to require_human with a reason instead.
 --
 -- STRICTEST WINS: deny > require_second_approver > require_human > allow. A
 -- rule can only ever tighten, so a customer may add one without auditing the
@@ -43,10 +56,28 @@ declare
   v_val        numeric;
   v_present    boolean;
   v_trips      boolean;
+  v_unreadable boolean;
 begin
   if p_tenant_id is null then
     return jsonb_build_object('outcome','require_human',
       'reasons', jsonb_build_array(jsonb_build_object('why','no workspace in context')));
+  end if;
+
+  -- ⛔ FAIL CLOSED ON THE ACTOR, not only on the measures. Left unguarded, an
+  -- unrecognised or absent p_actor_kind, or a scoped kind with no
+  -- p_actor_id, would just match nothing in the loop below and fall out
+  -- through v_worst's default of 0 — permission by omission, one parameter
+  -- over from the bug this function exists to end.
+  if p_actor_kind is null or p_actor_kind not in ('all','role','user','org_unit','de') then
+    return jsonb_build_object('outcome','require_human',
+      'reasons', jsonb_build_array(jsonb_build_object(
+        'why', format('unknown actor kind: %s is not a kind this evaluator recognizes', coalesce(p_actor_kind, '<null>')))));
+  end if;
+
+  if p_actor_kind <> 'all' and p_actor_id is null then
+    return jsonb_build_object('outcome','require_human',
+      'reasons', jsonb_build_array(jsonb_build_object(
+        'why', format('unidentified actor: actor_kind %s was given with no actor_id', p_actor_kind))));
   end if;
 
   for r in
@@ -55,33 +86,55 @@ begin
       join authority_dimensions ad on ad.dimension = ar.dimension
      where ar.tenant_id = p_tenant_id
        and ar.is_active
-       and (ar.category is null or ar.category = p_category)
+       -- ⛔ p_category IS NULL must NOT narrow to global-only rules.
+       -- task_approval_facts can genuinely return a null category, and the
+       -- strictest reading of "I don't know the category" is "every
+       -- category-scoped rule applies", not "no category-scoped rule does".
+       and (p_category is null or ar.category is null or ar.category = p_category)
        and (
          ar.actor_kind = 'all'
          or (ar.actor_kind = p_actor_kind and ar.actor_id = p_actor_id)
          -- ⚠ A PERSON IS ALSO REACHED BY THEIR ROLE AND THEIR ORG UNIT, and
-         -- by any unit ABOVE the one they belong to. This mirrors
-         -- has_approval_authority exactly, because step 2 proves the cutover
-         -- with a differential against it — an evaluator that only matched
-         -- exact actor ids would fail that differential on every role-scoped
-         -- and unit-scoped row, which is 151 rows today.
+         -- by any unit ABOVE the one they belong to. The walk direction
+         -- mirrors has_approval_authority (mig 593) — an evaluator that only
+         -- matched exact actor ids would fail step 2's differential against
+         -- it on every role-scoped and unit-scoped row, which is 151 rows
+         -- today. It does NOT mirror 593's is_active pruning: see the note
+         -- at the recursive CTE below for why that pruning would fail open
+         -- here.
          or (p_actor_kind = 'user' and ar.actor_kind = 'role' and exists (
                select 1 from profiles pr
                 where pr.user_id = p_actor_id and pr.tenant_id = p_tenant_id
                   and coalesce(pr.is_active, true)
                   and pr.role = ar.actor_role))
          or (p_actor_kind = 'user' and ar.actor_kind = 'org_unit' and exists (
+               -- ⚠ THIS WALK MUST NOT PRUNE ON is_active. mig 593 prunes an
+               -- inactive intermediate unit out of a walk that computes
+               -- GRANTS — losing a branch there loses authority, which
+               -- fails closed. Here the walk computes a RESTRICTION's
+               -- reach: losing a branch would let one inactive intermediate
+               -- unit silently exempt its whole live subtree from a rule
+               -- above it, which fails OPEN. Do not "restore" an is_active
+               -- filter here to make this match 593 again — the polarity
+               -- difference is the point, not an oversight.
                with recursive below as (
                  select ar.actor_id as id
                  union
-                 select u.id from org_units u join below b on u.parent_id = b.id where u.is_active
+                 select u.id from org_units u join below b on u.parent_id = b.id
                )
                select 1 from org_unit_members m
                 where m.user_id = p_actor_id and m.is_active
                   and m.org_unit_id in (select id from below)))
        )
+     order by ar.dimension, ar.comparator, ar.threshold, ar.id
   loop
-    v_present := v_measures ? r.dimension;
+    v_rank := 0;  -- local to this rule; only "if v_rank > v_worst" below promotes it
+
+    -- ⛔ `?` TESTS KEY PRESENCE, NOT MEASUREMENT. {"amount_cents": null} has
+    -- the key, and 74% of pending approvals carry no amount exactly that
+    -- way — a JSON null must be treated like an absent key, not like zero
+    -- or false.
+    v_present := (v_measures ? r.dimension) and jsonb_typeof(v_measures -> r.dimension) <> 'null';
 
     if not v_present then
       -- ⛔ absence escalates. Never `or` past it.
@@ -91,29 +144,60 @@ begin
         'outcome', 'require_human',
         'why', format('unmeasured: this action did not report %s, and a rule depends on it', r.dimension));
     else
-      if r.value_type = 'boolean' then
-        v_val := case when coalesce((v_measures->>r.dimension)::boolean, false) then 1 else 0 end;
-      else
-        v_val := (v_measures->>r.dimension)::numeric;
-      end if;
-
-      v_trips := case r.comparator
-        when '>'  then v_val >  r.threshold
-        when '>=' then v_val >= r.threshold
-        when '<'  then v_val <  r.threshold
-        when '<=' then v_val <= r.threshold
-        when 'is' then v_val =  r.threshold
-        else false
+      -- ⛔ A MALFORMED MEASURE FAILS CLOSED, NOT RAISES. This function IS the
+      -- fail-closed guarantee; it cannot delegate that guarantee back to a
+      -- caller by letting a bad cast abort the transaction — this repo has
+      -- a standing trap where `.rpc()` resolves on a Postgres error, so an
+      -- unhandled exception here can read as silence, not as a refusal.
+      v_unreadable := false;
+      begin
+        if r.value_type = 'boolean' then
+          v_val := case when coalesce((v_measures->>r.dimension)::boolean, false) then 1 else 0 end;
+        else
+          v_val := (v_measures->>r.dimension)::numeric;
+        end if;
+      exception when others then
+        v_unreadable := true;
       end;
 
-      if not v_trips then continue; end if;
+      if v_unreadable then
+        v_rank := 1;
+        v_reasons := v_reasons || jsonb_build_object(
+          'dimension', r.dimension, 'comparator', r.comparator, 'threshold', r.threshold,
+          'outcome', 'require_human',
+          'why', format('unreadable measure: %s could not be read as %s', r.dimension, r.value_type));
+      else
+        v_trips := case r.comparator
+          when '>'  then v_val >  r.threshold
+          when '>=' then v_val >= r.threshold
+          when '<'  then v_val <  r.threshold
+          when '<=' then v_val <= r.threshold
+          when 'is' then v_val =  r.threshold
+          else null
+        end;
 
-      v_rank := case r.outcome
-        when 'deny' then 3 when 'require_second_approver' then 2 else 1 end;
-      v_reasons := v_reasons || jsonb_build_object(
-        'dimension', r.dimension, 'comparator', r.comparator, 'threshold', r.threshold,
-        'outcome', r.outcome,
-        'why', format('%s %s %s', r.dimension, r.comparator, r.threshold));
+        if v_trips is null then
+          -- Unknown comparator — only reachable if the registry ever grows
+          -- one this function was not updated to evaluate. Escalate, do not
+          -- raise: raising is exactly what the branch above exists to stop
+          -- doing, and silently not-firing is exactly the bug this whole
+          -- function exists to end.
+          v_rank := 1;
+          v_reasons := v_reasons || jsonb_build_object(
+            'dimension', r.dimension, 'comparator', r.comparator, 'threshold', r.threshold,
+            'outcome', 'require_human',
+            'why', format('unknown comparator: %s is not understood by this evaluator', r.comparator));
+        elsif not v_trips then
+          continue;
+        else
+          v_rank := case r.outcome
+            when 'deny' then 3 when 'require_second_approver' then 2 else 1 end;
+          v_reasons := v_reasons || jsonb_build_object(
+            'dimension', r.dimension, 'comparator', r.comparator, 'threshold', r.threshold,
+            'outcome', r.outcome,
+            'why', format('%s %s %s', r.dimension, r.comparator, r.threshold));
+        end if;
+      end if;
     end if;
 
     if v_rank > v_worst then v_worst := v_rank; end if;
