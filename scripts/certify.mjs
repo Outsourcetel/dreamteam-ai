@@ -916,11 +916,17 @@ const sections = [
       // claude/docs54-stage-c — a source the union does not read, and one the
       // 715/717 note did not name because that pair never sat on a branch.
       //
-      // So the gap is wider than claim-to-apply: a number can be spent where
-      // no consulted source can see it. Reading unmerged origin branches would
-      // have caught this one and is the cheapest next move; taking the claim
-      // in the LEDGER at claim time closes both and is still the real fix.
-      // Recorded here rather than attempted in passing.
+      // ⚠ CORRECTED SAME DAY, because the first version of this note pointed
+      // at the wrong fix. It said the gap was that migrate:next cannot read
+      // unmerged branches. It reads the PRODUCTION LEDGER — verified by
+      // running it: `local 755 · origin 755 · prod ledger 757`. So the branch
+      // is only why the number was invisible BEFORE their apply; the reason it
+      // was still invisible AT MY CLAIM is that they had not applied yet. That
+      // is the SAME claim-to-apply gap as 669 and 715/717, for the fourth time.
+      //
+      // Reading branches would narrow the window; only taking the claim in the
+      // ledger AT CLAIM TIME closes it. Do not let this list grow a fifth entry
+      // that re-diagnoses the same hole. Recorded, not attempted in passing.
       '754',
     ]);
     const names = readdirSync('supabase/migrations').filter((f) => f.endsWith('.sql'));
