@@ -1217,6 +1217,26 @@
           "n": 1
         }
       }
+    },
+    {
+      "id": "C-11",
+      "what": "get_de_performance_summary reports responses_this_month=0 for the only employee that has any traffic. Technical Support on outsourcetel-hq handled 159 conversations in 30 days and carries 111 eval judgments; the summary a human reads to judge that employee says zero responses, and avg_csat, escalation_rate and resolution_rate are all null. Denominator stated: 6 active HQ employees compared, 5 genuinely have 0 conversations and are reported correctly, so the counter is wrong on 1 of the 1 rows capable of testing it. roi_hours_saved now returns null rather than a fabricated figure (an honest repair since docs/51), but the volume line beneath it is broken",
+      "where": "public.get_de_performance_summary -> responses_this_month; docs/63",
+      "severity": "measurement",
+      "why_skipped": "walked-past",
+      "first_named": {
+        "date": "2026-08-18",
+        "source": "docs/63 Workstream M, 2026-08-18"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "sql",
+        "sql": "select count(*)::int as n from digital_employees d where d.status='active' and (select count(*) from de_conversations c where c.de_id=d.id and c.created_at>now()-interval '30 days') > 0 and coalesce((public.get_de_performance_summary(d.id)->>'responses_this_month')::int,0) = 0",
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        }
+      }
     }
   ]
 }
