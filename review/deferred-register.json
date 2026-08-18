@@ -394,7 +394,7 @@
         "date": "2026-08-12",
         "source": "docs/51-measurement-organs-audit.md"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
@@ -408,7 +408,9 @@
           "n": 0
         },
         "note": "INVERTED POLARITY, deliberately: this item is open while the count is ZERO. Closing it means either wiring a reader or dropping the function — either way the grep changes. A register that could only express 'open when nonzero' would have to carry this one on a claim."
-      }
+      },
+      "closed_by": "src/lib/api.ts fetchDispatchHealth + PlatformConsolePage System Health panel — the function now has a reader on the platform-admin page whose subtitle previously admitted connector health was the only signal tracked",
+      "closed_on": "2026-08-18"
     },
     {
       "id": "C-3",

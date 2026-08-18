@@ -1077,3 +1077,29 @@ export const fetchPlatformTenantOverview = async (): Promise<Record<string, Tena
   const rows = (data ?? []) as TenantOverviewRow[];
   return Object.fromEntries(rows.map((r) => [r.tenant_id, r]));
 };
+
+/** Outbound-dispatch and scheduled-job health for a window (platform admin only —
+ *  get_dispatch_health raises for anyone else).
+ *
+ *  This reader exists because the function did not have one (register C-2). It
+ *  was written in migration 366 and then read by nothing, which is the exact
+ *  reason two failures in this review went unseen for days: the reconcile job
+ *  failing 48 times a day, and a connector retried 6,700 times against a dead
+ *  endpoint. Both are counted here, and nobody was counting. */
+export interface DispatchHealth {
+  window_hours: number;
+  http_total: number;
+  http_failed: number;
+  http_timed_out: number;
+  cron_runs: number;
+  cron_failed: number;
+  worst_error: string | null;
+  last_failure_at: string | null;
+}
+
+export const fetchDispatchHealth = async (hours = 24): Promise<DispatchHealth | null> => {
+  const { data, error } = await supabase.rpc('get_dispatch_health', { p_hours: hours });
+  if (error) { console.error('fetchDispatchHealth:', error.message); return null; }
+  const row = (data ?? [])[0] as DispatchHealth | undefined;
+  return row ?? null;
+};
