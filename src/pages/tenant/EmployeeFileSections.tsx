@@ -17,6 +17,7 @@ import type { Page } from '../../types';
 import { fmtMoneyK } from '../../lib/customerApi';
 import { getApprovalThresholdCents } from '../../lib/guardrailApi';
 import { setAutonomyDial, getApprovalEvidence } from '../../lib/autonomyApi';
+import { listReviewNarrativeSettings, setReviewNarrativeSettings, narrateReview } from '../../lib/reviewNarrativeApi';
 import type { ApprovalEvidence } from '../../lib/autonomyApi';
 import {
   computeTrustEvidence, requestTrustPromotion, listTrustHistory, listDeTrustSurface,
@@ -530,23 +531,50 @@ export function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
 // { skills: [{ skill, value, proficiency }], ...metric aggregates }.
 type ReviewSkillSnap = { skill: string; value: number | null; proficiency: number | null };
 type ReviewRow = {
-  id: string; period_start: string; verdict: string; summary: string; status: string; created_at: string;
+  id: string; period_start: string; period_end: string;
+  verdict: string; summary: string; status: string; created_at: string;
   metrics_snapshot: { skills?: ReviewSkillSnap[] } | null;
+  // Optional AI commentary (mig 767). NEVER the verdict — it is written by a
+  // separate RPC that names three narrative columns and mentions no verdict.
+  ai_narrative: string | null;
+  ai_narrative_model: string | null;
+  ai_narrative_at: string | null;
 };
 export function DeReviewsPanel({ de }: { de: DigitalEmployee }) {
   const canManage = useCanManageDe();
+  const { authedUser, isDTUser } = useAuth();
+  const canConfigure = isDTUser || ['tenant_owner', 'tenant_admin'].includes(authedUser?.role ?? '');
   const [reviews, setReviews] = useState<ReviewRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [narrating, setNarrating] = useState<string | null>(null);
+  const [narrativeError, setNarrativeError] = useState<string | null>(null);
+  const [settings, setSettings] = useState<{ enabled: boolean; instructions: string | null } | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [draftInstructions, setDraftInstructions] = useState('');
 
   const load = useCallback(async () => {
     const { data: r, error: rErr } = await supabase.from('de_performance_reviews')
-      .select('id, period_start, verdict, summary, status, created_at, metrics_snapshot')
+      .select('id, period_start, period_end, verdict, summary, status, created_at, metrics_snapshot, ai_narrative, ai_narrative_model, ai_narrative_at')
       .eq('de_id', de.id).order('created_at', { ascending: false }).limit(3);
     if (rErr) { setError(rErr.message); return; }
     setReviews((r ?? []) as ReviewRow[]);
+    // What applies to THIS employee: its own override if set, else the
+    // workspace default. Absence renders as off, never as a guess.
+    try {
+      const s = await listReviewNarrativeSettings(de.id);
+      setSettings(s.effective ? { enabled: s.effective.enabled, instructions: s.effective.instructions } : null);
+      setDraftInstructions(s.effective?.instructions ?? '');
+    } catch { setSettings(null); }
   }, [de.id]);
   useEffect(() => { void load(); }, [load]);
+
+  const narrate = async (reviewId: string, force = false) => {
+    setNarrating(reviewId); setNarrativeError(null);
+    try { await narrateReview(reviewId, force); await load(); }
+    catch (e) { setNarrativeError((e as Error)?.message ?? 'Could not write the commentary.'); }
+    finally { setNarrating(null); }
+  };
 
   const run = async (fn: () => PromiseLike<{ error: { message: string } | null }>) => {
     setBusy(true); setError(null);
@@ -562,18 +590,79 @@ export function DeReviewsPanel({ de }: { de: DigitalEmployee }) {
         <h3 className="text-base font-semibold text-white">Performance reviews</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">real metrics</span>
       </div>
+      {/* ⚠ This used to read "Quarterly reviews … a below-threshold verdict".
+          Migration 765 ended both halves: a review measures a WINDOW it names
+          rather than a quarter, and it judges the goals this workspace set
+          rather than three hardcoded numbers. Copy describing the old
+          behaviour is how the next reader inherits the old belief. */}
       <p className="text-[11px] text-dt-muted mb-3">
-        Quarterly reviews record an honest verdict from real metrics; a below-threshold
-        verdict opens an improvement plan with a written consequence.
+        A review records an honest verdict against the goals you set for this employee,
+        over the window it names. Miss one and it opens an improvement plan with a
+        written consequence. No goals set means no verdict — never a judgment against
+        numbers you did not choose.
       </p>
       {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      {narrativeError && <p className="text-xs text-amber-300 mb-2">{narrativeError}</p>}
 
       <div className="flex items-center gap-2 mb-1.5">
+        {canConfigure && (
+          <button onClick={() => setShowSettings(v => !v)}
+            className="text-[10px] text-dt-muted hover:text-dt-support">
+            AI commentary: {settings?.enabled ? 'on' : 'off'}
+          </button>
+        )}
         <button onClick={() => void run(() => supabase.rpc('run_de_performance_review'))} disabled={busy || !canManage}
           className="ml-auto text-[10px] text-indigo-400 hover:text-indigo-300 disabled:opacity-50">
           {busy ? 'Working…' : 'Run review now'}
         </button>
       </div>
+
+      {showSettings && canConfigure && (
+        <div className="rounded-xl border border-dt-border bg-dt-page p-3 mb-2">
+          <p className="text-[11px] text-dt-support mb-2">
+            Optional AI commentary sits <em>beside</em> the verdict and explains it in plain
+            language. It can never change a verdict, a number, or whether an improvement plan
+            opens — those are decided by measurement before any model is asked.
+          </p>
+          <textarea
+            value={draftInstructions}
+            onChange={e => setDraftInstructions(e.target.value)}
+            maxLength={2000}
+            rows={3}
+            placeholder="How should it be written? e.g. plain English for a business owner, under 100 words, never speculate about causes."
+            className="w-full text-[11px] rounded-lg bg-dt-inset border border-dt-border p-2 text-dt-support"
+          />
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-[10px] text-dt-faint">{draftInstructions.length}/2000 · applies to this employee</span>
+            <button
+              onClick={async () => {
+                setBusy(true); setNarrativeError(null);
+                try {
+                  await setReviewNarrativeSettings({ enabled: true, instructions: draftInstructions, deId: de.id });
+                  await load();
+                } catch (e) { setNarrativeError((e as Error)?.message ?? 'Could not save.'); }
+                finally { setBusy(false); }
+              }}
+              disabled={busy}
+              className="ml-auto text-[10px] text-indigo-400 hover:text-indigo-300 disabled:opacity-50">
+              Turn on & save
+            </button>
+            {settings?.enabled && (
+              <button
+                onClick={async () => {
+                  setBusy(true); setNarrativeError(null);
+                  try { await setReviewNarrativeSettings({ enabled: false, instructions: draftInstructions, deId: de.id }); await load(); }
+                  catch (e) { setNarrativeError((e as Error)?.message ?? 'Could not save.'); }
+                  finally { setBusy(false); }
+                }}
+                disabled={busy}
+                className="text-[10px] text-dt-muted hover:text-dt-support disabled:opacity-50">
+                Turn off
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {reviews.length === 0 ? (
         <p className="text-xs text-dt-muted">No reviews yet — they run quarterly, or on demand.</p>
       ) : (
@@ -587,7 +676,11 @@ export function DeReviewsPanel({ de }: { de: DigitalEmployee }) {
                   : 'bg-dt-panel text-dt-support'}`}>
                   {r.verdict === 'insufficient_data' ? 'insufficient data' : r.verdict}
                 </span>
-                <span className="text-[11px] text-dt-muted">quarter starting {r.period_start}</span>
+                {/* ⚠ was "quarter starting {period_start}". Mig 765 made
+                    period_start the START OF THE MEASURED WINDOW, not a
+                    quarter boundary — the old label named a period the row no
+                    longer describes. */}
+                <span className="text-[11px] text-dt-muted">{r.period_start} to {r.period_end}</span>
                 {r.status === 'open' ? (
                   <button onClick={() => void run(() => supabase.rpc('acknowledge_de_performance_review', { p_review_id: r.id }))}
                     disabled={busy || !canManage}
@@ -599,6 +692,34 @@ export function DeReviewsPanel({ de }: { de: DigitalEmployee }) {
                 )}
               </div>
               <p className="text-[11px] text-dt-support mt-1.5">{r.summary}</p>
+
+              {/* The optional AI commentary. Rendered UNDER the verdict and the
+                  measured summary, never in place of either, and always with
+                  its author named — a narrative with no recorded author is a
+                  sentence the reader cannot weigh. */}
+              {r.ai_narrative ? (
+                <div className="mt-2 rounded-lg border border-dt-border bg-dt-inset p-2.5">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300">AI-written</span>
+                    <span className="text-[10px] text-dt-faint">
+                      {r.ai_narrative_model}{r.ai_narrative_at ? ` · ${r.ai_narrative_at.slice(0, 10)}` : ''}
+                    </span>
+                    <span className="text-[10px] text-dt-faint">— commentary only; the verdict above is measured</span>
+                    {canManage && (
+                      <button onClick={() => void narrate(r.id, true)} disabled={narrating === r.id}
+                        className="ml-auto text-[10px] text-dt-muted hover:text-dt-support disabled:opacity-50">
+                        {narrating === r.id ? 'Writing…' : 'Rewrite'}
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-dt-support whitespace-pre-wrap">{r.ai_narrative}</p>
+                </div>
+              ) : settings?.enabled && canManage ? (
+                <button onClick={() => void narrate(r.id)} disabled={narrating === r.id}
+                  className="mt-1.5 text-[10px] text-indigo-400 hover:text-indigo-300 disabled:opacity-50">
+                  {narrating === r.id ? 'Writing…' : 'Explain this review'}
+                </button>
+              ) : null}
               {/* The skills snapshot each review captures — stored since the
                   first review and rendered nowhere until docs/31 Q10. */}
               {(() => {
