@@ -10,12 +10,18 @@
       "where": "pg_default_acl / storage.objects",
       "severity": "security",
       "why_skipped": "out-of-scope",
-      "first_named": { "date": "2026-08-12", "source": "docs/52-authenticated-write-perimeter.md §9" },
+      "first_named": {
+        "date": "2026-08-12",
+        "source": "docs/52-authenticated-write-perimeter.md §9"
+      },
       "state": "open",
       "verification": {
         "kind": "sql",
         "sql": "select (has_table_privilege('anon','storage.objects','TRUNCATE')::int + has_table_privilege('authenticated','storage.objects','TRUNCATE')::int) as n",
-        "open_if": { "op": ">=", "n": 1 },
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        },
         "note": "Asks the catalogue the sharpest single question the finding contains. RLS does not apply to TRUNCATE, so either grant is one statement away from destroying every tenant's stored objects."
       }
     },
@@ -25,12 +31,18 @@
       "where": "pg_default_acl (schema public, grantor supabase_admin)",
       "severity": "security",
       "why_skipped": "blocked",
-      "first_named": { "date": "2026-08-12", "source": "commit 09c16c6e / mig 715" },
+      "first_named": {
+        "date": "2026-08-12",
+        "source": "commit 09c16c6e / mig 715"
+      },
       "state": "open",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from pg_default_acl d join pg_namespace ns on ns.oid = d.defaclnamespace join pg_roles r on r.oid = d.defaclrole where ns.nspname = 'public' and r.rolname = 'supabase_admin' and d.defaclacl::text like '%anon=arwdDxtm%'",
-        "open_if": { "op": ">=", "n": 1 },
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        },
         "note": "postgres is not a superuser and not a member of supabase_admin, so this cannot be revoked from here. Compensating control: certify's authenticated-write-perimeter arm reads live grants."
       }
     },
@@ -40,12 +52,18 @@
       "where": "schema net",
       "severity": "security",
       "why_skipped": "blocked",
-      "first_named": { "date": "2026-08-10", "source": "docs/45-certification-scoreboard.md; re-named docs/52 §9" },
+      "first_named": {
+        "date": "2026-08-10",
+        "source": "docs/45-certification-scoreboard.md; re-named docs/52 §9"
+      },
       "state": "open",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace where ns.nspname = 'net' and p.proname in ('http_post','http_get','http_delete') and has_function_privilege('anon', p.oid, 'EXECUTE')",
-        "open_if": { "op": ">=", "n": 1 },
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        },
         "note": "docs/53 carried this on the naming document (⏸). Re-probed 2026-08-12: proacl is NULL on all 12 net routines, i.e. the Postgres default of EXECUTE to PUBLIC, so anon holds it on all three. The only thing between that grant and a live SSRF primitive is that `net` is not in PostgREST's exposed-schema list — certify's net-not-exposed arm is the standing check on that half."
       }
     },
@@ -55,12 +73,18 @@
       "where": "public.get_de_cost_metrics",
       "severity": "security",
       "why_skipped": "founder-decision",
-      "first_named": { "date": "2026-08-10", "source": "docs/45-certification-scoreboard.md" },
+      "first_named": {
+        "date": "2026-08-10",
+        "source": "docs/45-certification-scoreboard.md"
+      },
       "state": "open",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace where ns.nspname = 'public' and p.proname = 'get_de_cost_metrics' and p.prosrc not ilike '%can_access_de%'",
-        "open_if": { "op": ">=", "n": 1 },
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        },
         "note": "Narrowing changes what people see, so it is a product call, not a bug fix. Pinned on the responsibility predicate (can_access_de) because that is what narrowing it would have to use. Residual: if the function is dropped entirely this reads CLOSED, which is the correct verdict for the exposure but not for the feature."
       }
     },
@@ -70,12 +94,18 @@
       "where": "public.profiles",
       "severity": "security",
       "why_skipped": "walked-past",
-      "first_named": { "date": "2026-08-10", "source": "mig 663 header / docs/45-certification-scoreboard.md" },
+      "first_named": {
+        "date": "2026-08-10",
+        "source": "mig 663 header / docs/45-certification-scoreboard.md"
+      },
       "state": "open",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from public.profiles where tenant_id is null",
-        "open_if": { "op": ">=", "n": 1 }
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        }
       }
     },
     {
@@ -84,12 +114,18 @@
       "where": "vault.secrets",
       "severity": "security",
       "why_skipped": "founder-decision",
-      "first_named": { "date": "2026-08-06", "source": "memory: project_product_kb_outsourcetel" },
+      "first_named": {
+        "date": "2026-08-06",
+        "source": "memory: project_product_kb_outsourcetel"
+      },
       "state": "open",
       "verification": {
         "kind": "none",
         "why_unverifiable": "the rotation happens inside vault.secrets, which only a platform_super_admin may read or write — correctly. No read this probe can make distinguishes a rotated key from the original, so a mechanical check here would be theatre.",
-        "claim": { "file": "docs/53-deferred-work-census.md", "anchor": "Resend API key rotation" }
+        "claim": {
+          "file": "docs/53-deferred-work-census.md",
+          "anchor": "Resend API key rotation"
+        }
       }
     },
     {
@@ -98,14 +134,20 @@
       "where": "MobileShell.tsx / human_tasks decide path",
       "severity": "correctness",
       "why_skipped": "founder-decision",
-      "first_named": { "date": "2026-08-12", "source": "docs/50-review-scorecard.md (UI-proven)" },
+      "first_named": {
+        "date": "2026-08-12",
+        "source": "docs/50-review-scorecard.md (UI-proven)"
+      },
       "state": "closed",
       "closed_by": "mig 721 (trg_sync_conversation_draft) + commit f778f358",
       "closed_on": "2026-08-12",
       "verification": {
         "kind": "sql",
         "sql": "select (1 - least(count(*),1))::int as n from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_namespace ns on ns.oid = c.relnamespace join pg_proc p on p.oid = t.tgfoid where ns.nspname = 'public' and c.relname = 'human_tasks' and t.tgname = 'trg_sync_conversation_draft' and not t.tgisinternal and t.tgenabled = 'O'",
-        "open_if": { "op": ">=", "n": 1 },
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        },
         "note": "docs/53 recorded this OPEN. Re-verified 2026-08-12: mig 721 landed and moved the consequence onto the row as an AFTER UPDATE OF status trigger. Open again the moment the trigger is dropped or disabled — a disabled trigger is indistinguishable from a deleted one at runtime. certify's stranded-draft probe holds the richer arms (allow-list, approvals-only, data)."
       }
     },
@@ -115,12 +157,18 @@
       "where": "public.human_tasks (task 03aaa6dd, outsourcetel-hq)",
       "severity": "correctness",
       "why_skipped": "founder-decision",
-      "first_named": { "date": "2026-08-11", "source": "certify ring-0 (unexecutable-approval, arm no-executor)" },
+      "first_named": {
+        "date": "2026-08-11",
+        "source": "certify ring-0 (unexecutable-approval, arm no-executor)"
+      },
       "state": "open",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from public.human_tasks ht where ht.status = 'pending' and ht.type = 'action_approval' and not exists (select 1 from public.action_executions ae where ae.task_id = ht.id or ae.resolves_task_id = ht.id)",
-        "open_if": { "op": ">=", "n": 1 },
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        },
         "note": "Closes when a human withdraws or re-raises the task. This register REPORTS; it never decides. Deliberately not keyed to that one task id — an exemption keyed to the single row a check finds is how a gate becomes theatre."
       }
     },
@@ -130,12 +178,18 @@
       "where": "public.action_executions (bfb462a0)",
       "severity": "correctness",
       "why_skipped": "founder-decision",
-      "first_named": { "date": "2026-08-11", "source": "commit db6591f2" },
+      "first_named": {
+        "date": "2026-08-11",
+        "source": "commit db6591f2"
+      },
       "state": "open",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from public.action_executions ae join public.action_definitions ad on ad.id = ae.action_definition_id join public.human_tasks ht on ht.id = coalesce(ae.task_id, ae.resolves_task_id) where ht.status = 'pending' and ad.status <> 'active'",
-        "open_if": { "op": ">=", "n": 1 },
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        },
         "note": "It is a decision about another workspace's pending work, which is why nobody here may clear it."
       }
     },
@@ -145,12 +199,18 @@
       "where": "public.onboarding_template_versions (outsourcetel-hq, SaaS onboarding — starter v5)",
       "severity": "correctness",
       "why_skipped": "founder-decision",
-      "first_named": { "date": "2026-08-12", "source": "certify ring-0 (onboarding-bindings-are-runnable)" },
+      "first_named": {
+        "date": "2026-08-12",
+        "source": "certify ring-0 (onboarding-bindings-are-runnable)"
+      },
       "state": "open",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from public.onboarding_template_versions v join public.onboarding_templates tpl on tpl.id = v.template_id cross join lateral jsonb_array_elements(v.items) i cross join lateral (select public.onboarding_verb_verdict(v.tenant_id, i->>'action_key') as verdict) r where coalesce(i->>'action_key','') <> '' and (tpl.version = v.version or exists (select 1 from public.onboarding_projects p where p.template_version_id = v.id)) and (not coalesce((r.verdict->>'reachable')::boolean,false) or (coalesce((r.verdict->>'desk_known')::boolean,false) and not coalesce((r.verdict->>'role_ok')::boolean,false)))",
-        "open_if": { "op": ">=", "n": 1 },
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        },
         "note": "Asks onboarding_verb_verdict — the ONE place this predicate is written (mig 693) — rather than re-inlining it. A probe whose rule disagrees with the runtime's manufactures findings and misses real ones in the same pass."
       }
     },
@@ -160,14 +220,22 @@
       "where": "supabase/functions/widget-ask/index.ts ~L631",
       "severity": "correctness",
       "why_skipped": "founder-decision",
-      "first_named": { "date": "2026-08-12", "source": "docs/50-review-scorecard.md (F-5)" },
+      "first_named": {
+        "date": "2026-08-12",
+        "source": "docs/50-review-scorecard.md (F-5)"
+      },
       "state": "open",
       "verification": {
         "kind": "grep",
-        "paths": ["supabase/functions/widget-ask/index.ts"],
+        "paths": [
+          "supabase/functions/widget-ask/index.ts"
+        ],
         "pattern": "needs_escalation: false, no_docs: true",
         "count": "matches",
-        "open_if": { "op": ">=", "n": 1 },
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        },
         "note": "Pinned on the return shape of the branch. Residual, stated rather than hidden: a fix that raises a human task but leaves this return untouched would not close the item mechanically — the item is pinned on the shape, and closing it should mean changing that shape."
       }
     },
@@ -177,13 +245,19 @@
       "where": "dev project nmuntxrcdksyhsdywpan",
       "severity": "correctness",
       "why_skipped": "out-of-scope",
-      "first_named": { "date": "2026-08-09", "source": "commit 10bbc641; measured docs/50 D" },
+      "first_named": {
+        "date": "2026-08-09",
+        "source": "commit 10bbc641; measured docs/50 D"
+      },
       "state": "open",
       "verification": {
         "kind": "sql-lag",
         "production_sql": "select count(*)::int as n from public.schema_migrations",
         "dev_sql": "select count(*)::int as n from public.schema_migrations",
-        "open_if": { "op": ">=", "n": 1 },
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        },
         "note": "n is production ledger rows MINUS dev ledger rows. Deliberately not a fixed threshold: docs/53 measured 74 behind on 2026-08-12 and the true figure that morning was 88 and rising, so any pinned number would have been stale before the commit landed. This closes only when dev is level or ahead."
       }
     },
@@ -193,14 +267,22 @@
       "where": "scripts/golden-path.mjs:327",
       "severity": "correctness",
       "why_skipped": "founder-decision",
-      "first_named": { "date": "2026-08-12", "source": "docs/50-review-scorecard.md D (F-8)" },
+      "first_named": {
+        "date": "2026-08-12",
+        "source": "docs/50-review-scorecard.md D (F-8)"
+      },
       "state": "open",
       "verification": {
         "kind": "grep",
-        "paths": ["scripts/golden-path.mjs"],
+        "paths": [
+          "scripts/golden-path.mjs"
+        ],
         "pattern": "\\(production: \\d+ / \\d+ / \\d+\\)",
         "count": "matches",
-        "open_if": { "op": ">=", "n": 1 },
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        },
         "note": "Matches the literal digits, not the word 'production'. A real query would interpolate, so the digits disappearing IS the fix."
       }
     },
@@ -210,16 +292,24 @@
       "where": "scripts/certify.mjs",
       "severity": "correctness",
       "why_skipped": "founder-decision",
-      "first_named": { "date": "2026-08-12", "source": "docs/50-review-scorecard.md (F-7)" },
+      "first_named": {
+        "date": "2026-08-12",
+        "source": "docs/50-review-scorecard.md (F-7)"
+      },
       "state": "closed",
       "closed_by": "scripts/stranded-draft.mjs, wired into certify's PROBES as no-approval-that-said-sent-and-sent-nothing",
       "closed_on": "2026-08-12",
       "verification": {
         "kind": "grep",
-        "paths": ["scripts/certify.mjs"],
+        "paths": [
+          "scripts/certify.mjs"
+        ],
         "pattern": "strandedDraftSql",
         "count": "matches",
-        "open_if": { "op": "==", "n": 0 },
+        "open_if": {
+          "op": "==",
+          "n": 0
+        },
         "note": "docs/53 recorded this OPEN (⏸, 'follows from B-1'). Re-verified 2026-08-12: the sibling probe exists and is wired. Open again if the wiring is removed. This checks that the class HAS a standing probe; the probe's own arms (mechanism present/enabled/attached, allow-list, approvals-only) are certify's job, not re-derived here."
       }
     },
@@ -229,16 +319,24 @@
       "where": "supabase/functions/playbook-execute/index.ts (BRANCH_ALLOWED vs runBranchStep)",
       "severity": "correctness",
       "why_skipped": "walked-past",
-      "first_named": { "date": "2026-08-09", "source": "docs/47-debt-map.md; re-carried docs/50 D" },
+      "first_named": {
+        "date": "2026-08-09",
+        "source": "docs/47-debt-map.md; re-carried docs/50 D"
+      },
       "state": "closed",
       "closed_by": "scripts/playbook-branch-parity.mjs (5 arms) wired into certify; BRANCH_ALLOWED is now 8 keys with 8 case arms, `wait` refused rather than silently skipped",
       "closed_on": "2026-08-12",
       "verification": {
         "kind": "grep",
-        "paths": ["scripts/certify.mjs"],
+        "paths": [
+          "scripts/certify.mjs"
+        ],
         "pattern": "playbook-branch-parity",
         "count": "matches",
-        "open_if": { "op": "==", "n": 0 },
+        "open_if": {
+          "op": "==",
+          "n": 0
+        },
         "note": "docs/53 recorded this OPEN and ranked it 3rd to fix. Re-verified 2026-08-12: the ratchet exists and runs in full certify. The arms-vs-keys set comparison is branch-parity's own work — this item verifies that the comparison is WIRED, because the class regressing silently is what happened before and an unwired checker is how it stayed silent for months."
       }
     },
@@ -248,12 +346,18 @@
       "where": "public.schema_migrations / certify migration-ledger",
       "severity": "correctness",
       "why_skipped": "walked-past",
-      "first_named": { "date": "2026-08-12", "source": "certify migration-ledger (ORPHANED ×2)" },
+      "first_named": {
+        "date": "2026-08-12",
+        "source": "certify migration-ledger (ORPHANED ×2)"
+      },
       "state": "open",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from public.schema_migrations where filename in ('715_the_definition_says_which_engine_owns_it.sql','717_four_roles_get_a_procedure_and_intake.sql')",
-        "open_if": { "op": ">=", "n": 1 },
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        },
         "note": "Closes when the branch is merged (the files arrive on main) or the ledger rows are reconciled. NOT this session's to fix — it belongs to whoever owns that branch. Recorded here so it stops being a red nobody owns."
       }
     },
@@ -263,12 +367,18 @@
       "where": "public.ops_alerts",
       "severity": "measurement",
       "why_skipped": "walked-past",
-      "first_named": { "date": "2026-08-12", "source": "docs/51-measurement-organs-audit.md (ranked 6th, never scheduled)" },
+      "first_named": {
+        "date": "2026-08-12",
+        "source": "docs/51-measurement-organs-audit.md (ranked 6th, never scheduled)"
+      },
       "state": "open",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from public.ops_alerts where resolved_at is null",
-        "open_if": { "op": ">=", "n": 7 },
+        "open_if": {
+          "op": ">=",
+          "n": 7
+        },
         "note": "The threshold is the banner's own capacity, not a round number: it renders 6 rows, so while more than 6 are open some are structurally invisible. A nonzero count is normal operation and must not read as a defect."
       }
     },
@@ -278,14 +388,23 @@
       "where": "public.get_dispatch_health",
       "severity": "measurement",
       "why_skipped": "walked-past",
-      "first_named": { "date": "2026-08-12", "source": "docs/51-measurement-organs-audit.md" },
+      "first_named": {
+        "date": "2026-08-12",
+        "source": "docs/51-measurement-organs-audit.md"
+      },
       "state": "open",
       "verification": {
         "kind": "grep",
-        "paths": ["src", "supabase/functions"],
+        "paths": [
+          "src",
+          "supabase/functions"
+        ],
         "pattern": "get_dispatch_health",
         "count": "matches",
-        "open_if": { "op": "==", "n": 0 },
+        "open_if": {
+          "op": "==",
+          "n": 0
+        },
         "note": "INVERTED POLARITY, deliberately: this item is open while the count is ZERO. Closing it means either wiring a reader or dropping the function — either way the grep changes. A register that could only express 'open when nonzero' would have to carry this one on a claim."
       }
     },
@@ -295,12 +414,18 @@
       "where": "public.de_records_gate",
       "severity": "measurement",
       "why_skipped": "walked-past",
-      "first_named": { "date": "2026-08-12", "source": "docs/51-measurement-organs-audit.md (ranked 7th)" },
+      "first_named": {
+        "date": "2026-08-12",
+        "source": "docs/51-measurement-organs-audit.md (ranked 7th)"
+      },
       "state": "open",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace where ns.nspname = 'public' and p.proname = 'de_records_gate' and p.prosrc ilike '%evidence_runs%' and p.prosrc not ilike '%evidence_is_production%'",
-        "open_if": { "op": ">=", "n": 1 },
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        },
         "note": "The origin column has existed since mig 682; this body does not use it. Both conjuncts matter — reading evidence_runs is what makes the missing predicate a defect."
       }
     },
@@ -310,12 +435,18 @@
       "where": "public.get_workforce_trust_metrics",
       "severity": "measurement",
       "why_skipped": "walked-past",
-      "first_named": { "date": "2026-08-12", "source": "docs/51-measurement-organs-audit.md (ranked 7th)" },
+      "first_named": {
+        "date": "2026-08-12",
+        "source": "docs/51-measurement-organs-audit.md (ranked 7th)"
+      },
       "state": "open",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace where ns.nspname = 'public' and p.proname = 'get_workforce_trust_metrics' and p.prosrc ilike '%human_tasks%' and p.prosrc not ilike '%evidence_is_production%'",
-        "open_if": { "op": ">=", "n": 1 }
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        }
       }
     },
     {
@@ -324,12 +455,18 @@
       "where": "public.eval_gate + gate_knowledge_publish / role_certifications",
       "severity": "measurement",
       "why_skipped": "founder-decision",
-      "first_named": { "date": "2026-08-12", "source": "docs/51-measurement-organs-audit.md (ranked 8th; open since docs/37)" },
+      "first_named": {
+        "date": "2026-08-12",
+        "source": "docs/51-measurement-organs-audit.md (ranked 8th; open since docs/37)"
+      },
       "state": "open",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from public.role_certifications where archetype_key <> 'support_agent'",
-        "open_if": { "op": "==", "n": 0 },
+        "open_if": {
+          "op": "==",
+          "n": 0
+        },
         "note": "INVERTED POLARITY: open while ZERO non-support certifications exist. docs/53 carried this on the naming document (⏸); re-verified 2026-08-12 at 29/29 support_agent. The first non-support certification is the mechanical event that closes it."
       }
     },
@@ -339,14 +476,22 @@
       "where": "supabase/functions/de-work/index.ts",
       "severity": "measurement",
       "why_skipped": "walked-past",
-      "first_named": { "date": "2026-08-12", "source": "docs/51-measurement-organs-audit.md §1 (structural, unscheduled)" },
+      "first_named": {
+        "date": "2026-08-12",
+        "source": "docs/51-measurement-organs-audit.md §1 (structural, unscheduled)"
+      },
       "state": "open",
       "verification": {
         "kind": "grep",
-        "paths": ["supabase/functions/de-work/index.ts"],
+        "paths": [
+          "supabase/functions/de-work/index.ts"
+        ],
         "pattern": "evidence_runs",
         "count": "matches",
-        "open_if": { "op": "==", "n": 0 },
+        "open_if": {
+          "op": "==",
+          "n": 0
+        },
         "note": "INVERTED POLARITY. docs/53 carried this on the naming document (⏸). Pinned on the work engine specifically, because 'only the answer paths write it' is not decidable from a whole-tree grep, whereas 'de-work does not write it' is, and de-work is what Move 1 is about."
       }
     },
@@ -356,14 +501,22 @@
       "where": "supabase/baseline/edge-typecheck.json",
       "severity": "measurement",
       "why_skipped": "walked-past",
-      "first_named": { "date": "2026-08-12", "source": "certify's own edge-typecheck ratchet offer" },
+      "first_named": {
+        "date": "2026-08-12",
+        "source": "certify's own edge-typecheck ratchet offer"
+      },
       "state": "open",
       "verification": {
         "kind": "grep",
-        "paths": ["supabase/baseline/edge-typecheck.json"],
+        "paths": [
+          "supabase/baseline/edge-typecheck.json"
+        ],
         "pattern": "\"(agentic-step-execute|ai-session|de-improve|de-mission)\": [1-9]",
         "count": "matches",
-        "open_if": { "op": ">=", "n": 1 },
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        },
         "note": "Reads the pin file, which is what 'not re-pinned' means. Residual, stated: this does not re-run deno check, so it verifies the ceiling is still slack — not that the four functions are still at 0. certify's edge-typecheck section is what measures that, every run, and prints the ratchet offer."
       }
     },
@@ -373,14 +526,22 @@
       "where": "package.json",
       "severity": "hygiene",
       "why_skipped": "deliberate",
-      "first_named": { "date": "2026-08-09", "source": "docs/47-debt-map.md" },
+      "first_named": {
+        "date": "2026-08-09",
+        "source": "docs/47-debt-map.md"
+      },
       "state": "open",
       "verification": {
         "kind": "grep",
-        "paths": ["package.json"],
+        "paths": [
+          "package.json"
+        ],
         "pattern": "\"react-router-dom\": \"\\^6",
         "count": "matches",
-        "open_if": { "op": ">=", "n": 1 },
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        },
         "note": "Pinned on the major version rather than on `npm audit`, because the item's own stated content is 'the fix is a v7 major'. Confirmed against npm audit 2026-08-12: 3 moderate, 1 high across esbuild/react-router/react-router-dom/vite."
       }
     },
@@ -390,14 +551,22 @@
       "where": "package.json",
       "severity": "hygiene",
       "why_skipped": "deliberate",
-      "first_named": { "date": "2026-08-09", "source": "docs/47-debt-map.md" },
+      "first_named": {
+        "date": "2026-08-09",
+        "source": "docs/47-debt-map.md"
+      },
       "state": "open",
       "verification": {
         "kind": "grep",
-        "paths": ["package.json"],
+        "paths": [
+          "package.json"
+        ],
         "pattern": "\"vite\": \"\\^4",
         "count": "matches",
-        "open_if": { "op": ">=", "n": 1 }
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        }
       }
     },
     {
@@ -406,14 +575,22 @@
       "where": ".github/workflows/ci.yml",
       "severity": "hygiene",
       "why_skipped": "blocked",
-      "first_named": { "date": "2026-08-09", "source": "docs/47-debt-map.md" },
+      "first_named": {
+        "date": "2026-08-09",
+        "source": "docs/47-debt-map.md"
+      },
       "state": "open",
       "verification": {
         "kind": "grep",
-        "paths": [".github/workflows/ci.yml"],
+        "paths": [
+          ".github/workflows/ci.yml"
+        ],
         "pattern": "golden-path",
         "count": "matches",
-        "open_if": { "op": "==", "n": 0 },
+        "open_if": {
+          "op": "==",
+          "n": 0
+        },
         "note": "INVERTED POLARITY: open while CI names golden-path nowhere. CI today runs certify:offline, which says in its own banner that it is a subset."
       }
     },
@@ -423,14 +600,22 @@
       "where": "src/",
       "severity": "hygiene",
       "why_skipped": "walked-past",
-      "first_named": { "date": "2026-08-07", "source": "commits 7c24a42b / b90db57e / e29348cd" },
+      "first_named": {
+        "date": "2026-08-07",
+        "source": "commits 7c24a42b / b90db57e / e29348cd"
+      },
       "state": "open",
       "verification": {
         "kind": "grep",
-        "paths": ["src"],
+        "paths": [
+          "src"
+        ],
         "pattern": "text-\\[9px\\]",
         "count": "matches",
-        "open_if": { "op": ">=", "n": 1 }
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        }
       }
     },
     {
@@ -439,14 +624,22 @@
       "where": "scripts/design-drift.mjs",
       "severity": "hygiene",
       "why_skipped": "out-of-scope",
-      "first_named": { "date": "2026-08-09", "source": "commit dc8ebeb2" },
+      "first_named": {
+        "date": "2026-08-09",
+        "source": "commit dc8ebeb2"
+      },
       "state": "open",
       "verification": {
         "kind": "grep",
-        "paths": ["scripts/design-drift.mjs"],
+        "paths": [
+          "scripts/design-drift.mjs"
+        ],
         "pattern": "'raw hex colors': 18|'radius variants': 13",
         "count": "matches",
-        "open_if": { "op": ">=", "n": 1 },
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        },
         "note": "Reads the drift baselines, because the item is that these two have not MOVED. design-drift.mjs only ever ratchets down, so the day either number falls someone must edit these literals — and that edit is what closes this."
       }
     },
@@ -456,16 +649,24 @@
       "where": "supabase/functions/",
       "severity": "hygiene",
       "why_skipped": "out-of-scope",
-      "first_named": { "date": "2026-08-06", "source": "commit d01f952a" },
+      "first_named": {
+        "date": "2026-08-06",
+        "source": "commit d01f952a"
+      },
       "state": "open",
       "verification": {
         "kind": "grep",
-        "paths": ["supabase/functions"],
+        "paths": [
+          "supabase/functions"
+        ],
         "pattern": "^function (renderTemplate|stripHtml)\\(",
         "flags": "gm",
         "exclude": "_shared/",
         "count": "matches",
-        "open_if": { "op": ">=", "n": 1 },
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        },
         "note": "⚠ CORRECTED WHILE SEEDING. docs/53 D-6 reported 'callModel has 7 non-shared definitions'. Re-read 2026-08-12: all seven are `const callModel = makeCallModelText(...)` — BINDINGS to the shared factory in supabase/functions/_shared/modelCall.ts, i.e. the consolidated shape, not drift. A grep for the identifier counted them as duplicates. The callModel half of this item was already closed; the renderTemplate and stripHtml halves stand and are what this verification counts."
       }
     },
@@ -475,14 +676,22 @@
       "where": "tests/",
       "severity": "hygiene",
       "why_skipped": "walked-past",
-      "first_named": { "date": "2026-08-09", "source": "docs/47-debt-map.md; re-carried docs/50 D" },
+      "first_named": {
+        "date": "2026-08-09",
+        "source": "docs/47-debt-map.md; re-carried docs/50 D"
+      },
       "state": "open",
       "verification": {
         "kind": "grep",
-        "paths": ["tests"],
+        "paths": [
+          "tests"
+        ],
         "pattern": "@testing-library",
         "count": "files",
-        "open_if": { "op": "==", "n": 0 },
+        "open_if": {
+          "op": "==",
+          "n": 0
+        },
         "note": "INVERTED POLARITY: open while no test file imports a rendering library. The first component test that exists closes it, which is the right bar — 'some' is the whole distance from zero here."
       }
     },
@@ -492,15 +701,23 @@
       "where": "supabase/ (no config.toml)",
       "severity": "hygiene",
       "why_skipped": "walked-past",
-      "first_named": { "date": "2026-08-09", "source": "docs/47-debt-map.md; re-carried 2026-08-12" },
+      "first_named": {
+        "date": "2026-08-09",
+        "source": "docs/47-debt-map.md; re-carried 2026-08-12"
+      },
       "state": "open",
       "verification": {
         "kind": "grep",
-        "paths": ["supabase"],
+        "paths": [
+          "supabase"
+        ],
         "include": "\\.toml$",
         "pattern": "verify_jwt",
         "count": "matches",
-        "open_if": { "op": "==", "n": 0 },
+        "open_if": {
+          "op": "==",
+          "n": 0
+        },
         "note": "INVERTED POLARITY. docs/53 carried this unverified (⏸). Re-verified 2026-08-12: supabase/config.toml does not exist and no .toml under supabase/ mentions verify_jwt, across 64 function directories. Recording the gate in config.toml is what closes it."
       }
     },
@@ -510,12 +727,18 @@
       "where": "supabase/functions/email-inbound / de_conversations",
       "severity": "hygiene",
       "why_skipped": "founder-decision",
-      "first_named": { "date": "2026-08-12", "source": "docs/50-review-scorecard.md (W-1)" },
+      "first_named": {
+        "date": "2026-08-12",
+        "source": "docs/50-review-scorecard.md (W-1)"
+      },
       "state": "open",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from public.de_conversations where channel = 'email'",
-        "open_if": { "op": "==", "n": 0 },
+        "open_if": {
+          "op": "==",
+          "n": 0
+        },
         "note": "INVERTED POLARITY: open while zero email conversations exist. The first one closes it, and that is exactly the wiring decision (keys plus a receiving domain) the item is waiting on."
       }
     },
@@ -525,12 +748,18 @@
       "where": "cron.job",
       "severity": "hygiene",
       "why_skipped": "founder-decision",
-      "first_named": { "date": "2026-08-09", "source": "commit abaefe24, re-asserted e0fe5d2f" },
+      "first_named": {
+        "date": "2026-08-09",
+        "source": "commit abaefe24, re-asserted e0fe5d2f"
+      },
       "state": "open",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from cron.job where jobname = 'approved-action-driver-5min' and not active",
-        "open_if": { "op": ">=", "n": 1 },
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        },
         "note": "⚠ THIS ITEM MUST NOT BE CLOSED BY ANY AGENT. Enabling the driver is the founder's decision and is a standing prohibition in every session brief. The verification exists so that the driver being switched on is VISIBLE here, not so that anyone switches it on."
       }
     },
@@ -540,12 +769,18 @@
       "where": "public.action_executions",
       "severity": "hygiene",
       "why_skipped": "founder-decision",
-      "first_named": { "date": "2026-08-11", "source": "onboarding spec" },
+      "first_named": {
+        "date": "2026-08-11",
+        "source": "onboarding spec"
+      },
       "state": "open",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from public.action_executions where dedupe_key like 'onboarding:%'",
-        "open_if": { "op": "==", "n": 0 },
+        "open_if": {
+          "op": "==",
+          "n": 0
+        },
         "note": "INVERTED POLARITY: open while the path has never produced an execution."
       }
     },
@@ -555,15 +790,23 @@
       "where": "supabase/functions/",
       "severity": "hygiene",
       "why_skipped": "walked-past",
-      "first_named": { "date": "2026-08-09", "source": "docs/47-debt-map.md; re-carried docs/50 D" },
+      "first_named": {
+        "date": "2026-08-09",
+        "source": "docs/47-debt-map.md; re-carried docs/50 D"
+      },
       "state": "open",
       "verification": {
         "kind": "grep",
-        "paths": ["supabase/functions"],
+        "paths": [
+          "supabase/functions"
+        ],
         "include": "\\.ts$",
         "pattern": "from ['\"]https://(?![^'\"]*@\\d+\\.\\d+\\.\\d+)[^'\"]+['\"]",
         "count": "matches",
-        "open_if": { "op": ">=", "n": 1 },
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        },
         "note": "docs/53 carried the count unverified (⏸) at 68. Re-counted 2026-08-12: 71 of 133 remote imports carry no @x.y.z pin. The count moved; the class did not."
       }
     },
@@ -573,12 +816,18 @@
       "where": "branch claude/goofy-swanson-5d16ef",
       "severity": "correctness",
       "why_skipped": "founder-decision",
-      "first_named": { "date": "2026-08-12", "source": "branch claude/goofy-swanson-5d16ef" },
+      "first_named": {
+        "date": "2026-08-12",
+        "source": "branch claude/goofy-swanson-5d16ef"
+      },
       "state": "open",
       "verification": {
         "kind": "none",
         "why_unverifiable": "the two employees exist only on an unmerged branch — production holds no digital_employees rows by those names (verified 2026-08-12), so any query from main would read 'not present' and be indistinguishable from 'fixed'. This becomes verifiable the moment B-10's branch is merged or reverted.",
-        "claim": { "file": "docs/53-deferred-work-census.md", "anchor": "cannot be activated" }
+        "claim": {
+          "file": "docs/53-deferred-work-census.md",
+          "anchor": "cannot be activated"
+        }
       }
     },
     {
@@ -587,12 +836,18 @@
       "where": "branch claude/goofy-swanson-5d16ef",
       "severity": "correctness",
       "why_skipped": "blocked",
-      "first_named": { "date": "2026-08-12", "source": "branch claude/goofy-swanson-5d16ef" },
+      "first_named": {
+        "date": "2026-08-12",
+        "source": "branch claude/goofy-swanson-5d16ef"
+      },
       "state": "open",
       "verification": {
         "kind": "none",
         "why_unverifiable": "blocked on dwell time, and the watchers belong to the same unmerged branch as E-1. production's work_watchers hold 28 rows, all of which have run at least once, so no query from main separates 'these two never fired' from 'these two are not here'.",
-        "claim": { "file": "docs/53-deferred-work-census.md", "anchor": "intake is wired but unobserved" }
+        "claim": {
+          "file": "docs/53-deferred-work-census.md",
+          "anchor": "intake is wired but unobserved"
+        }
       }
     },
     {
@@ -601,12 +856,18 @@
       "where": "branch claude/goofy-swanson-5d16ef",
       "severity": "correctness",
       "why_skipped": "blocked",
-      "first_named": { "date": "2026-08-12", "source": "branch claude/goofy-swanson-5d16ef" },
+      "first_named": {
+        "date": "2026-08-12",
+        "source": "branch claude/goofy-swanson-5d16ef"
+      },
       "state": "open",
       "verification": {
         "kind": "none",
         "why_unverifiable": "an unexercised HTTP path leaves no trace to query. Proving it would mean holding a server-to-server credential that is deliberately unrecoverable after issue — which is the blocker itself, not an accident of this register.",
-        "claim": { "file": "docs/53-deferred-work-census.md", "anchor": "never exercised end to end" }
+        "claim": {
+          "file": "docs/53-deferred-work-census.md",
+          "anchor": "never exercised end to end"
+        }
       }
     },
     {
@@ -615,12 +876,18 @@
       "where": "public.customer_account_contacts",
       "severity": "hygiene",
       "why_skipped": "founder-decision",
-      "first_named": { "date": "2026-08-09", "source": "docs/48-triage-of-64.md" },
+      "first_named": {
+        "date": "2026-08-09",
+        "source": "docs/48-triage-of-64.md"
+      },
       "state": "open",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from public.customer_account_contacts",
-        "open_if": { "op": "==", "n": 0 },
+        "open_if": {
+          "op": "==",
+          "n": 0
+        },
         "note": "INVERTED POLARITY: open while the table is empty. The first contact row closes it."
       }
     },
@@ -630,12 +897,18 @@
       "where": "public.human_tasks",
       "severity": "hygiene",
       "why_skipped": "founder-decision",
-      "first_named": { "date": "2026-08-09", "source": "docs/48-triage-of-64.md" },
+      "first_named": {
+        "date": "2026-08-09",
+        "source": "docs/48-triage-of-64.md"
+      },
       "state": "open",
       "verification": {
         "kind": "none",
         "why_unverifiable": "the 22 tasks are not distinguishable from the other 386 pending tasks by any stored field — a title LIKE filter returns 54 and would be a number this register manufactured rather than measured. A verification that invents its own population is worse than none, because it looks rigorous.",
-        "claim": { "file": "docs/53-deferred-work-census.md", "anchor": "The $85,000 commercial decision" }
+        "claim": {
+          "file": "docs/53-deferred-work-census.md",
+          "anchor": "The $85,000 commercial decision"
+        }
       }
     },
     {
@@ -644,12 +917,18 @@
       "where": "review/debt-map-findings.json",
       "severity": "hygiene",
       "why_skipped": "walked-past",
-      "first_named": { "date": "2026-08-09", "source": "docs/47-debt-map.md" },
+      "first_named": {
+        "date": "2026-08-09",
+        "source": "docs/47-debt-map.md"
+      },
       "state": "open",
       "verification": {
         "kind": "none",
         "why_unverifiable": "review/debt-map-findings.json records what each finding IS, not whether anything was scheduled for it — there is no field a query could read, and inferring 'unscheduled' from the absence of a commit would be guessing. Closing this means triaging the remainder into items of their own, and each of those will carry its own verification.",
-        "claim": { "file": "review/debt-map-findings.json", "anchor": "\"dim\"" }
+        "claim": {
+          "file": "review/debt-map-findings.json",
+          "anchor": "\"dim\""
+        }
       }
     },
     {
@@ -658,12 +937,18 @@
       "where": "public.onboarding_template_versions",
       "severity": "hygiene",
       "why_skipped": "founder-decision",
-      "first_named": { "date": "2026-08-10", "source": "onboarding step-types spec" },
+      "first_named": {
+        "date": "2026-08-10",
+        "source": "onboarding step-types spec"
+      },
       "state": "open",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from public.onboarding_template_versions v cross join lateral jsonb_array_elements(v.items) i where i->>'type' in ('document','spreadsheet','pdf','link','file')",
-        "open_if": { "op": "==", "n": 0 },
+        "open_if": {
+          "op": "==",
+          "n": 0
+        },
         "note": "INVERTED POLARITY: open while no template item anywhere uses one of the new step types. Pinned on the vocabulary rather than on storage object counts, because an avatar upload would move the object count and say nothing about this feature."
       }
     },
@@ -673,12 +958,18 @@
       "where": "public.onboarding_templates / onboarding_template_versions",
       "severity": "hygiene",
       "why_skipped": "deliberate",
-      "first_named": { "date": "2026-08-11", "source": "onboarding step-types spec" },
+      "first_named": {
+        "date": "2026-08-11",
+        "source": "onboarding step-types spec"
+      },
       "state": "open",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from public.onboarding_templates tpl join public.onboarding_template_versions v on v.template_id = tpl.id and v.version = tpl.version where jsonb_array_length(v.items) = 10",
-        "open_if": { "op": ">=", "n": 1 },
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        },
         "note": "Scoped to the CURRENT published version of each template, because a superseded 10-item version mints nothing. That scoping is what makes the number 14 and not 15."
       }
     },
@@ -688,12 +979,18 @@
       "where": "public.voice_messages / 3 edge functions",
       "severity": "hygiene",
       "why_skipped": "founder-decision",
-      "first_named": { "date": "2026-08-12", "source": "docs/50-review-scorecard.md" },
+      "first_named": {
+        "date": "2026-08-12",
+        "source": "docs/50-review-scorecard.md"
+      },
       "state": "open",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from public.voice_messages",
-        "open_if": { "op": "==", "n": 0 },
+        "open_if": {
+          "op": "==",
+          "n": 0
+        },
         "note": "INVERTED POLARITY: open while the channel has never carried anything. Note that formally PARKING the channel would not close this verification — parking is a decision, and a decision leaves no row here. If the founder parks it, close the item by hand with the decision as closed_by."
       }
     },
@@ -703,12 +1000,18 @@
       "where": "public.de_conversations",
       "severity": "hygiene",
       "why_skipped": "founder-decision",
-      "first_named": { "date": "2026-08-11", "source": "docs/49-full-review-inventory.md §5" },
+      "first_named": {
+        "date": "2026-08-11",
+        "source": "docs/49-full-review-inventory.md §5"
+      },
       "state": "open",
       "verification": {
         "kind": "none",
         "why_unverifiable": "a conversation reaching status='closed' says nothing about WHO closed it — a human closing one by hand is indistinguishable from an auto-close rule firing, so the obvious query would report this closed the first time anyone tidies the inbox. That is the stored-marker-read-as-truth trap, and a wrong verification here is worse than none.",
-        "claim": { "file": "docs/53-deferred-work-census.md", "anchor": "Support auto-close deliberately unbuilt" }
+        "claim": {
+          "file": "docs/53-deferred-work-census.md",
+          "anchor": "Support auto-close deliberately unbuilt"
+        }
       }
     },
     {
@@ -717,12 +1020,18 @@
       "where": "security review programme",
       "severity": "security",
       "why_skipped": "out-of-scope",
-      "first_named": { "date": "2026-08-12", "source": "docs/50-review-scorecard.md C" },
+      "first_named": {
+        "date": "2026-08-12",
+        "source": "docs/50-review-scorecard.md C"
+      },
       "state": "open",
       "verification": {
         "kind": "none",
         "why_unverifiable": "this is owed WORK (run an anon-role attack probe, walk a checklist), not a state of the system. Nothing in the database or the repo changes when it is done except the artefact it produces, and pinning it to that artefact's existence would let an empty file close it.",
-        "claim": { "file": "docs/50-review-scorecard.md", "anchor": "anon-role probe (not" }
+        "claim": {
+          "file": "docs/50-review-scorecard.md",
+          "anchor": "anon-role probe (not"
+        }
       }
     },
     {
@@ -731,12 +1040,58 @@
       "where": "mobile push / work watchers",
       "severity": "measurement",
       "why_skipped": "blocked",
-      "first_named": { "date": "2026-08-12", "source": "docs/50-review-scorecard.md B" },
+      "first_named": {
+        "date": "2026-08-12",
+        "source": "docs/50-review-scorecard.md B"
+      },
       "state": "open",
       "verification": {
         "kind": "none",
         "why_unverifiable": "the lock-screen hop needs a physical device and a person looking at it; no server-side row distinguishes 'delivered to the lock screen' from 'accepted by the push service'. The watcher half needs dwell time on a live workspace.",
-        "claim": { "file": "docs/53-deferred-work-census.md", "anchor": "lock-screen last hop" }
+        "claim": {
+          "file": "docs/53-deferred-work-census.md",
+          "anchor": "lock-screen last hop"
+        }
+      }
+    },
+    {
+      "id": "B-11",
+      "what": "reconcile_blocked_goals writes attention_flag='wait_unanswered', a value its own table's CHECK forbids (allowed: stalled|waiting_too_long|wake_spin|steps_failed) — the 30-min cron has failed 245 times in 7 days and no objective has been reconciled since 2026-08-05",
+      "where": "pg_proc.reconcile_blocked_goals line 51 vs constraint de_objectives_attention_flag_check",
+      "severity": "correctness",
+      "why_skipped": "walked-past",
+      "first_named": {
+        "date": "2026-08-18",
+        "source": "docs/50 Workstream E, 2026-08-17"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "sql",
+        "sql": "select count(*)::int as n from cron.job_run_details d join cron.job j on j.jobid=d.jobid where j.jobname='reconcile-blocked-goals-30min' and d.status='failed' and d.start_time > now() - interval '24 hours'",
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        }
+      }
+    },
+    {
+      "id": "C-8",
+      "what": "ops_alerts reach nobody: the only consumer is an in-app banner (OpsAlertsBanner.tsx) — no push, no email — while a working push channel exists and is proven. 133 alerts unresolved, 77 of them de_objective_wake_spin firing continuously since 2026-07-29 (the downstream symptom of B-11), unnoticed for 20 days",
+      "where": "src/components/OpsAlertsBanner.tsx — sole reader of ops_alerts; supabase/functions/push-send unused by it",
+      "severity": "measurement",
+      "why_skipped": "walked-past",
+      "first_named": {
+        "date": "2026-08-18",
+        "source": "docs/50 Workstream E, 2026-08-17"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "sql",
+        "sql": "select count(*)::int as n from ops_alerts where resolved_at is null and created_at < now() - interval '7 days'",
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        }
       }
     }
   ]
