@@ -1193,6 +1193,30 @@
           "n": 3
         }
       }
+    },
+    {
+      "id": "A-8",
+      "what": "Subprocessor disclosure is pinned to today's configuration, not to the code's capability. The LLM failover chain is anthropic -> bedrock (AWS) -> openai -> google and a provider joins the chain the moment its key is set in Settings, with no policy change and no customer notice. Today only Anthropic receives customer content (30-day usage shows Anthropic models only, and no OpenAI/Google key rows exist), and the privacy policy names only Anthropic — so adding one key in a settings screen would silently route customer conversations to an undisclosed processor",
+      "where": "supabase/functions/_shared/llm.ts chain (anthropic|bedrock|openai|google) vs src/pages/legal/PrivacyPolicyPage.tsx; docs/62",
+      "severity": "security",
+      "why_skipped": "founder-decision",
+      "first_named": {
+        "date": "2026-08-18",
+        "source": "docs/62 Workstream N, 2026-08-18"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "grep",
+        "paths": [
+          "supabase/functions/_shared/llm.ts"
+        ],
+        "pattern": "bedrock|openai|google",
+        "count": "matches",
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        }
+      }
     }
   ]
 }
