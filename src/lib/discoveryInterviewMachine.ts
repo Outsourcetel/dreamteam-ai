@@ -74,6 +74,21 @@ export type ModelFillOutcome = 'not_needed' | 'ran' | 'skipped_no_llm' | 'skippe
 export interface ProposalEmission {
   proposed: number;
   refused: number;
+  /** Blank conversation_type slots the model never wrote a word into.
+   *
+   *  ⚠ NOT PART OF ANY LOSS THE CUSTOMER IS SHOWN, and that is the point.
+   *  `how_customers_reach_us` emits a fixed CEILING of blank topic shapes (ten,
+   *  the founder's number) rather than one per derived candidate, so a customer
+   *  who names three topics leaves seven untouched. Those seven used to land in
+   *  `refused`, and the screen told them "we dropped 7 drafts because we could
+   *  not point at something you said to justify them" — about seven things that
+   *  were never drafted from anything.
+   *  It is read for exactly ONE thing: whether topics were on the table at all,
+   *  so the two platform-failure banners can name them without inventing a
+   *  count. OPTIONAL because an engine deployed before this field existed still
+   *  answers honestly — absent means "we do not know", which the banners treat
+   *  as "say nothing about topics" rather than as zero. */
+  unused_topic_slots?: number;
   skipped_already_proposed: boolean;
   model_fill: ModelFillOutcome;
 }
@@ -594,14 +609,29 @@ export function outcomeReport(emission: ProposalEmission | null | undefined): Ou
 
   const { proposed, refused, model_fill: fill, skipped_already_proposed: already } = emission;
 
+  // ⚠ THE TOPIC CLAUSE, AND WHY IT CARRIES NO NUMBER. Conversation topics need
+  // the AI engine exactly as much as the other four kinds do, and both banners
+  // below used to omit them entirely — so a customer who spent the interview
+  // listing what people ask about was told what was lost and not told that.
+  // The count is deliberately absent: `refused` no longer includes untouched
+  // topic slots (see ProposalEmission.unused_topic_slots), and adding the slot
+  // ceiling to it would claim we lost ten topics from a customer who would have
+  // named three. What IS known is whether topics were on the table at all, so
+  // the clause is conditional on that and says no more.
+  const topicsWereOnTheTable = (emission.unused_topic_slots ?? 0) > 0;
+  const topicClause = topicsWereOnTheTable
+    ? ' The conversation topics you named are part of that loss and never got as far as a draft, so there is no count for them.'
+    : '';
+
   // ── platform-side causes first, because they are not the customer's fault ──
   if (fill === 'skipped_no_llm') {
     return {
       tone: 'danger',
       headline: 'Your AI engine was not available, so most recommendations were lost',
       body:
-        'Every recommendation that needs the AI engine to write its detail — people to hire, guardrails, procedures and trust rules — was dropped, '
-        + `because this workspace had no AI engine key when the interview finished${refused > 0 ? ` (${refused} in total)` : ''}. `
+        'Every recommendation that needs the AI engine to write its detail — people to hire, guardrails, procedures, trust rules and conversation topics — was dropped, '
+        + `because this workspace had no AI engine key when the interview finished${refused > 0 ? ` (${refused} in total)` : ''}.`
+        + `${topicClause} `
         + 'This is not something you said or did not say. An owner or admin should add a key under Settings → AI Engine. '
         + '⚠ This interview will not try again — the recommendations have to come from a new one.',
       hasProposals: proposed > 0,
@@ -612,8 +642,9 @@ export function outcomeReport(emission: ProposalEmission | null | undefined): Ou
       tone: 'danger',
       headline: 'This workspace hit its AI spending limit before the recommendations were written',
       body:
-        'Every recommendation that needs the AI engine to write its detail — people to hire, guardrails, procedures and trust rules — was dropped '
-        + `for that reason${refused > 0 ? ` (${refused} in total)` : ''}, not because of anything you said. `
+        'Every recommendation that needs the AI engine to write its detail — people to hire, guardrails, procedures, trust rules and conversation topics — was dropped '
+        + `for that reason${refused > 0 ? ` (${refused} in total)` : ''}, not because of anything you said.`
+        + `${topicClause} `
         + 'An owner or admin can raise the limit under Settings. '
         + '⚠ This interview will not try again — the recommendations have to come from a new one.',
       hasProposals: proposed > 0,
@@ -652,6 +683,14 @@ export function outcomeReport(emission: ProposalEmission | null | undefined): Ou
       hasProposals: false,
     };
   }
+  // ⚠ THIS SENTENCE IS ONLY TRUE BECAUSE OF WHAT `refused` COUNTS. It counts a
+  // draft the model actually attempted and we would not stand behind. It does
+  // NOT count an untouched conversation_type slot — for one interview those are
+  // nine or seven at a time, and this branch would have told a customer who
+  // named one topic that we discarded nine drafts of their business. If that
+  // definition ever loosens again, this is the sentence that becomes a lie
+  // first. tests/discovery-proposals.test.ts drives 1, 3 and 10 named topics
+  // through the real proposalsFrom + validatePayload and pins all three counts.
   if (refused > 0) {
     return {
       tone: 'warn',

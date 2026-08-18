@@ -86,27 +86,30 @@
  * EXPECTED_KIND_TABLES, and the kind must be admitted by
  * discovery_proposals_kind_check.
  *
- * `conversation_type` IS DELIBERATELY ABSENT AND MUST NOT BE ADDED.
- *   - There is no conversation_types table (to_regclass -> null, measured
- *     again 2026-08-15), no writer, and nothing routes on
- *     de_conversations.category from a bare label.
- *   - task-3-contract.md S8 item 14: "Do not give any kind a per-kind
- *     exemption from the Task 5 certify assertions. If a kind cannot satisfy
- *     them, that kind is not ready to ship."
- *   - The founder's 2026-08-15 ruling makes the topic axis a real feature:
- *     it already exists as de_conversations.category driven by
- *     support_triage_rules, and the interview will write REAL rules
- *     (match_pattern + set_category) in the follow-up task. When that writer
- *     lands, conversation_type gains a route HERE and a matching entry in
- *     EXPECTED_KIND_TABLES pointing at support_triage_rules — together, in
- *     the same edit as the writer, never before it.
- *   - ⚠ AS OF 2026-08-15 THE EMITTER IS OFF. supabase/functions/_shared/
- *     discoveryProposals.ts no longer maps how_customers_reach_us to
- *     conversation_type and no longer pushes the draft (its
- *     DIMENSION_STRUCTURAL_KINDS header carries the reasons and the return
- *     conditions). This sentence used to claim a removal that had not
- *     happened; it is now true, and tests/discovery-proposals.test.ts's
- *     "conversation_type is NOT emitted" case is what keeps it true.
+ * ⚠ `conversation_type` CAME BACK ON 2026-08-18 (migration 754), and the
+ * condition this comment set out is the one it came back under. It used to say
+ * "DELIBERATELY ABSENT AND MUST NOT BE ADDED", for three reasons, of which the
+ * first two are now spent and the third still stands:
+ *   - "there is no conversation_types table" — still true, and it never
+ *     needed one. The route points at `support_triage_rules`, the table the
+ *     LIVE topic axis already runs on (198 rows, 18 tenants), read by
+ *     classify_support_text and written into de_conversations.category by
+ *     trg_triage_support_conversation.
+ *   - "no writer" — there is one now, and it landed in the SAME EDIT as this
+ *     key, which is what that comment demanded: createTriageRuleFromProposal
+ *     under RLS, then decide_discovery_proposal's own `when` arm.
+ *   - task-3-contract.md S8 item 14 — "do not give any kind a per-kind
+ *     exemption; if a kind cannot satisfy the assertions, it is not ready to
+ *     ship" — STILL STANDS and is why this entry is safe to add: the kind now
+ *     satisfies them the ordinary way. It resolves live, it matches
+ *     EXPECTED_KIND_TABLES, the CHECK admits it, and eighteen probe assertions
+ *     drive its accept.
+ *   - ⚠ WHAT DID NOT COME BACK IS THE CLAIM. "nothing routes on
+ *     de_conversations.category" is STILL TRUE (enumerated 2026-08-17: de_id is
+ *     stamped at conversation INSERT, before any message exists; no reader of
+ *     category picks an employee). So the card says LABELLED, not routed, and
+ *     the accept records `routes_to_employee: false` as a stated fact. The kind
+ *     is routable because it writes a real rule, not because the rule routes.
  *
  * `writer` is documentation with teeth ONLY in the audit trail — it is the
  * string a later auditor uses to tell an ordinary write from an ad-hoc one.
@@ -164,6 +167,25 @@ export const KIND_ROUTES = Object.freeze({
     table: 'trust_policies',
     writer: 'seed_de_trust_policy, inside decide_discovery_proposal — level-0 policy only, NO ladder written and NO dial applied',
   }),
+  // ⚠ ADDED BY MIGRATION 754, TOGETHER WITH THE WRITER AND NOT BEFORE IT — which
+  // is the condition the comment above this map set out on 2026-08-15 and the
+  // only condition under which this key may exist. The writer is
+  // createTriageRuleFromProposal (src/lib/supportInboxApi.ts) under RLS, then
+  // decide_discovery_proposal's `when 'conversation_type'` arm verifies the row
+  // and stamps it. `to_regclass('public.support_triage_rules')` resolves (198
+  // rows, 18 tenants, measured 2026-08-17), and EXPECTED_KIND_TABLES names the
+  // same table independently.
+  //
+  // ⚠ THIS IS NOT AN EXEMPTION AND THE DIFFERENCE IS CHECKABLE. The 2026-08-15
+  // note said a route must never be added to silence a row assertion. What
+  // changed is not this file: there is now a real table, a real writer, a real
+  // RLS path and eighteen probe assertions driving the accept end to end. What
+  // the card claims narrowed at the same time — it says LABELLED, not ROUTED,
+  // because nothing reads de_conversations.category to choose an employee.
+  conversation_type: Object.freeze({
+    table: 'support_triage_rules',
+    writer: 'createTriageRuleFromProposal (browser, as the signed-in human under RLS, carrying source_proposal_id) then decide_discovery_proposal verifies every literal and stamps the id',
+  }),
 });
 
 /**
@@ -196,6 +218,7 @@ export const EXPECTED_KIND_TABLES = Object.freeze({
   procedure: 'playbook_definitions',
   employee: 'digital_employees',
   trust_rule: 'trust_policies',
+  conversation_type: 'support_triage_rules',
 });
 
 /**

@@ -23,7 +23,7 @@ import {
   whatAcceptingWrites, trustRuleBlockReason, itemsForBatchMode, needsAcceptConfirmation,
   __looksLikeEnforceablePattern_forDriftTestOnly,
   __looksLikeEnforceablePattern_forDriftTestOnly as looksLikeEnforceablePattern,
-  sopTextForProcedure, procedureAcceptability,
+  sopTextForProcedure, procedureAcceptability, acceptAllSectionBlurb,
 } from '../src/lib/discoveryProposalPresentation';
 // migration 752: the deterministic key lives with the writer, and the drift
 // guard below pins it against the SQL construction that enforces it.
@@ -563,14 +563,46 @@ describe('humanizeConnectorTouch — fix round 1, Important ("connector literals
 describe('cardCopyFor — every kind carries its literal on the card, not just in the Drawer', () => {
   const noOwners = new Map<string, string>();
 
-  it('conversation_type: label is on the title, owner (or its absence) is on the meta — RED if the owner_ref is silently dropped', () => {
-    const withOwner = cardCopyFor('conversation_type', { label: 'Billing question', owner_ref: 'archetype:billing_ar' },
-      new Map([['billing_ar', 'Morgan']]));
-    expect(withOwner.title).toContain('Billing question');
-    expect(withOwner.meta).toBe('Routes to: Morgan');
+  // ⚠ REWRITTEN BY 754, AND THE OLD ASSERTION WAS PINNING A FALSE PROMISE.
+  // It required `meta` to read "Routes to: Morgan" — RED if the owner_ref was
+  // silently dropped. Measured 2026-08-17: NOTHING ROUTES ON A TOPIC.
+  // de_conversations.de_id is stamped when the conversation row is INSERTED
+  // (widget-ask:338, email-inbound:190), the category is written afterwards by
+  // trg_triage_support_conversation on the first user message, and no reader of
+  // de_conversations.category selects an employee. So the test was keeping a
+  // sentence true to itself rather than to the product, which is how a false
+  // card survives a green suite.
+  //
+  // What the card must now carry is the ENFORCEABLE LITERAL — the phrases the
+  // rule actually matches and the category it files under — because that is
+  // §11b's "you cannot consent to what you cannot predict" applied to a triage
+  // rule, and it is what decide_discovery_proposal compares byte for byte.
+  it('conversation_type: the label is on the title and the MATCH PHRASES are on the meta — RED if the literal is only in the drawer', () => {
+    const copy = cardCopyFor('conversation_type', {
+      label: 'Billing question', set_category: 'billing_question',
+      match_pattern: 'invoice query|charged twice',
+    }, noOwners);
+    expect(copy.title).toContain('Billing question');
+    expect(copy.meta).toContain('invoice query');
+    expect(copy.meta).toContain('charged twice');
+    expect(copy.meta).toContain('billing_question');
+  });
 
-    const noOwner = cardCopyFor('conversation_type', { label: 'Billing question', owner_ref: 'unassigned' }, noOwners);
-    expect(noOwner.meta).toMatch(/no owner/i);
+  // ⚠ THE CARD MUST NOT CLAIM ROUTING, IN ANY OF ITS FOUR SENTENCES. Three of
+  // the four it used to carry did ("tagged and routed", "Routes to: X", "assign
+  // one when you publish"). This is the guard that keeps them from coming back
+  // by a copy edit nobody reviews against the enumeration.
+  it('conversation_type: NO sentence on the card claims the topic routes or is owned', () => {
+    const copy = cardCopyFor('conversation_type', {
+      label: 'Billing question', set_category: 'billing_question', match_pattern: 'invoice query',
+    }, new Map([['billing_ar', 'Morgan']]));
+    const all = [copy.title, copy.detail, copy.meta, copy.nudge ?? ''].join(' ');
+    expect(all).not.toMatch(/\brout(e|es|ed|ing)\b/i);
+    expect(all).not.toMatch(/\bowner\b|\bassign\b/i);
+    // ...and the vacuity guard: the card must still SAY something about what
+    // accepting does, or "claims nothing" would pass on an empty card.
+    expect(copy.detail.length).toBeGreaterThan(20);
+    expect(all).toMatch(/label/i);
   });
 
   it('connector: provider + what it reads/writes + the credential note — RED if reads/writes are missing from meta', () => {
@@ -2399,5 +2431,145 @@ describe('the procedure CARD says only things the accept makes true (migration 7
     expect(whatAcceptingWrites('procedure', empty)).toMatch(/^Creates nothing\./);
     expect(cardCopyFor('procedure', empty).detail).not.toMatch(/nothing runs until you publish/i);
     expect(cardCopyFor('procedure', empty).nudge).toMatch(/Nothing is created/i);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// THE SCREEN AROUND THE CARD (754 FIX ROUND, C1)
+//
+// Migration 754 spent ninety header lines removing four false promises from the
+// conversation_type CARD, and left three more standing on the page AROUND it —
+// all customer-facing, all saying the opposite of what the accept does.
+// `grep -c conversation_type src/pages/tenant/DiscoveryProposalsPage.tsx`
+// returned ZERO on the day 754 was written:
+//
+//   (a) THE PER-CARD FLASH. The chain is employee -> guardrail -> procedure ->
+//       trust_rule -> fall-through, and a topic had no arm, so it landed on the
+//       CONNECTOR arm: "set up and waiting for your credential. You'll find it
+//       under Systems." There is no credential, no second gate, and the rule is
+//       not under Systems. The comments directly above that chain are 751's
+//       ("a guardrail accept is NOT waiting for your credential"), 752's and
+//       753's — 754 was the fourth kind to join the chain and the first not to
+//       add its arm.
+//   (b) THE BATCH FLASH. batchModeFor('conversation_type') is 'accept_all', so
+//       ten accepted topics replayed the same sentence about a whole batch,
+//       one line below a comment reading "752: AND IT WAS ABOUT TO BE FALSE
+//       ABOUT AN ENTIRE BATCH".
+//   (c) THE SECTION BLURB: "The real consent step for conversation topics comes
+//       later — publishing a procedure, or entering a credential for a
+//       connector." There is no later consent step for a topic.
+//
+// What the accept really does: createTriageRuleFromProposal INSERTs into
+// support_triage_rules under RLS, and classify_support_text reads every ACTIVE
+// rule in the workspace on the first user message of every support
+// conversation. The rule is live before the flash finishes rendering.
+//
+// These follow the shape of the trust_rule flash pins above: the page SOURCE is
+// the oracle, stripped of line comments first (unstripped, the paragraph
+// forbidding a sentence counts as the sentence).
+describe('the conversation-topic accept says what it did — the screen, not just the card (754 fix round)', () => {
+  const PAGE = 'src/pages/tenant/DiscoveryProposalsPage.tsx';
+  const pageCode = () => readFileSync(PAGE, 'utf8').replace(/^\s*\/\/.*$/gm, '');
+
+  // ⚠ THE ARM'S END IS STRUCTURAL, NOT A CHARACTER COUNT. The first version of
+  // this bounded the slice at "second `outcome.reusedExisting` + 400 chars",
+  // which overran the arm and swept in the CONNECTOR arm that follows it — so
+  // the test went red reporting the connector's own (correct) sentence as the
+  // topic's. The arm is a ternary whose inner branch reads `? (outcome.
+  // reusedExisting`, so the fall-through `: outcome.reusedExisting` — colon,
+  // space, no paren — occurs exactly once and is the real boundary.
+  //
+  // The guard matters as much as the bound: `indexOf` returning -1 would make
+  // `slice(0, -1)` silently hand back the whole rest of the file, and every
+  // `not.toMatch` below would then be asserting about code that is not the arm.
+  // A boundary that cannot be found must fail loudly, not widen the window.
+  function topicFlashArm(code: string): string {
+    const start = code.indexOf("p.kind === 'conversation_type'");
+    expect(start, 'the flash chain has no conversation_type arm to bound').toBeGreaterThan(-1);
+    const arm = code.slice(start);
+    const end = arm.indexOf(': outcome.reusedExisting');
+    expect(end, 'the topic arm has no fall-through boundary — the extraction is not bounded and the assertions below would read the whole file').toBeGreaterThan(-1);
+    const body = arm.slice(0, end);
+    // Vacuity: the bounded body must actually contain the two template
+    // literals, or an empty slice would pass every `not.toMatch`.
+    expect(body.length, 'the bounded arm is too short to be the real one').toBeGreaterThan(200);
+    return body;
+  }
+
+  it('(a) the per-card flash HAS a conversation_type arm — RED if a topic falls through to the connector sentence again', () => {
+    const code = pageCode();
+    // The arm itself, in the chain rather than anywhere in the file.
+    expect(code, 'the flash chain has no conversation_type arm').toMatch(
+      /p\.kind === 'conversation_type'/,
+    );
+    // ⚠ THE VACUITY GUARD FIRST. Two `not.toMatch` against a subject that never
+    // arrived pass for the wrong reason, so the connector sentence is proven to
+    // still BE in this file (it is correct for connectors) before anything is
+    // asserted about topics.
+    expect(code, 'the connector sentence has moved — this test is no longer comparing anything')
+      .toMatch(/waiting for your credential/);
+
+    // The topic arm must say the two things the accept makes true and the card
+    // may not: it is live now, and where to take it off.
+    const armBody = topicFlashArm(code);
+    expect(armBody).toMatch(/switched on now/i);
+    expect(armBody).toMatch(/Support › Triage rules/);
+    expect(armBody).not.toMatch(/waiting for your credential/);
+    expect(armBody).not.toMatch(/under Systems/);
+  });
+
+  it('(a2) the topic flash never claims a topic decides who answers — RED if "routes" returns, which is the promise 754 removed from the card', () => {
+    const code = pageCode();
+    const armBody = topicFlashArm(code);
+    expect(armBody).not.toMatch(/routed to|routes to|who answers it/i);
+    expect(armBody).toMatch(/does not change who answers/i);
+  });
+
+  it('(b) the BATCH flash has its own topic noun — RED if "10 set up, each waiting for your credential" can be said about ten triage rules', () => {
+    const code = pageCode();
+    expect(code, 'the batch flash no longer branches on conversation_type')
+      .toMatch(/batchKind === 'conversation_type'/);
+    // The three parts of that sentence, each branched.
+    expect(code).toMatch(/batchKind === 'conversation_type' \? 'switched on'/);
+    expect(code).toMatch(/each filing new conversations under its own topic/);
+    expect(code).toMatch(/every one of them is still switched on/);
+    // and the vacuity guard: the connector tail still exists, for connectors.
+    expect(code).toMatch(/', each waiting for your credential'/);
+  });
+
+  it('(c) the SECTION blurb is per kind and never promises a later consent step for a topic', () => {
+    // The false sentence, gone from the page entirely.
+    expect(pageCode()).not.toMatch(/The real consent step for/);
+    // and the page reads the pure function rather than a literal.
+    expect(pageCode()).toMatch(/acceptAllSectionBlurb\(kind\)/);
+
+    const topic = acceptAllSectionBlurb('conversation_type');
+    expect(topic).toMatch(/no later step/i);
+    expect(topic).toMatch(/straight away/i);
+    expect(topic).toMatch(/Support › Triage rules/);
+    expect(topic).not.toMatch(/credential|publish/i);
+
+    // ⚠ THE INVERSION. The two kinds the old sentence WAS true of must still
+    // say their own second gate, or this fix has removed a true promise along
+    // with the false one.
+    expect(acceptAllSectionBlurb('connector')).toMatch(/credential/i);
+    expect(acceptAllSectionBlurb('procedure')).toMatch(/publish/i);
+    expect(acceptAllSectionBlurb('connector')).not.toBe(acceptAllSectionBlurb('procedure'));
+    expect(acceptAllSectionBlurb('conversation_type')).not.toBe(acceptAllSectionBlurb('connector'));
+  });
+
+  it('(c2) every kind batchModeFor sends to the accept-all renderer has a blurb of its own — RED if a seventh kind inherits somebody else\'s promise', () => {
+    let compared = 0;
+    for (const kind of PROPOSAL_KINDS) {
+      if (batchModeFor(kind) !== 'accept_all') continue;
+      const blurb = acceptAllSectionBlurb(kind);
+      expect(blurb.length, `${kind} blurb`).toBeGreaterThan(40);
+      // Not the bare default — that one is only for a kind nobody has decided
+      // about yet, and every kind in this section has been decided about.
+      expect(blurb, `${kind} fell through to the default blurb`)
+        .not.toBe('Uncheck anything you don\'t want proposed at all.');
+      compared++;
+    }
+    expect(compared, 'no kind reaches the accept-all renderer — this test compared nothing').toBe(3);
   });
 });

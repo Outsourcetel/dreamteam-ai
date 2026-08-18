@@ -8,8 +8,11 @@
 // WRITES five kinds: 'connector' through Path B, 'employee' through Path A
 // (migration 746), 'guardrail' through Path B for PATTERN-bearing rules only
 // (751), 'procedure' through Path B via the playbook-draft EDGE FUNCTION (752),
-// and — since migration 753 — 'trust_rule' through Path A. ONE kind is still
-// read-only here: 'conversation_type', which has no writer at all.
+// 'trust_rule' through Path A (753), and — since migration 754 —
+// 'conversation_type' through Path B into support_triage_rules. NO KIND IS
+// READ-ONLY ANY MORE: this line used to end "ONE kind is still read-only here:
+// 'conversation_type', which has no writer at all", and every kind
+// discovery_proposals_kind_check admits now has one.
 //
 // ⚠ 'trust_rule' IS THE ONLY PROPOSAL THAT SUBTRACTS OVERSIGHT rather than
 // adding a capability, and the accept is correspondingly the smallest one on
@@ -78,7 +81,8 @@ import { addGuardrailRule } from './guardrailApi';
 import { CATEGORIES } from './categoryContracts';
 import type { SystemCategory } from './categoryContracts';
 import { draftPlaybookFromSop } from './playbookBuilderApi';
-import { KIND_LABELS, PROPOSAL_KINDS, guardrailAcceptability, procedureAcceptability } from './discoveryProposalPresentation';
+import { createTriageRuleFromProposal } from './supportInboxApi';
+import { KIND_LABELS, PROPOSAL_KINDS, guardrailAcceptability, procedureAcceptability, topicAcceptability } from './discoveryProposalPresentation';
 import type { AcceptCompliancePack, ProposalKind, ProposalState } from './discoveryProposalPresentation';
 
 export type { ProposalKind, ProposalState };
@@ -394,6 +398,22 @@ const ACCEPT_WRITERS: Partial<Record<ProposalKind, AcceptWriter>> = {
   // for the three measured reasons, and the card copy in
   // discoveryProposalPresentation.ts, which no longer claims enforcement.
   trust_rule: (proposal, note) => acceptTrustRuleProposal(proposal, note),
+  // Migration 754, and THE LAST ENTRY THIS TABLE WILL EVER GAIN — every kind
+  // discovery_proposals_kind_check admits now has a writer. Path B for the
+  // connector/guardrail reason rather than the procedure one: `authenticated`
+  // holds INSERT/UPDATE/DELETE/SELECT on support_triage_rules behind an
+  // owner/admin/manager RLS policy, and the ordinary writer is the triage-rules
+  // editor's own PostgREST call, so an inlined SQL write would run as postgres
+  // and bypass a policy customers already depend on.
+  //
+  // ⚠ IT LABELS, IT DOES NOT ROUTE, and the card was rewritten to say so. The
+  // topic axis is real (de_conversations.category, written by
+  // trg_triage_support_conversation from classify_support_text) but nothing
+  // reads it to choose a digital employee: de_id is stamped when the
+  // conversation row is inserted, before the first message exists. The
+  // restriction to payloads that can become a real rule lives in
+  // topicAcceptability, which the CARD reads too.
+  conversation_type: (proposal, note) => acceptConversationTopicProposal(proposal, note),
 };
 
 /** The kinds this screen can decide, derived from the ONE table above and
@@ -429,20 +449,21 @@ function acceptWriterFor(kind: ProposalKind): AcceptWriter | null {
 /** Which kinds this screen can actually decide today — derived from
  *  ACCEPT_WRITERS, never a list of its own.
  *
- *  'connector', 'employee', 'guardrail', 'procedure' and — since migration 753
- *  — 'trust_rule'. ONE omission remains, and it has a named reason:
- *   - 'conversation_type' — no table and no writer (to_regclass(
- *                    'public.conversation_types') is null), and nothing routes
- *                    on it today. A topic axis DOES exist and is live
- *                    (de_conversations.category, driven by
- *                    support_triage_rules), and the founder's ruling of
- *                    2026-08-15 is that the interview will eventually write
- *                    REAL triage rules rather than a label. That is a separate
- *                    task with its own writer. Until it lands, an accept path
- *                    here could only be a no-op — the exact "looks governed and
- *                    is not" artefact this whole step exists to prevent.
+ *  ⚠ AS OF MIGRATION 754 THERE ARE NO OMISSIONS LEFT: all six kinds
+ *  discovery_proposals_kind_check admits have a writer, and this function
+ *  returns true for every one of them. The sentence that used to stand here —
+ *  "'conversation_type' — no table and no writer, and nothing routes on it
+ *  today ... an accept path here could only be a no-op" — was true when it was
+ *  written and is now half true, and the half that survives is on the card
+ *  rather than in this list. The kind writes a REAL row in support_triage_rules
+ *  (the table the live topic axis already runs on), so the accept is not a
+ *  no-op; but NOTHING STILL ROUTES ON A TOPIC — de_conversations.de_id is
+ *  stamped when the conversation row is inserted, before the first message
+ *  exists — so the card says the conversation gets LABELLED and never that it
+ *  gets routed, and the accept records routes_to_employee: false rather than
+ *  leaving it to be inferred from an absence.
  *
- *  A kind that is not here keeps its controls switched off on the screen,
+ *  A kind that is not here would keep its controls switched off on the screen,
  *  rather than offering a button that quietly does nothing. */
 export function isDecidableKind(kind: ProposalKind): boolean {
   return acceptWriterFor(kind) !== null;
@@ -909,6 +930,87 @@ async function acceptTrustRuleProposal(
  * ⚠ NOT EXPORTED, same as the connector writer. The only way here is
  * acceptProposal, through ACCEPT_WRITERS.
  */
+/**
+ * Accept a conversation_type proposal — migration 754, Path B.
+ *
+ * The browser creates the triage rule as the signed-in human under RLS
+ * (createTriageRuleFromProposal), then the RPC verifies every literal against
+ * the card and stamps the id. It does not invent anything: name, match_pattern
+ * and set_category all come off the payload and are compared byte for byte
+ * server-side, so a rule this function created with different words would be
+ * refused rather than silently accepted.
+ *
+ * ⚠ THE CRASH WINDOW IS CLOSED BY THE DATABASE HERE, NOT BY THIS FUNCTION —
+ * which is the difference from the guardrail writer. `support_triage_rules`
+ * carried NO unique index of any kind (measured 2026-08-17: the primary key, a
+ * set_priority CHECK and the tenant FK, and nothing else), so before 754 a
+ * browser dying between the insert and the stamp left an orphan and a retry
+ * minted a second live rule. 754 adds `source_proposal_id` plus a PARTIAL UNIQUE
+ * index over it, so one proposal owns at most one rule. The find-first inside
+ * createTriageRuleFromProposal turns the resulting 23505 into a re-use; it is
+ * not what makes the accept safe.
+ *
+ * ⚠ NOT EXPORTED, same as the other four writers. The only way here is
+ * acceptProposal, through ACCEPT_WRITERS.
+ */
+async function acceptConversationTopicProposal(
+  proposal: DiscoveryProposal,
+  note: string | null,
+): Promise<DecisionOutcome> {
+  if (proposal.kind !== 'conversation_type') {
+    return {
+      ok: false,
+      error: `That is a "${proposal.kind}" recommendation, not a conversation topic. Nothing was changed.`,
+    };
+  }
+
+  // THE ONE GATE, and the card reads the same function — see topicAcceptability.
+  const gate = topicAcceptability(proposal.payload);
+  if (!gate.ok) {
+    // Nothing is created. The RPC refuses in its own words and writes them onto
+    // the row (migration 740), so a reload still shows why; returning its
+    // outcome unchanged is what stops this function inventing a second sentence
+    // that would then disagree with the card.
+    return decideDiscoveryProposal(proposal.id, 'accepted', note, null);
+  }
+
+  let created: { id: string; rule_order: number; reused: boolean };
+  try {
+    created = await createTriageRuleFromProposal({
+      proposalId: proposal.id,
+      name: gate.label,
+      matchPattern: gate.pattern,
+      setCategory: gate.category,
+    });
+  } catch (err) {
+    return { ok: false, error: `This topic could not be set up: ${friendlyDecisionError(err instanceof Error ? err.message : String(err))}` };
+  }
+
+  const outcome = await decideDiscoveryProposal(proposal.id, 'accepted', note, created.id);
+  if (!outcome.ok) {
+    // THREE sentences, in this order — what happened to support_triage_rules,
+    // why the stamp did not land, and what to do next. The first matters here
+    // for the guardrail reason: a triage rule that exists is ALREADY LABELLING
+    // traffic, so "we could not record your decision" must never be read as
+    // "nothing changed in your workspace".
+    const reason = stripNothingChanged(outcome.error ?? '');
+    const whatHappened = created.reused
+      ? `This recommendation had already created the "${gate.label}" topic rule, so nothing new was added — and it is still labelling conversations.`
+      : `The "${gate.label}" topic rule was created and is live now — new conversations mentioning those words are already being labelled.`;
+    if (outcome.code === 'already_decided') {
+      return {
+        ...outcome,
+        error: `${whatHappened} But this recommendation had already been decided${outcome.state ? ` — it is ${outcome.state} now` : ''}, so your decision was not recorded and it will not take another one. Reload the page to see where it landed, and remove the rule under Support › Triage rules if you did not want it.`,
+      };
+    }
+    return {
+      ...outcome,
+      error: `${whatHappened} We could not record your decision: ${reason} Accepting again is safe — it will re-use the rule that now exists rather than making a second one. If you would rather it were not there at all, delete it under Support › Triage rules.`,
+    };
+  }
+  return { ...outcome, reusedExisting: created.reused };
+}
+
 async function acceptGuardrailProposal(
   proposal: DiscoveryProposal,
   note: string | null,

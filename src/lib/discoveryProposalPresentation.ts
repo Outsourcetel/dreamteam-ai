@@ -24,6 +24,23 @@
 //   - conversation_type / procedure / connector are low-stakes enough that
 //     their SECOND gate (publish / credential) is the real consent, so they
 //     get "accept all N" with per-item unchecking.
+//     ⚠ RE-EXAMINED FOR conversation_type ON 2026-08-18, because migration 754
+//     gave that kind a real writer and the old justification named a "SECOND
+//     gate" it does not have — there is no publish step and no credential for a
+//     triage rule. accept_all is KEPT, on a different and stronger argument:
+//     an accepted topic CHANGES NO DECISION. It writes a label the inbox filter
+//     and the History report count by; it blocks nothing (unlike a guardrail),
+//     removes no human (unlike a trust rule), grants no access (unlike a
+//     connector), creates no colleague (unlike an employee), and does not
+//     choose who answers — de_conversations.de_id is stamped when the
+//     conversation row is inserted, before the first message exists. It is also
+//     the ONE kind that routinely arrives ten at a time, which is the case this
+//     mode exists for, and every one of the ten is individually removable in
+//     Support › Triage rules afterwards. If a future change ever lets a topic
+//     set priority, severity or ownership, this decision has to be re-made:
+//     those DO change what happens to traffic. createTriageRuleFromProposal
+//     therefore writes the column defaults for priority and severity and takes
+//     neither from the payload.
 //   - employee batches by department, but every card stays individually
 //     visible — batching here is a GROUPING device, never a bulk-decide one.
 // ============================================================
@@ -71,6 +88,39 @@ export const KIND_LABELS: Record<ProposalKind, string> = {
  *  before any "accept all" fatigue, then the three low-stakes batches. */
 export const SECTION_ORDER: readonly ProposalKind[] =
   ['employee', 'guardrail', 'trust_rule', 'connector', 'procedure', 'conversation_type'];
+
+/**
+ * The sentence under an "Accept N selected" heading.
+ *
+ * ⚠⚠ THIS USED TO BE ONE LITERAL FOR ALL THREE accept_all KINDS, and it said:
+ * "The real consent step for X comes later — publishing a procedure, or
+ * entering a credential for a connector." For a conversation topic there IS NO
+ * LATER STEP. That is the same false promise migration 754 identified on the
+ * card face ("you can assign one when you publish") and removed — re-made one
+ * level up, over a whole section, where it covers ten cards at once instead of
+ * one. A topic accept writes a live triage rule: classify_support_text reads
+ * every active rule in the workspace on the first user message of every support
+ * conversation, so there is nothing between the click and the traffic.
+ *
+ * It is a FUNCTION over the kind, not a record with a fallback, for the reason
+ * batchModeFor's header gives: a default branch is how a seventh kind inherits
+ * a promise nobody made for it. A kind with no entry gets a sentence that
+ * claims nothing beyond what the checkbox does.
+ *
+ * PURE, so it is pinned by a unit test rather than by grepping a page.
+ */
+export function acceptAllSectionBlurb(kind: ProposalKind): string {
+  switch (kind) {
+    case 'connector':
+      return 'Accepting one records the system and nothing more — you still enter the credential yourself, under Systems, before anything can read or write. Uncheck anything you don\'t want proposed at all.';
+    case 'procedure':
+      return 'Accepting one writes a draft under Playbooks and runs nothing: publishing it is the step that lets it run, and that is a separate decision. Uncheck anything you don\'t want proposed at all.';
+    case 'conversation_type':
+      return 'There is no later step for these. Accepting one adds a triage rule straight away, and new conversations using those words are filed under that topic from then on — it changes who answers nothing, it sits behind your built-in categories like Safety and Security, and you can reword or remove any of them under Support › Triage rules. Uncheck anything you don\'t want.';
+    default:
+      return 'Uncheck anything you don\'t want proposed at all.';
+  }
+}
 
 // ── small string helpers, same shape as discoveryProposals.ts's own ────────
 
@@ -641,6 +691,58 @@ export function procedureAcceptability(payload: Record<string, unknown>): Proced
   return { ok: true, sopText, name, reason: '' };
 }
 
+/** Can this conversation_type payload become a real triage rule, and if not,
+ *  why — in words a business owner can act on.
+ *
+ *  ⚠ ONE GATE, READ BY BOTH THE CARD AND THE WRITER, for the reason
+ *  guardrailAcceptability's header gives: a copy that says "this will be set up"
+ *  next to a writer that refuses is the disagreement §11b exists to prevent.
+ *  acceptConversationTopicProposal calls this before it writes anything, and
+ *  whatAcceptingWrites calls it to decide which sentence to print.
+ *
+ *  ⚠ THE SQL BRANCH IS THE STRICTER OF THE TWO AND THAT IS DELIBERATE — but
+ *  ONLY where being stricter is free. On Path B the browser INSERTS the rule
+ *  between the two gates, so a server stricter than this one would leave a live
+ *  triage rule behind a proposal that reverts to pending and re-refuses forever
+ *  — exactly the trap migration 751 documents for guardrails. So every
+ *  predicate here mirrors the SQL one character for character: the token shape
+ *  (^[a-z0-9]+(_[a-z0-9]+)*$, <= 40), the non-empty pattern, and the
+ *  empty-alternative refusal. The rule_order band is NOT checked here because
+ *  this side CHOOSES it rather than receiving it. */
+export interface TopicAcceptability {
+  ok: boolean;
+  label: string;
+  category: string;
+  pattern: string;
+  reason: string;
+}
+export function topicAcceptability(payload: Record<string, unknown>): TopicAcceptability {
+  const label = str(payload.label);
+  const category = str(payload.set_category);
+  const pattern = str(payload.match_pattern);
+  const no = (reason: string): TopicAcceptability => ({ ok: false, label, category, pattern, reason });
+
+  if (!label) {
+    return no('This one does not say what the topic is called, so there is nothing to show you in your triage rules.');
+  }
+  if (!category) {
+    return no(`This one does not say what to file "${label}" conversations under, so nothing would be labelled.`);
+  }
+  if (!/^[a-z0-9]+(_[a-z0-9]+)*$/.test(category) || category.length > 40) {
+    return no(`We cannot file conversations under "${category}" — a topic you can sort and count by has to be plain lower-case words joined by underscores, like "delivery_delay".`);
+  }
+  // ⚠ A MISSING PATTERN IS A CATCH-ALL, NOT AN EMPTY RULE. classify_support_text
+  // returns IMMEDIATELY on the first rule with no pattern; every workspace
+  // already has exactly one of those, and a second would swallow the rest.
+  if (!pattern) {
+    return no(`This one has no words to look for, and a topic rule with no words catches every conversation rather than the ones about "${label}".`);
+  }
+  if (/(^\||\|\||\|$)/.test(pattern)) {
+    return no(`The words to look for on this one — "${pattern}" — have a "|" with nothing beside it, so the card would be showing you a phrase that is never looked at.`);
+  }
+  return { ok: true, label, category, pattern, reason: '' };
+}
+
 // ── card copy ────────────────────────────────────────────────────────────
 
 export interface ProposalCardCopy {
@@ -656,9 +758,13 @@ export interface ProposalCardCopy {
 }
 
 /** The one function every card in the screen calls for its copy. Takes only
- *  data — kind + payload + an employee-name lookup for the two kinds
- *  (conversation_type's owner_ref, trust_rule's de_ref) that reference an
- *  employee by "archetype:<key>" rather than carrying a name of their own.
+ *  data — kind + payload + an employee-name lookup for the ONE kind
+ *  (trust_rule's de_ref) that references an employee by "archetype:<key>"
+ *  rather than carrying a name of their own. ⚠ It was TWO until migration 754:
+ *  conversation_type carried an `owner_ref` and the card rendered "Routes to:
+ *  <name>". Nothing routes on a topic — de_conversations.de_id is stamped when
+ *  the conversation row is inserted, before any message exists — so the field
+ *  and the sentence are both gone rather than made optional.
  *
  *  ⚠ `context` IS THE CONSENT, AND IT IS ON THE CARD BECAUSE ACCEPT IS ON THE
  *  CARD. Until this parameter existed, the entire compliance-pack disclosure
@@ -680,15 +786,48 @@ export function cardCopyFor(
   const archetypeOf = (ref: string) => (ref.startsWith('archetype:') ? ref.slice('archetype:'.length) : ref);
 
   switch (kind) {
+    // ⚠⚠ 754: FOUR SENTENCES WERE ON THIS CARD AND THREE OF THEM DESCRIBED
+    // BEHAVIOUR THAT DOES NOT EXIST. Checked one at a time against live code:
+    //
+    //  1. "Conversations get tagged and routed under this topic from now on."
+    //     TAGGED is true — trg_triage_support_conversation writes
+    //     de_conversations.category from classify_support_text on the first user
+    //     message. ROUTED IS FALSE. de_id is stamped when the conversation row
+    //     is INSERTED (widget-ask/index.ts:338, email-inbound/index.ts:190),
+    //     before any message exists, so the employee is chosen before the topic
+    //     is known — and no reader of de_conversations.category selects an
+    //     employee (enumerated 2026-08-17: three SQL functions name both and all
+    //     three read action_definitions.category or group by channel; the client
+    //     readers are four filters and a label).
+    //  2. "Routes to: <employee>" — FALSE for the same reason, and worse,
+    //     because it names a specific person the topic will supposedly reach.
+    //     `owner_ref` is gone from the payload entirely (validatePayload, 754):
+    //     a required field whose only job was to satisfy a promise the platform
+    //     does not keep.
+    //  3. "you can assign one when you publish" — FALSE TWICE. There is no
+    //     publish step for a triage rule and no owner to assign.
+    //  4. "You can rename or reassign this topic later." RENAME is true — the
+    //     triage-rules editor has full CRUD. REASSIGN is not a thing.
+    //
+    // What replaces them is what the accept actually does, including the part
+    // the customer would otherwise discover by surprise: this rule is consulted
+    // AFTER the built-in categories. classify_support_text returns on the FIRST
+    // match ordered by rule_order, the workspace's eleven baseline rules occupy
+    // 10..100 and 9999, and an accepted topic is confined to 200..9998 — so
+    // "someone is hurt" stays Safety even if the words also match a topic the
+    // customer named. `rulesAhead` comes from the accept's own counter, so the
+    // card and the audit line cannot drift.
     case 'conversation_type': {
       const label = str(payload.label) || 'New topic';
-      const ownerRef = str(payload.owner_ref);
-      const ownerName = ownerRef && ownerRef !== 'unassigned' ? employeeNameByArchetype.get(archetypeOf(ownerRef)) : undefined;
+      const category = str(payload.set_category);
+      const pattern = str(payload.match_pattern);
       return {
-        title: `Track "${label}" as a conversation topic`,
-        detail: 'Conversations get tagged and routed under this topic from now on.',
-        meta: ownerName ? `Routes to: ${ownerName}` : 'No owner yet — you can assign one when you publish.',
-        nudge: 'You can rename or reassign this topic later.',
+        title: `File "${label}" as its own conversation topic`,
+        detail: 'Support conversations mentioning these words get labelled with this topic, so you can filter and count them. It does not change who answers them.',
+        meta: pattern
+          ? `Looks for: ${pattern.split('|').map((p) => p.trim()).filter(Boolean).join(' · ')}${category ? ` → filed as "${category}"` : ''}`
+          : 'No words to look for yet',
+        nudge: 'Runs after your built-in categories like Safety and Security, so those still win. You can rename it, change the words or remove it in Triage rules.',
       };
     }
 
@@ -1167,7 +1306,17 @@ export function whatAcceptingWrites(
       }
       return 'Sends what you described to the drafter, which writes it up as a DRAFT procedure under Playbooks — a model does the writing, so this uses some of your AI budget. Nothing runs it: a draft is not published, and only publishing makes it live. You can read it, change it, or archive it.';
     }
-    case 'conversation_type': return 'Adds this as a routable conversation topic.';
+    // ⚠ 754: this read "Adds this as a routable conversation topic." It added
+    // NOTHING — there was no writer at all until migration 754 — and "routable"
+    // was false besides. Now it adds a real row and the sentence says which one,
+    // what looks at it, and the two things it does not do.
+    case 'conversation_type': {
+      const gate = topicAcceptability(payload);
+      if (!gate.ok) {
+        return `Creates nothing. ${gate.reason} Accepting it records that reason against this recommendation and leaves it here for you.`;
+      }
+      return `Adds a triage rule under Support › Triage rules. From then on, a support conversation whose first message contains any of those words is labelled "${gate.category}", which is what the inbox topic filter and the History report count by. It does NOT decide who answers — the digital employee is chosen when the conversation starts, before the first message arrives — and it is consulted AFTER your built-in categories, so Safety, Security and the rest still win where the words overlap. You can edit or delete it there at any time.`;
+    }
     case 'guardrail': {
       // ⚠ 751: the threshold branch used to say "Creates a guardrail that
       // requires your approval above this threshold". It creates NOTHING —
