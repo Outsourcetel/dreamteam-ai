@@ -173,3 +173,22 @@ evidence rather than being deleted:
 3. DE runtime attribution — split dispatch_log 5,695 into real-work vs heartbeat vs exam.
 4. Mission #7 — drive one mission end-to-end (the keystone has exactly one data point).
 5. Knowledge — ingest one doc on Review Lab; explain jobs=2 vs chunks=812.
+
+## Verification sweep 2026-08-13 (results filed to the register, not here)
+
+Re-verified two of this document's findings against live production; both agree with
+`review/deferred-register.json`, which is the authoritative open state:
+
+- **B-1 / F-6 — CLOSED, now proven.** mig 721 installs `trg_sync_conversation_draft` (6th
+  status-sync trigger). Re-ran the exact failing test: fresh hosted draft → raw
+  `decide_human_task` (the path that stranded it) → `delivery=sent`, conv `human_owned`,
+  customer poll shows 1 message. Pre-fix rows stay stranded by design.
+- **B-8 / F-7 — CLOSED.** certify probe `no-approval-that-said-sent-and-sent-nothing` covers the
+  class with a mechanism arm, so a quiet week cannot fake a pass.
+- **B-6 / F-4 — measurably WORSE:** dev ledger 657, prod **777** (was 731 on 08-12) → the gap
+  grew 74 → **120 migrations** in a day.
+
+⚠ **Correction to this document:** its carried-forward r5 list named debt #0 (playbook branch
+executor) as still-standing. It was already fixed — register **B-9 closed**. I carried those
+r5 items forward from docs/47 without re-measuring them, which is the precise failure docs/53
+names. The register exists because of it; open state belongs there.
