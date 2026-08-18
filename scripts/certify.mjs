@@ -905,6 +905,23 @@ const sections = [
       // ledger at claim time, not at apply time — a real change to
       // migrate:next, recorded here rather than attempted in passing.
       '715', '717',
+      // 2026-08-18 — the SAME defeat a fourth time, and it widens the gap the
+      // 715/717 note left open. Two agents, one repo:
+      //   754_a_trust_level_cannot_hide_a_live_grant     applied 01:29:28
+      //   754_conversation_topics_the_customer_named     applied 01:40:52
+      //
+      // `npm run migrate:next` answered correctly for mine: at claim time the
+      // other 754 was not in the local tree, not on origin/MAIN, and not in
+      // the production ledger. It was on an UNMERGED BRANCH —
+      // claude/docs54-stage-c — a source the union does not read, and one the
+      // 715/717 note did not name because that pair never sat on a branch.
+      //
+      // So the gap is wider than claim-to-apply: a number can be spent where
+      // no consulted source can see it. Reading unmerged origin branches would
+      // have caught this one and is the cheapest next move; taking the claim
+      // in the LEDGER at claim time closes both and is still the real fix.
+      // Recorded here rather than attempted in passing.
+      '754',
     ]);
     const names = readdirSync('supabase/migrations').filter((f) => f.endsWith('.sql'));
     const byNum = new Map();
