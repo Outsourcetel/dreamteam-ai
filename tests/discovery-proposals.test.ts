@@ -112,6 +112,39 @@ describe('a proposal must be decidable', () => {
       label: 'Billing question', set_category: 'billing_question', match_pattern: 'invoice query|billing question',
     })).not.toThrow();
   });
+
+  // ⚠⚠ 760 PUT `owner_ref` BACK, OPTIONAL. §11b specified "label + owner"; 754
+  // removed the owner because nothing routed on a topic; 760 built the routing.
+  // OPTIONAL rather than required is the one difference from §11b's original
+  // contract, and it is a decision: required would mean a session where the
+  // model can confidently place three of ten topics emits three cards, and
+  // "a customer might ask for 10 different things" is the founder's own
+  // requirement for this kind.
+  it('accepts a conversation type with NO owner — a topic nobody owns is answered the way the workspace answers today', () => {
+    expect(() => validatePayload('conversation_type', {
+      label: 'Billing question', set_category: 'billing_question', match_pattern: 'invoice query',
+    })).not.toThrow();
+  });
+
+  it('accepts a conversation type whose owner is an archetype reference', () => {
+    expect(() => validatePayload('conversation_type', {
+      label: 'Billing question', set_category: 'billing_question', match_pattern: 'invoice query',
+      owner_ref: 'archetype:billing_ar',
+    })).not.toThrow();
+  });
+
+  // ⚠ THE INVERSION, and it is the same failure trust_rule's de_ref already
+  // met: a model that will not admit it does not know writes prose, or writes
+  // the literal an older prompt used to ask for. Either one names nobody, and
+  // this kind now decides who a customer talks to.
+  it('refuses an owner_ref that is not a reference — "unassigned", a job title, a name', () => {
+    for (const bad of ['unassigned', 'whoever picks up the phone', 'Morgan', 'de:1234', 'archetype:Billing AR']) {
+      expect(() => validatePayload('conversation_type', {
+        label: 'Billing question', set_category: 'billing_question', match_pattern: 'invoice query',
+        owner_ref: bad,
+      }), `owner_ref ${JSON.stringify(bad)} was accepted`).toThrow(/one of the people this interview recommended|archetype/i);
+    }
+  });
 });
 
 // ── validatePayload, the rest of the contract ───────────────────────────────

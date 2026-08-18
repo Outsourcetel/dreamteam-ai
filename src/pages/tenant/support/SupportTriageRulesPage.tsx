@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import type { Page } from '../../../types';
 import { listTriageRules, upsertTriageRule, deleteTriageRule } from '../../../lib/supportInboxApi';
 import type { TriageRule } from '../../../lib/supportInboxApi';
+import { listDigitalEmployees } from '../../../lib/digitalEmployeesApi';
 import { LiveLoadingSkeleton } from '../../../components/LiveDataStates';
 
 // ============================================================
@@ -10,15 +11,33 @@ import { LiveLoadingSkeleton } from '../../../components/LiveDataStates';
 // by the DB trigger; this lets an admin edit the rules that drive it.
 // Precedence = rule_order (lower wins), so keep safety/security first.
 // Writes are RLS-guarded (owner/admin/manager).
+//
+// ⚠⚠ mig 760 — AND WHO ANSWERS. This screen is the EDIT half of the founder's
+// decision: "the interview SEEDS it, the Support › Triage rules screen EDITS
+// it. A customer must be able to change their mind on the screen without
+// re-running the interview." So the owner is a first-class control here, not a
+// read-only badge, and clearing it back to "whoever usually answers" has to be
+// as easy as setting it.
+//
+// ⚠ THE PICKER IS FILTERED THE SAME WAY classify_support_text FILTERS, and this
+// is the one place the two could drift: the SQL returns an owner only for an
+// employee that is in the tenant, is NOT the Workspace Assistant, and is not
+// paused/retired/archived/designed. Offering a name here that the classifier
+// would refuse would let someone set an owner that silently never answers. The
+// database is still the authority — a stale option just fails the composite FK
+// or falls back at answer time — but the list a person reads should not lie.
 // ============================================================
 
 type Draft = Partial<TriageRule> & { name: string; set_category: string };
-const BLANK: Draft = { rule_order: 100, name: '', match_pattern: '', set_category: '', set_priority: 'normal', set_severity: 'sev3', active: true };
+const BLANK: Draft = { rule_order: 100, name: '', match_pattern: '', set_category: '', set_priority: 'normal', set_severity: 'sev3', active: true, owner_de_id: null };
 const PRIORITIES: TriageRule['set_priority'][] = ['low', 'normal', 'high', 'urgent'];
 const SEVERITIES = ['sev1', 'sev2', 'sev3', 'sev4'];
+/** Same set classify_support_text refuses to return an owner for. */
+const CANNOT_FRONT = new Set(['paused', 'retired', 'archived', 'designed']);
 
 const SupportTriageRulesPage = ({ setPage, embedded }: { setPage: (p: Page) => void; embedded?: boolean }) => {
   const [rules, setRules] = useState<TriageRule[]>([]);
+  const [owners, setOwners] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -27,11 +46,30 @@ const SupportTriageRulesPage = ({ setPage, embedded }: { setPage: (p: Page) => v
 
   const refresh = useCallback(async () => {
     setLoading(true); setError(null);
-    try { setRules(await listTriageRules()); }
-    catch (err) { setError((err as Error)?.message || 'Failed to load triage rules.'); }
+    try {
+      const [rows, des] = await Promise.all([listTriageRules(), listDigitalEmployees()]);
+      setRules(rows);
+      setOwners(
+        des
+          // `is_workforce_assistant` is not on the DigitalEmployee interface but
+          // IS on the row (listTenantRows selects '*'), so it is read through a
+          // narrow cast rather than by widening a type six other pages share.
+          .filter((d) => (d as { is_workforce_assistant?: boolean }).is_workforce_assistant !== true
+            && !CANNOT_FRONT.has(String(d.lifecycle_status ?? '')))
+          .map((d) => ({ id: d.id, name: d.persona_name || d.name })),
+      );
+    } catch (err) { setError((err as Error)?.message || 'Failed to load triage rules.'); }
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void refresh(); }, [refresh]);
+
+  /** The employee a rule sends conversations to, or the honest absence. Said in
+   *  words rather than left blank: an empty cell and "nobody in particular"
+   *  read identically, and one of them is a decision the customer made. */
+  const ownerLabel = (id: string | null | undefined): string => {
+    if (!id) return '—';
+    return owners.find((o) => o.id === id)?.name ?? 'someone who can no longer answer';
+  };
 
   const notify = (m: string) => { setToast(m); setTimeout(() => setToast(null), 3000); };
 
@@ -122,6 +160,30 @@ const SupportTriageRulesPage = ({ setPage, embedded }: { setPage: (p: Page) => v
               <span className="text-xs text-dt-support">Active</span>
             </label>
           </div>
+          {/* ⚠ mig 760 — WHO ANSWERS. On its own row rather than squeezed into
+              the four-column grid above: it is the only control here that
+              changes who a customer talks to, and the sentence under it is the
+              one thing a person cannot work out from the field itself. */}
+          <label className="block">
+            <span className="text-[11px] text-dt-support">Answered by</span>
+            <select
+              value={draft.owner_de_id ?? ''}
+              onChange={(e) => set({ owner_de_id: e.target.value || null })}
+              className="mt-1 w-full bg-dt-page border border-dt-border-strong rounded-lg px-3 py-1.5 text-sm text-dt-body"
+            >
+              <option value="">Whoever usually answers</option>
+              {owners.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+              {/* An owner that is no longer selectable — retired, paused, or
+                  never published — still has to be VISIBLE, or saving any other
+                  field on this rule would silently clear it. */}
+              {draft.owner_de_id && !owners.some((o) => o.id === draft.owner_de_id) && (
+                <option value={draft.owner_de_id}>Someone who can no longer answer — pick again to change it</option>
+              )}
+            </select>
+            <span className="mt-1 block text-[11px] text-dt-muted">
+              New conversations matching this rule start with this person. Conversations already open keep whoever has them. If they are paused, retired or not published yet, these carry on being answered the way they are now.
+            </span>
+          </label>
           <div className="flex gap-2">
             <button onClick={save} disabled={saving}
               className="text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-60 transition-colors">
@@ -139,20 +201,21 @@ const SupportTriageRulesPage = ({ setPage, embedded }: { setPage: (p: Page) => v
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="border-b border-dt-border text-left">
-                {['Order', 'Name', 'Keywords', 'Category', 'Priority', 'Severity', '', ''].map((h, i) => (
+                {['Order', 'Name', 'Keywords', 'Category', 'Answered by', 'Priority', 'Severity', '', ''].map((h, i) => (
                   <th key={i} className="py-2.5 px-4 text-[11px] uppercase tracking-wide text-dt-muted font-medium">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {rules.length === 0 ? (
-                <tr><td colSpan={8} className="py-6 px-4 text-center text-xs text-dt-muted">No triage rules yet — add one, or apply migration 233 to seed the defaults.</td></tr>
+                <tr><td colSpan={9} className="py-6 px-4 text-center text-xs text-dt-muted">No triage rules yet — add one, or apply migration 233 to seed the defaults.</td></tr>
               ) : rules.map((r) => (
                 <tr key={r.id} className={`border-b border-dt-border hover:bg-dt-panel transition-colors ${!r.active ? 'opacity-50' : ''}`}>
                   <td className="py-3 px-4 text-dt-support">{r.rule_order}</td>
                   <td className="py-3 px-4 font-medium text-white">{r.name}</td>
                   <td className="py-3 px-4 text-dt-support text-xs max-w-xs truncate">{r.match_pattern || <span className="italic">catch-all</span>}</td>
                   <td className="py-3 px-4 text-dt-support">{r.set_category}</td>
+                  <td className="py-3 px-4 text-dt-support text-xs">{ownerLabel(r.owner_de_id)}</td>
                   <td className="py-3 px-4"><span className={`text-xs ${r.set_priority === 'urgent' ? 'text-rose-400' : r.set_priority === 'high' ? 'text-amber-300' : 'text-dt-support'}`}>{r.set_priority}</span></td>
                   <td className="py-3 px-4"><span className={`text-xs ${r.set_severity === 'sev1' ? 'text-rose-400' : r.set_severity === 'sev2' ? 'text-amber-300' : 'text-dt-support'}`}>{r.set_severity}</span></td>
                   <td className="py-3 px-4"><button onClick={() => setDraft({ ...r })} className="text-xs text-indigo-400 hover:text-indigo-300">Edit</button></td>

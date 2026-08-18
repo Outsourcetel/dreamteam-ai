@@ -45,6 +45,13 @@ import { BATTERY, PG_ONLY_WHITESPACE, guardrailBranch, extractPredicate } from '
 // resolves it fine); it is Deno that cannot load anything importing
 // import.meta.env, which is why the frontend copy exists at all.
 import { validatePayload as realValidatePayload } from '../supabase/functions/_shared/discoveryProposals.ts';
+// Same reason, same mechanism: the mig-760 PRECEDENCE is a pure function in a
+// _shared module precisely so it can be inverted here. The three conversation
+// writers themselves are Deno and cannot be imported — what this file can do
+// about them is pin their wiring, which the block at the bottom does.
+import {
+  chooseAnswerer, routerMayChoose, NEVER_FRONTS_CUSTOMER_CHAT,
+} from '../supabase/functions/_shared/topicRouting.ts';
 // The fourth door onto guardrail_rules.pattern, and the only one that is not
 // PostgREST — see THE RPC DOORS below. Its screen runs before the RPC call, so
 // a refusal throws without a network round trip, same as the other three.
@@ -588,21 +595,52 @@ describe('cardCopyFor — every kind carries its literal on the card, not just i
     expect(copy.meta).toContain('billing_question');
   });
 
-  // ⚠ THE CARD MUST NOT CLAIM ROUTING, IN ANY OF ITS FOUR SENTENCES. Three of
-  // the four it used to carry did ("tagged and routed", "Routes to: X", "assign
-  // one when you publish"). This is the guard that keeps them from coming back
-  // by a copy edit nobody reviews against the enumeration.
-  it('conversation_type: NO sentence on the card claims the topic routes or is owned', () => {
+  // ⚠⚠ REPLACED BY 760. The assertion that stood here — "NO sentence on the
+  // card claims the topic routes or is owned" — was the correct guard for a
+  // platform where nothing routed on a topic, and it is the wrong one now:
+  // §11b's own table asks for "label + owner — one line", 754 removed the owner
+  // because the promise was empty, and 760 built the promise. What has to be
+  // pinned instead is that the card carries the owner AND the condition, and
+  // that a card naming nobody says so rather than going quiet.
+  it('conversation_type: the card names WHO ANSWERS, and says it starts when they are live — RED if the owner is silently dropped', () => {
     const copy = cardCopyFor('conversation_type', {
       label: 'Billing question', set_category: 'billing_question', match_pattern: 'invoice query',
+      owner_ref: 'archetype:billing_ar',
     }, new Map([['billing_ar', 'Morgan']]));
-    const all = [copy.title, copy.detail, copy.meta, copy.nudge ?? ''].join(' ');
-    expect(all).not.toMatch(/\brout(e|es|ed|ing)\b/i);
-    expect(all).not.toMatch(/\bowner\b|\bassign\b/i);
-    // ...and the vacuity guard: the card must still SAY something about what
-    // accepting does, or "claims nothing" would pass on an empty card.
-    expect(copy.detail.length).toBeGreaterThan(20);
-    expect(all).toMatch(/label/i);
+    // §11b: the owner is on the CARD FACE, never only in the drawer.
+    expect(copy.meta).toContain('Morgan');
+    expect(copy.meta).toMatch(/Answered by/i);
+    // ⚠ AND THE CONDITION, which is the half a customer is hurt by if it is
+    // missing: the owner was hired in this same session and is therefore at
+    // lifecycle_status 'designed', and classify_support_text returns no owner
+    // for a never-published employee. Accepting records the choice; publishing
+    // is what turns it on.
+    expect(`${copy.detail} ${copy.nudge ?? ''}`).toMatch(/live in your workspace/i);
+    // ...and the enforceable literal is still there. Adding a person must not
+    // have pushed the phrases off the card.
+    expect(copy.meta).toContain('invoice query');
+    expect(copy.meta).toContain('billing_question');
+  });
+
+  it('conversation_type: a topic naming NOBODY says so out loud — RED if an absent owner reads the same as an assigned one', () => {
+    const owned = cardCopyFor('conversation_type', {
+      label: 'Billing question', set_category: 'billing_question', match_pattern: 'invoice query',
+      owner_ref: 'archetype:billing_ar',
+    }, new Map([['billing_ar', 'Morgan']]));
+    const unowned = cardCopyFor('conversation_type', {
+      label: 'Billing question', set_category: 'billing_question', match_pattern: 'invoice query',
+    }, new Map([['billing_ar', 'Morgan']]));
+    // THE INVERSION. Two cards that read identically would mean the owner is
+    // decoration, which is exactly what 754 deleted it for being.
+    expect(unowned.meta).not.toBe(owned.meta);
+    expect(unowned.detail).not.toBe(owned.detail);
+    expect(unowned.meta).toMatch(/whoever usually answers/i);
+    expect(unowned.detail).toMatch(/Whoever usually answers still answers them/i);
+    // ...and it must not name somebody it was not given. The map HAS Morgan in
+    // it here on purpose: a lookup keyed on the wrong thing would find her.
+    expect(`${unowned.title} ${unowned.detail} ${unowned.meta} ${unowned.nudge ?? ''}`).not.toContain('Morgan');
+    // vacuity guard: the card still says what accepting does.
+    expect(unowned.detail.length).toBeGreaterThan(20);
   });
 
   it('connector: provider + what it reads/writes + the credential note — RED if reads/writes are missing from meta', () => {
@@ -2518,11 +2556,35 @@ describe('the conversation-topic accept says what it did — the screen, not jus
     expect(armBody).not.toMatch(/under Systems/);
   });
 
-  it('(a2) the topic flash never claims a topic decides who answers — RED if "routes" returns, which is the promise 754 removed from the card', () => {
+  // ⚠⚠ REWRITTEN BY 760, AND THE OLD ASSERTION WAS RIGHT WHEN IT WAS WRITTEN.
+  // It required the flash to say "does not change who answers" and forbade
+  // "routes to" — because 754 measured that nothing on the platform read
+  // de_conversations.category to pick an employee. 760 built that, so the
+  // sentence the test protected is now the false one.
+  //
+  // What replaces it is the pair of facts a customer can be hurt by if either
+  // is missing: WHO takes over, and WHEN. The "when" is the load-bearing half —
+  // the owner is an employee the same session just hired, and a just-hired
+  // employee is at lifecycle_status 'designed', which classify_support_text
+  // refuses to route to. So accepting changes nothing until that person is
+  // published, and a flash that said "switched on, Morgan answers these now"
+  // would be describing something that has not happened.
+  it('(a2) the topic flash names who takes over AND says it starts when they go live — RED if either half goes missing', () => {
     const code = pageCode();
     const armBody = topicFlashArm(code);
-    expect(armBody).not.toMatch(/routed to|routes to|who answers it/i);
-    expect(armBody).toMatch(/does not change who answers/i);
+    // both branches exist: named owner, and nobody
+    expect(armBody).toMatch(/outcome\.routesToEmployee/);
+    expect(armBody).toMatch(/live in your workspace/i);
+    // ⚠ THE HALF NOBODY WOULD MISS. Without it the flash promises routing that
+    // has not started, which is the exact shape of the promise 754 deleted.
+    expect(armBody).toMatch(/nothing about who answers changes before that/i);
+    // ...and the no-owner branch still says today's behaviour out loud, because
+    // an absence and a decision read identically to a customer.
+    expect(armBody).toMatch(/Whoever usually answers still answers them/i);
+    // ⚠ AND THE OTHER THING THIS ARM MAY NEVER SAY: that conversations already
+    // open move. de_id is write-once — moving it would retroactively re-attribute
+    // a whole thread, economics and CSAT included.
+    expect(armBody).toMatch(/conversations already open keep the person they have/i);
   });
 
   it('(b) the BATCH flash has its own topic noun — RED if "10 set up, each waiting for your credential" can be said about ten triage rules', () => {
@@ -2544,10 +2606,22 @@ describe('the conversation-topic accept says what it did — the screen, not jus
     expect(pageCode()).toMatch(/acceptAllSectionBlurb\(kind\)/);
 
     const topic = acceptAllSectionBlurb('conversation_type');
-    expect(topic).toMatch(/no later step/i);
     expect(topic).toMatch(/straight away/i);
     expect(topic).toMatch(/Support › Triage rules/);
-    expect(topic).not.toMatch(/credential|publish/i);
+    expect(topic).not.toMatch(/credential/i);
+    // ⚠⚠ 760: "There is no later step for these" WAS TRUE AND IS NOT ANY MORE,
+    // and this is the one assertion in this file that had to be inverted rather
+    // than extended. A topic that names a person does have a later step, and it
+    // is a firmer one than the connector's credential: the owner is an employee
+    // the same session just hired, a just-hired employee sits at
+    // lifecycle_status 'designed', and classify_support_text returns no owner
+    // for one — so nothing about who answers moves until that person is
+    // published, one at a time, each behind their own certification gate.
+    // The blurb covers ten cards at once, so if it claims immediacy it claims
+    // it ten times.
+    expect(topic).not.toMatch(/no later step/i);
+    expect(topic).toMatch(/live in your workspace/i);
+    expect(topic).toMatch(/not before/i);
 
     // ⚠ THE INVERSION. The two kinds the old sentence WAS true of must still
     // say their own second gate, or this fix has removed a true promise along
@@ -2571,5 +2645,247 @@ describe('the conversation-topic accept says what it did — the screen, not jus
       compared++;
     }
     expect(compared, 'no kind reaches the accept-all renderer — this test compared nothing').toBe(3);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WHO ANSWERS THIS TURN — the mig 760 FIX ROUND (R1 + R2), pinned.
+//
+// ⚠⚠⚠ WHAT WAS WRONG, so a future reader can tell these pins from decoration.
+// Migration 760's TypeScript half called `classifyAndRoute` BEFORE the
+// conversation-reuse check on ALL THREE writers, and gated it on nothing:
+//   · de-answer/index.ts:525     — in the de_id-absent branch; the conversation
+//                                  was not resolved until :596.
+//   · widget-ask/index.ts:287    — the `if (convId)` reuse check sat at :352.
+//   · email-inbound/index.ts:195 — the 14-day thread lookup sat at :212, and
+//                                  the comment at :203 CLAIMED a reused thread
+//                                  is not re-routed. It was.
+// So turn 2 of an open thread could be answered, CHARGED and ESCALATED by
+// employee B while de_conversations.de_id still said employee A — the column
+// get_de_economics, get_de_performance_metrics, get_de_csat_metrics,
+// de_eval_quality, snapshot_de_kpi_readings, get_benchmark_report and
+// compose_weekly_value_digest all count by. Live-reachable: the portal is a
+// multi-turn chat (EndUserChatPage.tsx:190/:259 pass a stored conversationId
+// with de_id null) and public/widget.js:144 sends conversation_id every turn.
+//
+// AND THE COPY ALREADY DENIED IT: discoveryProposalPresentation.ts:1368 ships
+// "conversations that are already open keep the person they have — this only
+// applies to new ones", and (a2) above pins that sentence. That test passed
+// while the code did the opposite, which is why every pin below is on the CODE
+// PATH and not on another sentence.
+//
+// R2: de-orchestrate always names an employee (`de_id: chosen`), so an LLM's
+// responsibility-fit judgement silently overrode the owner the customer named.
+// Founder ruling: the customer's topic owner wins, and the router chooses only
+// where no topic matched. Dormant — active_supervisors = 0 across all 18
+// tenants — which is exactly why switching the router on must not be able to
+// reverse it quietly.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('who answers this turn — a reused thread keeps its employee (R1), a named owner beats the router (R2)', () => {
+  const A = (id: string, mode: string | null = null) => ({ id, external_reply_mode: mode });
+  const SOURCES = {
+    'de-answer': 'supabase/functions/de-answer/index.ts',
+    'widget-ask': 'supabase/functions/widget-ask/index.ts',
+    'email-inbound': 'supabase/functions/email-inbound/index.ts',
+    'de-orchestrate': 'supabase/functions/de-orchestrate/index.ts',
+  } as const;
+  const src = (k: keyof typeof SOURCES) => readFileSync(SOURCES[k], 'utf8');
+  /** Same source with line endings normalised — these files are CRLF on disk,
+   *  and a multi-line needle written with \n would silently never match, which
+   *  is a pin that cannot fail rather than a pin that passes. */
+  const srcLF = (k: keyof typeof SOURCES) => src(k).replace(/\r\n/g, '\n');
+  /** The N characters immediately BEFORE a needle — used to prove a call sits
+   *  inside a conditional, which mere ordering cannot show. */
+  const before = (code: string, needle: string, n = 300) => {
+    const i = code.indexOf(needle);
+    expect(i, needle + ' is not in this file at all — this pin compared nothing').toBeGreaterThan(-1);
+    return code.slice(Math.max(0, i - n), i);
+  };
+  const countOf = (code: string, needle: string) => code.split(needle).length - 1;
+
+  // ── THE PRECEDENCE ITSELF, as a pure function over every combination ──────
+  it('chooseAnswerer resolves named > thread > topic > fallback, and all 16 combinations are compared', () => {
+    const slots = ['named', 'thread', 'topic', 'fallback'] as const;
+    let compared = 0;
+    for (let mask = 0; mask < 16; mask++) {
+      const c: Record<string, { id: string; external_reply_mode: string | null } | null> = {};
+      const present: string[] = [];
+      slots.forEach((s, bit) => {
+        const on = (mask & (1 << bit)) !== 0;
+        c[s] = on ? A(s + '-de') : null;
+        if (on) present.push(s);
+      });
+      const got = chooseAnswerer(c);
+      const label = 'mask ' + mask + ' (' + (present.join('+') || 'none') + ')';
+      expect(got.reason, label).toBe(present[0] ?? 'nobody');
+      expect(got.who?.id ?? null, label).toBe(present.length ? present[0] + '-de' : null);
+      compared++;
+    }
+    // ⚠ COUNT THE COMPARISONS. A loop that iterated zero times renders exactly
+    // like a clean pass.
+    expect(compared, 'the precedence table compared nothing').toBe(16);
+  });
+
+  // ⚠ THE INVERSION THAT MATTERS MOST, stated on its own rather than buried in
+  // the table: the thread beats BOTH the topic and today's fallback. Move that
+  // one line in chooseAnswerer and this is what goes red.
+  it('a thread with a recorded owner beats the topic owner AND the roster fallback — RED if a classifier can move an open conversation', () => {
+    expect(chooseAnswerer({ thread: A('thread-de'), topic: A('topic-de'), fallback: A('oldest-de') }).who?.id)
+      .toBe('thread-de');
+    expect(chooseAnswerer({ thread: A('thread-de'), fallback: A('oldest-de') }).reason).toBe('thread');
+    // ...and the vacuity guard: with NO thread the topic really does win, or
+    // the assertion above would pass on a build where routing never happened.
+    expect(chooseAnswerer({ topic: A('topic-de'), fallback: A('oldest-de') }).who?.id).toBe('topic-de');
+    expect(chooseAnswerer({ fallback: A('oldest-de') }).reason).toBe('fallback');
+    // A thread whose recorded owner has GONE is passed as null by every caller
+    // and lands on today's fallback — never back at the classifier, because the
+    // callers do not classify a reused thread at all.
+    expect(chooseAnswerer({ thread: null, topic: null, fallback: A('oldest-de') }).reason).toBe('fallback');
+    expect(chooseAnswerer({}).who).toBeNull();
+    expect(chooseAnswerer({}).reason).toBe('nobody');
+  });
+
+  it('routerMayChoose says NO when a topic named somebody and YES otherwise — R2, both directions', () => {
+    expect(routerMayChoose({ triage: null, owner: { id: 'owner-de', external_reply_mode: null } })).toBe(false);
+    // the three shapes that all mean "nobody named anybody"
+    expect(routerMayChoose({ triage: null, owner: null })).toBe(true);
+    expect(routerMayChoose(null)).toBe(true);
+    expect(routerMayChoose(undefined)).toBe(true);
+  });
+
+  it('the four lifecycles that never front customer chat are exactly the ones the front desk already excluded', () => {
+    expect([...NEVER_FRONTS_CUSTOMER_CHAT].sort())
+      .toEqual(['archived', 'designed', 'paused', 'retired']);
+    // ...and the two writers that use it really are still excluding that set at
+    // the front desk, or the constant would be describing nothing.
+    for (const k of ['widget-ask', 'email-inbound'] as const) {
+      expect(src(k), k + ' front desk').toContain("'(paused,retired,archived,designed)'");
+      expect(src(k), k + ' recorded owner').toContain('NEVER_FRONTS_CUSTOMER_CHAT.includes(');
+    }
+    // de-answer deliberately uses the LOOSER set (no 'designed') for both its
+    // explicit-de_id refusal and its fallback — a difference that predates
+    // migration 760 — so its recorded-owner check must match its own branch and
+    // not this constant. Pinned so "make them consistent" is a decision.
+    expect(countOf(src('de-answer'), "['paused', 'retired', 'archived'].includes("), 'de-answer eligibility sets')
+      .toBe(2);
+    expect(src('de-answer')).not.toContain('NEVER_FRONTS_CUSTOMER_CHAT');
+  });
+
+  // ── R1, ON THE CODE PATH: the thread is resolved BEFORE the classifier ────
+  it('all three conversation writers resolve the thread BEFORE classifying, and classify only when there is no thread', () => {
+    const cases = [
+      { k: 'de-answer' as const, read: ".select('id, de_id').eq('id', conversation_id)", guard: 'existingConv' },
+      { k: 'widget-ask' as const, read: ".select('id, de_id')", guard: 'existingConv' },
+      { k: 'email-inbound' as const, read: ".select('id, de_id').eq('tenant_id', tenantId)", guard: 'openConv' },
+    ];
+    let compared = 0;
+    for (const c of cases) {
+      const code = src(c.k);
+      // VACUITY FIRST: this file must still be a caller at all, and must call
+      // it EXACTLY ONCE — a second, ungated call site would satisfy every
+      // ordering assertion below while re-classifying the reused thread anyway.
+      // Counted on the call form, not the bare name, because these files
+      // discuss classifyAndRoute in prose as well (de-answer names it three
+      // times: import, call, and the paragraph about `exam`).
+      expect(countOf(code, 'await classifyAndRoute('), c.k + ' classifyAndRoute CALL sites').toBe(1);
+      expect(code, c.k + ' no longer imports it').toContain("from '../_shared/topicRouting.ts'");
+      const iRead = code.indexOf(c.read);
+      const iCls = code.indexOf('await classifyAndRoute(');
+      expect(iRead, c.k + ': the conversation read carrying de_id is gone').toBeGreaterThan(-1);
+      expect(iCls, c.k + ': classifyAndRoute is gone').toBeGreaterThan(-1);
+      // ⚠ THE ORDER. This is the byte-level statement of the defect: iCls < iRead
+      // is exactly what shipped, on all three files.
+      expect(iCls, c.k + ': the classifier still runs BEFORE the thread is resolved').toBeGreaterThan(iRead);
+      // ⚠ AND THE GUARD, because order alone is satisfied by a file that reads
+      // the thread first and then classifies unconditionally anyway.
+      expect(before(code, 'await classifyAndRoute(', 300), c.k + ': the classify call is not gated on the thread')
+        .toContain(c.guard);
+      // the ROW's employee is read, and the shared precedence decides
+      expect(code, c.k + ' never resolves the recorded owner').toMatch(/threadOwner\s*=\s*\{/);
+      expect(code, c.k + ' does not use the shared precedence').toContain('chooseAnswerer({');
+      expect(code, c.k + ' does not pass the thread into the precedence').toMatch(/thread:\s*threadOwner,/);
+      compared++;
+    }
+    expect(compared, 'no writer was compared').toBe(3);
+  });
+
+  it('email-inbound hands the SAME employee to de-answer and to create_outbound_draft — RED if the draft is attributed to a fresh route again', () => {
+    const code = src('email-inbound');
+    expect(code).toContain('body: JSON.stringify({ tenant_id: tenantId, de_id: deId, conversation_id: convId, question })');
+    expect(code).toContain('p_tenant_id: tenantId, p_de_id: deId, p_recipient: from.email');
+    // and deId comes from the precedence, resolved exactly once
+    expect(code).toMatch(/const deId: string \| null = firstDe\?\.id \?\? null;/);
+    expect(countOf(code, 'const deId'), 'deId is resolved more than once').toBe(1);
+    expect(countOf(code, 'const firstDe'), 'firstDe is resolved more than once').toBe(1);
+  });
+
+  // ── R2, ON THE CODE PATH: the router runs only where no topic matched ─────
+  it('de-orchestrate consults the topic owner BEFORE the model and puts the model call in the else — RED if the router can override the customer', () => {
+    const code = src('de-orchestrate');
+    const iCls = code.indexOf('await classifyAndRoute(');
+    const iGuard = code.indexOf('if (!routerMayChoose(topicRouted))');
+    const iLlm = code.indexOf('await llmMessages(');
+    expect(iCls, 'de-orchestrate no longer classifies at all').toBeGreaterThan(-1);
+    expect(iGuard, 'the R2 precedence guard is gone').toBeGreaterThan(-1);
+    // VACUITY: the model call this guard exists to skip must still be here, or
+    // "the router did not override" would be a statement about no router.
+    expect(iLlm, 'de-orchestrate no longer calls the routing model — this pin compares nothing').toBeGreaterThan(-1);
+    expect(iCls, 'the classification happens after the router chose').toBeLessThan(iGuard);
+    expect(iGuard, 'the model call is not behind the precedence guard').toBeLessThan(iLlm);
+    // the topic owner is what `chosen` becomes on that arm
+    expect(code).toContain('chosen = topicRouted.owner!.id;');
+    // ...and it still NAMES an employee to de-answer, which is why the
+    // precedence had to move here rather than into de-answer.
+    expect(code).toContain('de_id: chosen');
+    // the same channel derivation de-answer uses, so the two agree about what
+    // is triaged: anything that is not exam/portal is 'dock'.
+    expect(code).toContain("const convChannel = channel === 'exam' ? 'exam' : channel === 'portal' ? 'portal' : 'dock';");
+  });
+
+  // ⚠⚠⚠ THE BACK DOOR, and it is the one that would have made the R1 fix
+  // decorative. knowledgeApi.ts:625 sends the request to DE-ORCHESTRATE rather
+  // than de-answer whenever the tenant is known — which is every portal turn
+  // (EndUserChatPage.tsx:190 and :259 pass a stored conversationId with de_id
+  // null, and the portal is the multi-turn surface R1 is about). So the fourth
+  // classifyAndRoute call site has to obey R1 too: classify on turn 2 there and
+  // the topic owner is NAMED to de-answer, and a named employee beats the row.
+  it('de-orchestrate does not classify a thread it was handed — RED if the portal\'s turn 2 can be re-routed through the supervisor path', () => {
+    const code = src('de-orchestrate');
+    expect(code).toContain('const reusedThread = typeof conversation_id === \'string\' && !!conversation_id;');
+    // ⚠⚠ THE WHOLE CONSTRUCT, NOT THE NAME NEARBY. The first version of this
+    // pin asked only that `reusedThread` appear in the 200 characters before
+    // the call — and it stayed GREEN when the gate was deleted, because the
+    // `const reusedThread = …` line survives the deletion and sits right there.
+    // A pin a mutation cannot break is decoration; this one names the branch.
+    expect(srcLF('de-orchestrate'), 'the de-orchestrate classify call is not gated on the thread').toContain(
+      '    const topicRouted = reusedThread\n      ? { triage: null, owner: null }\n      : await classifyAndRoute(',
+    );
+    expect(countOf(code, 'await classifyAndRoute('), 'de-orchestrate classify call sites').toBe(1);
+    // ...and the vacuity guard, which is the whole reason this pin exists: the
+    // dock/portal really does go through de-orchestrate and not de-answer.
+    const api = readFileSync('src/lib/knowledgeApi.ts', 'utf8');
+    expect(api, 'askDE no longer prefers de-orchestrate — this pin now guards nothing')
+      .toContain("const endpoint = tenantId ? 'de-orchestrate' : 'de-answer';");
+    const portal = readFileSync('src/pages/portal/EndUserChatPage.tsx', 'utf8');
+    expect(portal, 'the portal no longer passes a stored conversation id with a null de_id')
+      .toMatch(/askDE\([^)]*conversationId[^)]*null,\s*'portal'\)/);
+  });
+
+  it('no writer validates the thread twice — one lookup, one source of truth', () => {
+    // de-answer's reuse branch takes the row it already read.
+    expect(src('de-answer')).toContain('convId = existingConv.id;');
+    expect(countOf(src('de-answer'), "error: 'conversation_not_found'"), 'de-answer checks the thread twice again').toBe(1);
+    // widget-ask: convId seeded from the hoisted read, never re-validated.
+    // ⚠ TWO, NOT ONE, and the second is not a duplicate: the `poll` action is a
+    // separate endpoint in the same file with its own key, its own tenant and
+    // its own 404 (it selects `id, status`, not `id, de_id`). Pinned at two
+    // WITH the poll one named, so "the ask path validates twice again" reads as
+    // three and goes red, and deleting the poll check also goes red.
+    expect(src('widget-ask')).toContain('let convId: string | null = existingConv?.id ?? null;');
+    expect(countOf(src('widget-ask'), "error: 'conversation_not_found'"), 'widget-ask thread checks').toBe(2);
+    expect(src('widget-ask'), 'the poll branch — the OTHER conversation_not_found — has moved')
+      .toContain(".from('de_conversations').select('id, status').eq('id', pConv)");
+    // email-inbound: the 14-day lookup is the only thread resolution.
+    expect(src('email-inbound')).toContain('let convId = openConv?.id ?? null;');
   });
 });

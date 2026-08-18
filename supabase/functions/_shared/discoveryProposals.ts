@@ -868,17 +868,22 @@ export function validatePayload(
 
   switch (kind) {
     case 'conversation_type': {
-      // ⚠ REWRITTEN BY 754, AND THE OLD CONTRACT WAS THE DEFECT. It read
-      // "label + owner — one line", quoting §11b, and demanded `owner_ref`
-      // because "a topic nobody owns is not something a person can decide to
-      // route". Measured 2026-08-17: NOTHING ROUTES ON A TOPIC. de_id is stamped
-      // when the conversation row is inserted (widget-ask:338,
-      // email-inbound:190), the category is written afterwards by
-      // trg_triage_support_conversation on the first user message, and no reader
-      // of de_conversations.category picks an employee. So `owner_ref` was a
-      // required field whose only purpose was to satisfy a promise the platform
-      // does not keep, and it is GONE rather than made optional — an owner on
-      // this card could only ever be decoration.
+      // ⚠⚠ THIS FIELD LIST HAS NOW MOVED TWICE, AND BOTH MOVES WERE RIGHT.
+      // §11b specified "label + owner — one line". 754 REMOVED `owner_ref`,
+      // because it measured that nothing routed on a topic: de_id was stamped
+      // when the conversation row was inserted, before any message existed, and
+      // no reader of de_conversations.category picked an employee. A required
+      // field whose only purpose was to satisfy a promise the platform did not
+      // keep is decoration, and decoration on a consent card is worse than an
+      // omission.
+      //
+      // ⚠ 760 BRINGS IT BACK WITH THE PROMISE. classify_support_text now
+      // returns the matched rule's owner, and all three conversation writers
+      // read it before the row exists. So §11b's original line is true again —
+      // and `owner_ref` is OPTIONAL rather than required, which is the one
+      // difference from the original contract: a topic nobody owns is a topic
+      // the workspace answers the way it does today, and refusing to propose it
+      // would lose nine of the ten topics a customer names.
       //
       // What replaces it is the shape support_triage_rules actually needs. All
       // three are re-checked in SQL at accept time; this is the emission gate,
@@ -911,6 +916,16 @@ export function validatePayload(
       }
       if (/(^\||\|\||\|$)/.test(pattern)) {
         throw new Error(`validatePayload: conversation_type "${label}" has a "|" with nothing beside it in "${pattern}" — the blank between the bars is skipped rather than matched, so the card would show a phrase nothing ever looks for`);
+      }
+      // ⚠ 760 — WHO ANSWERS. Optional (absent = the workspace's usual choice),
+      // but if it is there it has to be a REFERENCE the accept can resolve.
+      // The failure this catches is the one trust_rule's de_ref already met:
+      // a model that writes "whoever picks up the phone", or the literal
+      // "unassigned" an older prompt used to ask for. Both name nobody, and a
+      // card that says a person answers this had better be able to say which.
+      const ownerRef = str(payload.owner_ref);
+      if (ownerRef && !/^archetype:[a-z0-9_]+$/.test(ownerRef)) {
+        throw new Error(`validatePayload: conversation_type "${label}" says these conversations go to "${ownerRef}", which is not one of the people this interview recommended — an owner has to be "archetype:<key>" so the accept can resolve it to somebody real, or absent so the workspace answers the way it does today`);
       }
       return;
     }
@@ -1114,9 +1129,27 @@ export const FILL_WHITELIST: Readonly<Record<FilledKind, readonly string[]>> = {
   // must be non-empty (a pattern-less rule is a catch-all that swallows every
   // topic below it) with no empty alternative, and all three are compared byte
   // for byte against the row the browser created. A model cannot choose the
-  // rule_order, the priority, the severity or the tenant — the four fields that
-  // decide what the rule DOES to traffic.
-  conversation_type: ['label', 'set_category', 'match_pattern'],
+  // rule_order, the priority, the severity or the tenant.
+  //
+  // ⚠⚠ 760 ADDS A FOURTH, AND IT IS THE ONE THAT CHANGES WHAT HAPPENS TO
+  // TRAFFIC: `owner_ref`, which decides WHO ANSWERS. The paragraph above used
+  // to end "the four fields that decide what the rule DOES to traffic" and that
+  // sentence is now incomplete rather than wrong — priority, severity, order
+  // and tenant are still not the model's. Three things bound the new one:
+  //   · it is a REFERENCE, not free text — `archetype:<key>`, resolved by
+  //     decide_discovery_proposal to the employee an ACCEPTED employee proposal
+  //     in the SAME session created. A model naming somebody who was never
+  //     hired refuses; a model writing prose refuses. Same shape as
+  //     trust_rule's `de_ref`, which has been model-filled since 753.
+  //   · it is OPTIONAL. Required would mean a session where the model can only
+  //     confidently place three of ten topics emits three cards — and "ten
+  //     different things" is the founder's own requirement for this kind.
+  //     Absent means "the workspace's usual choice", which is today's behaviour.
+  //   · IT DOES NOT TAKE EFFECT ON ACCEPT. The employee it resolves to was just
+  //     hired and is at lifecycle_status 'designed' (measured), and
+  //     classify_support_text returns no owner for a never-published employee.
+  //     Publishing them is what turns it on.
+  conversation_type: ['label', 'set_category', 'match_pattern', 'owner_ref'],
 };
 
 /**
@@ -1386,16 +1419,25 @@ export interface ProposalsFromOptions {
  *     things, and one dimension offering one topic was the other half of the
  *     original defect.
  *
- *  ⚠ WHAT DID NOT COME BACK IS THE ROUTING CLAIM. Enumerated 2026-08-17:
- *  de_conversations.de_id is stamped when the conversation row is INSERTED
- *  (widget-ask:338, email-inbound:190), the category is written afterwards by
- *  an AFTER INSERT trigger on the first user message, and no reader of
- *  category selects an employee. So the card says the conversation is
- *  LABELLED, never routed, and the accept records routes_to_employee: false.
- *  Standing rule, unchanged and now satisfied the ordinary way: a kind absent
- *  from scripts/discovery-proposal-check.mjs's KIND_ROUTES makes certify go RED
- *  on any row carrying it. conversation_type is in KIND_ROUTES and in
- *  EXPECTED_KIND_TABLES as of the same edit as this line. */
+ *  ⚠⚠ AND ON 2026-08-18 THE ROUTING CLAIM CAME BACK TOO (migration 760), which
+ *  is the fourth way this shape has changed. 754's note here read "the card
+ *  says the conversation is LABELLED, never routed, and the accept records
+ *  routes_to_employee: false", and every word of it was true when written:
+ *  de_id was stamped when the conversation row was INSERTED, before any message
+ *  existed, and no reader of `category` selected an employee.
+ *
+ *  What changed is the order, not the reader. classify_support_text now returns
+ *  the matched rule's OWNER, and all three conversation writers — widget-ask,
+ *  email-inbound and de-answer — classify the customer's question BEFORE the
+ *  row exists and stamp de_id from that one answer, along with all four triage
+ *  columns. de_id is still write-once; it is simply chosen later in the request
+ *  and earlier in the conversation. So the payload carries `owner_ref` again,
+ *  the accept records routes_to_employee as an EXPRESSION over the resolved
+ *  owner rather than a literal, and a topic naming nobody still routes nothing.
+ *  Standing rule, unchanged: a kind absent from
+ *  scripts/discovery-proposal-check.mjs's KIND_ROUTES makes certify go RED on
+ *  any row carrying it. conversation_type is in KIND_ROUTES and in
+ *  EXPECTED_KIND_TABLES. */
 /** How many blank conversation_type shapes one heard `how_customers_reach_us`
  *  emits. See the emission arm for why it is a ceiling rather than a target, and
  *  why an unfilled slot is a logged refusal rather than an empty card. 10 is the
@@ -1708,8 +1750,13 @@ export function proposalsFrom(
               label: null,
               set_category: null,
               match_pattern: null,
+              // ⚠ 760: a slot for WHO ANSWERS. Null here and null after the fill
+              // is a topic the workspace answers the way it does today — the
+              // model is asked, never required, and validatePayload lets an
+              // absent owner through on purpose.
+              owner_ref: null,
               evidence,
-              note: 'labels conversations; it does not choose who answers them',
+              note: 'labels conversations, and can name who answers them once that employee is live',
             },
             rationale: `Heard evidence for "${dim.title}": ${evidenceLine}`,
             source_dimension: dim.key,

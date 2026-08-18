@@ -334,6 +334,15 @@ export interface DecisionOutcome {
   statedCapUnit?: string;
   ladderWritten?: boolean;
   enforcesToday?: boolean;
+  /** CONVERSATION TOPIC ONLY (migration 760). Whether the accepted topic names
+   *  an employee, read off the RPC's own counter rather than off the payload —
+   *  so the sentence the screen prints and the sentence in the audit trail are
+   *  the same object read twice. `false` is a fact here, not an absence: a
+   *  topic naming nobody is the founder's "no match keeps today's behaviour",
+   *  and the previous version of this card promised routing by saying nothing. */
+  routesToEmployee?: boolean;
+  /** ...and WHO, so the flash can name them without a second lookup. */
+  ownerName?: string;
 }
 
 /** One kind's accept writer: its ordinary validated writer, wrapped to return
@@ -406,12 +415,14 @@ const ACCEPT_WRITERS: Partial<Record<ProposalKind, AcceptWriter>> = {
   // editor's own PostgREST call, so an inlined SQL write would run as postgres
   // and bypass a policy customers already depend on.
   //
-  // ⚠ IT LABELS, IT DOES NOT ROUTE, and the card was rewritten to say so. The
-  // topic axis is real (de_conversations.category, written by
-  // trg_triage_support_conversation from classify_support_text) but nothing
-  // reads it to choose a digital employee: de_id is stamped when the
-  // conversation row is inserted, before the first message exists. The
-  // restriction to payloads that can become a real rule lives in
+  // ⚠ IT LABELS, AND SINCE MIGRATION 760 IT CAN ALSO DECIDE WHO ANSWERS. The
+  // topic axis was always real (de_conversations.category, written by
+  // trg_triage_support_conversation from classify_support_text); what changed is
+  // that classify_support_text now returns the matched rule's OWNER too, and
+  // widget-ask, email-inbound and de-answer each classify the customer's
+  // question BEFORE the conversation row exists and stamp de_id from it. de_id
+  // is still write-once — it is chosen earlier in the conversation, never moved
+  // later. The restriction to payloads that can become a real rule lives in
   // topicAcceptability, which the CARD reads too.
   conversation_type: (proposal, note) => acceptConversationTopicProposal(proposal, note),
 };
@@ -454,14 +465,14 @@ function acceptWriterFor(kind: ProposalKind): AcceptWriter | null {
  *  returns true for every one of them. The sentence that used to stand here —
  *  "'conversation_type' — no table and no writer, and nothing routes on it
  *  today ... an accept path here could only be a no-op" — was true when it was
- *  written and is now half true, and the half that survives is on the card
- *  rather than in this list. The kind writes a REAL row in support_triage_rules
- *  (the table the live topic axis already runs on), so the accept is not a
- *  no-op; but NOTHING STILL ROUTES ON A TOPIC — de_conversations.de_id is
- *  stamped when the conversation row is inserted, before the first message
- *  exists — so the card says the conversation gets LABELLED and never that it
- *  gets routed, and the accept records routes_to_employee: false rather than
- *  leaving it to be inferred from an absence.
+ *  written and stopped being true in two steps. 754 gave the kind a REAL row
+ *  in support_triage_rules — the table the live topic axis already runs on — so
+ *  the accept stopped being a no-op. 760 gave it the other half: a topic can
+ *  now name WHO ANSWERS it, classify_support_text returns that employee, and
+ *  all three conversation writers read it before the row exists. The card that
+ *  used to say "labelled, never routed" now says who answers, and the accept
+ *  records routes_to_employee as a fact about THAT card rather than a literal
+ *  false — a topic naming nobody still routes nothing.
  *
  *  A kind that is not here would keep its controls switched off on the screen,
  *  rather than offering a button that quietly does nothing. */
@@ -631,6 +642,10 @@ export async function decideDiscoveryProposal(
         stated_cap_unit?: string;
         ladder_written?: boolean;
         enforces_today?: boolean;
+        // migration 760, conversation_type: an EXPRESSION over the resolved
+        // owner, never a literal, so `false` here is a fact about that card.
+        routes_to_employee?: boolean;
+        owner_name?: string;
       }
     | null;
 
@@ -675,6 +690,8 @@ export async function decideDiscoveryProposal(
     statedCapUnit: typeof res.stated_cap_unit === 'string' ? res.stated_cap_unit : undefined,
     ladderWritten: typeof res.ladder_written === 'boolean' ? res.ladder_written : undefined,
     enforcesToday: typeof res.enforces_today === 'boolean' ? res.enforces_today : undefined,
+    routesToEmployee: typeof res.routes_to_employee === 'boolean' ? res.routes_to_employee : undefined,
+    ownerName: typeof res.owner_name === 'string' ? res.owner_name : undefined,
   };
 }
 
@@ -974,6 +991,36 @@ async function acceptConversationTopicProposal(
     return decideDiscoveryProposal(proposal.id, 'accepted', note, null);
   }
 
+  // ⚠ mig 760 — WHO ANSWERS, RESOLVED THE SAME WAY THE RPC RESOLVES IT.
+  // The payload says `archetype:<key>`, never an employee id, because when the
+  // card was written that employee did not exist. The employee it means is the
+  // one an ACCEPTED employee proposal IN THIS SAME SESSION created — the RPC
+  // does exactly this lookup and then compares the result byte for byte against
+  // the row this function is about to insert, so resolving it any other way
+  // here produces a refusal rather than a wrong rule.
+  //
+  // ⚠ IT IS NOT A PRE-FLIGHT AND IT IS NOT A GATE. If the lookup finds nothing
+  // the insert still happens with no owner and the RPC refuses in its own
+  // words, which is what puts the reason on the card (migration 740). A browser
+  // that decided for itself whether this was allowed would be the third
+  // statement of a rule the database already makes twice.
+  let ownerDeId: string | null = null;
+  const ownerRef = typeof proposal.payload.owner_ref === 'string' ? proposal.payload.owner_ref.trim() : '';
+  if (/^archetype:[a-z0-9_]+$/.test(ownerRef)) {
+    const { data: sib } = await supabase
+      .from('discovery_proposals')
+      .select('created_object_id, decided_at')
+      .eq('session_id', proposal.session_id)
+      .eq('tenant_id', proposal.tenant_id)
+      .eq('kind', 'employee')
+      .eq('state', 'accepted')
+      .not('created_object_id', 'is', null)
+      .eq('payload->>archetype_key', ownerRef.slice('archetype:'.length))
+      .order('decided_at', { ascending: false })
+      .limit(1);
+    ownerDeId = (sib && sib.length > 0 ? String((sib[0] as { created_object_id: string }).created_object_id) : null);
+  }
+
   let created: { id: string; rule_order: number; reused: boolean };
   try {
     created = await createTriageRuleFromProposal({
@@ -981,6 +1028,7 @@ async function acceptConversationTopicProposal(
       name: gate.label,
       matchPattern: gate.pattern,
       setCategory: gate.category,
+      ownerDeId,
     });
   } catch (err) {
     return { ok: false, error: `This topic could not be set up: ${friendlyDecisionError(err instanceof Error ? err.message : String(err))}` };
