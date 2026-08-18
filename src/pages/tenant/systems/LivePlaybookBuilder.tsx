@@ -1448,8 +1448,12 @@ const GAP_STATUS_CHIP: Record<string, string> = {
 
 /** The three ways to answer a missing_knowledge gap — all existing
  *  machinery: pick a doc, link a page (extract-document), upload a file. */
-function KnowledgeGapAnswer({ gap, onAnswered, onError }: {
-  gap: PlaybookGap; onAnswered: () => void; onError: (m: string) => void;
+// isAdmin is not decoration: answer_playbook_gap requires tenant_owner or
+// tenant_admin in the database, so offering the control to anyone else shows a
+// button that will be refused on click. AuthorityGapAnswer below already gated
+// this correctly; these two siblings did not (audit:role-gates).
+function KnowledgeGapAnswer({ gap, isAdmin, onAnswered, onError }: {
+  gap: PlaybookGap; isAdmin: boolean; onAnswered: () => void; onError: (m: string) => void;
 }) {
   const [mode, setMode] = useState<'pick' | 'link' | 'upload' | null>(null);
   const [docs, setDocs] = useState<KnowledgeDoc[]>([]);
@@ -1528,7 +1532,8 @@ function KnowledgeGapAnswer({ gap, onAnswered, onError }: {
             <option value="">Pick a document…</option>
             {docs.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
           </select>
-          <Button kind="secondary" size="sm" disabled={busy || !pickId}
+          <Button kind="secondary" size="sm" disabled={busy || !pickId || !isAdmin}
+            title={isAdmin ? undefined : 'Only an owner or admin can answer this'}
             onClick={() => { setBusy(true); void finish(pickId, 'pick').catch(e => onError((e as Error).message)).finally(() => setBusy(false)); }}>
             Use this doc
           </Button>
@@ -1576,8 +1581,8 @@ function AuthorityGapAnswer({ gap, isAdmin, onAnswered, onError }: {
   );
 }
 
-function DataGapAnswer({ gap, onAnswered, onError }: {
-  gap: PlaybookGap; onAnswered: () => void; onError: (m: string) => void;
+function DataGapAnswer({ gap, isAdmin, onAnswered, onError }: {
+  gap: PlaybookGap; isAdmin: boolean; onAnswered: () => void; onError: (m: string) => void;
 }) {
   const ask = gap.ask as { entity?: string; field?: string; help?: string };
   const [value, setValue] = useState('');
@@ -1596,8 +1601,10 @@ function DataGapAnswer({ gap, onAnswered, onError }: {
         <input value={value} onChange={e => setValue(e.target.value)}
           placeholder={ask.field ? `${ask.entity === 'account' ? 'Account field' : 'Workspace value'}: ${ask.field}` : 'Value…'}
           className="flex-1 text-[11px] bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1 text-dt-body placeholder:text-dt-faint" />
-        <Button kind="secondary" size="sm" disabled={busy} onClick={() => void record()}>{busy ? 'Saving…' : 'Save answer'}</Button>
+        <Button kind="secondary" size="sm" disabled={busy || !isAdmin} onClick={() => void record()}
+          title={isAdmin ? undefined : 'Only an owner or admin can answer this'}>{busy ? 'Saving…' : 'Save answer'}</Button>
       </div>
+      {!isAdmin && <p className="text-[10px] text-dt-muted">Answering this needs an owner or admin — the answer is recorded against the playbook.</p>}
     </div>
   );
 }
@@ -1735,9 +1742,9 @@ function GapPanel({ def, isAdmin, canManage, onChanged, onToast }: {
                   <p className="text-[10px] text-sky-300/80 mt-1">Answered — recompile to verify the evidence and close it.</p>
                 )}
                 {g.status === 'open' && canManage && (
-                  g.kind === 'missing_knowledge' ? <KnowledgeGapAnswer gap={g} onAnswered={answered} onError={setErr} />
+                  g.kind === 'missing_knowledge' ? <KnowledgeGapAnswer gap={g} isAdmin={isAdmin} onAnswered={answered} onError={setErr} />
                   : g.kind === 'missing_authority' ? <AuthorityGapAnswer gap={g} isAdmin={isAdmin} onAnswered={answered} onError={setErr} />
-                  : g.kind === 'missing_data' ? <DataGapAnswer gap={g} onAnswered={answered} onError={setErr} />
+                  : g.kind === 'missing_data' ? <DataGapAnswer gap={g} isAdmin={isAdmin} onAnswered={answered} onError={setErr} />
                   : <StructureGapAnswer gap={g} definitionId={def.id} onApplied={(m) => { onToast(m); void reload(); onChanged(); }} onError={setErr} />
                 )}
               </li>
