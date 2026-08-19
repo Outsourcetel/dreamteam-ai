@@ -1,9 +1,9 @@
-// The workspace sending identity (EXEC 0.4). When a DE's outbound email draft is
+import { DEFAULT_ACCENT } from '../design/branding';
 // approved, it sends from this address (via Resend). Owner/admin only.
 import React, { useEffect, useState } from 'react';
 import { getCommsSettings, setCommsSettings } from '../lib/commsApi';
 
-export default function CommsSettingsCard({ accentColor = '#6366f1' }: { accentColor?: string }) {
+export default function CommsSettingsCard({ accentColor = DEFAULT_ACCENT }: { accentColor?: string }) {
   const [fromEmail, setFromEmail] = useState('');
   const [fromName, setFromName] = useState('');
   const [loading, setLoading] = useState(true);

@@ -1,3 +1,4 @@
+import { DEFAULT_ACCENT } from '../design/branding';
 import React from 'react';
 import type { Page } from '../types';
 
@@ -25,7 +26,7 @@ const PageTabs = ({
         className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
           page === t.id ? 'text-white' : 'text-dt-support hover:text-white'
         }`}
-        style={page === t.id ? { backgroundColor: accentColor || '#6366f1' } : {}}
+        style={page === t.id ? { backgroundColor: accentColor || DEFAULT_ACCENT } : {}}
       >
         {t.label}
       </button>

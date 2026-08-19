@@ -1,3 +1,4 @@
+import { DEFAULT_ACCENT } from '../design/branding';
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabase';
 import {
@@ -466,7 +467,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     name: liveName ?? 'Workspace',
     industry: godModeSession?.tenant?.industry ?? dbCurrentTenant?.industry ?? '',
     badge: (liveName ?? 'W').trim().charAt(0).toUpperCase() || 'W',
-    badgeColor: '#6366f1',
+    badgeColor: DEFAULT_ACCENT,
     activeDEs: 0,
   };
 
@@ -512,8 +513,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           id:           dbCurrentTenant.id,
           name:         dbCurrentTenant.name,
           slug:         dbCurrentTenant.slug,
-          primaryColor: dbCurrentTenant.accent_color ?? '#6366f1',
-          accentColor:  dbCurrentTenant.accent_color ?? '#6366f1',
+          primaryColor: dbCurrentTenant.accent_color ?? DEFAULT_ACCENT,
+          accentColor:  dbCurrentTenant.accent_color ?? DEFAULT_ACCENT,
           plan:         dbCurrentTenant.plan,
           status:       dbCurrentTenant.status,
           industry:     dbCurrentTenant.industry ?? '',

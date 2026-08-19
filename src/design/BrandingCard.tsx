@@ -1,3 +1,4 @@
+import { DEFAULT_ACCENT } from './branding';
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabase';
 import { PanelCard, Button, Banner, Chip } from './primitives';
@@ -12,7 +13,7 @@ const SURFACES: { key: TenantBranding['surface_key']; label: string; swatch: str
 ];
 
 export default function BrandingCard() {
-  const [accent, setAccent] = useState('#6366f1');
+  const [accent, setAccent] = useState(DEFAULT_ACCENT);
   const [surface, setSurface] = useState<TenantBranding['surface_key']>('midnight');
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);

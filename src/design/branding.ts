@@ -5,6 +5,22 @@ import { supabase } from '../supabase';
 // defaults in tokens.css. Guardrailed: accent is one hex (derivations are
 // computed here), surfaces come from a curated map — combinations stay legible.
 
+/** The accent a workspace gets before it chooses one — Midnight Navy's indigo.
+ *
+ *  It lives here because it was written out as a literal `#6366f1` in fifteen
+ *  places across nine files: two chat surfaces, the platform console, settings,
+ *  user management, the auth context (twice), and every component that takes an
+ *  `accentColor` prop with a fallback. Fifteen copies of one default is the
+ *  same shape as any other list that must agree and has nothing checking it —
+ *  changing the product's default accent meant finding all fifteen, and missing
+ *  one meant two defaults in one product.
+ *
+ *  This is deliberately NOT a CSS token: it is a JavaScript fallback for a
+ *  per-tenant value that arrives at runtime and is applied as an inline style,
+ *  so it cannot be resolved at stylesheet time. tokens.css owns the static
+ *  palette; this owns the dynamic one's default. */
+export const DEFAULT_ACCENT = '#6366f1';
+
 export interface TenantBranding { accent_hex: string | null; surface_key: 'midnight' | 'graphite' }
 
 const SURFACES: Record<string, Record<string, string>> = {
