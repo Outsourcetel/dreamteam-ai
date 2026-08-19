@@ -6,9 +6,9 @@
 -- returns an EMPTY list. There are no automated backups of this database. This
 -- file is the schema half of the answer; data is NOT in here (see below).
 --
--- Contents: 9 extensions · 0 enums · 299 tables ·
--- 1387 constraints · 415 indexes · 840 functions ·
--- 291 triggers · 398 policies · explicit REVOKEs for the closed perimeter.
+-- Contents: 9 extensions · 0 enums · 304 tables ·
+-- 1404 constraints · 420 indexes · 851 functions ·
+-- 295 triggers · 402 policies · explicit REVOKEs for the closed perimeter.
 --
 -- WHAT THIS DOES NOT COVER, so nobody mistakes it for a full backup:
 --   · no table DATA — tenants, users, documents, conversations are all absent
@@ -2977,6 +2977,44 @@ AS $function$
   );
 $function$;
 
+CREATE OR REPLACE FUNCTION public.authority_rule_requires_a_reader()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare v_reader text; v_active boolean; v_value_type text;
+begin
+  select reader_fn, is_active, value_type into v_reader, v_active, v_value_type
+    from public.authority_dimensions where dimension = new.dimension;
+  if not coalesce(v_active, false) then
+    raise exception 'dimension_not_active: % is not a measure this platform offers', new.dimension;
+  end if;
+  if v_reader is null then
+    raise exception 'dimension_has_no_reader: nothing reads % yet, so a rule about it would be decoration — the reader ships before the rule becomes declarable', new.dimension;
+  end if;
+  -- Ask the catalog, never a stored boolean.
+  if to_regprocedure(v_reader) is null then
+    raise exception 'dimension_reader_missing: % names %, which does not exist', new.dimension, v_reader;
+  end if;
+  -- ⛔ A STORABLE RULE THAT CAN NEVER FIRE IS A CONFIGURABLE CONTROL THAT
+  -- ENFORCES NOTHING — the same disease this whole registry exists to end,
+  -- one column over. The composite FK above stops an illegal COMPARATOR from
+  -- being stored (`reversible >= 5`); nothing stopped an illegal THRESHOLD:
+  -- evaluate_authority maps a boolean measure to 1 or 0, so `reversible is 7`
+  -- can never equal either, and confidence is read as a 0..100 score, so
+  -- `confidence < -1` can never trip. Both are legal to insert today and dead
+  -- on arrival.
+  if v_value_type = 'boolean' and new.threshold not in (0, 1) then
+    raise exception 'threshold_cannot_fire: % is boolean, stored as 1 or 0, so a threshold of % can never match', new.dimension, new.threshold;
+  end if;
+  if new.dimension = 'confidence' and (new.threshold < 0 or new.threshold > 100) then
+    raise exception 'threshold_cannot_fire: % is scored 0..100, so a threshold of % can never trip a comparison', new.dimension, new.threshold;
+  end if;
+  return new;
+end
+$function$;
+
 CREATE OR REPLACE FUNCTION public.auto_provision_new_tenant()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -4761,31 +4799,75 @@ CREATE OR REPLACE FUNCTION public.classify_support_text(p_tenant_id uuid, p_text
  STABLE SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-DECLARE
-  r support_triage_rules;
-  v_low text := lower(coalesce(p_text, ''));
-  frag text;
-BEGIN
-  FOR r IN
-    SELECT * FROM support_triage_rules
-    WHERE tenant_id = p_tenant_id AND active
-    ORDER BY rule_order, created_at
-  LOOP
+declare
+  r        support_triage_rules;
+  v_hit    support_triage_rules;
+  v_low    text := lower(coalesce(p_text, ''));
+  frag     text;
+  v_owner  uuid;
+begin
+  <<rules>>
+  for r in
+    select * from support_triage_rules
+     where tenant_id = p_tenant_id and active
+     order by rule_order, created_at
+  loop
     -- Catch-all rule (no pattern) applies immediately.
-    IF r.match_pattern IS NULL OR btrim(r.match_pattern) = '' THEN
-      RETURN jsonb_build_object('category', r.set_category, 'priority', r.set_priority, 'severity', r.set_severity, 'rule', r.name);
-    END IF;
+    if r.match_pattern is null or btrim(r.match_pattern) = '' then
+      v_hit := r;
+      exit rules;
+    end if;
     -- First rule whose ANY literal keyword is present wins.
-    FOREACH frag IN ARRAY string_to_array(r.match_pattern, '|') LOOP
+    foreach frag in array string_to_array(r.match_pattern, '|') loop
       frag := lower(btrim(frag));
-      IF frag <> '' AND position(frag IN v_low) > 0 THEN
-        RETURN jsonb_build_object('category', r.set_category, 'priority', r.set_priority, 'severity', r.set_severity, 'rule', r.name);
-      END IF;
-    END LOOP;
-  END LOOP;
-  -- No rule matched and no catch-all configured — safe neutral default.
-  RETURN jsonb_build_object('category','general','priority','normal','severity','sev3','rule','default');
-END; $function$;
+      if frag <> '' and position(frag in v_low) > 0 then
+        v_hit := r;
+        exit rules;
+      end if;
+    end loop;
+  end loop;
+
+  -- No rule matched and no catch-all configured — safe neutral default,
+  -- unchanged from migration 233 and still the answer 18 workspaces would get
+  -- if their baseline were ever deleted.
+  if v_hit.id is null then
+    return jsonb_build_object('category', 'general', 'priority', 'normal',
+                              'severity', 'sev3', 'rule', 'default',
+                              'rule_id', null, 'owner_de_id', null);
+  end if;
+
+  -- ⚠ 760 — WHO ANSWERS, RESOLVED OFF THE ROW THAT MATCHED and filtered to an
+  -- employee who can actually take it. Every clause here is a decision:
+  --   · tenant_id = p_tenant_id — belt as well as the composite foreign key's
+  --     braces. The FK makes a cross-workspace owner unwritable; this makes it
+  --     unreadable even if the constraint were ever dropped.
+  --   · is_workforce_assistant — the Workspace Assistant is the platform's own
+  --     internal helper, not one of the customer's employees. Without this it
+  --     would be the first path that puts customer support traffic in front of
+  --     it. Stated as a FILTER, never as a value anything reads.
+  --   · lifecycle_status — rows are RETIRED here, never deleted, so existence
+  --     is not eligibility. 'designed' is in the list because widget-ask's own
+  --     front-desk resolution excludes it ("never published DEs never front
+  --     customer chat") and a topic owner IS fronting customer chat.
+  -- A miss on any of these returns NULL, which sends the caller to its ordinary
+  -- fallback — the topic keeps its label and stops choosing a person.
+  if v_hit.owner_de_id is not null then
+    select d.id into v_owner
+      from digital_employees d
+     where d.id = v_hit.owner_de_id
+       and d.tenant_id = p_tenant_id
+       and coalesce(d.is_workforce_assistant, false) = false
+       and coalesce(d.lifecycle_status, '') not in ('paused', 'retired', 'archived', 'designed');
+  end if;
+
+  return jsonb_build_object('category', v_hit.set_category,
+                            'priority',  v_hit.set_priority,
+                            'severity',  v_hit.set_severity,
+                            'rule',      v_hit.name,
+                            'rule_id',   v_hit.id,
+                            'owner_de_id', v_owner);
+end;
+$function$;
 
 CREATE OR REPLACE FUNCTION public.clear_de_operate_login(p_system_id uuid)
  RETURNS jsonb
@@ -6330,6 +6412,20 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.connector_circuit_open(p_failures integer, p_last_error_at timestamp with time zone)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE
+AS $function$
+  -- Open (i.e. suppress dispatch) once a connector has failed repeatedly AND
+  -- is still failing recently. 10 is generous enough that a transient blip or
+  -- a brief provider wobble never trips it; an hour of quiet is short enough
+  -- that a fixed connector recovers by itself within the hour.
+  select coalesce(p_failures, 0) >= 10
+     and p_last_error_at is not null
+     and p_last_error_at > now() - interval '1 hour';
+$function$;
+
 CREATE OR REPLACE FUNCTION public.count_pending_knowledge_gaps(p_tenant_id uuid)
  RETURNS integer
  LANGUAGE plpgsql
@@ -7297,6 +7393,103 @@ exception when others then
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.de_kpi_action_value(p_tenant_id uuid, p_de_id uuid, p_source text, p_source_config jsonb)
+ RETURNS TABLE(v numeric, n bigint)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  select
+    -- ⚠ mig 501's guard. A non-'action' metric MUST come back NULL, never 0.
+    case when coalesce(p_source, '') = 'action' then
+      case when coalesce(p_source_config->>'agg', 'count') = 'auto_rate'
+           then round(100.0 * count(*) filter (where ae.decision = 'auto_executed') / nullif(count(*), 0), 1)
+           else count(*)::numeric end
+    end                                            as v,
+    count(*)                                       as n
+    from action_executions ae
+    left join action_definitions ad on ad.id = ae.action_definition_id
+   where p_source = 'action'
+     and ae.tenant_id = p_tenant_id
+     and ae.subject_kind = 'de'
+     and ae.subject_id = p_de_id
+     and ae.rollback_of is null
+     and ae.created_at >= now() - interval '91 days'
+     and (coalesce(p_source_config->>'category', '')     = '' or ad.category = p_source_config->>'category')
+     and (coalesce(p_source_config->>'action_label', '') = '' or ad.label    = p_source_config->>'action_label')
+$function$;
+
+CREATE OR REPLACE FUNCTION public.de_kpi_status_internal(p_tenant_id uuid, p_de_id uuid, p_window_weeks integer DEFAULT 13)
+ RETURNS TABLE(kpi_id uuid, name text, metric_key text, target numeric, direction text, current numeric, met boolean, sample bigint)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+
+declare
+  -- ⛔ mig 766: `p_tenant_id uuid;` WAS DECLARED HERE, shadowing the
+  -- parameter of the same name. Mig 764 generated this body by replacing
+  -- v_tenant -> p_tenant_id across the whole text, including the DECLARE
+  -- block, so the function computed every tenant-scoped lookup against a
+  -- NULL local instead of its argument. Removed.
+  m record; v_csat numeric; v_csat_n bigint; v_vals jsonb; v_samples jsonb;
+begin
+  -- A tenant id passed as a PARAMETER is not authorisation, it is an assertion
+  -- to be checked. Callers are trusted routines today; that is a property of
+  -- today's callers, not of this function.
+  if not exists (select 1 from digital_employees d
+                  where d.id = p_de_id and d.tenant_id = p_tenant_id) then
+    return;
+  end if;
+
+
+  select * into m from get_de_performance_metrics(p_tenant_id, p_window_weeks) where de_id = p_de_id;
+  select round(100.0 * count(*) filter (where csat_score = 1) / nullif(count(*) filter (where csat_submitted_at is not null), 0), 1),
+         count(*) filter (where csat_submitted_at is not null)
+    into v_csat, v_csat_n
+  from de_conversations where tenant_id = p_tenant_id and de_id = p_de_id;
+
+  v_vals := jsonb_strip_nulls(jsonb_build_object(
+    'resolution_rate',        case when coalesce(m.total_decisions, 0) >= 1 then m.resolution_rate end,
+    'avg_confidence',         case when coalesce(m.total_decisions, 0) >= 1 then m.avg_confidence end,
+    'escalation_rate',        case when coalesce(m.total_decisions, 0) >= 1 then m.escalation_rate end,
+    'error_rate',             case when coalesce(m.total_runs, 0) >= 1 then m.error_rate end,
+    'csat_pct',               v_csat,
+    'high_frustration_count', case when coalesce(m.total_decisions, 0) >= 1 then m.high_frustration_count::numeric end,
+    'total_decisions',        coalesce(m.total_decisions, 0)::numeric
+  ));
+  v_samples := jsonb_build_object('csat_pct', v_csat_n);
+
+  return query
+  select k.id, k.name, k.metric_key, k.target, k.direction, cur.v,
+         case when cur.v is null then null
+              when k.direction = 'higher' then cur.v >= k.target
+              else cur.v <= k.target end,
+         cur.n
+  -- ⛔ mig 766. This read `from de_kpis k` with NO restriction at all — not
+  -- by employee, not by workspace — so it returned EVERY goal in the database
+  -- whatever it was asked about. Scoped here at the source, as a subquery, so
+  -- no later join can widen it back.
+  from (select * from de_kpis
+         where de_id = p_de_id and tenant_id = p_tenant_id) k
+  left join kpi_metric_catalog c
+    on c.metric_key = k.metric_key and (c.tenant_id is null or c.tenant_id = p_tenant_id)
+  -- mig 757: the arm lives in ONE place now (mig 756). Same expression,
+  -- proven identical over 1143 (metric x employee) pairs before the switch.
+  left join lateral public.de_kpi_action_value(p_tenant_id, p_de_id, c.source, c.source_config) act on true
+  -- Latest manual reading, for metrics the platform doesn't compute.
+  left join lateral (
+    select d.value, count(*) over () as rn from de_kpi_readings d
+     where d.de_id = k.de_id and d.metric_key = k.metric_key
+       and d.source = 'manual'                    -- GI-5: fallback = human readings only
+     order by d.as_of desc, d.created_at desc limit 1
+  ) r on true
+  cross join lateral (
+    select coalesce((v_vals->>k.metric_key)::numeric, act.v, r.value) as v,
+           coalesce((v_samples->>k.metric_key)::bigint, nullif(act.n, 0), r.rn, coalesce(m.total_decisions, 0)) as n
+  ) cur;
+end $function$;
+
 CREATE OR REPLACE FUNCTION public.de_may_use_action(p_tenant_id uuid, p_de_id uuid, p_action_definition_id uuid)
  RETURNS boolean
  LANGUAGE sql
@@ -7497,7 +7690,11 @@ begin
       into v_n, v_failed
       from evidence_runs er
      where er.tenant_id = p_tenant_id and er.de_id = p_de_id
-       and er.created_at > now() - interval '56 days';
+       and er.created_at > now() - interval '56 days'
+       -- C-3: production evidence only. 75 of 287 runs carry a non-production
+       -- origin, and an exam failing on a harness error must never count toward
+       -- an error rate that flips external_reply_mode.
+       and public.evidence_is_production(er.origin);
     if coalesce(v_n, 0) >= 10
        and (100.0 * coalesce(v_failed, 0) / nullif(v_n, 0)) > 15 then
       v_reasons := array_append(v_reasons, 'degraded_metrics');
@@ -8264,6 +8461,35 @@ declare
   v_tr_pol     public.trust_policies%rowtype;
   v_tr_seeded  boolean := false;  -- did THIS accept open the setting
   v_tr_dials   bigint;    -- de_autonomy rows for this exact scope, counted
+
+  -- ── added by 754, for the `conversation_type` branch ────────────────────
+  -- The payload is {label, set_category, match_pattern, examples, evidence} —
+  -- FILL_WHITELIST.conversation_type is ['label','set_category','match_pattern'],
+  -- so those three are the model's and the rest is the emitter's. All three are
+  -- COMPARED byte for byte against the row the browser created, which is why
+  -- they are trimmed with 751's explicit set rather than one-argument btrim.
+  --
+  -- v_ct_ties and v_ct_ahead are COUNTED, never claimed. classify_support_text
+  -- walks the rules `ORDER BY rule_order, created_at` and returns on the FIRST
+  -- match, so where a rule sits IS the routing decision — and a tie is broken by
+  -- a timestamp no screen shows.
+  v_ct_label   text;      -- what the topic is called, off the payload
+  v_ct_cat     text;      -- the token written into de_conversations.category
+  v_ct_pattern text;      -- the pipe-separated literal phrases, verbatim
+  v_ct_ties    bigint;    -- other active rules sharing its position
+  v_ct_ahead   bigint;    -- active rules consulted BEFORE it
+  v_ct_rule    public.support_triage_rules%rowtype;
+  -- ⚠ 760. THE OWNER, and it is resolved the way 753 resolves a trust rule's
+  -- de_ref rather than the way every other Path B kind resolves an object id:
+  -- `owner_ref` is "archetype:<key>", never an employee id, because at the
+  -- moment the interview writes the card that employee DOES NOT EXIST YET. The
+  -- id it means is the one an ACCEPTED employee proposal IN THIS SAME SESSION
+  -- created, so "you cannot own a topic until you have been hired" is enforced
+  -- here in SQL and not only by the browser.
+  v_ct_own_ref  text;     -- "archetype:<key>", off the payload, or NULL
+  v_ct_own_arch text;     -- ...the key on its own
+  v_ct_owner    uuid;     -- the employee it resolves to, or NULL for "nobody"
+  v_ct_own_name text;     -- ...their name, for the card and the audit line
 begin
   --------------------------------------------------------------------------
   -- ZONE 1 — refuse before touching anything. Every branch here RAISES, and
@@ -9408,11 +9634,334 @@ begin
 
         v_object_id := v_tr_pol.id;
 
+      -- ---- conversation_type — Path B, and the LAST kind ------------------
+      -- The browser already inserted the triage rule as the signed-in human
+      -- under RLS (`authenticated` holds INSERT/UPDATE/DELETE/SELECT on
+      -- support_triage_rules, and support_triage_rules_admin_write is a
+      -- FOR ALL policy over tenant_owner/tenant_admin/tenant_manager). This
+      -- verifies and stamps it. It does NOT insert: an `insert into
+      -- support_triage_rules` here runs as postgres and bypasses RLS, which is
+      -- the second creation engine the plan forbids — the same argument the
+      -- connector arm makes, and it applies with full force here because the
+      -- ORDINARY writer for this table is PostgREST (upsertTriageRule,
+      -- src/lib/supportInboxApi.ts:333) behind a full CRUD editor the customer
+      -- already uses.
+      --
+      -- ⚠ WHY THIS KIND IS NOT PATH A, stated against the two that are.
+      -- `employee` is Path A because `authenticated` holds SELECT and nothing
+      -- else on digital_employees; `trust_rule` is Path A for the same reason on
+      -- trust_policies. Neither is true here. There IS a PostgREST write path,
+      -- customers use it, and routing the interview around it would mean two
+      -- writers for one table with only one of them under RLS.
+      when 'conversation_type' then
+        v_writer     := 'createTriageRuleFromProposal -> support_triage_rules (client, under RLS), verified and stamped here';
+        v_object_tbl := 'support_triage_rules';
+
+        -- ⚠ THE SAME EXPLICIT WHITESPACE SET 751 ESTABLISHED, for the same
+        -- measured reason: one-argument `btrim` strips SPACES ONLY, while the
+        -- client composes with JS `.trim()`. All three of these are COMPARED
+        -- byte for byte against what the browser wrote, so a lone tab surviving
+        -- here and not there is a permanent stuck proposal beside a live rule.
+        v_ct_label   := nullif(btrim(v_p.payload ->> 'label',         E' \t\n\r\f\v\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'), '');
+        v_ct_cat     := nullif(btrim(v_p.payload ->> 'set_category',  E' \t\n\r\f\v\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'), '');
+        v_ct_pattern := nullif(btrim(v_p.payload ->> 'match_pattern', E' \t\n\r\f\v\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'), '');
+        -- ⚠ 760: the FOURTH literal, trimmed with the same explicit whitespace
+        -- set for the same reason — one-argument btrim strips SPACES ONLY and
+        -- the browser composes with JS .trim(). This one is OPTIONAL: a topic
+        -- nobody owns is a topic the workspace answers the way it does today,
+        -- which is the whole of the founder's "no match keeps today's behaviour".
+        v_ct_own_ref := nullif(btrim(v_p.payload ->> 'owner_ref',     E' \t\n\r\f\v\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'), '');
+
+        if v_ct_label is null then
+          raise exception 'this recommendation has no name for the topic, and a topic nobody can read on a screen is not something anyone can agree to. Nothing was created, and it is still here waiting for you.';
+        end if;
+        if v_ct_cat is null then
+          raise exception 'this recommendation does not say which topic to file these conversations under, so there is nothing to write down. Nothing was created, and it is still here waiting for you.';
+        end if;
+
+        -- ⚠ THE CATEGORY TOKEN IS WRITTEN INTO de_conversations.category AND
+        -- READ BACK BY THE INBOX FILTER AS AN EXACT STRING (supportInboxApi.ts's
+        -- CONV_COLS and SupportInboxPage's `c.category !== topic`), and
+        -- SupportHistoryReport renders `category.replace(/_/g, ' ')`. So the
+        -- shape is fixed here rather than left to whatever a model wrote: lower
+        -- case, a-z 0-9 and underscore, at most 40 characters. The eleven live
+        -- categories all satisfy it (safety, security, legal, outage, data,
+        -- billing, access, complaint, feature_request, how_to, general —
+        -- measured 2026-08-17 across 18 tenants).
+        if v_ct_cat !~ '^[a-z0-9]+(_[a-z0-9]+)*$' or length(v_ct_cat) > 40 then
+          raise exception 'we cannot file conversations under "%" — a topic name we can sort and count by has to be plain lower-case words joined by underscores, like "delivery_delay". Nothing was created, and it is still here waiting for you.',
+            v_ct_cat;
+        end if;
+
+        -- ⚠ THE PATTERN IS NOT A REGULAR EXPRESSION HERE, AND THAT IS THE
+        -- OPPOSITE OF THE GUARDRAIL CASE — measured from the matcher itself
+        -- rather than assumed from the field name. `classify_support_text`
+        -- (read live 2026-08-17) does:
+        --     FOREACH frag IN ARRAY string_to_array(r.match_pattern, '|')
+        --       IF position(lower(btrim(frag)) IN lower(text)) > 0 THEN ...
+        -- `position`, not `~` and not `new RegExp`. So every character in a
+        -- triage pattern means itself, and 751's whole regex-metacharacter
+        -- screen would be refusing safe input if it were copied here. What DOES
+        -- carry over is the empty-alternative hazard, and it lands differently:
+        -- an empty fragment is skipped by `frag <> ''`, so "billing|" matches
+        -- exactly what "billing" does rather than matching everything. It is
+        -- refused anyway, because a card showing a trailing bar promises a
+        -- second phrase that will never be looked at.
+        --
+        -- A NULL pattern is refused OUTRIGHT and this is the sharpest edge on
+        -- this kind: a rule with no pattern is a CATCH-ALL that returns
+        -- IMMEDIATELY for every message reaching it, which would silently swallow
+        -- every conversation the rules below it were written for. All 18 live
+        -- tenants carry exactly one such rule, at rule_order 9999, called
+        -- "Default". An interview must never mint a second one.
+        if v_ct_pattern is null then
+          raise exception 'this recommendation has no words to look for, and a topic rule with no words catches EVERY conversation rather than the ones about "%" — every other topic below it would stop being used. Nothing was created, and it is still here waiting for you.',
+            v_ct_label;
+        end if;
+        if v_ct_pattern ~ '(^\||\|\||\|$)' then
+          raise exception 'the words to look for on this one — "%" — have a "|" with nothing beside it. The blank between the bars is skipped rather than matched, so the card would be showing you a phrase that is never looked at. Nothing was created, and it is still here waiting for you.',
+            v_ct_pattern;
+        end if;
+
+        -- ⚠⚠ 760 — WHO ANSWERS, RESOLVED FROM THE SESSION AND NEVER FROM THE
+        -- CALLER. This is 753's de_ref shape, and it is that shape for the same
+        -- reason: there is no employee id to hand us at the moment the card is
+        -- written, so the reference is to an ARCHETYPE the same interview
+        -- proposed, and the employee it means is the one an ACCEPTED employee
+        -- proposal in THIS session created.
+        --
+        -- ⚠ AN UNRESOLVABLE OWNER REFUSES; IT DOES NOT DEGRADE TO "nobody". The
+        -- card named a person. Writing the rule without them would be a card
+        -- that said one thing and a workspace that does another, with no later
+        -- reader able to tell — and this repo has paid for silent degradation
+        -- before. The refusal says which card to say yes to first.
+        if v_ct_own_ref is not null then
+          if v_ct_own_ref !~ '^archetype:[a-z0-9_]+$' then
+            raise exception 'this recommendation says these conversations should go to "%" rather than to one of the people it recommended, so there is nobody to send them to. Nothing was created, and it is still here waiting for you.',
+              v_ct_own_ref;
+          end if;
+          v_ct_own_arch := substring(v_ct_own_ref from 11);
+
+          select s.created_object_id into v_ct_owner
+            from public.discovery_proposals s
+           where s.session_id = v_p.session_id
+             and s.tenant_id  = v_p.tenant_id
+             and s.kind       = 'employee'
+             and s.state      = 'accepted'
+             and s.created_object_id is not null
+             and nullif(btrim(s.payload ->> 'archetype_key', E' \t\n\r\f\v\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff'), '') = v_ct_own_arch
+           order by s.decided_at desc nulls last
+           limit 1;
+          if v_ct_owner is null then
+            raise exception 'we have not set up the person who would answer these yet. Say yes to that recommendation first and this one will be ready straight after — a topic that goes to somebody who does not exist would just sit there. Nothing was created, and it is still here waiting for you.';
+          end if;
+
+          -- ...and that id, which came off a SIBLING ROW rather than off this
+          -- decision, still has to be an employee in THIS workspace.
+          -- ⚠ THE WORKSPACE ASSISTANT IS A FILTER, NEVER A VALUE READ — the
+          -- standing instruction stated as a predicate. It is the workspace's
+          -- own internal helper, not one of the customer's employees, and this
+          -- would otherwise be the first path on the platform that puts
+          -- customer support traffic in front of it.
+          --
+          -- ⚠⚠ AND LIFECYCLE IS DELIBERATELY *NOT* A BAR HERE, WHICH IS THE
+          -- OPPOSITE OF WHAT THE FIRST VERSION OF THIS BRANCH DID — measured,
+          -- not reasoned. The employee an owner_ref resolves to is ALWAYS one
+          -- an accepted employee proposal in this same session just created,
+          -- and the ordinary discovery hire lands at
+          -- `lifecycle_status = 'designed', status = 'idle'` (driven live
+          -- 2026-08-18 through this very function). So a lifecycle bar here
+          -- would refuse EVERY owner the interview can ever propose, and the
+          -- feature would be dead on arrival with a message blaming the
+          -- customer.
+          --
+          -- THE SPLIT IS THE POINT: this function records CONSENT — the
+          -- customer said this person answers this topic — and
+          -- classify_support_text decides ELIGIBILITY at answer time, where a
+          -- 'designed', paused, retired or archived owner returns NULL and the
+          -- workspace's ordinary choice answers instead. One place, one rule,
+          -- re-evaluated on every message rather than frozen at accept time.
+          --
+          -- ⚠ AND IT IS ALSO THE SECOND GATE THIS KIND WAS SAID NOT TO HAVE.
+          -- Because the owner is always a just-hired 'designed' employee,
+          -- accepting a topic with an owner CHANGES NOTHING ABOUT WHO ANSWERS
+          -- until that employee is published. The card and the drawer both say
+          -- so; the sentence a customer reads before pressing a button has to
+          -- be the sentence that turns out to be true.
+          select d.name into v_ct_own_name
+            from public.digital_employees d
+           where d.id = v_ct_owner
+             and d.tenant_id = v_p.tenant_id
+             and coalesce(d.is_workforce_assistant, false) = false;
+          if v_ct_own_name is null then
+            raise exception 'the person this topic would go to is not one of yours, so these conversations would have nowhere to land. Nothing was created, and it is still here waiting for you.';
+          end if;
+        end if;
+
+        if p_created_object_id is null then
+          raise exception 'a conversation topic is accepted by creating the rule first: add it as the signed-in person, then pass its id here (Path B)';
+        end if;
+
+        -- The id a caller hands us is NOT its own authorisation. Read the WHOLE
+        -- row back — every sentence on the card is checked against it below.
+        select * into v_ct_rule
+          from public.support_triage_rules t
+         where t.id = p_created_object_id
+           and t.tenant_id = v_p.tenant_id;
+        if v_ct_rule.id is null then
+          raise exception 'no topic rule % in this workspace — a created-object id is not its own authorisation', p_created_object_id;
+        end if;
+
+        -- ⚠⚠ THE PROVENANCE COLUMN IS THE IDEMPOTENCY, AND IT IS THE ONLY
+        -- THING THAT COULD BE. support_triage_rules carried exactly three
+        -- constraints before this migration — the primary key, the
+        -- set_priority CHECK and the tenant FK (read live 2026-08-17) — and NO
+        -- unique index of any kind. So a browser that died between the insert
+        -- and the stamp left an orphan rule, and a retry minted a second one
+        -- with nothing in the database to stop it. 752 solved the same problem
+        -- with a deterministic key over an index that already existed; there was
+        -- no key column here to be deterministic about.
+        -- This file adds `source_proposal_id` plus a UNIQUE index over it, so
+        -- one proposal can own at most ONE rule, enforced by the database rather
+        -- than by the browser not clicking twice. The client's find-first is a
+        -- COURTESY that turns a 23505 into a re-use; this is the guarantee.
+        if v_ct_rule.source_proposal_id is distinct from v_p.id then
+          raise exception 'the topic rule that was created is not linked to this recommendation (it points at %), so accepting this would leave two rules where you agreed to one. Nothing was recorded, and this is still here waiting for you.',
+            coalesce(v_ct_rule.source_proposal_id::text, 'nothing');
+        end if;
+
+        -- ⚠ THE CONSENTED LITERALS, BYTE FOR BYTE — §11b's "you cannot consent
+        -- to what you cannot predict" applied to a topic rule. The card rendered
+        -- the topic name, the words to look for and the file-under token; if the
+        -- row carries anything else the customer agreed to one rule and got
+        -- another, and no later reader could tell.
+        if v_ct_rule.set_category is distinct from v_ct_cat then
+          raise exception 'the rule that was created files conversations under "%", but this recommendation showed "%" — a topic has to be the one that was agreed to, exactly', coalesce(v_ct_rule.set_category, 'nothing'), v_ct_cat;
+        end if;
+        if v_ct_rule.match_pattern is distinct from v_ct_pattern then
+          raise exception 'the rule that was created looks for "%", but this recommendation showed "%" — the words on the card are the whole of what you agreed to', coalesce(v_ct_rule.match_pattern, 'nothing'), v_ct_pattern;
+        end if;
+        if v_ct_rule.name is distinct from v_ct_label then
+          raise exception 'the rule that was created is called "%", but this recommendation showed "%" — the name is what you will see in your triage rules, so it has to be the one on the card', coalesce(v_ct_rule.name, 'nothing'), v_ct_label;
+        end if;
+        -- ⚠⚠ 760 — AND WHO ANSWERS, WHICH IS NOW THE LARGEST FACT ON THE CARD.
+        -- `is distinct from` compares BOTH DIRECTIONS with one operator and
+        -- that is deliberate: a card naming nobody must not create a rule that
+        -- sends traffic to somebody, and a card naming somebody must not create
+        -- a rule that sends it nowhere. Either way the customer agreed to one
+        -- thing and got another, and a triage rule is editable with no version
+        -- history anywhere else, so the literal has to be checked here or never.
+        if v_ct_rule.owner_de_id is distinct from v_ct_owner then
+          raise exception 'the rule that was created sends these conversations to %, but this recommendation said %. Who answers is the biggest thing on that card, so it has to be the one that was agreed to. Nothing was recorded, and it is still here waiting for you.',
+            coalesce((select d.name from public.digital_employees d
+                       where d.id = v_ct_rule.owner_de_id and d.tenant_id = v_p.tenant_id
+                         and coalesce(d.is_workforce_assistant, false) = false), 'nobody in particular'),
+            coalesce(v_ct_own_name, 'nobody in particular');
+        end if;
+
+        -- ...and it has to actually be consulted. `classify_support_text`
+        -- filters `WHERE tenant_id = p_tenant_id AND active`, so an inactive rule
+        -- is a card that says a topic is being tracked while nothing looks at it.
+        if not coalesce(v_ct_rule.active, false) then
+          raise exception 'the rule that was created is switched off, and a topic nothing looks for is not the thing this recommendation described. Nothing was recorded, and this is still here waiting for you.';
+        end if;
+
+        -- ⚠⚠ THE ORDER IS THE ROUTING DECISION, AND IT IS CHECKED RATHER THAN
+        -- DEFAULTED. `classify_support_text` walks the rules
+        -- `ORDER BY rule_order, created_at` and RETURNS ON THE FIRST MATCH. The
+        -- column defaults to 100 — and every one of the 18 live tenants already
+        -- carries a baseline rule AT 100 ("How-to"), seeded before today, so a
+        -- rule taking the default would tie with it and lose the tie on
+        -- created_at, silently and forever. That is an ordering nobody chose.
+        --
+        -- The live baseline, measured 2026-08-17, is identical in all 18
+        -- tenants: 10 Safety, 20 Security, 30 Legal/Regulatory, 40 Outage,
+        -- 50 Data loss, 60 Billing, 70 Access, 80 Complaint, 90 Feature request,
+        -- 100 How-to, 9999 Default (the catch-all).
+        --
+        -- So this kind is confined to the band 200..9998, and the accept
+        -- REFUSES a row outside it. That band is a decision with two halves,
+        -- and both are on the card:
+        --   · ABOVE 100 — a topic from an interview NEVER outranks Safety or
+        --     Security. "Someone is hurt" must not be re-filed as "delivery
+        --     delay" because a customer described their inbox that way.
+        --   · BELOW 9999 — it is still consulted before the catch-all, so it
+        --     does change what a conversation is filed as. A rule that only ran
+        --     after "Default" could never fire at all.
+        if coalesce(v_ct_rule.rule_order, 100) < 200 or coalesce(v_ct_rule.rule_order, 100) > 9998 then
+          raise exception 'the rule that was created sits at position % in your triage list, and a topic from this conversation belongs between 200 and 9998 — after the built-in urgent categories like Safety and Security, and before the catch-all. Nothing was recorded, and this is still here waiting for you.',
+            coalesce(v_ct_rule.rule_order::text, 'the default');
+        end if;
+
+        -- WHAT ELSE IS AT THAT POSITION, COUNTED RATHER THAN ASSUMED. Ties are
+        -- broken by created_at, which nothing on any screen shows, so a tie is a
+        -- routing decision made invisibly. This does NOT refuse — two of the
+        -- customer's own topics sharing a position is a display question between
+        -- rules they both wrote, not a safety question, and refusing would make
+        -- a second interview session unable to accept anything. It is COUNTED,
+        -- and the number travels into the audit detail and the return payload so
+        -- the screen can say it out loud.
+        select count(*) into v_ct_ties
+          from public.support_triage_rules t
+         where t.tenant_id = v_p.tenant_id
+           and t.active
+           and t.rule_order = v_ct_rule.rule_order
+           and t.id <> v_ct_rule.id;
+
+        -- ...and how many active rules sit AHEAD of it, which is the honest
+        -- answer to "will this actually catch anything". A rule behind ten
+        -- broader patterns fires for whatever they leave.
+        select count(*) into v_ct_ahead
+          from public.support_triage_rules t
+         where t.tenant_id = v_p.tenant_id
+           and t.active
+           and t.rule_order < v_ct_rule.rule_order;
+
+        -- What the screen and the audit line are allowed to say, from ONE
+        -- object so the two cannot drift. The PATTERN and the CATEGORY are in
+        -- here deliberately: the row is editable and deletable from the triage
+        -- rules editor with no version history anywhere else, so the literals
+        -- the customer consented to have to outlive it — the same reasoning
+        -- 751 states for a guardrail's pattern.
+        -- ⚠⚠ 760 REPLACED THE PARAGRAPH THAT USED TO STAND HERE, AND THE OLD ONE
+        -- WAS TRUE WHEN IT WAS WRITTEN. It said `routes_to_employee` is FALSE
+        -- because "nothing on this platform reads de_conversations.category to
+        -- choose a digital employee". That is no longer the shape: the three
+        -- functions that CREATE a conversation now classify the question BEFORE
+        -- the row exists, look the topic's owner up from that one classification,
+        -- and stamp de_id from it (widget-ask, email-inbound, de-answer).
+        --
+        -- ⚠ SO THE COUNTER IS AN EXPRESSION, NOT A LITERAL, and that is the
+        -- whole point of it. A topic with no owner still routes nothing, and
+        -- `routes_to_employee` says so for that card; a topic with an owner says
+        -- so for that one. A hardcoded `true` would be the same defect the
+        -- hardcoded `false` became — a sentence the customer is shown that
+        -- nothing can be checked against — and both arms are driven in probe 19.
+        v_counters := jsonb_build_object(
+          'rule_id',            v_ct_rule.id,
+          'topic_name',         v_ct_rule.name,
+          'set_category',       v_ct_rule.set_category,
+          'match_pattern',      v_ct_rule.match_pattern,
+          'set_priority',       v_ct_rule.set_priority,
+          'set_severity',       v_ct_rule.set_severity,
+          'rule_order',         v_ct_rule.rule_order,
+          'rules_ahead_of_it',  coalesce(v_ct_ahead, 0),
+          'rules_sharing_its_position', coalesce(v_ct_ties, 0),
+          'owner_de_id',        v_ct_owner,
+          'owner_name',         v_ct_own_name,
+          'routes_to_employee', (v_ct_owner is not null),
+          'labels_conversations', true);
+
+        v_object_id := v_ct_rule.id;
+
       -- ---- every other kind ---------------------------------------------
-      -- ⚠ EXACTLY ONE KIND REACHES THIS ARM NOW: `conversation_type`. It is
-      -- admitted by discovery_proposals_kind_check and routed by nothing, so
-      -- this refusal is the ROUTER's and nothing else's. A kind with no writer
-      -- must say so.
+      -- ⚠ NO PRODUCT KIND REACHES THIS ARM ANY MORE. All six kinds
+      -- discovery_proposals_kind_check admitted before today now have a `when`
+      -- branch above. What reaches it is `__unrouted_probe__`, a SENTINEL this
+      -- migration adds to the CHECK precisely so this arm stays drivable — see
+      -- the header. Nothing emits it, `authenticated` holds SELECT and nothing
+      -- else on discovery_proposals, and it is absent from ProposalKind, from
+      -- KIND_LABELS and from SECTION_ORDER, so no card can ever carry it.
       --
       -- ⚠⚠ AND THE PROBES THAT DRIVE IT NO LONGER NAME IT. 751 repointed probe
       -- 7 off `guardrail`, 752 repointed probe 14 off `procedure`, and each
@@ -11223,6 +11772,7 @@ BEGIN
     SELECT 1 FROM connectors k
      WHERE k.category = 'erp_financials'
        AND k.status = 'connected'
+       AND NOT public.connector_circuit_open(k.consecutive_failures, k.last_error_at)
        AND k.scheduled_sync_enabled
        AND tenant_is_operational(k.tenant_id)
        AND (k.last_scheduled_sync_at IS NULL
@@ -11244,6 +11794,7 @@ BEGIN
     SELECT k.id, k.tenant_id, k.provider FROM connectors k
      WHERE k.category = 'erp_financials'
        AND k.status = 'connected'
+       AND NOT public.connector_circuit_open(k.consecutive_failures, k.last_error_at)
        AND k.scheduled_sync_enabled
        AND tenant_is_operational(k.tenant_id)
        AND (k.last_scheduled_sync_at IS NULL
@@ -11392,6 +11943,7 @@ BEGIN
     SELECT 1 FROM connectors k
      WHERE k.category = 'erp_financials'
        AND k.status = 'connected'
+       AND NOT public.connector_circuit_open(k.consecutive_failures, k.last_error_at)
        AND k.scheduled_sync_enabled
        AND tenant_is_operational(k.tenant_id))
   THEN
@@ -11411,6 +11963,7 @@ BEGIN
     SELECT k.id, k.tenant_id FROM connectors k
      WHERE k.category = 'erp_financials'
        AND k.status = 'connected'
+       AND NOT public.connector_circuit_open(k.consecutive_failures, k.last_error_at)
        AND k.scheduled_sync_enabled
        AND tenant_is_operational(k.tenant_id)
      ORDER BY k.last_sync_at NULLS FIRST
@@ -12096,6 +12649,216 @@ AS $function$
   where tenant_id = p_tenant_id and source_provider = p_provider;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.evaluate_authority(p_tenant_id uuid, p_actor_kind text, p_actor_id uuid, p_category text, p_measures jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  r            record;
+  v_rank       int;
+  v_worst      int := 0;                  -- 0 allow, 1 human, 2 second, 3 deny
+  v_reasons    jsonb := '[]'::jsonb;
+  v_measures   jsonb := coalesce(p_measures, '{}'::jsonb);
+  v_val        numeric;
+  v_present    boolean;
+  v_trips      boolean;
+  v_unreadable boolean;
+begin
+  if p_tenant_id is null then
+    return jsonb_build_object('outcome','require_human',
+      'reasons', jsonb_build_array(jsonb_build_object('why','no workspace in context')));
+  end if;
+
+  -- ⛔ FAIL CLOSED ON THE ACTOR, not only on the measures. Left unguarded, an
+  -- unrecognised or absent p_actor_kind, or a scoped kind with no
+  -- p_actor_id, would just match nothing in the loop below and fall out
+  -- through v_worst's default of 0 — permission by omission, one parameter
+  -- over from the bug this function exists to end.
+  --
+  -- ⚠ 'role' and 'org_unit' are RULE-scoping vocabulary, not actor kinds — a
+  -- rule scopes to a role or a unit, but no caller ever IS one. authority_
+  -- rules_actor_shape (mig 770) already forces actor_id null for a 'role'
+  -- rule, so a caller that passed ('role', <uuid>) as ITS OWN kind would
+  -- match nothing in the loop below (ar.actor_kind = p_actor_kind never
+  -- holds, since no rule's actor_kind is ever 'role' paired with a live
+  -- actor_id) and silently fall out through v_worst's default of 0 — allow.
+  -- Only the two kinds a caller can actually BE, plus 'all', are accepted.
+  if p_actor_kind is null or p_actor_kind not in ('all','user','de') then
+    return jsonb_build_object('outcome','require_human',
+      'reasons', jsonb_build_array(jsonb_build_object(
+        'why', format('unknown actor kind: %s is not a kind this evaluator recognizes', coalesce(p_actor_kind, '<null>')))));
+  end if;
+
+  if p_actor_kind <> 'all' and p_actor_id is null then
+    return jsonb_build_object('outcome','require_human',
+      'reasons', jsonb_build_array(jsonb_build_object(
+        'why', format('unidentified actor: actor_kind %s was given with no actor_id', p_actor_kind))));
+  end if;
+
+  -- ⛔ THE ACTOR MUST RESOLVE, NOT MERELY BE WELL-SHAPED. A stale, cross-
+  -- tenant, or edge-function-relayed id that names nobody in p_tenant_id
+  -- would otherwise pass the shape check above and then silently lose every
+  -- role- and unit-derived rule below — their EXISTS joins simply find no
+  -- row — and fall out through v_worst's default of 0, returning the most
+  -- permissive answer available. Do NOT silently narrow to whatever rules
+  -- happen to still match; escalate instead.
+  -- ⛔ AND IT MUST BE ACTIVE. Without `coalesce(is_active, true)` this guard
+  -- escalates for a profile that does not EXIST but waves through one that has
+  -- been DEACTIVATED — and the role arm below filters on exactly that flag, so
+  -- an offboarded user resolves here, matches no role-scoped rule there, and
+  -- receives the most permissive answer available. That is the likelier real
+  -- case of the two: people are offboarded far more often than user ids are
+  -- fabricated. It is also the same polarity trap the org-unit comment sixty
+  -- lines below warns about — a filter that means "fewer grants" in
+  -- has_approval_authority means "fewer restrictions" here.
+  if p_actor_kind = 'user' and not exists (
+       select 1 from profiles
+        where user_id = p_actor_id and tenant_id = p_tenant_id
+          and coalesce(is_active, true)) then
+    return jsonb_build_object('outcome','require_human',
+      'reasons', jsonb_build_array(jsonb_build_object(
+        'why', format('unidentified actor: no active profile for user %s in this workspace', p_actor_id))));
+  end if;
+
+  if p_actor_kind = 'de' and not exists (
+       select 1 from digital_employees where id = p_actor_id and tenant_id = p_tenant_id) then
+    return jsonb_build_object('outcome','require_human',
+      'reasons', jsonb_build_array(jsonb_build_object(
+        'why', format('unidentified actor: no digital employee %s in this workspace', p_actor_id))));
+  end if;
+
+  for r in
+    select ar.dimension, ar.comparator, ar.threshold, ar.outcome, ad.value_type
+      from authority_rules ar
+      join authority_dimensions ad on ad.dimension = ar.dimension
+     where ar.tenant_id = p_tenant_id
+       and ar.is_active
+       -- ⛔ p_category IS NULL must NOT narrow to global-only rules.
+       -- task_approval_facts can genuinely return a null category, and the
+       -- strictest reading of "I don't know the category" is "every
+       -- category-scoped rule applies", not "no category-scoped rule does".
+       and (p_category is null or ar.category is null or ar.category = p_category)
+       and (
+         ar.actor_kind = 'all'
+         or (ar.actor_kind = p_actor_kind and ar.actor_id = p_actor_id)
+         -- ⚠ A PERSON IS ALSO REACHED BY THEIR ROLE AND THEIR ORG UNIT, and
+         -- by any unit ABOVE the one they belong to. The walk direction
+         -- mirrors has_approval_authority (mig 593) — an evaluator that only
+         -- matched exact actor ids would fail step 2's differential against
+         -- it on every role-scoped and unit-scoped row, which is 151 rows
+         -- today. It does NOT mirror 593's is_active pruning: see the note
+         -- at the recursive CTE below for why that pruning would fail open
+         -- here.
+         or (p_actor_kind = 'user' and ar.actor_kind = 'role' and exists (
+               select 1 from profiles pr
+                where pr.user_id = p_actor_id and pr.tenant_id = p_tenant_id
+                  and coalesce(pr.is_active, true)
+                  and pr.role = ar.actor_role))
+         or (p_actor_kind = 'user' and ar.actor_kind = 'org_unit' and exists (
+               -- ⚠ THIS WALK MUST NOT PRUNE ON is_active. mig 593 prunes an
+               -- inactive intermediate unit out of a walk that computes
+               -- GRANTS — losing a branch there loses authority, which
+               -- fails closed. Here the walk computes a RESTRICTION's
+               -- reach: losing a branch would let one inactive intermediate
+               -- unit silently exempt its whole live subtree from a rule
+               -- above it, which fails OPEN. Do not "restore" an is_active
+               -- filter here to make this match 593 again — the polarity
+               -- difference is the point, not an oversight.
+               with recursive below as (
+                 select ar.actor_id as id
+                 union
+                 select u.id from org_units u join below b on u.parent_id = b.id
+               )
+               select 1 from org_unit_members m
+                where m.user_id = p_actor_id and m.is_active
+                  and m.org_unit_id in (select id from below)))
+       )
+     order by ar.dimension, ar.comparator, ar.threshold, ar.id
+  loop
+    v_rank := 0;  -- local to this rule; only "if v_rank > v_worst" below promotes it
+
+    -- ⛔ `?` TESTS KEY PRESENCE, NOT MEASUREMENT. {"amount_cents": null} has
+    -- the key, and 74% of pending approvals carry no amount exactly that
+    -- way — a JSON null must be treated like an absent key, not like zero
+    -- or false.
+    v_present := (v_measures ? r.dimension) and jsonb_typeof(v_measures -> r.dimension) <> 'null';
+
+    if not v_present then
+      -- ⛔ absence escalates. Never `or` past it.
+      v_rank := 1;
+      v_reasons := v_reasons || jsonb_build_object(
+        'dimension', r.dimension, 'comparator', r.comparator, 'threshold', r.threshold,
+        'outcome', 'require_human',
+        'why', format('unmeasured: this action did not report %s, and a rule depends on it', r.dimension));
+    else
+      -- ⛔ A MALFORMED MEASURE FAILS CLOSED, NOT RAISES. This function IS the
+      -- fail-closed guarantee; it cannot delegate that guarantee back to a
+      -- caller by letting a bad cast abort the transaction — this repo has
+      -- a standing trap where `.rpc()` resolves on a Postgres error, so an
+      -- unhandled exception here can read as silence, not as a refusal.
+      v_unreadable := false;
+      begin
+        if r.value_type = 'boolean' then
+          v_val := case when coalesce((v_measures->>r.dimension)::boolean, false) then 1 else 0 end;
+        else
+          v_val := (v_measures->>r.dimension)::numeric;
+        end if;
+      exception when others then
+        v_unreadable := true;
+      end;
+
+      if v_unreadable then
+        v_rank := 1;
+        v_reasons := v_reasons || jsonb_build_object(
+          'dimension', r.dimension, 'comparator', r.comparator, 'threshold', r.threshold,
+          'outcome', 'require_human',
+          'why', format('unreadable measure: %s could not be read as %s', r.dimension, r.value_type));
+      else
+        v_trips := case r.comparator
+          when '>'  then v_val >  r.threshold
+          when '>=' then v_val >= r.threshold
+          when '<'  then v_val <  r.threshold
+          when '<=' then v_val <= r.threshold
+          when 'is' then v_val =  r.threshold
+          else null
+        end;
+
+        if v_trips is null then
+          -- Unknown comparator — only reachable if the registry ever grows
+          -- one this function was not updated to evaluate. Escalate, do not
+          -- raise: raising is exactly what the branch above exists to stop
+          -- doing, and silently not-firing is exactly the bug this whole
+          -- function exists to end.
+          v_rank := 1;
+          v_reasons := v_reasons || jsonb_build_object(
+            'dimension', r.dimension, 'comparator', r.comparator, 'threshold', r.threshold,
+            'outcome', 'require_human',
+            'why', format('unknown comparator: %s is not understood by this evaluator', r.comparator));
+        elsif not v_trips then
+          continue;
+        else
+          v_rank := case r.outcome
+            when 'deny' then 3 when 'require_second_approver' then 2 else 1 end;
+          v_reasons := v_reasons || jsonb_build_object(
+            'dimension', r.dimension, 'comparator', r.comparator, 'threshold', r.threshold,
+            'outcome', r.outcome,
+            'why', format('%s %s %s', r.dimension, r.comparator, r.threshold));
+        end if;
+      end if;
+    end if;
+
+    if v_rank > v_worst then v_worst := v_rank; end if;
+  end loop;
+
+  return jsonb_build_object(
+    'outcome', case v_worst when 3 then 'deny' when 2 then 'require_second_approver'
+                            when 1 then 'require_human' else 'allow' end,
+    'reasons', v_reasons);
+end
+$function$;
+
 CREATE OR REPLACE FUNCTION public.evidence_is_production(p_origin text)
  RETURNS boolean
  LANGUAGE sql
@@ -12773,6 +13536,105 @@ BEGIN
   );
   RETURN jsonb_build_object('ok', true);
 END$function$;
+
+CREATE OR REPLACE FUNCTION public.forget_end_user(p_tenant_id uuid, p_end_user_ref text, p_reason text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_actor    text;
+  v_convs    int := 0;
+  v_msgs     int := 0;
+  v_sessions int := 0;
+  v_contacts int := 0;
+  v_conv_ids uuid[];
+begin
+  -- ── rails ────────────────────────────────────────────────────────────────
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+  if coalesce(btrim(p_end_user_ref), '') = '' then
+    raise exception 'an end-user reference is required — refusing to erase on a blank subject';
+  end if;
+  if not (
+    public.is_platform_admin()
+    or (public.auth_tenant_id() = p_tenant_id
+        and public.auth_has_tenant_role(array['tenant_owner', 'tenant_admin']))
+  ) then
+    raise exception 'only an owner or admin of this workspace may erase a person''s data';
+  end if;
+
+  select coalesce(full_name, 'unknown') into v_actor from profiles where user_id = auth.uid();
+
+  -- ── the subject's conversations, resolved once and reused ────────────────
+  select coalesce(array_agg(id), '{}') into v_conv_ids
+    from de_conversations
+   where tenant_id = p_tenant_id and end_user_ref = p_end_user_ref;
+
+  -- ── measure BEFORE writing (see header) ──────────────────────────────────
+  v_convs := coalesce(array_length(v_conv_ids, 1), 0);
+
+  select count(*) into v_msgs from de_messages
+   where tenant_id = p_tenant_id and conversation_id = any(v_conv_ids);
+
+  select count(*) into v_sessions from end_user_sessions
+   where tenant_id = p_tenant_id and end_user_ref = p_end_user_ref;
+
+  select count(*) into v_contacts from customer_account_contacts
+   where tenant_id = p_tenant_id and end_user_ref = p_end_user_ref;
+
+  -- ── erase ────────────────────────────────────────────────────────────────
+  -- The person's own words go; the employee's replies stay, because they are
+  -- the workspace's record of what it told a customer and they do not identify
+  -- the customer once the identifiers above are gone.
+  update de_messages
+     set content = '[erased at the data subject''s request]'
+   where tenant_id = p_tenant_id and conversation_id = any(v_conv_ids);
+
+  update de_conversations
+     set end_user_ref = null,
+         end_user_name = '[erased]',
+         handoff_summary = case when handoff_summary is null then null
+                                else '[erased at the data subject''s request]' end
+   where id = any(v_conv_ids);
+
+  delete from end_user_sessions
+   where tenant_id = p_tenant_id and end_user_ref = p_end_user_ref;
+
+  delete from customer_account_contacts
+   where tenant_id = p_tenant_id and end_user_ref = p_end_user_ref;
+
+  -- ── receipt ──────────────────────────────────────────────────────────────
+  -- Audited under its own category so an erasure is findable later WITHOUT
+  -- storing the reference that was erased. The subject key is deliberately not
+  -- written into the audit detail: recording who was forgotten, in the log, in
+  -- order to prove they were forgotten, defeats the point.
+  perform public.append_audit_event(
+    p_tenant_id, v_actor, 'human',
+    format('Erased an end user''s personal data on request — %s conversation(s), %s message(s), %s session(s), %s contact(s)',
+           v_convs, v_msgs, v_sessions, v_contacts),
+    'access_control',
+    jsonb_build_object(
+      'conversations_pseudonymised', v_convs,
+      'user_messages_erased',        v_msgs,
+      'sessions_deleted',            v_sessions,
+      'contacts_deleted',            v_contacts,
+      'reason',                      coalesce(p_reason, 'data subject request')
+    )
+  );
+
+  return jsonb_build_object(
+    'ok', true,
+    'conversations_pseudonymised', v_convs,
+    'user_messages_erased',        v_msgs,
+    'sessions_deleted',            v_sessions,
+    'contacts_deleted',            v_contacts,
+    'nothing_found', (v_convs + v_sessions + v_contacts) = 0
+  );
+end;
+$function$;
 
 CREATE OR REPLACE FUNCTION public.gate_de_certification()
  RETURNS trigger
@@ -13658,7 +14520,13 @@ begin
     from de_token_usage u
     left join ai_model_pricing pr on pr.model_id = u.model_id
     where u.tenant_id = p_tenant_id and u.de_id is not null
-      and evidence_is_production(u.origin)   -- 682: exam spend is not a business cost metric
+      and evidence_is_production(u.origin)
+      -- A-4: and only the employees this caller actually holds. can_access_de
+      -- keeps owner/admin/manager on the WHOLE workforce of their own
+      -- workspace and platform staff on everything, so no role that could see
+      -- this before loses it; it is the narrower roles that stop seeing spend
+      -- for employees they are not responsible for.
+      and public.can_access_de(u.de_id)   -- 682: exam spend is not a business cost metric
     group by u.de_id;
 end;
 $function$;
@@ -14069,10 +14937,10 @@ CREATE OR REPLACE FUNCTION public.get_de_kpi_status(p_de_id uuid)
  RETURNS TABLE(kpi_id uuid, name text, metric_key text, target numeric, direction text, current numeric, met boolean, sample bigint)
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
- SET search_path TO 'public', 'extensions'
+ SET search_path TO 'public'
 AS $function$
 declare
-  v_tenant uuid; m record; v_csat numeric; v_csat_n bigint; v_vals jsonb; v_samples jsonb;
+  v_tenant uuid;
 begin
   select tenant_id into v_tenant from digital_employees where id = p_de_id and public.can_access_de(id);
   if v_tenant is null then return; end if;
@@ -14080,60 +14948,10 @@ begin
     if auth_tenant_id() is distinct from v_tenant then raise exception 'not a member of this workspace'; end if;
   end if;
 
-  select * into m from get_de_performance_metrics(v_tenant, 13) where de_id = p_de_id;
-  select round(100.0 * count(*) filter (where csat_score = 1) / nullif(count(*) filter (where csat_submitted_at is not null), 0), 1),
-         count(*) filter (where csat_submitted_at is not null)
-    into v_csat, v_csat_n
-  from de_conversations where tenant_id = v_tenant and de_id = p_de_id;
-
-  v_vals := jsonb_strip_nulls(jsonb_build_object(
-    'resolution_rate',        case when coalesce(m.total_decisions, 0) >= 1 then m.resolution_rate end,
-    'avg_confidence',         case when coalesce(m.total_decisions, 0) >= 1 then m.avg_confidence end,
-    'escalation_rate',        case when coalesce(m.total_decisions, 0) >= 1 then m.escalation_rate end,
-    'error_rate',             case when coalesce(m.total_runs, 0) >= 1 then m.error_rate end,
-    'csat_pct',               v_csat,
-    'high_frustration_count', case when coalesce(m.total_decisions, 0) >= 1 then m.high_frustration_count::numeric end,
-    'total_decisions',        coalesce(m.total_decisions, 0)::numeric
-  ));
-  v_samples := jsonb_build_object('csat_pct', v_csat_n);
-
-  return query
-  select k.id, k.name, k.metric_key, k.target, k.direction, cur.v,
-         case when cur.v is null then null
-              when k.direction = 'higher' then cur.v >= k.target
-              else cur.v <= k.target end,
-         cur.n
-  from de_kpis k
-  left join kpi_metric_catalog c
-    on c.metric_key = k.metric_key and (c.tenant_id is null or c.tenant_id = v_tenant)
-  left join lateral (
-    select
-      case when coalesce(c.source, '') = 'action' then
-        case when coalesce(c.source_config->>'agg', 'count') = 'auto_rate' then
-          round(100.0 * count(*) filter (where ae.decision = 'auto_executed') / nullif(count(*), 0), 1)
-        else count(*)::numeric end
-      end as v,
-      count(*) as n
-      from action_executions ae
-      left join action_definitions ad on ad.id = ae.action_definition_id
-     where c.source = 'action'
-       and ae.tenant_id = v_tenant and ae.subject_kind = 'de' and ae.subject_id = p_de_id
-       and ae.rollback_of is null and ae.created_at >= now() - interval '91 days'
-       and (coalesce(c.source_config->>'category', '') = '' or ad.category = c.source_config->>'category')
-       and (coalesce(c.source_config->>'action_label', '') = '' or ad.label = c.source_config->>'action_label')
-  ) act on true
-  -- Latest manual reading, for metrics the platform doesn't compute.
-  left join lateral (
-    select d.value, count(*) over () as rn from de_kpi_readings d
-     where d.de_id = k.de_id and d.metric_key = k.metric_key
-       and d.source = 'manual'                    -- GI-5: fallback = human readings only
-     order by d.as_of desc, d.created_at desc limit 1
-  ) r on true
-  cross join lateral (
-    select coalesce((v_vals->>k.metric_key)::numeric, act.v, r.value) as v,
-           coalesce((v_samples->>k.metric_key)::bigint, nullif(act.n, 0), r.rn, coalesce(m.total_decisions, 0)) as n
-  ) cur;
-end $function$;
+  -- 13: the window this function has always used. Unchanged on purpose.
+  return query select * from public.de_kpi_status_internal(v_tenant, p_de_id, 13);
+end
+$function$;
 
 CREATE OR REPLACE FUNCTION public.get_de_metrics_batch(p_tenant_id uuid, p_de_id uuid, p_metric_keys text[] DEFAULT NULL::text[], p_date_from timestamp with time zone DEFAULT NULL::timestamp with time zone, p_date_to timestamp with time zone DEFAULT NULL::timestamp with time zone)
  RETURNS TABLE(metric_key text, metric_name text, value numeric, unit text, trend text, comparison jsonb)
@@ -14420,9 +15238,10 @@ BEGIN
   -- A real count of real rows (subject_kind/subject_id are the actual
   -- columns; the old read named action_executions.de_id, which never existed
   -- here). A genuine zero is a true measurement and stays 0.
-  SELECT COALESCE(COUNT(*), 0) INTO v_responses_this_month FROM action_executions
-  WHERE subject_kind = 'de' AND subject_id = p_de_id AND mode = 'execute'
-    AND created_at > now() - (p_time_window_days || ' days')::interval;
+  SELECT COALESCE(COUNT(*), 0) INTO v_responses_this_month
+  FROM de_messages m JOIN de_conversations c ON c.id = m.conversation_id
+  WHERE c.de_id = p_de_id AND m.role = 'assistant'
+    AND m.created_at > now() - (p_time_window_days || ' days')::interval;
 
   SELECT COALESCE(COUNT(*), 0) INTO v_amendments_count FROM workforce_actions
   WHERE entity_id = p_de_id AND action_type IN ('de_amend', 'de_train') AND applied_at IS NOT NULL AND created_at > now() - (p_time_window_days || ' days')::interval;
@@ -16354,7 +17173,9 @@ begin
   into v_decided, v_unchanged, v_edited, v_rejected, v_median_s, v_snap
   from human_tasks
   where tenant_id = v_tenant and status in ('approved','rejected')
-    and decided_at is not null and decided_at >= v_since;
+    and decided_at is not null and decided_at >= v_since
+    -- C-4: same rule as the gate above — an exercise task is not workforce trust.
+    and public.evidence_is_production(origin);
 
   select count(*) into v_employees
   from digital_employees where tenant_id = v_tenant and status = 'active';
@@ -19968,17 +20789,29 @@ BEGIN
              -- every gate uses. NULL for destructive entries: the destructive
              -- gate sits above the dial, so showing a dial there would lie.
              'dial', CASE WHEN NOT c.dialable THEN NULL
-                     -- mig 496: a write-back card must read the key the GATE
-                     -- reads. resolve_de_autonomy_chain stops at the first
-                     -- action_type that has ANY row for the tenant, and
-                     -- provisioning guarantees 'action_execute' rows exist
-                     -- everywhere — so an 'action:crm'-shaped row would be
-                     -- silently ignored at runtime while reading as ON here.
-                     -- That inverse failure (a dial that looks on and does
-                     -- nothing) is worse than the invisible one it replaces.
+                     -- ⚠ mig 755. This read the GENERIC key alone, on mig
+                     -- 496's reasoning that the chain "stops at the first
+                     -- action_type that has ANY row" and that provisioning put
+                     -- 'action_execute' rows everywhere. MIGRATION 618 ENDED
+                     -- BOTH FACTS: it reversed the chain to ask the SPECIFIC
+                     -- key first and deleted the workspace rows. The dials
+                     -- panel was updated to write 'action:<category>'; this
+                     -- reader was not, so the screen answered a question
+                     -- enforcement had stopped asking.
+                     -- Measured in an aborting transaction on 2026-08-18,
+                     -- BOTH directions reachable:
+                     --   dial OFF + generic ON  -> screen true,  gate false
+                     --   dial ON  + no generic  -> screen false, gate TRUE
+                     -- The second is a governance screen showing a capability
+                     -- as off while the employee is permitted to act.
+                     -- It now asks the SAME chain, in the SAME order, that
+                     -- decide_action_execution asks.
                      WHEN c.kind = 'writeback' THEN
                        (SELECT to_jsonb(r)
-                          FROM resolve_de_autonomy(v_tenant, 'action_execute', p_de_id, c.category) r)
+                          FROM resolve_de_autonomy_chain(
+                                 v_tenant,
+                                 ARRAY['action:' || c.category, NULL, 'action_execute'],
+                                 p_de_id, c.category, NULL) r)
                      ELSE
                        (SELECT to_jsonb(r)
                           FROM resolve_de_autonomy(v_tenant, c.capability_key, p_de_id, NULL) r)
@@ -20963,6 +21796,46 @@ AS $function$
       '\n{3,}',    chr(10) || chr(10), 'g'),
       '^\s+|\s+$', '',                 'g'),
     'sha256'), 'hex')
+$function$;
+
+CREATE OR REPLACE FUNCTION public.notify_ops_alert()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_secret text;
+  v_anon   text;
+  v_req    bigint;
+begin
+  -- A resolved alert is history, not news.
+  if new.resolved_at is not null then return new; end if;
+
+  select decrypted_secret into v_secret from vault.decrypted_secrets
+   where name = 'playbook_dispatch_secret';
+  if v_secret is null then
+    -- Deliberately silent: raising an ops alert about ops alerts, from inside
+    -- the ops alert trigger, is a loop. The 640 dispatcher already alarms on a
+    -- missing secret.
+    return new;
+  end if;
+  v_anon := platform_anon_key();
+
+  begin
+    select net.http_post(
+      url := platform_fn_url('/functions/v1/push-send'),
+      body := jsonb_build_object('alert_id', new.id),
+      headers := jsonb_build_object('Content-Type', 'application/json',
+                                    'Authorization', 'Bearer ' || v_anon,
+                                    'x-dispatch-secret', v_secret),
+      timeout_milliseconds := 10000) into v_req;
+  exception when others then
+    -- ⚠ NEVER let a ping failure block the INSERT that records the problem.
+    raise warning 'ops alert ping failed for %: %', new.id, sqlerrm;
+  end;
+  return new;
+end;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.notify_pending_human_task()
@@ -24049,7 +24922,7 @@ BEGIN
     -- ── AGED WAIT: a real question, unanswered too long. Flag, never resolve. ──
     IF g.n_waiting > 0 AND g.newest_wait < now() - make_interval(days => c_aged_days) THEN
       UPDATE de_objectives
-         SET attention_flag = 'wait_unanswered',
+         SET attention_flag = 'waiting_too_long',
              attention_since = coalesce(attention_since, g.newest_wait), updated_at = now()
        WHERE id = g.id;
       v_aged := v_aged + 1;
@@ -27163,6 +28036,23 @@ AS $function$
     (select minutes from review_time_standards
       where tenant_id is null and task_type = p_task_type),
     3)
+$function$;
+
+CREATE OR REPLACE FUNCTION public.resolve_review_narrative_settings(p_tenant_id uuid, p_de_id uuid)
+ RETURNS TABLE(enabled boolean, instructions text, scope text)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  select s.enabled, s.instructions,
+         case when s.de_id is null then 'workspace' else 'employee' end
+    from public.de_review_narrative_settings s
+   where s.tenant_id = p_tenant_id
+     and (s.de_id = p_de_id or s.de_id is null)
+   -- Specific first. Same shape as the autonomy chain (mig 618): the more
+   -- specific row wins, and there is at most one of each.
+   order by (s.de_id is not null) desc
+   limit 1;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.resolve_work_item_framing(p_tenant_id uuid, p_category text)
@@ -30689,6 +31579,61 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.set_authority_rule(p_actor_kind text, p_dimension text, p_comparator text, p_threshold numeric, p_outcome text, p_category text DEFAULT NULL::text, p_actor_id uuid DEFAULT NULL::uuid, p_actor_role text DEFAULT NULL::text)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  v_tenant uuid := auth_tenant_id();
+  v_id     uuid;
+begin
+  if v_tenant is null then raise exception 'not_authenticated'; end if;
+  if not auth_has_tenant_role(array['tenant_owner','tenant_admin']) then
+    raise exception 'insufficient_role';
+  end if;
+
+  -- The shape CHECK in 770 would catch these, but its message names a
+  -- constraint. These name the mistake.
+  if p_actor_kind = 'role' and coalesce(btrim(p_actor_role), '') = '' then
+    raise exception 'actor_role_required: a rule scoped to a role must name the role';
+  end if;
+  if p_actor_kind in ('user','org_unit','de') and p_actor_id is null then
+    raise exception 'actor_id_required: a rule scoped to % must name which one', p_actor_kind;
+  end if;
+
+  -- ⛔ AN ACTOR ID SUPPLIED BY A CALLER IS AN ASSERTION, NOT AUTHORISATION.
+  -- Without these, an owner could scope a rule onto another workspace's
+  -- employee or org unit — the tenant-id-param trap, one level down.
+  if p_actor_kind = 'user' and not exists (
+       select 1 from profiles where user_id = p_actor_id and tenant_id = v_tenant) then
+    raise exception 'actor_not_in_workspace: no profile for that user here';
+  end if;
+  if p_actor_kind = 'de' and not exists (
+       select 1 from digital_employees where id = p_actor_id and tenant_id = v_tenant) then
+    raise exception 'actor_not_in_workspace: no digital employee with that id here';
+  end if;
+  if p_actor_kind = 'org_unit' and not exists (
+       select 1 from org_units where id = p_actor_id and tenant_id = v_tenant) then
+    raise exception 'actor_not_in_workspace: no org unit with that id here';
+  end if;
+
+  insert into authority_rules
+    (tenant_id, actor_kind, actor_id, actor_role, category,
+     dimension, comparator, threshold, outcome, created_by)
+  values
+    (v_tenant, p_actor_kind,
+     case when p_actor_kind in ('user','org_unit','de') then p_actor_id end,
+     case when p_actor_kind = 'role' then btrim(p_actor_role) end,
+     nullif(btrim(coalesce(p_category, '')), ''),
+     p_dimension, p_comparator, p_threshold, p_outcome, auth.uid())
+  returning id into v_id;
+
+  return v_id;
+end
+$function$;
+
 CREATE OR REPLACE FUNCTION public.set_connector_ingest_config(p_connector_id uuid, p_config jsonb)
  RETURNS void
  LANGUAGE plpgsql
@@ -31737,6 +32682,83 @@ begin
                             'overridden', true);
 end $function$;
 
+CREATE OR REPLACE FUNCTION public.set_review_narrative(p_review_id uuid, p_narrative text, p_model text)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare v_n int;
+begin
+  if coalesce(btrim(p_narrative), '') = '' then
+    raise exception 'narrative_empty: refusing to store an empty commentary';
+  end if;
+  if coalesce(btrim(p_model), '') = '' then
+    raise exception 'model_required: a narrative with no recorded author cannot be weighed';
+  end if;
+
+  update de_performance_reviews
+     set ai_narrative       = p_narrative,
+         ai_narrative_model = p_model,
+         ai_narrative_at    = now()
+   where id = p_review_id;
+
+  get diagnostics v_n = row_count;
+  return v_n = 1;
+end
+$function$;
+
+CREATE OR REPLACE FUNCTION public.set_review_narrative_settings(p_enabled boolean, p_instructions text DEFAULT NULL::text, p_de_id uuid DEFAULT NULL::uuid)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  v_tenant uuid := auth_tenant_id();
+  v_id     uuid;
+begin
+  if v_tenant is null then raise exception 'not_authenticated'; end if;
+  if not auth_has_tenant_role(array['tenant_owner','tenant_admin']) then
+    raise exception 'insufficient_role';
+  end if;
+
+  -- An employee override may only name an employee of THIS workspace. A
+  -- tenant id resolved from the caller is authorisation; a de_id supplied by
+  -- the caller is an assertion, and gets checked.
+  if p_de_id is not null and not exists (
+      select 1 from digital_employees d where d.id = p_de_id and d.tenant_id = v_tenant) then
+    raise exception 'de_not_in_workspace';
+  end if;
+
+  if length(coalesce(p_instructions, '')) > 2000 then
+    raise exception 'instructions_too_long: % characters, limit 2000', length(p_instructions);
+  end if;
+
+  -- ⚠ ON CONFLICT matches ONE index, and these are two PARTIAL indexes with
+  -- different predicates. Branch on which row is being written — a single
+  -- statement naming either target would raise on the other kind rather than
+  -- fall through to it.
+  if p_de_id is not null then
+    insert into de_review_narrative_settings (tenant_id, de_id, enabled, instructions, updated_by)
+    values (v_tenant, p_de_id, coalesce(p_enabled, false), nullif(btrim(coalesce(p_instructions,'')), ''), auth.uid())
+    on conflict (tenant_id, de_id) where de_id is not null
+    do update set enabled = excluded.enabled, instructions = excluded.instructions,
+                  updated_by = excluded.updated_by, updated_at = now()
+    returning id into v_id;
+  else
+    insert into de_review_narrative_settings (tenant_id, de_id, enabled, instructions, updated_by)
+    values (v_tenant, null, coalesce(p_enabled, false), nullif(btrim(coalesce(p_instructions,'')), ''), auth.uid())
+    on conflict (tenant_id) where de_id is null
+    do update set enabled = excluded.enabled, instructions = excluded.instructions,
+                  updated_by = excluded.updated_by, updated_at = now()
+    returning id into v_id;
+  end if;
+
+  return v_id;
+end
+$function$;
+
 CREATE OR REPLACE FUNCTION public.set_rule_adjudicable(p_rule_id uuid, p_on boolean, p_justification text DEFAULT NULL::text)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -32766,18 +33788,10 @@ begin
              -- platform value resolves to 0 rather than NULL, and the snapshot
              -- PERSISTS that zero — which run_work_watchers then reads to open
              -- autonomous objectives against a number nobody measured.
-             case when coalesce(cat.source, '') = 'action' then
-             (select case when coalesce(cat.source_config->>'agg', 'count') = 'auto_rate'
-                          then round(100.0 * count(*) filter (where ae.decision = 'auto_executed') / nullif(count(*), 0), 1)
-                          else count(*)::numeric end
-                from action_executions ae
-                left join action_definitions ad on ad.id = ae.action_definition_id
-               where cat.source = 'action'
-                 and ae.tenant_id = v_tenant and ae.subject_kind = 'de' and ae.subject_id = p_de_id
-                 and ae.rollback_of is null and ae.created_at >= now() - interval '91 days'
-                 and (coalesce(cat.source_config->>'category', '') = '' or ad.category = cat.source_config->>'category')
-                 and (coalesce(cat.source_config->>'action_label', '') = '' or ad.label = cat.source_config->>'action_label'))
-             end
+             -- mig 757: one arm (mig 756). It carries mig 501's guard
+             -- INTERNALLY — a non-'action' metric still returns NULL, never 0 —
+             -- so that wrapper moved into the function rather than being lost.
+             (select a.v from public.de_kpi_action_value(v_tenant, p_de_id, cat.source, cat.source_config) a)
            ) as val
     from s
     left join kpi_metric_catalog cat
@@ -35486,33 +36500,77 @@ begin
 end;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.upsert_kpi_metric(p_metric_key text, p_label text, p_direction text DEFAULT 'higher'::text, p_unit text DEFAULT NULL::text, p_description text DEFAULT NULL::text)
+CREATE OR REPLACE FUNCTION public.upsert_kpi_metric(p_metric_key text, p_label text, p_direction text DEFAULT 'higher'::text, p_unit text DEFAULT NULL::text, p_description text DEFAULT NULL::text, p_source text DEFAULT 'manual'::text, p_source_config jsonb DEFAULT NULL::jsonb)
  RETURNS uuid
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-DECLARE v_tenant uuid := auth_tenant_id(); v_id uuid;
-BEGIN
-  IF v_tenant IS NULL THEN RAISE EXCEPTION 'not_authenticated'; END IF;
-  IF NOT auth_has_tenant_role(ARRAY['tenant_owner','tenant_admin']) THEN RAISE EXCEPTION 'insufficient_role'; END IF;
-  IF p_metric_key !~ '^[a-z0-9_]{2,60}$' THEN
-    RAISE EXCEPTION 'metric_key must be lowercase letters, numbers and underscores';
-  END IF;
+declare
+  v_tenant uuid := auth_tenant_id();
+  v_id     uuid;
+  v_source text := coalesce(nullif(btrim(p_source), ''), 'manual');
+  v_cfg    jsonb;
+  v_bad    text;
+begin
+  if v_tenant is null then raise exception 'not_authenticated'; end if;
+  if not auth_has_tenant_role(array['tenant_owner','tenant_admin']) then raise exception 'insufficient_role'; end if;
+  if p_metric_key !~ '^[a-z0-9_]{2,60}$' then
+    raise exception 'metric_key must be lowercase letters, numbers and underscores';
+  end if;
   -- A tenant may not shadow a built-in key; that would silently change
   -- which value the computed lookup returns.
-  IF EXISTS (SELECT 1 FROM kpi_metric_catalog WHERE tenant_id IS NULL AND metric_key = p_metric_key) THEN
-    RAISE EXCEPTION 'metric_key_reserved: % is a built-in metric', p_metric_key;
-  END IF;
+  if exists (select 1 from kpi_metric_catalog where tenant_id is null and metric_key = p_metric_key) then
+    raise exception 'metric_key_reserved: % is a built-in metric', p_metric_key;
+  end if;
 
-  INSERT INTO kpi_metric_catalog (tenant_id, metric_key, label, direction, unit, description, source)
-  VALUES (v_tenant, p_metric_key, p_label, coalesce(p_direction,'higher'), p_unit, p_description, 'manual')
-  ON CONFLICT (tenant_id, metric_key) WHERE tenant_id IS NOT NULL
-  DO UPDATE SET label = excluded.label, direction = excluded.direction,
-                unit = excluded.unit, description = excluded.description
-  RETURNING id INTO v_id;
-  RETURN v_id;
-END$function$;
+  if v_source not in ('manual', 'action') then
+    raise exception 'source_not_supported: % — a workspace metric is manual (you record it) or action (the platform counts it)', v_source;
+  end if;
+
+  if v_source = 'manual' then
+    if p_source_config is not null and p_source_config <> '{}'::jsonb then
+      raise exception 'source_config_not_allowed: a manual metric takes no source_config';
+    end if;
+    -- NOT NULL with default {} — see the suite note above: setting this
+    -- to NULL broke the EXISTING manual path, which is the path that already
+    -- worked. Caught only because the suite tested the old behaviour too.
+    v_cfg := '{}'::jsonb;
+  else
+    v_cfg := coalesce(p_source_config, '{}'::jsonb);
+    if jsonb_typeof(v_cfg) <> 'object' then
+      raise exception 'source_config_must_be_an_object';
+    end if;
+    -- An unrecognised key is NOT harmless: the arm treats a missing filter as
+    -- "match everything", so a typo turns a narrow metric into a count of all
+    -- actions. Refuse instead of measuring the wrong thing quietly.
+    select string_agg(k, ', ') into v_bad
+      from jsonb_object_keys(v_cfg) k
+     where k not in ('agg', 'category', 'action_label');
+    if v_bad is not null then
+      raise exception 'source_config_unknown_key: % — only agg, category, action_label', v_bad;
+    end if;
+    if coalesce(v_cfg->>'agg', 'count') not in ('count', 'auto_rate') then
+      raise exception 'source_config_agg_invalid: % — count or auto_rate', v_cfg->>'agg';
+    end if;
+    if coalesce(v_cfg->>'category', '') <> ''
+       and not exists (select 1 from system_categories sc where sc.key = v_cfg->>'category') then
+      raise exception 'source_config_category_unknown: %', v_cfg->>'category';
+    end if;
+  end if;
+
+  insert into kpi_metric_catalog (tenant_id, metric_key, label, direction, unit, description, source, source_config)
+  values (v_tenant, p_metric_key, p_label, coalesce(p_direction,'higher'), p_unit, p_description, v_source, v_cfg)
+  on conflict (tenant_id, metric_key) where tenant_id is not null
+  do update set label = excluded.label, direction = excluded.direction,
+                unit = excluded.unit, description = excluded.description,
+                -- Without these two, a metric could never be switched from
+                -- manual to computed after it was first created — which is
+                -- the whole point of this migration.
+                source = excluded.source, source_config = excluded.source_config
+  returning id into v_id;
+  return v_id;
+end$function$;
 
 CREATE OR REPLACE FUNCTION public.upsert_tenant_skill(p_skill_key text, p_name text, p_category text, p_description text DEFAULT NULL::text, p_signal_label text DEFAULT NULL::text)
  RETURNS text
@@ -36347,6 +37405,116 @@ declare
   v_d5              boolean := false;
   v_d6              boolean := false;
   v_d7              boolean := false;
+
+  -- ── added by 754, for probe 18 ──────────────────────────────────────────
+  -- v_p18_topics is the FIXTURE the denominator is read off: every "expected"
+  -- count in probe 18 is array_length(v_p18_topics, 1), never a literal. 752
+  -- blocked on a probe that said 10 when it made 11.
+  v_p18_topics      text[][];
+  v_p18_expected    integer;
+  v_p18_inserted    integer := 0;
+  v_p18_accepted    integer := 0;
+  v_p18_props       uuid[] := '{}';
+  v_p18_rules       uuid[] := '{}';
+  v_p18_prop        uuid;
+  v_p18_rule        uuid;
+  v_p18_rule_other  uuid;
+  v_p18_ins_err     text[] := '{}';
+  v_p18_acc_err     text[] := '{}';
+  v_p18_first       jsonb;
+  v_p18_rows        bigint;
+  v_p18_cats        bigint;
+  v_p18_ids         bigint;
+  v_p18_orders      bigint;
+  v_p18_cls_hit     text;
+  v_p18_cls_miss    text;
+  v_p18_cls_shadow  text;
+  v_p18_dup_refused boolean;
+  v_p18_dup_state   text;
+  v_p18_new_ok      boolean;
+  v_p18_new_err     text;
+  -- ── added by the 754 FIX ROUND: the idempotency index, asked as a question.
+  -- support_triage_rules_source_proposal_uq was described in this file as "the
+  -- guarantee … enforced by the database rather than by the browser not
+  -- clicking twice" and was pinned by NOTHING: a reviewer DROPPED it and got
+  -- 18/18 probes, 262 assertions and zero findings. Probe 18(g2) drives the
+  -- RPC's source_proposal_id CHECK, which is the stamp reading a column — not
+  -- the database refusing a second row under the race the index exists for.
+  v_p18_race_rule   uuid;
+  v_p18_race_refused boolean;
+  v_p18_race_state  text;
+  v_p18_race_msg    text;
+  v_p18_null_ok     boolean;
+  v_p18_null_err    text;
+  v_p18_own_n       bigint;
+  v_p18_del_n       integer;
+  v_p18_del_err     text;
+  v_p18_still       bigint;
+  v_p18_tagged      bigint;
+  v_p18_untagged    bigint;
+  v_p18_g1          text;
+  v_p18_g2          text;
+  v_p18_g3          text;
+  v_p18_g4          text;
+  v_p18_g5          text;
+  v_p18_g5_order    integer;
+  v_p18_g6          text;
+  v_p18_g7          text;
+  v_p18_g8          text;
+  v_p18_user_refused boolean := false;
+  v_p18_user_msg    text;
+  v_p18_owner_ok    boolean := false;
+  v_i               integer;
+  v_d18             boolean := false;
+
+  -- ── added by 760, for PROBE 19 — A TOPIC DECIDES WHO ANSWERS ───────────
+  v_p19_de          uuid;     -- the employee hired in this session to own a topic
+  v_p19_prop_emp    uuid;
+  v_p19_prop        uuid;
+  v_p19_rule        uuid;
+  v_p19_res         jsonb;
+  v_p19_owner_ok    boolean := false;
+  v_p19_acc_err     text;
+  v_p19_row_owner   uuid;
+  v_p19_hit         jsonb;    -- classify on the topic's OWN words
+  v_p19_miss        jsonb;    -- classify on words no rule of ours matches
+  v_p19_base        jsonb;    -- classify on a BASELINE rule's words
+  v_p19_designed    jsonb;    -- ...the same hit while the owner is still 'designed'
+  v_p19_retired     jsonb;    -- ...the same hit, once the owner is retired
+  v_p19_life        text;     -- the owner's lifecycle_status, captured and put back
+  v_p19_status      text;     -- ...and its status, which de_status_allowed ties to it
+  v_p19_miss_before text;     -- the unmatched category BEFORE the owned rule existed
+  v_p19_conv_all    uuid;     -- conversation stamped with all four columns
+  v_p19_conv_cat    uuid;     -- ...with ONLY category (the silent regression)
+  v_p19_conv_none   uuid;     -- ...with none of them (today's path)
+  v_p19_all         public.de_conversations%rowtype;
+  v_p19_cat         public.de_conversations%rowtype;
+  v_p19_none        public.de_conversations%rowtype;
+  v_p19_cross_ref   boolean := false;
+  v_p19_cross_state text;
+  v_p19_del_ok      boolean := false;
+  v_p19_del_err     text;
+  v_p19_del_owner   uuid;
+  v_p19_del_tenant  uuid;
+  v_p19_del_n       bigint;
+  v_p19_unres       text;
+  v_p19_unres_state text;
+  v_p19_pending     text;    -- the owner card the customer has not said yes to
+  v_p19_bad_ref     text;
+  v_p19_orphan      text;
+  v_p19_extra       text;
+  v_p19_setters     bigint;   -- SQL functions that SET de_conversations.de_id
+  v_p19_writers     bigint;   -- roles other than postgres/service_role with UPDATE
+  v_dc_before       bigint;
+  v_dc_after        bigint;
+  v_dm_before       bigint;
+  v_dm_after        bigint;
+  v_rc_before       bigint;
+  v_rc_after        bigint;
+  v_d19             boolean := false;
+  -- the rollback baseline for the table THIS probe writes into
+  v_str_before      bigint;
+  v_str_after       bigint;
   v_d8              boolean := false;
   v_d9              boolean := false;
   v_d10             boolean := false;
@@ -36812,9 +37980,15 @@ declare
   -- the paragraph and conclude the kind is routed.
   --
   -- If that set comes back EMPTY the fixture guard reports a FINDING and both
-  -- probes are skipped, which drops probes_completed below 17 and turns the
-  -- section red with a message saying what to rebuild. That is the whole point:
-  -- the day conversation_type ships, this goes red on purpose.
+  -- probes are skipped, which drops probes_completed below 18 and turns the
+  -- section red with a message saying what to rebuild. That is the whole point.
+  --
+  -- ⚠ AND THAT DAY IS TODAY. This paragraph used to end "the day
+  -- conversation_type ships, this goes red on purpose" — 754 is that ship, and
+  -- what keeps the two probes drivable is the `__unrouted_probe__` sentinel
+  -- added to the CHECK in PART 3, which no emitter writes and no card renders.
+  -- The set is therefore non-empty for a reason that is deliberate rather than
+  -- accidental, and deleting the sentinel is what makes it empty again.
   v_router_src      text;    -- decide_discovery_proposal's body, comments out
   v_kind_check      text;    -- the CHECK constraint, verbatim
   v_kinds_all       text[];  -- every kind the CHECK admits
@@ -36997,7 +38171,7 @@ begin
       'verify_decide_discovery_proposal cannot switch to role `authenticated` and back to %L (%s: %s). Every probe here drives the RPC as the real runtime role; without that they would run as the caller, which holds EXECUTE on everything, and every refusal below would be a statement about the caller rather than about the function.',
       v_caller, sqlstate, sqlerrm));
     v_notes := array_append(v_notes, format(
-      'note: probes_completed=0 probes_attempted=17 assertions=0 caller=%s — impersonation unavailable, nothing was compared', v_caller));
+      'note: probes_completed=0 probes_attempted=19 assertions=0 caller=%s — impersonation unavailable, nothing was compared', v_caller));
     return array_cat(v_bad, v_notes);
   end;
 
@@ -37006,7 +38180,7 @@ begin
       'the role switch reported current_user=%L rather than authenticated — the probes below would not be running as the runtime role they claim to test',
       coalesce(v_seen_role, 'NULL')));
     v_notes := array_append(v_notes, format(
-      'note: probes_completed=0 probes_attempted=17 assertions=0 caller=%s — role switch did not take effect', v_caller));
+      'note: probes_completed=0 probes_attempted=19 assertions=0 caller=%s — role switch did not take effect', v_caller));
     return array_cat(v_bad, v_notes);
   end if;
 
@@ -37139,7 +38313,7 @@ begin
       coalesce(v_platform_uid::text, 'NULL'), coalesce(v_dim, 'NULL'),
       coalesce(v_arch_key, 'NULL')));
     v_notes := array_append(v_notes, format(
-      'note: probes_completed=0 probes_attempted=17 assertions=0 caller=%s — fixtures missing, nothing was compared', v_caller));
+      'note: probes_completed=0 probes_attempted=19 assertions=0 caller=%s — fixtures missing, nothing was compared', v_caller));
     return array_cat(v_bad, v_notes);
   end if;
 
@@ -37259,6 +38433,27 @@ begin
   select count(*) into v_tp_before from public.trust_policies
    where tenant_id in (v_tenant, v_other_tenant);
   select count(*) into v_da_before from public.de_autonomy
+   where tenant_id in (v_tenant, v_other_tenant);
+  -- ── added by 754. Probe 18 creates real triage rules under RLS in a real
+  -- workspace, and a surviving one is not inert: classify_support_text reads
+  -- every active rule in the tenant on the FIRST user message of every support
+  -- conversation, so a leaked probe rule would re-file a customer's traffic
+  -- under "vddp_delivery" on every certify run.
+  select count(*) into v_str_before from public.support_triage_rules
+   where tenant_id in (v_tenant, v_other_tenant);
+
+  -- ⚠ added by 760. PROBE 19 is the FIRST probe in this function to insert a
+  -- conversation and a message — every probe before it stopped at
+  -- classify_support_text and said so in the honest-limits note. A surviving
+  -- de_conversations row is not an orphan: it is a thread in a real customer's
+  -- Support Inbox, it is counted by get_de_economics against a real employee,
+  -- and its CSAT and performance readings would move. So it gets its own arm
+  -- rather than riding on somebody else's.
+  select count(*) into v_dc_before from public.de_conversations
+   where tenant_id in (v_tenant, v_other_tenant);
+  select count(*) into v_dm_before from public.de_messages
+   where tenant_id in (v_tenant, v_other_tenant);
+  select count(*) into v_rc_before from public.role_certifications
    where tenant_id in (v_tenant, v_other_tenant);
 
   ------------------------------------------------------------------------
@@ -37940,9 +39135,20 @@ begin
   ------------------------------------------------------------------------
   -- PROBE 7 — AN UNROUTABLE KIND. The whole reason migration 740 exists.
   --
-  -- 'trust_rule' is a value discovery_proposals_kind_check ACCEPTS, so the
-  -- refusal can only come from the router — a refusal intercepted by an
-  -- earlier constraint would prove nothing.
+  -- ⚠ ITS SUBJECT IS `__unrouted_probe__` AS OF 754, AND IT IS NOT NAMED HERE.
+  -- The kind is DERIVED at run time by the fixtures block (v_unrouted: the
+  -- values discovery_proposals_kind_check admits, minus the `when` arms really
+  -- present in the router's comment-stripped body). After 754 every one of the
+  -- six product kinds routes, so what that derivation returns is the sentinel
+  -- added in PART 3 — a value nothing emits, no card renders and
+  -- `authenticated` cannot insert. It is still a value the CHECK ACCEPTS, which
+  -- is the property this probe needs: a refusal intercepted by an earlier
+  -- constraint would prove nothing about the router.
+  --
+  -- ⚠⚠ THIS PARAGRAPH NAMED 'trust_rule' UNTIL THE FIX ROUND, one migration
+  -- after 753 gave that kind a branch — the exact reading that let this probe
+  -- go vacuous TWICE. It is left in full below because the history is the
+  -- argument, but the subject line above is the one that is true today.
   --
   -- ⚠ REPOINTED BY 751, FROM 'guardrail'. This probe's fifteen assertions are
   -- all phrased against `kind not yet routable%`; the moment migration 751 gave
@@ -37950,12 +39156,14 @@ begin
   -- guardrail branch's OWN refusals (a missing pattern, a missing created id)
   -- while still reporting a probe and a clean result. That is a check that
   -- cannot fail, arrived at by accident rather than by design, and it is this
-  -- repo's oldest mistake. `trust_rule` replaces it because contract §9 orders
-  -- that kind LAST — it stays unroutable longer than anything else, so this
-  -- probe stays a comparison for longer. Probe 14 fires the same two remaining
-  -- kinds independently; the duplication is deliberate, because probe 14 asks
-  -- "did the router swing open" and this one asks "does a refusal leave a
-  -- readable reason and a moving counter".
+  -- repo's oldest mistake. 751 repointed it at `trust_rule` because contract §9
+  -- ordered that kind LAST; 753 shipped trust_rule, 754 shipped
+  -- conversation_type, and the repoint-by-rename move ran out of kinds exactly
+  -- as probe 14's own header predicted it would. The DERIVATION plus the
+  -- sentinel is what replaced it, and it needs no repointing ever again.
+  -- Probe 14 fires every derived unrouted kind independently; the duplication
+  -- is deliberate, because probe 14 asks "did the router swing open" and this
+  -- one asks "does a refusal leave a readable reason and a moving counter".
   --
   -- Red if: an unroutable kind is silently accepted (worst case: 'accepted'
   -- with a null created_object_id); or the reason is not written down, which
@@ -37968,7 +39176,7 @@ begin
     -- It now drives whatever the fixtures block DERIVED as unrouted, and stops
     -- if there is nothing left — which the fixtures block has already reported
     -- as a FINDING naming what to rebuild. Not completing is what drops
-    -- probes_completed below 17; it is never a silent skip.
+    -- probes_completed below 18; it is never a silent skip.
     if coalesce(array_length(v_unrouted, 1), 0) = 0 then
       raise exception using errcode = 'P0001', message = '__undo_probe__';
     end if;
@@ -38876,25 +40084,28 @@ begin
   -- so "only the intended kind was opened" is a comparison rather than a
   -- reading of the diff.
   --
-  -- ⚠ 752: this fired `procedure` and `trust_rule`. `procedure` now routes, so
-  -- that half would have been asserting that the procedure branch refuses a
-  -- procedure — fifteen assertions still running and comparing nothing. It now
-  -- fires `trust_rule` and `conversation_type`, the only two kinds the CHECK
-  -- still admits and no writer routes.
+  -- ⚠ WHAT IT FIRES TODAY: exactly ONE kind, `__unrouted_probe__`, and it is
+  -- not named in this block either — the loop below walks whatever v_unrouted
+  -- derived. After 754 BOTH kinds this paragraph used to name route to real
+  -- tables (`trust_rule` since 753, `conversation_type` in this file), so the
+  -- sentinel added in PART 3 is the whole of the set.
   --
-  -- ⚠⚠ AND THIS IS THE LAST TIME A REPOINT CAN BE A RENAME. Contract §9 orders
-  -- `trust_rule` next; when it lands there is exactly ONE unroutable kind left
-  -- (`conversation_type`), and a probe whose construction is "the two kinds
-  -- nothing routes" cannot be built from one. Whoever ships trust_rule has to
-  -- rebuild this probe AND probe 7 around something else — an assertion about
-  -- the `else` arm itself, or a kind deliberately kept unrouted — or accept
-  -- that both go vacuous while staying green, which is the trap this repoint
-  -- exists to avoid rather than to pass on.
+  -- ⚠⚠ THE HISTORY, KEPT BECAUSE IT IS THE ARGUMENT. 752 recorded: "this fired
+  -- `procedure` and `trust_rule`; `procedure` now routes, so that half would
+  -- have been asserting that the procedure branch refuses a procedure — fifteen
+  -- assertions still running and comparing nothing", and it warned that a
+  -- repoint could not be a rename for much longer, because a probe built from
+  -- "the two kinds nothing routes" cannot be built from one, let alone from
+  -- none. That prediction came true one migration later. The answer was NOT
+  -- another rename: it was the derivation (already in place since 753) plus a
+  -- sentinel kind the CHECK admits and no product path can reach, so the probe
+  -- keeps comparing something after the last real kind was wired. The trap it
+  -- was written to avoid is closed rather than passed on.
   --
-  -- 751's note on the probe-7 overlap still holds for `trust_rule`: the two
-  -- probes ask different questions (this one, "is the router still shut";
-  -- probe 7, "does a refusal leave a reason and move the counter"), so the
-  -- overlap is kept rather than tidied.
+  -- 751's note on the probe-7 overlap still holds: the two probes ask different
+  -- questions (this one, "is the router still shut"; probe 7, "does a refusal
+  -- leave a reason and move the counter"), so the overlap is kept rather than
+  -- tidied.
   --
   -- And the role bar, on the FIRST kind where passing it wrongly would create a
   -- real, billable object: probe 5 proves a tenant_user is refused a connector
@@ -38902,15 +40113,17 @@ begin
   -- the writer, so a hole in the bar means a member with no authority hires
   -- somebody.
   --
-  -- Red if: procedure or trust_rule silently accept; or a refusal leaves no
+  -- Red if: ANY derived-unrouted kind silently accepts; or a refusal leaves no
   -- reason; or a tenant_user hires anyone; or the owner cannot hire on the same
   -- row, which would make the refusal a statement about the row and not the
-  -- role.
+  -- role. (This line named `procedure or trust_rule` until the fix round —
+  -- both of them route now, and naming kinds here is the same staleness the
+  -- loop below was built to remove.)
   ------------------------------------------------------------------------
   begin
     -- 753: nothing to drive if every admitted kind now routes. The fixtures
     -- block has already reported that as a FINDING naming what to rebuild, and
-    -- this probe not completing is what drops probes_completed below 17.
+    -- this probe not completing is what drops probes_completed below 18.
     if coalesce(array_length(v_unrouted, 1), 0) = 0 then
       raise exception using errcode = 'P0001', message = '__undo_probe__';
     end if;
@@ -41178,6 +42391,1085 @@ begin
   end if;
 
   ------------------------------------------------------------------------
+  ------------------------------------------------------------------------
+  -- PROBE 18 (754) — THE CONVERSATION-TOPIC PATH, AND THE "TEN THINGS" CASE.
+  --
+  -- The founder's instruction for this kind was, verbatim: "do the conversation
+  -- topics and make sure it's not addressing just one thing as a customer might
+  -- ask for 10 different things." So MANY-IN-ONE-SESSION is a REQUIREMENT and it
+  -- is driven here, not asserted about in a comment: ten topics are proposed in
+  -- ONE session, all ten are accepted, and the probe counts ten rules with ten
+  -- distinct categories and ten distinct ids. The count is ENUMERATED from the
+  -- fixture array rather than written as the literal 10 — 752 blocked on a probe
+  -- that said 10 when it made 11.
+  --
+  -- ⚠ AND THE COLLISION THIS KIND WOULD HAVE HIT. Migration 740's unique index
+  -- is (session_id, kind, identity_key), and before this migration identity_key
+  -- fell to `source_dimension` for every kind but employee and connector. Only
+  -- ONE dimension emits conversation_type, so ten topics in one session all
+  -- carried the SAME identity_key and the second insert died on 23505 — "ten
+  -- different things" was mechanically impossible. This file gives the kind its
+  -- own arm (payload->>'set_category'), and (d) below drives BOTH directions:
+  -- ten distinct categories are ADMITTED, and a repeat of one already in the
+  -- session is REFUSED with 23505. Without the second half the first proves
+  -- nothing — an index that admits everything admits ten things too.
+  --
+  -- Red if: an accept reports success while the rule is unlinked, inactive,
+  -- carries a different literal from the card, or sits where
+  -- classify_support_text will never reach it; or ten topics cannot coexist; or
+  -- the same topic can be minted twice; or an accepted rule cannot be removed;
+  -- or the rule is indistinguishable from the eleven baseline rules every
+  -- workspace already has; or the topic it files under is not the one the
+  -- classifier actually returns for the words on the card.
+  ------------------------------------------------------------------------
+  begin
+    -- THE TEN TOPICS, from ONE array, so the denominator below is enumerated
+    -- rather than typed. Each is (label, category, pattern) and every pattern is
+    -- deliberately unlike the ten baseline patterns measured live in all 18
+    -- tenants (safety/security/legal/outage/data/billing/access/complaint/
+    -- feature_request/how_to), so a match below is this rule firing and not one
+    -- of theirs.
+    v_p18_topics := array[
+      array['vddp probe topic — delivery',    'vddp_delivery',    'where is my parcel|late delivery|parcel stuck'],
+      array['vddp probe topic — returns',     'vddp_returns',     'send it back|return label|swap it for'],
+      array['vddp probe topic — sizing',      'vddp_sizing',      'what size|runs small|size guide'],
+      array['vddp probe topic — warranty',    'vddp_warranty',    'still under warranty|warranty claim'],
+      array['vddp probe topic — installation','vddp_installation','who installs|fitting appointment'],
+      array['vddp probe topic — spares',      'vddp_spares',      'spare part|replacement part'],
+      array['vddp probe topic — trade',       'vddp_trade',       'trade account|bulk order'],
+      array['vddp probe topic — quote',       'vddp_quote',       'can you quote|send me a quote'],
+      array['vddp probe topic — appointment', 'vddp_appointment', 'move my appointment|reschedule the visit'],
+      array['vddp probe topic — damaged',     'vddp_damaged',     'arrived damaged|broken on arrival']
+    ];
+    v_p18_expected := array_length(v_p18_topics, 1);
+
+    insert into public.discovery_sessions (tenant_id) values (v_tenant) returning id into v_session;
+
+    -- ── (a) TEN PROPOSALS IN ONE SESSION. Every insert here is a direct test of
+    -- the rebuilt identity_key: the tenth would have been refused before today.
+    v_p18_inserted := 0;
+    for v_i in 1 .. v_p18_expected loop
+      begin
+        insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
+          values (v_session, v_tenant, 'conversation_type',
+                  jsonb_build_object('vddp', '1',
+                                     'label',         v_p18_topics[v_i][1],
+                                     'set_category',  v_p18_topics[v_i][2],
+                                     'match_pattern', v_p18_topics[v_i][3]),
+                  'probe', v_dim, 'pending')
+          returning id into v_p18_prop;
+        v_p18_props := array_append(v_p18_props, v_p18_prop);
+        v_p18_inserted := v_p18_inserted + 1;
+      exception when unique_violation then
+        v_p18_ins_err := array_append(v_p18_ins_err, format('%s (%s)', v_p18_topics[v_i][2], sqlstate));
+      end;
+    end loop;
+
+    -- ── (b) ACCEPT ALL TEN, through the ordinary Path B shape: the browser
+    -- creates the rule under RLS as the signed-in owner, then the RPC verifies
+    -- and stamps. `set local role authenticated` is what makes the insert go
+    -- through support_triage_rules_admin_write rather than through postgres.
+    v_p18_accepted := 0;
+    for v_i in 1 .. coalesce(array_length(v_p18_props, 1), 0) loop
+      perform set_config('request.jwt.claim.sub', v_admin_uid::text, true);
+      set local role authenticated;
+      insert into public.support_triage_rules
+        (tenant_id, rule_order, name, match_pattern, set_category, set_priority, set_severity, active, source_proposal_id)
+        values (v_tenant, 200 + v_i, v_p18_topics[v_i][1], v_p18_topics[v_i][3],
+                v_p18_topics[v_i][2], 'normal', 'sev3', true, v_p18_props[v_i])
+        returning id into v_p18_rule;
+      v_res := public.decide_discovery_proposal(v_p18_props[v_i], 'accepted', 'ten topics', v_p18_rule);
+      execute format('set local role %I', v_caller);
+
+      if coalesce((v_res ->> 'ok')::boolean, false) then
+        v_p18_accepted := v_p18_accepted + 1;
+        v_p18_rules := array_append(v_p18_rules, v_p18_rule);
+      else
+        v_p18_acc_err := array_append(v_p18_acc_err, format('%s -> %s', v_p18_topics[v_i][2], coalesce(v_res ->> 'error', 'NULL')));
+      end if;
+      -- the first accept is also the one whose counters are read in full
+      if v_i = 1 then v_p18_first := v_res; end if;
+    end loop;
+
+    -- what actually landed, counted off the table rather than off the loop
+    select count(*), count(distinct set_category), count(distinct id), count(distinct rule_order)
+      into v_p18_rows, v_p18_cats, v_p18_ids, v_p18_orders
+      from public.support_triage_rules t
+     where t.tenant_id = v_tenant
+       and t.source_proposal_id = any(v_p18_props);
+
+    -- ── (c) DOES IT ACTUALLY LABEL ANYTHING? The whole point of routing the
+    -- kind at all. classify_support_text is the ONLY reader of
+    -- support_triage_rules, and trg_triage_support_conversation is the only
+    -- writer of de_conversations.category from it. Driving the classifier is the
+    -- closest this probe can get to the product without inserting a customer
+    -- conversation; the trigger side is named in the honest-limits note.
+    -- ⚠ BOTH DIRECTIONS. The positive alone would pass on a classifier that
+    -- returned the first rule's category for every input.
+    -- ⚠⚠ THE POSITIVE TEXT CARRIES "late delivery" AND NOT "where is my parcel",
+    -- AND THE FIRST VERSION OF THIS PROBE USED THE SECOND AND WENT RED. That red
+    -- was CORRECT and it is the whole ordering argument firing: the baseline
+    -- "How-to" rule sits at rule_order 100 and its pattern contains the fragment
+    -- `where is`, so "where is my parcel" is classified how_to and the topic the
+    -- customer named at 201 never sees it. Moving the probe text is NOT how that
+    -- is answered — (c3) below drives that exact collision and ASSERTS the
+    -- baseline wins, because that is the designed behaviour of the 200..9998
+    -- band and the card says so out loud. This arm asks the different question:
+    -- does the rule fire AT ALL, on words only it matches. Checked against all
+    -- ten live baseline patterns: "late delivery" appears in none of them.
+    v_p18_cls_hit  := public.classify_support_text(v_tenant, 'We had a late delivery again this week') ->> 'category';
+    v_p18_cls_miss := public.classify_support_text(v_tenant, 'Please reset my password, I am locked out') ->> 'category';
+    -- (c3) THE SHADOW. Text matching BOTH the baseline How-to pattern (`where
+    -- is`) and this topic's own (`where is my parcel`). classify_support_text
+    -- returns on the FIRST match ordered by rule_order, so the baseline at 100
+    -- must win over the topic at 201.
+    v_p18_cls_shadow := public.classify_support_text(v_tenant, 'Hi — where is my parcel, it was due Tuesday') ->> 'category';
+
+    -- ── (d) THE IDENTITY INDEX, BOTH WAYS. A SECOND proposal repeating a
+    -- set_category already in this session must be refused by 740's unique
+    -- index; an ELEVENTH with a NEW category must be admitted. The second arm is
+    -- what says the first is about the CATEGORY and not about the kind.
+    begin
+      insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
+        values (v_session, v_tenant, 'conversation_type',
+                jsonb_build_object('vddp','1','label','vddp probe topic — delivery again',
+                                   'set_category','vddp_delivery','match_pattern','parcel again'),
+                'probe', v_dim, 'pending');
+      v_p18_dup_refused := false;
+    exception when unique_violation then
+      v_p18_dup_refused := true;
+      v_p18_dup_state   := sqlstate;
+    end;
+    begin
+      insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
+        values (v_session, v_tenant, 'conversation_type',
+                jsonb_build_object('vddp','1','label','vddp probe topic — eleventh',
+                                   'set_category','vddp_eleventh','match_pattern','something else entirely'),
+                'probe', v_dim, 'pending');
+      v_p18_new_ok := true;
+    exception when others then
+      v_p18_new_ok  := false;
+      v_p18_new_err := sqlerrm;
+    end;
+
+    -- ── (d2) THE IDEMPOTENCY INDEX ITSELF, WHICH NOTHING PINNED. This file
+    -- calls support_triage_rules_source_proposal_uq "the guarantee … enforced
+    -- by the database rather than by the browser not clicking twice", and a
+    -- reviewer dropped it and got 18/18 probes, 262 assertions and ZERO
+    -- findings. Every other arm about that column reads it through the RPC —
+    -- the STAMP checking a column — which is a different claim entirely: the
+    -- index is the only thing that stops TWO CONCURRENT ACCEPTS both inserting,
+    -- and createTriageRuleFromProposal's find-first is explicitly documented as
+    -- a courtesy that turns the resulting 23505 into a re-use.
+    --
+    -- Driven as the signed-in OWNER under RLS, exactly as (b) does, so the row
+    -- reaching the index is the row a browser really sends. A refusal for any
+    -- OTHER sqlstate (42501 from RLS, 23503 from the FK) is a different fact and
+    -- the assertion below says which it got.
+    --
+    -- ⚠ AND THE PARTIAL PREDICATE, which is the inversion. `where
+    -- source_proposal_id is not null` is what lets the 198 hand-written and
+    -- seeded rules keep sharing NULL. A non-partial index would refuse the
+    -- SECOND rule in every workspace on this platform, and the positive arm
+    -- above would pass on it — so a NULL-carrying insert is driven here too.
+    perform set_config('request.jwt.claim.sub', v_admin_uid::text, true);
+    set local role authenticated;
+    begin
+      insert into public.support_triage_rules
+        (tenant_id, rule_order, name, match_pattern, set_category, set_priority, set_severity, active, source_proposal_id)
+        values (v_tenant, 260, 'vddp race — same proposal twice', 'race two', 'vddp_race', 'normal', 'sev3', true, v_p18_props[2])
+        returning id into v_p18_race_rule;
+      v_p18_race_refused := false;
+    exception when others then
+      v_p18_race_refused := true;
+      v_p18_race_state   := sqlstate;
+      v_p18_race_msg     := sqlerrm;
+    end;
+    begin
+      insert into public.support_triage_rules
+        (tenant_id, rule_order, name, match_pattern, set_category, set_priority, set_severity, active, source_proposal_id)
+        values (v_tenant, 261, 'vddp race — no proposal at all', 'race three', 'vddp_race_null', 'normal', 'sev3', true, null);
+      v_p18_null_ok := true;
+    exception when others then
+      v_p18_null_ok  := false;
+      v_p18_null_err := format('%s: %s', sqlstate, sqlerrm);
+    end;
+    execute format('set local role %I', v_caller);
+    -- The count, because "the insert errored" and "only one rule owns that
+    -- proposal" are two different statements and the second is the one the
+    -- accept's re-use behaviour rests on.
+    select count(*) into v_p18_own_n
+      from public.support_triage_rules
+     where source_proposal_id = v_p18_props[2];
+
+    -- ── (e) CAN THE CUSTOMER TAKE ONE OFF? 751 kept the guardrail retire path
+    -- working and 752 verified archive; this is the same question for a topic.
+    -- Driven as the SIGNED-IN OWNER under RLS, through the same DELETE the
+    -- triage-rules editor uses (supportInboxApi.ts:356) — not as postgres, which
+    -- would prove nothing about what a customer can do.
+    perform set_config('request.jwt.claim.sub', v_admin_uid::text, true);
+    set local role authenticated;
+    begin
+      delete from public.support_triage_rules
+       where id = v_p18_rules[1] and tenant_id = v_tenant;
+      v_p18_del_n := 0;
+      get diagnostics v_p18_del_n = row_count;
+    exception when others then
+      v_p18_del_err := sqlerrm;
+    end;
+    execute format('set local role %I', v_caller);
+    select count(*) into v_p18_still
+      from public.support_triage_rules where id = v_p18_rules[1];
+
+    -- ── (f) IS AN ACCEPTED RULE DISTINGUISHABLE FROM THE ONES ALREADY THERE?
+    -- Measured 2026-08-17: 198 baseline rules across 18 tenants, 11 per tenant,
+    -- none of which can carry a source_proposal_id because the column did not
+    -- exist. Counted in this workspace rather than claimed.
+    select count(*) filter (where source_proposal_id is not null),
+           count(*) filter (where source_proposal_id is null)
+      into v_p18_tagged, v_p18_untagged
+      from public.support_triage_rules where tenant_id = v_tenant;
+
+    -- ── (g) THE REFUSALS. Each one gets its OWN session, because identity_key
+    -- is set_category for this kind and two probes sharing a category in one
+    -- session would collide on the index instead of reaching the router.
+    -- Every one of these must leave the proposal PENDING with a reason on it.
+
+    -- g1: no created object id at all
+    insert into public.discovery_sessions (tenant_id) values (v_tenant) returning id into v_session_b;
+    insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
+      values (v_session_b, v_tenant, 'conversation_type',
+              jsonb_build_object('vddp','1','label','vddp g1','set_category','vddp_g1','match_pattern','g one'),
+              'probe', v_dim, 'pending')
+      returning id into v_p18_prop;
+    perform set_config('request.jwt.claim.sub', v_admin_uid::text, true);
+    set local role authenticated;
+    v_res := public.decide_discovery_proposal(v_p18_prop, 'accepted', 'no object', null);
+    execute format('set local role %I', v_caller);
+    v_p18_g1 := coalesce(v_res ->> 'error', '');
+
+    -- g2: a rule that exists but is NOT linked to this proposal — the
+    -- idempotency column asked as a question rather than assumed
+    insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
+      values (v_session_b, v_tenant, 'conversation_type',
+              jsonb_build_object('vddp','1','label','vddp g2','set_category','vddp_g2','match_pattern','g two'),
+              'probe', v_dim, 'pending')
+      returning id into v_p18_prop;
+    insert into public.support_triage_rules
+      (tenant_id, rule_order, name, match_pattern, set_category, set_priority, set_severity, active, source_proposal_id)
+      values (v_tenant, 250, 'vddp g2', 'g two', 'vddp_g2', 'normal', 'sev3', true, null)
+      returning id into v_p18_rule;
+    perform set_config('request.jwt.claim.sub', v_admin_uid::text, true);
+    set local role authenticated;
+    v_res := public.decide_discovery_proposal(v_p18_prop, 'accepted', 'unlinked', v_p18_rule);
+    execute format('set local role %I', v_caller);
+    v_p18_g2 := coalesce(v_res ->> 'error', '');
+
+    -- g3: the rule carries a DIFFERENT pattern from the card
+    insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
+      values (v_session_b, v_tenant, 'conversation_type',
+              jsonb_build_object('vddp','1','label','vddp g3','set_category','vddp_g3','match_pattern','the words on the card'),
+              'probe', v_dim, 'pending')
+      returning id into v_p18_prop;
+    insert into public.support_triage_rules
+      (tenant_id, rule_order, name, match_pattern, set_category, set_priority, set_severity, active, source_proposal_id)
+      values (v_tenant, 251, 'vddp g3', 'entirely different words', 'vddp_g3', 'normal', 'sev3', true, v_p18_prop)
+      returning id into v_p18_rule;
+    perform set_config('request.jwt.claim.sub', v_admin_uid::text, true);
+    set local role authenticated;
+    v_res := public.decide_discovery_proposal(v_p18_prop, 'accepted', 'wrong pattern', v_p18_rule);
+    execute format('set local role %I', v_caller);
+    v_p18_g3 := coalesce(v_res ->> 'error', '');
+
+    -- g4: the rule is SWITCHED OFF — classify_support_text filters `active`
+    insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
+      values (v_session_b, v_tenant, 'conversation_type',
+              jsonb_build_object('vddp','1','label','vddp g4','set_category','vddp_g4','match_pattern','g four'),
+              'probe', v_dim, 'pending')
+      returning id into v_p18_prop;
+    insert into public.support_triage_rules
+      (tenant_id, rule_order, name, match_pattern, set_category, set_priority, set_severity, active, source_proposal_id)
+      values (v_tenant, 252, 'vddp g4', 'g four', 'vddp_g4', 'normal', 'sev3', false, v_p18_prop)
+      returning id into v_p18_rule;
+    perform set_config('request.jwt.claim.sub', v_admin_uid::text, true);
+    set local role authenticated;
+    v_res := public.decide_discovery_proposal(v_p18_prop, 'accepted', 'inactive', v_p18_rule);
+    execute format('set local role %I', v_caller);
+    v_p18_g4 := coalesce(v_res ->> 'error', '');
+
+    -- g5: THE ORDERING PIN. A rule left at the column default (100) ties with
+    -- the baseline "How-to" rule every one of the 18 live tenants carries at
+    -- exactly 100, and loses the tie on created_at — invisibly, forever.
+    insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
+      values (v_session_b, v_tenant, 'conversation_type',
+              jsonb_build_object('vddp','1','label','vddp g5','set_category','vddp_g5','match_pattern','g five'),
+              'probe', v_dim, 'pending')
+      returning id into v_p18_prop;
+    insert into public.support_triage_rules
+      (tenant_id, name, match_pattern, set_category, set_priority, set_severity, active, source_proposal_id)
+      values (v_tenant, 'vddp g5', 'g five', 'vddp_g5', 'normal', 'sev3', true, v_p18_prop)
+      returning id into v_p18_rule;
+    select rule_order into v_p18_g5_order from public.support_triage_rules where id = v_p18_rule;
+    perform set_config('request.jwt.claim.sub', v_admin_uid::text, true);
+    set local role authenticated;
+    v_res := public.decide_discovery_proposal(v_p18_prop, 'accepted', 'default order', v_p18_rule);
+    execute format('set local role %I', v_caller);
+    v_p18_g5 := coalesce(v_res ->> 'error', '');
+
+    -- g6: a CATCH-ALL. A null pattern returns immediately for every message and
+    -- would swallow everything below it — all 18 tenants already have exactly
+    -- one, at 9999, and an interview must never mint a second.
+    insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
+      values (v_session_b, v_tenant, 'conversation_type',
+              jsonb_build_object('vddp','1','label','vddp g6','set_category','vddp_g6'),
+              'probe', v_dim, 'pending')
+      returning id into v_p18_prop;
+    perform set_config('request.jwt.claim.sub', v_admin_uid::text, true);
+    set local role authenticated;
+    v_res := public.decide_discovery_proposal(v_p18_prop, 'accepted', 'catch all', null);
+    execute format('set local role %I', v_caller);
+    v_p18_g6 := coalesce(v_res ->> 'error', '');
+
+    -- g7: a category token the inbox filter and the report label cannot use
+    insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
+      values (v_session_b, v_tenant, 'conversation_type',
+              jsonb_build_object('vddp','1','label','vddp g7','set_category','Delivery Delay!','match_pattern','g seven'),
+              'probe', v_dim, 'pending')
+      returning id into v_p18_prop;
+    perform set_config('request.jwt.claim.sub', v_admin_uid::text, true);
+    set local role authenticated;
+    v_res := public.decide_discovery_proposal(v_p18_prop, 'accepted', 'bad token', null);
+    execute format('set local role %I', v_caller);
+    v_p18_g7 := coalesce(v_res ->> 'error', '');
+
+    -- g8: ANOTHER WORKSPACE'S RULE ID — an id is not its own authorisation
+    insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
+      values (v_session_b, v_tenant, 'conversation_type',
+              jsonb_build_object('vddp','1','label','vddp g8','set_category','vddp_g8','match_pattern','g eight'),
+              'probe', v_dim, 'pending')
+      returning id into v_p18_prop;
+    insert into public.support_triage_rules
+      (tenant_id, rule_order, name, match_pattern, set_category, set_priority, set_severity, active, source_proposal_id)
+      values (v_other_tenant, 253, 'vddp g8', 'g eight', 'vddp_g8', 'normal', 'sev3', true, v_p18_prop)
+      returning id into v_p18_rule_other;
+    perform set_config('request.jwt.claim.sub', v_admin_uid::text, true);
+    set local role authenticated;
+    v_res := public.decide_discovery_proposal(v_p18_prop, 'accepted', 'foreign rule', v_p18_rule_other);
+    execute format('set local role %I', v_caller);
+    v_p18_g8 := coalesce(v_res ->> 'error', '');
+
+    -- ── (h) THE ROLE BAR, and its inversion on the SAME ROW. A tenant_user must
+    -- not be able to accept; the workspace's own owner must, or the refusal is
+    -- about the row rather than about the role.
+    insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
+      values (v_session_b, v_tenant, 'conversation_type',
+              jsonb_build_object('vddp','1','label','vddp h','set_category','vddp_h','match_pattern','h one'),
+              'probe', v_dim, 'pending')
+      returning id into v_p18_prop;
+    insert into public.support_triage_rules
+      (tenant_id, rule_order, name, match_pattern, set_category, set_priority, set_severity, active, source_proposal_id)
+      values (v_tenant, 254, 'vddp h', 'h one', 'vddp_h', 'normal', 'sev3', true, v_p18_prop)
+      returning id into v_p18_rule;
+    perform set_config('request.jwt.claim.sub', v_user_uid::text, true);
+    set local role authenticated;
+    begin
+      v_res := public.decide_discovery_proposal(v_p18_prop, 'accepted', 'can I?', v_p18_rule);
+    exception when others then
+      v_p18_user_refused := true;
+      v_p18_user_msg     := sqlerrm;
+    end;
+    execute format('set local role %I', v_caller);
+    perform set_config('request.jwt.claim.sub', v_admin_uid::text, true);
+    set local role authenticated;
+    v_res := public.decide_discovery_proposal(v_p18_prop, 'accepted', 'the owner can', v_p18_rule);
+    execute format('set local role %I', v_caller);
+    v_p18_owner_ok := coalesce((v_res ->> 'ok')::boolean, false);
+
+    v_d18 := true;
+    raise exception using errcode = 'P0001', message = '__undo_probe__';
+  exception when others then
+    execute format('set local role %I', v_caller);
+    if sqlerrm <> '__undo_probe__' then
+      v_bad := array_append(v_bad, format('PROBE 18 ABORTED before it could finish (%s: %s) — the conversation-topic accept, the TEN-TOPICS-IN-ONE-SESSION case, the eight refusals, the removability of what it creates and the classifier''s own answer were NOT compared this run', sqlstate, sqlerrm));
+      v_d18 := false;
+    end if;
+  end;
+
+  if v_d18 then
+    v_probes_done := v_probes_done + 1;
+
+    -- ⚠ THE DENOMINATOR FIRST, for the reason probe 14 states: "ten topics
+    -- coexisted" is satisfied by having proposed none. The expected count is
+    -- read off the fixture array, never typed — 752 blocked on a probe that
+    -- said 10 when it made 11.
+    v_checks := v_checks + 1;
+    if v_p18_inserted <> v_p18_expected then
+      v_bad := array_append(v_bad, format(
+        'THE TEN-THINGS CASE DID NOT EVEN GET PROPOSED: %s of %s conversation_type proposals were admitted into ONE session (%s). identity_key for this kind is payload->>''set_category'' as of migration 754; if that arm is missing, every topic in a session collides on migration 740''s unique index and the customer can be offered exactly one. Nothing below is a statement about anything.',
+        v_p18_inserted, v_p18_expected, array_to_string(coalesce(v_p18_ins_err, '{}'::text[]), ' | ')));
+    end if;
+    v_checks := v_checks + 1;
+    if v_p18_accepted <> v_p18_expected then
+      v_bad := array_append(v_bad, format(
+        'only %s of %s conversation topics were ACCEPTED (%s). The founder''s instruction for this kind was that a customer may name ten different things; one accept working is not that.',
+        v_p18_accepted, v_p18_expected, array_to_string(coalesce(v_p18_acc_err, '{}'::text[]), ' | ')));
+    end if;
+    v_checks := v_checks + 1;
+    if v_p18_rows <> v_p18_expected or v_p18_cats <> v_p18_expected
+       or v_p18_ids <> v_p18_expected or v_p18_orders <> v_p18_expected then
+      v_bad := array_append(v_bad, format(
+        'the ten accepts produced %s rule(s) with %s distinct categor(ies), %s distinct id(s) and %s distinct position(s), expected %s of each. Equal counts of rows and categories is what says ten cards became ten DIFFERENT rules rather than one rule overwritten ten times; equal positions is what says no two of them are separated only by a created_at nobody can see.',
+        v_p18_rows, v_p18_cats, v_p18_ids, v_p18_orders, v_p18_expected));
+    end if;
+
+    -- the counters the card and the audit line both read
+    v_checks := v_checks + 1;
+    if coalesce(v_p18_first ->> 'created_object_table', '') <> 'support_triage_rules'
+       or (v_p18_first ->> 'set_category') is distinct from v_p18_topics[1][2]
+       or (v_p18_first ->> 'match_pattern') is distinct from v_p18_topics[1][3]
+       or coalesce((v_p18_first ->> 'routes_to_employee')::boolean, true)
+       or (v_p18_first ->> 'owner_de_id') is not null
+       or not coalesce((v_p18_first ->> 'labels_conversations')::boolean, false) then
+      v_bad := array_append(v_bad, format(
+        'the accept returned %L. The audit line and the screen are built from the SAME object, so a counter missing here is a sentence the customer is shown that nothing can be checked against. ⚠ 760 KEPT THIS ARM AND CHANGED WHAT IT MEANS: none of probe 18''s ten payloads carries an owner_ref, so routes_to_employee MUST still be false and owner_de_id MUST still be absent for them — that is the founder''s "no match keeps today''s behaviour exactly", pinned. The arm that proves a topic CAN route is probe 19, and both are needed: this one alone would go green on a build where routing was never wired, and that one alone would go green on a build where every topic routed whether the customer asked for it or not.',
+        left(coalesce(v_p18_first::text, 'NULL'), 400)));
+    end if;
+
+    -- (c) the classifier, both ways
+    v_checks := v_checks + 1;
+    if v_p18_cls_hit is distinct from v_p18_topics[1][2] then
+      v_bad := array_append(v_bad, format(
+        'classify_support_text returned %L for text carrying the first topic''s own words, expected %L. The card says conversations about this get filed under that topic; classify_support_text is the only reader of support_triage_rules, so if it does not say so the card is describing something that does not happen.',
+        coalesce(v_p18_cls_hit, 'NULL'), v_p18_topics[1][2]));
+    end if;
+    v_checks := v_checks + 1;
+    if v_p18_cls_miss = v_p18_topics[1][2] then
+      v_bad := array_append(v_bad, format(
+        'THE INVERSION FAILED: text about a locked account ALSO came back as %L. A classifier that answers the same thing for everything makes the positive arm above meaningless — and it would mean this rule had taken over the workspace''s existing triage.',
+        v_p18_cls_miss));
+    end if;
+
+    -- (c3) THE SHADOW, ASSERTED RATHER THAN AVOIDED. This is the arm that makes
+    -- the band a decision instead of a number: a topic from an interview sits
+    -- BEHIND every built-in category, so where the two patterns overlap the
+    -- built-in one wins. That is deliberate — "someone is hurt" must not be
+    -- re-filed as a delivery question — and it is also the honest limit of what
+    -- the card may claim, which is why the accept counts rules_ahead_of_it and
+    -- the card prints it. If this ever comes back as the topic's own category,
+    -- the band has been inverted and an interview can now outrank Safety.
+    v_checks := v_checks + 1;
+    if v_p18_cls_shadow is distinct from 'how_to' then
+      v_bad := array_append(v_bad, format(
+        'text matching BOTH the baseline "How-to" pattern and the accepted topic''s came back as %L, expected %L. classify_support_text returns on the FIRST match ordered by rule_order, the baseline sits at 100 and an accepted topic at 200..9998, so the baseline has to win — that ordering is what keeps Safety (10) and Security (20) ahead of anything an interview proposes. If the baseline seed has moved, re-measure before changing the band.',
+        coalesce(v_p18_cls_shadow, 'NULL'), 'how_to'));
+    end if;
+
+    -- (d) the identity index, both ways
+    v_checks := v_checks + 1;
+    if not coalesce(v_p18_dup_refused, false) or coalesce(v_p18_dup_state, '') <> '23505' then
+      v_bad := array_append(v_bad, format(
+        'a SECOND conversation_type repeating a set_category already in the session was ADMITTED (refused=%L sqlstate=%L, expected 23505). identity_key is payload->>''set_category'' for this kind, so migration 740''s unique index is the only thing stopping one interview offering the same topic twice under two names.',
+        coalesce(v_p18_dup_refused::text, 'NULL'), coalesce(v_p18_dup_state, 'NULL')));
+    end if;
+    v_checks := v_checks + 1;
+    if not coalesce(v_p18_new_ok, false) then
+      v_bad := array_append(v_bad, format(
+        'an ELEVENTH conversation_type with a NEW set_category in the same session was REFUSED (%L). This is the arm that says the refusal above is about the CATEGORY and not about the kind — without it, an index that refused every conversation_type after the first would pass.',
+        coalesce(v_p18_new_err, 'NULL')));
+    end if;
+
+    -- (d2) THE IDEMPOTENCY INDEX, DRIVEN RATHER THAN DESCRIBED
+    v_checks := v_checks + 1;
+    if not coalesce(v_p18_race_refused, false) or coalesce(v_p18_race_state, '') <> '23505' then
+      v_bad := array_append(v_bad, format(
+        'A SECOND support_triage_rules row claiming the SAME source_proposal_id was ADMITTED (refused=%L sqlstate=%L msg=%L, expected 23505). support_triage_rules_source_proposal_uq is the ONLY thing making a conversation-topic accept idempotent under a race — this table carried no unique index of any kind before migration 754, and createTriageRuleFromProposal''s find-first is a courtesy that turns this exact 23505 into a re-use, not the guarantee. Without the index two concurrent accepts of one card both insert, one proposal owns two live rules, and the customer''s inbox is filed under a topic twice.',
+        coalesce(v_p18_race_refused::text, 'NULL'), coalesce(v_p18_race_state, 'NULL'), left(coalesce(v_p18_race_msg, 'NULL'), 200)));
+    end if;
+    v_checks := v_checks + 1;
+    if coalesce(v_p18_own_n, -1) <> 1 then
+      v_bad := array_append(v_bad, format(
+        'proposal %L owns %s support_triage_rules row(s), expected exactly 1. "One proposal owns at most one rule" is the sentence this migration''s idempotency argument is built on, and it is a COUNT, not the fact that an insert raised.',
+        coalesce(v_p18_props[2]::text, 'NULL'), coalesce(v_p18_own_n::text, 'NULL')));
+    end if;
+    v_checks := v_checks + 1;
+    if not coalesce(v_p18_null_ok, false) then
+      v_bad := array_append(v_bad, format(
+        'THE INVERSION FAILED: a rule carrying NO source_proposal_id was REFUSED (%L). The index is PARTIAL (`where source_proposal_id is not null`) precisely so the 198 seeded and hand-written rules across 18 workspaces can all share NULL; if this arm is red the index has been rebuilt without its predicate and the ordinary triage-rules editor is now refusing the second rule in every workspace on the platform. It also makes the arm above a statement about the PROPOSAL ID rather than about inserting twice.',
+        coalesce(v_p18_null_err, 'NULL')));
+    end if;
+
+    -- (e) removability
+    v_checks := v_checks + 1;
+    if coalesce(v_p18_del_n, 0) <> 1 or coalesce(v_p18_still, 1) <> 0 then
+      v_bad := array_append(v_bad, format(
+        'an accepted topic rule could NOT be removed by the workspace owner under RLS (%s row(s) deleted, %s still there, error %L). 751 kept the guardrail retire path working and 752 verified archive; a topic a customer agreed to here has to be one they can take off here, through the same editor that manages the eleven they already had.',
+        coalesce(v_p18_del_n::text, 'NULL'), coalesce(v_p18_still::text, 'NULL'), coalesce(v_p18_del_err, 'none')));
+    end if;
+
+    -- (f) distinguishable from the baseline
+    v_checks := v_checks + 1;
+    if coalesce(v_p18_tagged, 0) < 1 or coalesce(v_p18_untagged, 0) < 1 then
+      v_bad := array_append(v_bad, format(
+        'this workspace holds %s rule(s) carrying a source_proposal_id and %s without one. Both have to be non-zero for the column to be doing its job: it is the ONLY thing that tells a rule the interview wrote from the eleven every workspace is seeded with, and it is also the unique key that stops a retry minting a second rule.',
+        coalesce(v_p18_tagged::text, 'NULL'), coalesce(v_p18_untagged::text, 'NULL')));
+    end if;
+
+    -- (g) the eight refusals, each with its own sentence
+    v_checks := v_checks + 1;
+    if v_p18_g1 not like '%creating the rule first%' then
+      v_bad := array_append(v_bad, format('a conversation_type accepted with NO created-object id did not meet the Path B refusal: %L', coalesce(v_p18_g1, 'NULL')));
+    end if;
+    v_checks := v_checks + 1;
+    if v_p18_g2 not like '%not linked to this recommendation%' then
+      v_bad := array_append(v_bad, format('a rule NOT carrying this proposal''s id was not refused for that reason: %L. source_proposal_id is the idempotency key; if the stamp does not check it, one proposal can adopt any rule in the workspace and a retry mints a second.', coalesce(v_p18_g2, 'NULL')));
+    end if;
+    v_checks := v_checks + 1;
+    if v_p18_g3 not like '%looks for%' then
+      v_bad := array_append(v_bad, format('a rule whose match_pattern differs from the card''s was ACCEPTED or refused for another reason: %L. The words on the card are the whole of what was agreed to.', coalesce(v_p18_g3, 'NULL')));
+    end if;
+    v_checks := v_checks + 1;
+    if v_p18_g4 not like '%switched off%' then
+      v_bad := array_append(v_bad, format('an INACTIVE rule was accepted or refused for another reason: %L. classify_support_text filters `active`, so an inactive rule is a card claiming a topic is tracked while nothing looks for it.', coalesce(v_p18_g4, 'NULL')));
+    end if;
+    v_checks := v_checks + 1;
+    if coalesce(v_p18_g5_order, -1) <> 100 then
+      v_bad := array_append(v_bad, format(
+        'the rule_order column defaulted to %L, not 100 — the ordering argument in this branch and on the card is built on that default colliding with the baseline "How-to" rule every one of the 18 live tenants carries at exactly 100. If the default moved, re-measure before trusting either.',
+        coalesce(v_p18_g5_order::text, 'NULL')));
+    end if;
+    v_checks := v_checks + 1;
+    if v_p18_g5 not like '%between 200 and 9998%' then
+      v_bad := array_append(v_bad, format('a rule left at the DEFAULT position was accepted or refused for another reason: %L. classify_support_text returns on the FIRST match ordered by rule_order then created_at, so a rule at 100 ties with the baseline How-to rule and loses on a timestamp no screen shows.', coalesce(v_p18_g5, 'NULL')));
+    end if;
+    v_checks := v_checks + 1;
+    if v_p18_g6 not like '%no words to look for%' then
+      v_bad := array_append(v_bad, format('a CATCH-ALL topic (no match_pattern) was accepted or refused for another reason: %L. A pattern-less rule returns immediately for every message and would swallow every topic below it.', coalesce(v_p18_g6, 'NULL')));
+    end if;
+    v_checks := v_checks + 1;
+    if v_p18_g7 not like '%plain lower-case words%' then
+      v_bad := array_append(v_bad, format('a set_category the inbox filter cannot use was accepted or refused for another reason: %L', coalesce(v_p18_g7, 'NULL')));
+    end if;
+    v_checks := v_checks + 1;
+    if v_p18_g8 not like '%not its own authorisation%' then
+      v_bad := array_append(v_bad, format('ANOTHER WORKSPACE''S rule id was accepted or refused for another reason: %L', coalesce(v_p18_g8, 'NULL')));
+    end if;
+
+    -- (h) the role bar and its inversion
+    v_checks := v_checks + 1;
+    if not coalesce(v_p18_user_refused, false) then
+      v_bad := array_append(v_bad, 'a TENANT_USER accepted a conversation topic — the rule is workspace-wide triage configuration, and the accept gate is owner/admin');
+    elsif coalesce(v_p18_user_msg, '') not like '%owners and admins%' then
+      v_bad := array_append(v_bad, format('the tenant_user was refused, but NOT by the role bar: %L', coalesce(v_p18_user_msg, 'NULL')));
+    end if;
+    v_checks := v_checks + 1;
+    if not v_p18_owner_ok then
+      v_bad := array_append(v_bad, 'THE INVERSION FAILED: the workspace''s OWN owner could not accept the SAME topic row the tenant_user was refused, so the refusal above is about the row and says nothing about the role');
+    end if;
+  end if;
+
+  ------------------------------------------------------------------------
+  -- PROBE 19 (760) — A TOPIC DECIDES WHO ANSWERS.
+  --
+  -- Probe 18 proves a topic gets WRITTEN. This one proves it gets USED, and it
+  -- is a separate probe rather than more arms on 18 because it is a statement
+  -- about a different function: classify_support_text, which is what the three
+  -- conversation writers call BEFORE the row exists.
+  --
+  -- ⚠⚠ WHY THE CLASSIFICATION MOVED IN FRONT OF THE INSERT, said once here
+  -- because every arm below depends on it. de_conversations.de_id is ATTRIBUTION
+  -- — get_de_economics, get_de_performance_metrics, get_de_csat_metrics,
+  -- de_eval_quality, snapshot_de_kpi_readings, get_benchmark_report and
+  -- compose_weekly_value_digest all count `from de_conversations where de_id =
+  -- p_de_id` — so re-stamping it after triage would retroactively move a whole
+  -- conversation, messages another employee already handled included, onto
+  -- somebody else. The only honest place to choose is before the row exists.
+  --
+  -- ⚠ AND WHAT THIS PROBE CANNOT REACH. The three writers are Deno
+  -- (widget-ask, email-inbound, de-answer) and cannot be called from SQL. What
+  -- is driven here is (1) the answer they all read — classify_support_text,
+  -- including the owner it now resolves — and (2) the TRIGGER they now have to
+  -- co-exist with, driven for real on a fixture conversation. Everything the
+  -- edge functions do between those two is pinned in TypeScript, not here, and
+  -- the honest-limits note says so.
+  --
+  -- Red if: an accept with an owner reports routing without writing one; or the
+  -- classifier hands back an owner for a topic nobody owns; or a retired owner
+  -- keeps fronting customer chat; or the unmatched answer moves at all; or an
+  -- owner from another workspace can be attached; or deleting an employee takes
+  -- the customer's topic with it (or, worse, cannot be done at all); or writing
+  -- only `category` at insert leaves severity NULL, which is the silent
+  -- regression the whole "write all four together" rule exists for.
+  ------------------------------------------------------------------------
+  begin
+    -- ── (a) THE FIXTURE, HIRED THE ORDINARY WAY ─────────────────────────
+    -- Same construction as probe 17: the employee this topic will belong to is
+    -- created by the SAME accept path a customer uses, in the session the topic
+    -- belongs to. Nothing here fabricates the link the branch resolves through.
+    insert into public.discovery_sessions (tenant_id) values (v_tenant) returning id into v_session;
+    insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
+      values (v_session, v_tenant, 'employee',
+              jsonb_build_object('vddp', '1', 'archetype_key', v_arch_key,
+                                 'name', 'vddp probe employee who answers a topic'),
+              'probe', v_dim, 'pending')
+      returning id into v_p19_prop_emp;
+
+    perform set_config('request.jwt.claim.sub', v_admin_uid::text, true);
+    set local role authenticated;
+    v_res := public.decide_discovery_proposal(v_p19_prop_emp, 'accepted', 'hire them', null);
+    execute format('set local role %I', v_caller);
+    v_p19_de := (v_res ->> 'created_object_id')::uuid;
+
+    -- WHAT THE UNMATCHED ANSWER IS *BEFORE* ANY OF THIS EXISTS. Read first, so
+    -- (d) below is a before/after comparison rather than a guess about what the
+    -- workspace's catch-all happens to be today.
+    v_p19_miss_before := public.classify_support_text(
+      v_tenant, 'vddpqqq zzzz wwww nothing here matches anything at all') ->> 'category';
+
+    -- ── (b) THE ACCEPT, WITH AN OWNER ───────────────────────────────────
+    insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
+      values (v_session, v_tenant, 'conversation_type',
+              jsonb_build_object('vddp', '1',
+                                 'label',         'vddp probe topic — who answers',
+                                 'set_category',  'vddp_who_answers',
+                                 'match_pattern', 'vddpzz routed phrase|vddpzz second phrase',
+                                 'owner_ref',     'archetype:' || v_arch_key),
+              'probe', v_dim, 'pending')
+      returning id into v_p19_prop;
+
+    perform set_config('request.jwt.claim.sub', v_admin_uid::text, true);
+    set local role authenticated;
+    insert into public.support_triage_rules
+      (tenant_id, rule_order, name, match_pattern, set_category, set_priority, set_severity, active, source_proposal_id, owner_de_id)
+      values (v_tenant, 4242, 'vddp probe topic — who answers',
+              'vddpzz routed phrase|vddpzz second phrase', 'vddp_who_answers',
+              'high', 'sev2', true, v_p19_prop, v_p19_de)
+      returning id into v_p19_rule;
+    begin
+      v_p19_res := public.decide_discovery_proposal(v_p19_prop, 'accepted', 'and this one answers them', v_p19_rule);
+      v_p19_owner_ok := coalesce((v_p19_res ->> 'ok')::boolean, false);
+    exception when others then
+      v_p19_acc_err := sqlerrm;
+    end;
+    execute format('set local role %I', v_caller);
+
+    select owner_de_id into v_p19_row_owner from public.support_triage_rules where id = v_p19_rule;
+
+    -- ── (c) THE SECOND GATE, DRIVEN BEFORE ANYTHING ELSE IS ASSERTED ─────
+    -- ⚠⚠ THE ORDINARY DISCOVERY HIRE LANDS AT lifecycle_status='designed'
+    -- (measured live 2026-08-18 through decide_discovery_proposal itself), and
+    -- 'designed' means never published. So at THIS instant the accept has
+    -- recorded who answers and NOTHING about who answers has changed — which is
+    -- the "second gate" this kind was said not to have, and it is driven here
+    -- rather than claimed on a card. Publishing the employee is what turns it
+    -- on, and the very next line is a customer doing exactly that.
+    v_p19_designed := public.classify_support_text(v_tenant, 'I have a vddpzz routed phrase for you');
+
+    -- ⚠ AND PUBLISHING IS ITSELF GATED, which this probe found by being refused
+    -- rather than by reading: `gate_de_certification` blocks any advance INTO
+    -- certified/published/assigned/active without a PASSED role_certifications
+    -- row whose config_fingerprint matches the row going live. So the probe
+    -- does what a workspace does — certifies first, on the exact fingerprint —
+    -- instead of picking whichever lifecycle value happened to slip past the
+    -- gate. Doing that would have made every routing arm below a statement
+    -- about an employee no real workspace could ever be in that state.
+    insert into public.role_certifications (tenant_id, de_id, score_pct, threshold_pct, status, config_fingerprint)
+      select v_tenant, v_p19_de, 100, 80, 'passed', public.de_config_fingerprint_row(d)
+        from public.digital_employees d where d.id = v_p19_de;
+    update public.digital_employees
+       set lifecycle_status = 'published' where id = v_p19_de;
+
+    -- ── (c2) THE CLASSIFIER, WHICH IS WHAT THE THREE WRITERS ACTUALLY READ ──
+    v_p19_hit     := public.classify_support_text(v_tenant, 'I have a vddpzz routed phrase for you');
+    v_p19_miss    := public.classify_support_text(v_tenant, 'vddpqqq zzzz wwww nothing here matches anything at all');
+    -- A BASELINE rule — one of the eleven every workspace is seeded with, which
+    -- nobody owns. If an owner comes back for THIS, the owner is being read off
+    -- the wrong row and every conversation in the workspace would route.
+    v_p19_base    := public.classify_support_text(v_tenant, 'I am locked out and need to reset password');
+
+    -- ── (d) RETIRED IS NOT DELETED, AND IT MUST FALL BACK ────────────────
+    -- The rule stays; the owner stops being eligible; the answer keeps its
+    -- category and loses its owner. That is what makes "retired" safe to use.
+    -- ⚠ `status` MOVES WITH IT, and the first version of this probe did not do
+    -- that and aborted on 23514: digital_employees carries
+    -- `de_status_allowed(lifecycle_status, status)`, which requires status
+    -- 'disabled' for paused/retired/archived. Both columns are captured and put
+    -- back so the arms after this one are talking about the same employee.
+    select lifecycle_status, status into v_p19_life, v_p19_status
+      from public.digital_employees where id = v_p19_de;
+    update public.digital_employees
+       set lifecycle_status = 'retired', status = 'disabled' where id = v_p19_de;
+    v_p19_retired := public.classify_support_text(v_tenant, 'I have a vddpzz routed phrase for you');
+    update public.digital_employees
+       set lifecycle_status = v_p19_life, status = v_p19_status where id = v_p19_de;
+
+    -- ── (e) THE FOUR COLUMNS, DRIVEN AGAINST THE REAL TRIGGER ────────────
+    -- ⚠ THIS IS THE ARM THE WHOLE "write all four together" RULE EXISTS FOR,
+    -- and it is DRIVEN rather than reasoned about. trg_triage_support_conversation
+    -- returns early on `category IS NOT NULL`, so a routed insert that stamped
+    -- only the category would leave severity NULL and priority stuck at its
+    -- 'normal' default — on a rule whose whole point may be that it is sev2/high.
+    -- Three conversations, three shapes, all rolled back with the rest.
+    insert into public.de_conversations (tenant_id, channel, de_id, status, category, severity, priority, triaged_at)
+      values (v_tenant, 'dock', v_p19_de, 'ai_handling', 'vddp_who_answers', 'sev2', 'high', now())
+      returning id into v_p19_conv_all;
+    insert into public.de_messages (tenant_id, conversation_id, role, content)
+      values (v_tenant, v_p19_conv_all, 'user', 'I have a vddpzz routed phrase for you');
+    select * into v_p19_all from public.de_conversations where id = v_p19_conv_all;
+
+    insert into public.de_conversations (tenant_id, channel, de_id, status, category)
+      values (v_tenant, 'dock', v_p19_de, 'ai_handling', 'vddp_who_answers')
+      returning id into v_p19_conv_cat;
+    insert into public.de_messages (tenant_id, conversation_id, role, content)
+      values (v_tenant, v_p19_conv_cat, 'user', 'I have a vddpzz routed phrase for you');
+    select * into v_p19_cat from public.de_conversations where id = v_p19_conv_cat;
+
+    insert into public.de_conversations (tenant_id, channel, de_id, status)
+      values (v_tenant, 'dock', v_p19_de, 'ai_handling')
+      returning id into v_p19_conv_none;
+    insert into public.de_messages (tenant_id, conversation_id, role, content)
+      values (v_tenant, v_p19_conv_none, 'user', 'I have a vddpzz routed phrase for you');
+    select * into v_p19_none from public.de_conversations where id = v_p19_conv_none;
+
+    -- ── (f) THE OWNER CANNOT COME FROM ANOTHER WORKSPACE ─────────────────
+    -- The composite FK (tenant_id, owner_de_id) -> digital_employees(tenant_id,
+    -- id) is what enforces this, in the database rather than in a function that
+    -- could be edited. A minimal employee is created in the OTHER tenant so the
+    -- arm does not depend on that workspace already having one.
+    insert into public.digital_employees (tenant_id, name, lifecycle_status)
+      values (v_other_tenant, 'vddp probe employee — other workspace', 'active')
+      returning id into v_p19_del_owner;
+    begin
+      update public.support_triage_rules set owner_de_id = v_p19_del_owner where id = v_p19_rule;
+    exception when others then
+      v_p19_cross_ref   := true;
+      v_p19_cross_state := sqlstate;
+    end;
+
+    -- ── (g) AN EMPLOYEE CAN STILL LEAVE, AND THE TOPIC IS THE CUSTOMER'S ──
+    -- ⚠ THE POSTGRES 15 COLUMN LIST IS THE WHOLE ARM. `on delete set null`
+    -- WITHOUT `(owner_de_id)` nulls EVERY referencing column — tenant_id
+    -- included — and tenant_id is NOT NULL, so the delete would raise 23502 and
+    -- the constraint would behave as RESTRICT: an employee nobody could ever
+    -- remove. Both halves are asserted: the delete SUCCEEDS, and the rule
+    -- survives with its tenant intact and its owner cleared.
+    insert into public.digital_employees (tenant_id, name, lifecycle_status)
+      values (v_tenant, 'vddp probe employee — about to leave', 'active')
+      returning id into v_p19_del_tenant;
+    update public.support_triage_rules set owner_de_id = v_p19_del_tenant where id = v_p19_rule;
+    begin
+      delete from public.digital_employees where id = v_p19_del_tenant;
+      v_p19_del_ok := true;
+    exception when others then
+      v_p19_del_err := format('%s: %s', sqlstate, sqlerrm);
+    end;
+    select count(*) into v_p19_del_n from public.support_triage_rules
+     where id = v_p19_rule and tenant_id = v_tenant and owner_de_id is null;
+    update public.support_triage_rules set owner_de_id = v_p19_de where id = v_p19_rule;
+
+    -- ── (h) THE THREE REFUSALS ON THE ACCEPT SIDE ────────────────────────
+    -- h1: an owner_ref naming an archetype NOBODY IN THIS SESSION HIRED.
+    insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
+      values (v_session, v_tenant, 'conversation_type',
+              jsonb_build_object('vddp', '1', 'label', 'vddp probe topic — unhired owner',
+                                 'set_category', 'vddp_unhired', 'match_pattern', 'vddpzz unhired',
+                                 'owner_ref', 'archetype:vddp_nobody_hired_this_one'),
+              'probe', v_dim, 'pending')
+      returning id into v_prop;
+    perform set_config('request.jwt.claim.sub', v_admin_uid::text, true);
+    set local role authenticated;
+    insert into public.support_triage_rules
+      (tenant_id, rule_order, name, match_pattern, set_category, active, source_proposal_id)
+      values (v_tenant, 4243, 'vddp probe topic — unhired owner', 'vddpzz unhired', 'vddp_unhired', true, v_prop)
+      returning id into v_p19_rule;
+    begin
+      v_res := public.decide_discovery_proposal(v_prop, 'accepted', 'probe', v_p19_rule);
+      v_p19_unres := coalesce(v_res ->> 'error', 'ACCEPTED');
+    exception when others then
+      v_p19_unres := sqlerrm; v_p19_unres_state := sqlstate;
+    end;
+    execute format('set local role %I', v_caller);
+
+    -- h1b: AND THE NARROWER CASE, added after an inversion round showed the
+    -- pair `state = 'accepted'` / `created_object_id is not null` was only
+    -- JOINTLY load-bearing: with h1 alone, widening the state filter to admit
+    -- 'pending' changed nothing, because a pending proposal has no
+    -- created_object_id anyway. This drives the case where the employee card
+    -- EXISTS and the customer has NOT said yes to it — which is the contract in
+    -- its own words: you cannot give a topic to somebody you have not hired.
+    insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
+      values (v_session, v_tenant, 'employee',
+              jsonb_build_object('vddp', '1', 'archetype_key', 'vddp_not_yet_hired',
+                                 'name', 'vddp probe employee nobody said yes to'),
+              'probe', v_dim, 'pending');
+    insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
+      values (v_session, v_tenant, 'conversation_type',
+              jsonb_build_object('vddp', '1', 'label', 'vddp probe topic — undecided owner',
+                                 'set_category', 'vddp_undecided', 'match_pattern', 'vddpzz undecided',
+                                 'owner_ref', 'archetype:vddp_not_yet_hired'),
+              'probe', v_dim, 'pending')
+      returning id into v_prop;
+    perform set_config('request.jwt.claim.sub', v_admin_uid::text, true);
+    set local role authenticated;
+    insert into public.support_triage_rules
+      (tenant_id, rule_order, name, match_pattern, set_category, active, source_proposal_id)
+      values (v_tenant, 4246, 'vddp probe topic — undecided owner', 'vddpzz undecided', 'vddp_undecided', true, v_prop)
+      returning id into v_p19_rule;
+    begin
+      v_res := public.decide_discovery_proposal(v_prop, 'accepted', 'probe', v_p19_rule);
+      v_p19_pending := coalesce(v_res ->> 'error', 'ACCEPTED');
+    exception when others then
+      v_p19_pending := sqlerrm;
+    end;
+    execute format('set local role %I', v_caller);
+
+    -- h2: an owner_ref that is not a reference at all — the literal the old
+    -- prompt used to ask for when no employee fit.
+    insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
+      values (v_session, v_tenant, 'conversation_type',
+              jsonb_build_object('vddp', '1', 'label', 'vddp probe topic — free text owner',
+                                 'set_category', 'vddp_freetext', 'match_pattern', 'vddpzz freetext',
+                                 'owner_ref', 'whoever picks up the phone'),
+              'probe', v_dim, 'pending')
+      returning id into v_prop;
+    perform set_config('request.jwt.claim.sub', v_admin_uid::text, true);
+    set local role authenticated;
+    insert into public.support_triage_rules
+      (tenant_id, rule_order, name, match_pattern, set_category, active, source_proposal_id)
+      values (v_tenant, 4244, 'vddp probe topic — free text owner', 'vddpzz freetext', 'vddp_freetext', true, v_prop)
+      returning id into v_p19_rule;
+    begin
+      v_res := public.decide_discovery_proposal(v_prop, 'accepted', 'probe', v_p19_rule);
+      v_p19_bad_ref := coalesce(v_res ->> 'error', 'ACCEPTED');
+    exception when others then
+      v_p19_bad_ref := sqlerrm;
+    end;
+    execute format('set local role %I', v_caller);
+
+    -- h3: THE CARD NAMED NOBODY AND THE ROW CARRIES SOMEBODY. This is the arm
+    -- that stops a browser assigning an owner the customer never saw — the
+    -- consent check reading in the direction nobody thinks to test.
+    insert into public.discovery_proposals (session_id, tenant_id, kind, payload, rationale, source_dimension, state)
+      values (v_session, v_tenant, 'conversation_type',
+              jsonb_build_object('vddp', '1', 'label', 'vddp probe topic — silent owner',
+                                 'set_category', 'vddp_silent', 'match_pattern', 'vddpzz silent'),
+              'probe', v_dim, 'pending')
+      returning id into v_prop;
+    perform set_config('request.jwt.claim.sub', v_admin_uid::text, true);
+    set local role authenticated;
+    insert into public.support_triage_rules
+      (tenant_id, rule_order, name, match_pattern, set_category, active, source_proposal_id, owner_de_id)
+      values (v_tenant, 4245, 'vddp probe topic — silent owner', 'vddpzz silent', 'vddp_silent', true, v_prop, v_p19_de)
+      returning id into v_p19_rule;
+    begin
+      v_res := public.decide_discovery_proposal(v_prop, 'accepted', 'probe', v_p19_rule);
+      v_p19_orphan := coalesce(v_res ->> 'error', 'ACCEPTED');
+    exception when others then
+      v_p19_orphan := sqlerrm;
+    end;
+    execute format('set local role %I', v_caller);
+
+    -- ── (i) de_id IS STILL WRITE-ONCE, AND THE REASON IS GRANTS ──────────
+    -- Counted, not asserted: how many SQL functions SET de_conversations.de_id
+    -- (must be zero — twelve functions UPDATE that table and none names it),
+    -- and how many roles other than postgres/service_role hold UPDATE on it
+    -- (must be zero — anon and authenticated hold SELECT only, which is why no
+    -- browser can move a conversation to a different employee).
+    select count(*) into v_p19_setters
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and regexp_replace(p.prosrc, '--[^' || chr(10) || ']*', '', 'g')
+             ~* 'update\s+(public\.)?de_conversations\s+set[^;]*\mde_id\s*=';
+    select count(*) into v_p19_writers
+      from information_schema.role_table_grants g
+     where g.table_schema = 'public' and g.table_name = 'de_conversations'
+       and g.privilege_type = 'UPDATE'
+       and g.grantee not in ('postgres', 'service_role');
+
+    -- ── (j) NOTHING ELSE IN THIS WORKSPACE GAINED AN OWNER ───────────────
+    select string_agg(t.name, ', ') into v_p19_extra
+      from public.support_triage_rules t
+     where t.tenant_id = v_tenant
+       and t.owner_de_id is not null
+       and t.name not like 'vddp probe topic%';
+
+    v_d19 := true;
+    raise exception using errcode = 'P0001', message = '__undo_probe__';
+  exception when others then
+    execute format('set local role %I', v_caller);
+    if sqlerrm <> '__undo_probe__' then
+      v_bad := array_append(v_bad, format('PROBE 19 ABORTED before it could finish (%s: %s) — whether a topic actually decides who answers, whether an unowned topic still routes nothing, whether a retired owner falls back, whether the four triage columns survive the trigger, and whether de_id is still write-once were NOT compared this run', sqlstate, sqlerrm));
+      v_d19 := false;
+    end if;
+  end;
+
+  if v_d19 then
+    v_probes_done := v_probes_done + 1;
+
+    -- (a) the accept reports routing, and reports WHO
+    v_checks := v_checks + 1;
+    if not v_p19_owner_ok then
+      v_bad := array_append(v_bad, format(
+        'a conversation topic naming an owner could not be accepted at all (%L). Everything below is a statement about a rule that was never stamped.',
+        coalesce(v_p19_acc_err, coalesce(v_p19_res ->> 'error', 'NULL'))));
+    end if;
+    v_checks := v_checks + 1;
+    if not coalesce((v_p19_res ->> 'routes_to_employee')::boolean, false)
+       or (v_p19_res ->> 'owner_de_id') is distinct from v_p19_de::text
+       or coalesce(v_p19_res ->> 'owner_name', '') = '' then
+      v_bad := array_append(v_bad, format(
+        'the accept of an OWNED topic returned %L. routes_to_employee has to be true here and owner_de_id has to be the employee the card named — probe 18 pins the opposite for the ten topics that name nobody, and the pair is what makes either arm mean anything. A counter that is the same on both is not a counter.',
+        left(coalesce(v_p19_res::text, 'NULL'), 400)));
+    end if;
+    v_checks := v_checks + 1;
+    if v_p19_row_owner is distinct from v_p19_de then
+      v_bad := array_append(v_bad, format(
+        'the stamped rule carries owner_de_id=%L, expected %L. The accept said it routes; the row is what actually decides.',
+        coalesce(v_p19_row_owner::text, 'NULL'), coalesce(v_p19_de::text, 'NULL')));
+    end if;
+
+    -- (a2) THE SECOND GATE. Accepting recorded the choice and changed nothing.
+    v_checks := v_checks + 1;
+    if (v_p19_designed ->> 'owner_de_id') is not null
+       or coalesce(v_p19_designed ->> 'category', '') <> 'vddp_who_answers' then
+      v_bad := array_append(v_bad, format(
+        'immediately after the accept — with the owner still at the lifecycle_status a discovery hire lands at, ''designed'' — the classifier returned %L. It must return the TOPIC and NO OWNER: a never-published employee does not front customer chat (widget-ask''s own front-desk resolution excludes ''designed'' for exactly that reason), so accepting a topic records who answers and changes nothing until that employee is published. That is the second gate this kind was said not to have, and if this arm goes green the card''s "once they are live in your workspace" is false.',
+        left(coalesce(v_p19_designed::text, 'NULL'), 300)));
+    end if;
+
+    -- (b) THE CLASSIFIER — the one answer all three writers read
+    v_checks := v_checks + 1;
+    if coalesce(v_p19_hit ->> 'category', '') <> 'vddp_who_answers'
+       or (v_p19_hit ->> 'owner_de_id') is distinct from v_p19_de::text
+       or coalesce(v_p19_hit ->> 'rule_id', '') = '' then
+      v_bad := array_append(v_bad, format(
+        'classify_support_text returned %L for text carrying the owned topic''s own words. This is the ONE call widget-ask, email-inbound and de-answer each make before the conversation row exists; if the owner is not in it, de_id is stamped from the old fallback and the card''s largest sentence is false.',
+        left(coalesce(v_p19_hit::text, 'NULL'), 300)));
+    end if;
+
+    -- (c) THE INVERSION THE FOUNDER ASKED FOR BY NAME — no match keeps today
+    v_checks := v_checks + 1;
+    if (v_p19_miss ->> 'owner_de_id') is not null
+       or coalesce(v_p19_miss ->> 'category', '') is distinct from coalesce(v_p19_miss_before, '') then
+      v_bad := array_append(v_bad, format(
+        'text matching NO topic came back as %L, and before any of this existed the same text came back as category %L with no owner. "No match keeps today''s behaviour exactly" is the founder''s decision 3 and this is the arm that holds it: a workspace that has not named an owner for anything must be byte-identical to yesterday.',
+        left(coalesce(v_p19_miss::text, 'NULL'), 300), coalesce(v_p19_miss_before, 'NULL')));
+    end if;
+    v_checks := v_checks + 1;
+    if (v_p19_base ->> 'owner_de_id') is not null
+       or coalesce(v_p19_base ->> 'category', '') <> 'access' then
+      v_bad := array_append(v_bad, format(
+        'a BASELINE rule''s own words came back as %L. The eleven rules every workspace is seeded with belong to nobody, so an owner here would mean the owner is being read off the wrong row — and every conversation in the workspace would route to one employee.',
+        left(coalesce(v_p19_base::text, 'NULL'), 300)));
+    end if;
+
+    -- (d) retired is not deleted
+    v_checks := v_checks + 1;
+    if (v_p19_retired ->> 'owner_de_id') is not null
+       or coalesce(v_p19_retired ->> 'category', '') <> 'vddp_who_answers' then
+      v_bad := array_append(v_bad, format(
+        'once the owner was RETIRED the same text came back as %L. A retired employee must stop fronting customer chat while the customer''s topic keeps working — the rule is theirs, the person left. Rows are retired here, never deleted, so a lookup that ignored lifecycle_status would keep routing to somebody who no longer works here.',
+        left(coalesce(v_p19_retired::text, 'NULL'), 300)));
+    end if;
+
+    -- (e) THE FOUR COLUMNS, AND THE SILENT REGRESSION
+    v_checks := v_checks + 1;
+    if v_p19_all.category is distinct from 'vddp_who_answers'
+       or v_p19_all.severity is distinct from 'sev2'
+       or v_p19_all.priority is distinct from 'high'
+       or v_p19_all.triaged_at is null then
+      v_bad := array_append(v_bad, format(
+        'a conversation stamped with ALL FOUR triage columns at insert came back category=%L severity=%L priority=%L triaged_at=%L after the first user message. The routed insert writes all four precisely so the trigger has nothing left to do; if they moved, the trigger is overwriting a decision that was already made.',
+        coalesce(v_p19_all.category, 'NULL'), coalesce(v_p19_all.severity, 'NULL'),
+        coalesce(v_p19_all.priority, 'NULL'), coalesce(v_p19_all.triaged_at::text, 'NULL')));
+    end if;
+    v_checks := v_checks + 1;
+    if v_p19_cat.severity is not null or coalesce(v_p19_cat.priority, '') <> 'normal' then
+      v_bad := array_append(v_bad, format(
+        'THE SILENT REGRESSION DID NOT HAPPEN: a conversation stamped with ONLY `category` came back severity=%L priority=%L, expected NULL and ''normal''. That is good news about the trigger and BAD news about this assertion — the whole reason the three writers must set all four together is that trg_triage_support_conversation returns early on `category IS NOT NULL` and leaves the other three at their defaults. If the trigger has changed, re-measure before relaxing anything.',
+        coalesce(v_p19_cat.severity, 'NULL'), coalesce(v_p19_cat.priority, 'NULL')));
+    end if;
+    v_checks := v_checks + 1;
+    if v_p19_none.category is distinct from 'vddp_who_answers'
+       or v_p19_none.severity is distinct from 'sev2'
+       or v_p19_none.priority is distinct from 'high'
+       or v_p19_none.triaged_at is null then
+      v_bad := array_append(v_bad, format(
+        'TODAY''S PATH STOPPED WORKING: a conversation inserted with NO triage columns came back category=%L severity=%L priority=%L triaged_at=%L instead of being filled in by trg_triage_support_conversation. This is the vacuity guard for the two arms above — without it they would both pass on a build where the trigger never fired at all — and it is also the path every conversation created before today took.',
+        coalesce(v_p19_none.category, 'NULL'), coalesce(v_p19_none.severity, 'NULL'),
+        coalesce(v_p19_none.priority, 'NULL'), coalesce(v_p19_none.triaged_at::text, 'NULL')));
+    end if;
+
+    -- (f) the tenant boundary, enforced by the constraint
+    v_checks := v_checks + 1;
+    if not coalesce(v_p19_cross_ref, false) or coalesce(v_p19_cross_state, '') <> '23503' then
+      v_bad := array_append(v_bad, format(
+        'a triage rule was given an owner from ANOTHER WORKSPACE (refused=%L sqlstate=%L, expected 23503). The composite foreign key over (tenant_id, owner_de_id) is the only thing standing between "who answers" and a cross-tenant reference — a plain FK on the id alone would have admitted this, and the lookup filtering by tenant afterwards would have turned it into a topic that silently stopped routing instead of a write that was refused.',
+        coalesce(v_p19_cross_ref::text, 'NULL'), coalesce(v_p19_cross_state, 'NULL')));
+    end if;
+
+    -- (g) an employee can leave without taking the customer's topic
+    v_checks := v_checks + 1;
+    if not coalesce(v_p19_del_ok, false) then
+      v_bad := array_append(v_bad, format(
+        'AN EMPLOYEE OWNING A TOPIC COULD NOT BE DELETED (%L). This is what `on delete set null` WITHOUT the Postgres 15 column list does: it tries to null tenant_id too, tenant_id is NOT NULL, and the whole constraint silently behaves as RESTRICT — an employee nobody can ever remove because of a triage rule.',
+        coalesce(v_p19_del_err, 'no error recorded')));
+    end if;
+    v_checks := v_checks + 1;
+    if coalesce(v_p19_del_n, 0) <> 1 then
+      v_bad := array_append(v_bad, format(
+        'after the owning employee was deleted, %s rule(s) matched "same id, same tenant, owner cleared", expected 1. CASCADE would have deleted the customer''s TOPIC because a person left; a nulled tenant_id would have detached the rule from the workspace. Both are what this arm exists to catch.',
+        coalesce(v_p19_del_n, 0)));
+    end if;
+
+    -- (h) the three refusals
+    v_checks := v_checks + 1;
+    if coalesce(v_p19_unres, '') not like '%have not set up the person%' then
+      v_bad := array_append(v_bad, format(
+        'a topic whose owner was never hired in this session was accepted, or refused for another reason: %L. It must refuse rather than quietly create the rule with no owner — the card named a person, and a rule that silently does not route to them is a card that said one thing and a workspace that does another.',
+        coalesce(v_p19_unres, 'NULL')));
+    end if;
+    v_checks := v_checks + 1;
+    if coalesce(v_p19_pending, '') not like '%have not set up the person%' then
+      v_bad := array_append(v_bad, format(
+        'a topic whose owner is an employee card the customer HAS NOT SAID YES TO was accepted, or refused for another reason: %L. The proposal exists and is pending, so this is the narrow case: "you cannot hand a topic to somebody you have not hired" has to be enforced by the STATE of that sibling card, not only by whether one exists. ⚠ This arm exists because an inversion round proved the previous coverage could not tell the two apart — widening the state filter to admit ''pending'' left everything green, since a pending row carries no created_object_id either.',
+        coalesce(v_p19_pending, 'NULL')));
+    end if;
+    v_checks := v_checks + 1;
+    if coalesce(v_p19_bad_ref, '') not like '%rather than to one of the people it recommended%' then
+      v_bad := array_append(v_bad, format(
+        'a free-text owner_ref was accepted, or refused for another reason: %L. "whoever picks up the phone" is not a reference anything can resolve, and a topic pointed at it names nobody.',
+        coalesce(v_p19_bad_ref, 'NULL')));
+    end if;
+    v_checks := v_checks + 1;
+    if coalesce(v_p19_orphan, '') not like '%sends these conversations to%' then
+      v_bad := array_append(v_bad, format(
+        'a rule carrying an owner the CARD NEVER NAMED was accepted, or refused for another reason: %L. This is the consent check read in the direction nobody tests: the customer agreed to a topic that changes nothing about who answers, and the row would have changed it.',
+        coalesce(v_p19_orphan, 'NULL')));
+    end if;
+
+    -- (i) de_id is still write-once
+    v_checks := v_checks + 1;
+    if coalesce(v_p19_setters, 0) <> 0 then
+      v_bad := array_append(v_bad, format(
+        '%s SQL function(s) now SET de_conversations.de_id. de_id is ATTRIBUTION — get_de_economics, get_de_performance_metrics, get_de_csat_metrics, de_eval_quality, snapshot_de_kpi_readings, get_benchmark_report and compose_weekly_value_digest all count conversations by it — so moving it after the fact retroactively moves a whole thread, messages another employee already answered included, onto somebody else. Topic routing chooses BEFORE the row exists precisely so it never has to.',
+        v_p19_setters));
+    end if;
+    v_checks := v_checks + 1;
+    if coalesce(v_p19_writers, 0) <> 0 then
+      v_bad := array_append(v_bad, format(
+        '%s role(s) other than postgres and service_role now hold UPDATE on de_conversations. The real reason de_id is write-once is this grant, not a grep: anon and authenticated hold SELECT only, so no browser can re-point a conversation at a different employee however the UI is built.',
+        v_p19_writers));
+    end if;
+
+    -- (j) and nothing else in the workspace gained an owner
+    v_checks := v_checks + 1;
+    if v_p19_extra is not null then
+      v_bad := array_append(v_bad, format(
+        'rules this probe did not create carry an owner in the probe workspace: %s. Either the probe leaked, or something is assigning owners to rules nobody decided about — and the eleven baseline rules every workspace is seeded with must never be among them.',
+        v_p19_extra));
+    end if;
+  end if;
+
   -- ROLLBACK INTEGRITY. Every probe above is a statement about rows that are
   -- still in production unless these match. Compared against baselines taken
   -- before any probe ran, never against a hardcoded zero — and this function
@@ -41209,6 +43501,14 @@ begin
   select count(*) into v_tp_after from public.trust_policies
    where tenant_id in (v_tenant, v_other_tenant);
   select count(*) into v_da_after from public.de_autonomy
+   where tenant_id in (v_tenant, v_other_tenant);
+  select count(*) into v_str_after from public.support_triage_rules
+   where tenant_id in (v_tenant, v_other_tenant);
+  select count(*) into v_dc_after from public.de_conversations
+   where tenant_id in (v_tenant, v_other_tenant);
+  select count(*) into v_dm_after from public.de_messages
+   where tenant_id in (v_tenant, v_other_tenant);
+  select count(*) into v_rc_after from public.role_certifications
    where tenant_id in (v_tenant, v_other_tenant);
 
   -- The exact leak checks. Every row this function creates is TAGGED — a
@@ -41329,11 +43629,27 @@ begin
       'A TRUST PROBE ROLLBACK IS BROKEN — trust_policies %s -> %s, de_autonomy %s -> %s (counts scoped to tenants %s and %s). The second of those is the serious one: de_autonomy is what the four enforcement paths read, so a surviving row is an employee acting on its own at a level nobody approved. Stop running this until it is fixed: it runs on every certify.',
       v_tp_before, v_tp_after, v_da_before, v_da_after, v_tenant::text, v_other_tenant::text));
   end if;
+
+  -- ── added by 754. Probe 18's own table, asserted separately so its message
+  -- can say what a survivor would DO rather than only that a count moved.
+  v_checks := v_checks + 1;
+  if v_str_after <> v_str_before then
+    v_bad := array_append(v_bad, format(
+      'A CONVERSATION-TOPIC PROBE ROLLBACK IS BROKEN — support_triage_rules %s -> %s (counts scoped to tenants %s and %s). A surviving probe rule is not a dormant row: classify_support_text reads every active rule in the workspace on the first user message of every support conversation, so real customer traffic would be filed under a probe category, and the inbox filter and the history report would both show it. Stop running this until it is fixed: it runs on every certify.',
+      v_str_before, v_str_after, v_tenant, v_other_tenant));
+  end if;
   v_checks := v_checks + 1;
   if coalesce(v_leak_tp, 0) <> 0 or coalesce(v_leak_da, 0) <> 0 then
     v_bad := array_append(v_bad, format(
       'TRUST PROBE ROWS SURVIVED — %s trust polic(ies) belonging to a "vddp probe employee…" (or the probe decoy) and %s autonomy dial(s) on one are in production. A level-0 policy is inert; a de_autonomy row is NOT — it is read by resolve_de_autonomy and enforced by decide_action_execution, playbook-execute, de-answer and widget-ask.',
       coalesce(v_leak_tp, 0), coalesce(v_leak_da, 0)));
+  end if;
+  -- ── added by 760. Probe 19's own two tables.
+  v_checks := v_checks + 1;
+  if v_dc_after <> v_dc_before or v_dm_after <> v_dm_before or v_rc_after <> v_rc_before then
+    v_bad := array_append(v_bad, format(
+      'A ROUTING PROBE ROLLBACK IS BROKEN AND THIS CHECK HAS PUT FAKE CUSTOMER CONVERSATIONS INTO A REAL WORKSPACE — de_conversations %s -> %s, de_messages %s -> %s, role_certifications %s -> %s (counts scoped to tenants %s and %s). None of these is a dormant row: the conversations appear in the Support Inbox as unanswered threads, get_de_economics counts them against the employee whose id they carry, and a surviving PASSED role certification is worse still — gate_de_certification reads it to decide whether an employee may be published, so it would let an uncertified employee go live. Stop running this until it is fixed: it runs on every certify.',
+      v_dc_before, v_dc_after, v_dm_before, v_dm_after, v_rc_before, v_rc_after, v_tenant::text, v_other_tenant::text));
   end if;
   v_checks := v_checks + 1;
   if not coalesce(v_admin_active, false) then
@@ -41348,17 +43664,18 @@ begin
   -- `probes_completed=` out of this line and refuses a run reporting zero.
   ------------------------------------------------------------------------
   v_notes := array_append(v_notes, format(
-    'note: probes_completed=%s probes_attempted=17 assertions=%s caller=%s role=authenticated tenants=%s,%s archetype=%s — EIGHTEEN accepts driven to SUCCESS so the refusals mean something (probe 1 owner+routable kind; 4 a parked proposal after a second Park was refused; 5d the owner on the row a tenant_user was refused; 6 the other tenant''s owner in their OWN workspace; 7 the routable sibling; 7e the twice-failed row once routable; 9 the row an unidentified caller was refused on; 10b the same owner with a connector that IS theirs; 11c the workspace''s own owner on the row a platform operator was refused on; 12 the employee hire itself; 13a the hire whose systems step raised 22023 and survived; 14 the owner on the employee row a tenant_user was refused; 15a a pattern-bearing guardrail, created under RLS by the owner and stamped; 15e5 the SAME accept on a whitespace-padded payload, which is the inversion that proves the trim; 15l the owner on the guardrail row a tenant_user was refused; 16a a procedure, drafted and key-stamped under RLS by the owner and stamped here; 16g the owner on the procedure row a tenant_user was refused; 17a a trust rule, on an employee hired through the ordinary accept in the SAME session, recorded at level 0 with NO ladder; 17e13 the owner on the trust_rule row a tenant_user was refused). Rows unchanged in the two probe tenants: %s proposals, %s sessions, %s connectors, %s decision audit events, %s employees (excluding the Workspace Assistant), %s playbook definitions, %s guardrail rules, %s trust policies, %s autonomy dials; %s tagged connector(s), %s tagged proposal(s), %s tagged employee(s), %s tagged archetype(s), %s tagged guardrail rule(s), %s tagged playbook definition(s), %s tagged trust polic(ies) and %s tagged autonomy dial(s) survive. NOT proven here: PostgREST''s JWT transport (the probes set request.jwt.claim.sub themselves), CONCURRENT as opposed to sequential double-click, whether the four edge-function enforcement paths actually withhold an answer, THE TRUST LADDER ACTUALLY ENFORCING ANYTHING (no policy on this platform is above level 0, so probe 17 proves what a level-0 policy does NOT do and inverts it by calling trust_apply_level directly — it does not prove what a PROMOTED policy would do end to end through decide_action_execution), and THE PLAYBOOK DRAFTER ITSELF — playbook-draft is Deno and needs a live model, so probe 16 performs the two writes it makes rather than calling it (they are all Deno; what is proven is that the rows these accepts create are the shape those readers select for, and for a procedure that means the shape THREE of the eight published gates were driven against here, and the shape the other five read for too).',
+    'note: probes_completed=%s probes_attempted=19 assertions=%s caller=%s role=authenticated tenants=%s,%s archetype=%s — NINETEEN accepts driven to SUCCESS so the refusals mean something (probe 1 owner+routable kind; 4 a parked proposal after a second Park was refused; 5d the owner on the row a tenant_user was refused; 6 the other tenant''s owner in their OWN workspace; 7 the routable sibling; 7e the twice-failed row once routable; 9 the row an unidentified caller was refused on; 10b the same owner with a connector that IS theirs; 11c the workspace''s own owner on the row a platform operator was refused on; 12 the employee hire itself; 13a the hire whose systems step raised 22023 and survived; 14 the owner on the employee row a tenant_user was refused; 15a a pattern-bearing guardrail, created under RLS by the owner and stamped; 15e5 the SAME accept on a whitespace-padded payload, which is the inversion that proves the trim; 15l the owner on the guardrail row a tenant_user was refused; 16a a procedure, drafted and key-stamped under RLS by the owner and stamped here; 16g the owner on the procedure row a tenant_user was refused; 17a a trust rule, on an employee hired through the ordinary accept in the SAME session, recorded at level 0 with NO ladder; 17e13 the owner on the trust_rule row a tenant_user was refused; 18b TEN conversation topics in ONE session, each created under RLS by the owner and stamped here; 18h the owner on the topic row a tenant_user was refused; 19b a conversation topic that NAMES THE EMPLOYEE WHO ANSWERS IT, on an employee hired through the ordinary accept in the SAME session, with the classifier then handing that employee back for the topic''s own words and NOBODY back for everything else). Rows unchanged in the two probe tenants: %s proposals, %s sessions, %s connectors, %s decision audit events, %s employees (excluding the Workspace Assistant), %s playbook definitions, %s guardrail rules, %s trust policies, %s autonomy dials, %s triage rules, %s conversations, %s messages; %s tagged connector(s), %s tagged proposal(s), %s tagged employee(s), %s tagged archetype(s), %s tagged guardrail rule(s), %s tagged playbook definition(s), %s tagged trust polic(ies) and %s tagged autonomy dial(s) survive. NOT proven here: PostgREST''s JWT transport (the probes set request.jwt.claim.sub themselves), CONCURRENT as opposed to sequential double-click, whether the four edge-function enforcement paths actually withhold an answer, THE TRUST LADDER ACTUALLY ENFORCING ANYTHING (no policy on this platform is above level 0, so probe 17 proves what a level-0 policy does NOT do and inverts it by calling trust_apply_level directly — it does not prove what a PROMOTED policy would do end to end through decide_action_execution), WHETHER THE THREE CONVERSATION WRITERS ACTUALLY ROUTE (⚠ 760 CHANGED WHAT THIS SENTENCE SAYS, AND THE OLD ONE — "nothing routes on a topic" — WAS TRUE UNTIL TODAY. A topic now carries an owner, classify_support_text returns it, and widget-ask, email-inbound and de-answer each read that ONE classification to choose de_id and to stamp all four triage columns before the row exists. Probe 19 drives the SQL half end to end — the accept, the owner on the row, the classifier both ways, a retired owner falling back, the tenant boundary, the delete behaviour — and it drives trg_triage_support_conversation FOR REAL on three fixture conversations, which is the arm that shows writing only `category` leaves severity NULL. What is NOT driven here is the three edge functions themselves: they are Deno, they cannot be called from SQL, and what they do between the classify call and the insert is pinned in TypeScript. So "a topic decides who answers" is proven for the answer all three of them read, and inferred for the three of them reading it), and THE PLAYBOOK DRAFTER ITSELF — playbook-draft is Deno and needs a live model, so probe 16 performs the two writes it makes rather than calling it (they are all Deno; what is proven is that the rows these accepts create are the shape those readers select for, and for a procedure that means the shape THREE of the eight published gates were driven against here, and the shape the other five read for too).',
     v_probes_done, v_checks, v_caller, v_tenant::text, v_other_tenant::text, v_arch_key,
     v_prop_after, v_sess_after, v_conn_after, v_audit_after,
-    v_emp_after, v_pb_after, v_gr_after, v_tp_after, v_da_after,
+    v_emp_after, v_pb_after, v_gr_after, v_tp_after, v_da_after, v_str_after,
+    v_dc_after, v_dm_after,
     coalesce(v_leak_conn, 0), coalesce(v_leak_prop, 0),
     coalesce(v_leak_emp, 0), coalesce(v_leak_arch, 0), coalesce(v_leak_gr, 0), coalesce(v_leak_pb, 0),
     coalesce(v_leak_tp, 0), coalesce(v_leak_da, 0)));
 
-  if v_probes_done < 17 then
+  if v_probes_done < 19 then
     v_bad := array_append(v_bad, format(
-      'only %s of 17 probes completed. The ones that did not are named above with their SQLSTATE; a probe that cannot run is a failure, never a skip, because its assertions did not compare anything this run.',
+      'only %s of 19 probes completed. The ones that did not are named above with their SQLSTATE; a probe that cannot run is a failure, never a skip, because its assertions did not compare anything this run.',
       v_probes_done));
   end if;
 
@@ -41833,7 +44150,8 @@ CREATE TABLE IF NOT EXISTS public.digital_employees (
   CONSTRAINT digital_employees_status_check CHECK ((status = ANY (ARRAY['active'::text, 'idle'::text, 'disabled'::text]))),
   CONSTRAINT digital_employees_status_matches_lifecycle CHECK (de_status_allowed(lifecycle_status, status)),
   CONSTRAINT digital_employees_trust_level_check CHECK ((trust_level = ANY (ARRAY['supervised'::text, 'established'::text, 'trusted'::text, 'autonomous'::text]))),
-  CONSTRAINT digital_employees_pkey PRIMARY KEY (id)
+  CONSTRAINT digital_employees_pkey PRIMARY KEY (id),
+  CONSTRAINT digital_employees_tenant_id_id_uq UNIQUE (tenant_id, id)
 );
 CREATE TABLE IF NOT EXISTS public.de_missions (
   "id" uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -42585,6 +44903,40 @@ CREATE TABLE IF NOT EXISTS public.auth_login_lockouts (
   "locked_until" timestamp with time zone,
   "last_attempt_at" timestamp with time zone DEFAULT now() NOT NULL,
   CONSTRAINT auth_login_lockouts_pkey PRIMARY KEY (user_id)
+);
+CREATE TABLE IF NOT EXISTS public.authority_dimensions (
+  "dimension" text NOT NULL,
+  "value_type" text NOT NULL,
+  "reader_fn" text,
+  "is_active" boolean DEFAULT true NOT NULL,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  CONSTRAINT authority_dimensions_value_type_check CHECK ((value_type = ANY (ARRAY['integer'::text, 'boolean'::text]))),
+  CONSTRAINT authority_dimensions_pkey PRIMARY KEY (dimension)
+);
+CREATE TABLE IF NOT EXISTS public.authority_dimension_comparators (
+  "dimension" text NOT NULL,
+  "comparator" text NOT NULL,
+  CONSTRAINT authority_dimension_comparators_pkey PRIMARY KEY (dimension, comparator)
+);
+CREATE TABLE IF NOT EXISTS public.authority_rules (
+  "id" uuid DEFAULT gen_random_uuid() NOT NULL,
+  "tenant_id" uuid NOT NULL,
+  "actor_kind" text NOT NULL,
+  "actor_id" uuid,
+  "actor_role" text,
+  "category" text,
+  "dimension" text NOT NULL,
+  "comparator" text NOT NULL,
+  "threshold" numeric NOT NULL,
+  "outcome" text NOT NULL,
+  "is_active" boolean DEFAULT true NOT NULL,
+  "created_by" uuid,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+  CONSTRAINT authority_rules_actor_kind_check CHECK ((actor_kind = ANY (ARRAY['all'::text, 'role'::text, 'user'::text, 'org_unit'::text, 'de'::text]))),
+  CONSTRAINT authority_rules_actor_shape CHECK ((((actor_kind = 'all'::text) AND (actor_id IS NULL) AND (actor_role IS NULL)) OR ((actor_kind = 'role'::text) AND (actor_id IS NULL) AND (actor_role IS NOT NULL)) OR ((actor_kind = ANY (ARRAY['user'::text, 'org_unit'::text, 'de'::text])) AND (actor_id IS NOT NULL) AND (actor_role IS NULL)))),
+  CONSTRAINT authority_rules_outcome_check CHECK ((outcome = ANY (ARRAY['require_human'::text, 'require_second_approver'::text, 'deny'::text]))),
+  CONSTRAINT authority_rules_pkey PRIMARY KEY (id)
 );
 CREATE TABLE IF NOT EXISTS public.vendors (
   "id" uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -43851,6 +46203,9 @@ CREATE TABLE IF NOT EXISTS public.de_performance_reviews (
   "acknowledged_by" uuid,
   "acknowledged_at" timestamp with time zone,
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "ai_narrative" text,
+  "ai_narrative_model" text,
+  "ai_narrative_at" timestamp with time zone,
   CONSTRAINT de_performance_reviews_status_check CHECK ((status = ANY (ARRAY['open'::text, 'acknowledged'::text]))),
   CONSTRAINT de_performance_reviews_verdict_check CHECK ((verdict = ANY (ARRAY['meets'::text, 'below'::text, 'insufficient_data'::text]))),
   CONSTRAINT de_performance_reviews_pkey PRIMARY KEY (id),
@@ -43949,6 +46304,17 @@ CREATE TABLE IF NOT EXISTS public.de_profile_fields (
   CONSTRAINT de_profile_fields_field_type_check CHECK ((field_type = ANY (ARRAY['text'::text, 'number'::text, 'date'::text]))),
   CONSTRAINT de_profile_fields_pkey PRIMARY KEY (id),
   CONSTRAINT de_profile_fields_tenant_id_field_key_key UNIQUE (tenant_id, field_key)
+);
+CREATE TABLE IF NOT EXISTS public.de_review_narrative_settings (
+  "id" uuid DEFAULT gen_random_uuid() NOT NULL,
+  "tenant_id" uuid NOT NULL,
+  "de_id" uuid,
+  "enabled" boolean DEFAULT false NOT NULL,
+  "instructions" text,
+  "updated_by" uuid,
+  "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  CONSTRAINT de_review_narrative_settings_pkey PRIMARY KEY (id)
 );
 CREATE TABLE IF NOT EXISTS public.de_role_assignments (
   "assignment_id" uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -44179,9 +46545,10 @@ CREATE TABLE IF NOT EXISTS public.discovery_proposals (
 CASE kind
     WHEN 'employee'::text THEN (payload ->> 'archetype_key'::text)
     WHEN 'connector'::text THEN (payload ->> 'provider_key'::text)
+    WHEN 'conversation_type'::text THEN (payload ->> 'set_category'::text)
     ELSE source_dimension
 END, ''::text)) STORED,
-  CONSTRAINT discovery_proposals_kind_check CHECK ((kind = ANY (ARRAY['employee'::text, 'procedure'::text, 'connector'::text, 'guardrail'::text, 'trust_rule'::text, 'conversation_type'::text]))),
+  CONSTRAINT discovery_proposals_kind_check CHECK ((kind = ANY (ARRAY['employee'::text, 'procedure'::text, 'connector'::text, 'guardrail'::text, 'trust_rule'::text, 'conversation_type'::text, '__unrouted_probe__'::text]))),
   CONSTRAINT discovery_proposals_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'accepted'::text, 'declined'::text, 'parked'::text]))),
   CONSTRAINT discovery_proposals_pkey PRIMARY KEY (id)
 );
@@ -45030,6 +47397,15 @@ CREATE TABLE IF NOT EXISTS public.messages (
   CONSTRAINT messages_role_check CHECK ((role = ANY (ARRAY['user'::text, 'agent'::text, 'ai'::text, 'system'::text]))),
   CONSTRAINT messages_pkey PRIMARY KEY (id)
 );
+CREATE TABLE IF NOT EXISTS public.migration_number_claims (
+  "num" integer NOT NULL,
+  "filename" text NOT NULL,
+  "claimed_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "claimed_by" text DEFAULT COALESCE(current_setting('application_name'::text, true), 'unknown'::text) NOT NULL,
+  "released_at" timestamp with time zone,
+  "release_note" text,
+  CONSTRAINT migration_number_claims_pkey PRIMARY KEY (num)
+);
 CREATE TABLE IF NOT EXISTS public.notifications (
   "id" uuid DEFAULT gen_random_uuid() NOT NULL,
   "tenant_id" uuid NOT NULL,
@@ -45844,6 +48220,8 @@ CREATE TABLE IF NOT EXISTS public.support_triage_rules (
   "set_severity" text DEFAULT 'sev3'::text NOT NULL,
   "active" boolean DEFAULT true NOT NULL,
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "source_proposal_id" uuid,
+  "owner_de_id" uuid,
   CONSTRAINT support_triage_rules_set_priority_check CHECK ((set_priority = ANY (ARRAY['low'::text, 'normal'::text, 'high'::text, 'urgent'::text]))),
   CONSTRAINT support_triage_rules_pkey PRIMARY KEY (id)
 );
@@ -46722,6 +49100,12 @@ DO $$ BEGIN ALTER TABLE public.audit_logs ADD CONSTRAINT audit_logs_tenant_id_fk
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.auth_login_lockouts ADD CONSTRAINT auth_login_lockouts_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.authority_dimension_comparators ADD CONSTRAINT authority_dimension_comparators_dimension_fkey FOREIGN KEY (dimension) REFERENCES authority_dimensions(dimension) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.authority_rules ADD CONSTRAINT authority_rules_dimension_comparator_fk FOREIGN KEY (dimension, comparator) REFERENCES authority_dimension_comparators(dimension, comparator);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.authority_rules ADD CONSTRAINT authority_rules_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.vendors ADD CONSTRAINT vendors_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.bills ADD CONSTRAINT bills_account_id_fkey FOREIGN KEY (account_id) REFERENCES fin_accounts(id) ON DELETE SET NULL;
@@ -47095,6 +49479,10 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.de_playbook_charter ADD CONSTRAINT de_playbook_charter_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.de_profile_fields ADD CONSTRAINT de_profile_fields_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.de_review_narrative_settings ADD CONSTRAINT de_review_narrative_settings_de_id_fkey FOREIGN KEY (de_id) REFERENCES digital_employees(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.de_review_narrative_settings ADD CONSTRAINT de_review_narrative_settings_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.de_role_assignments ADD CONSTRAINT de_role_assignments_de_id_fkey FOREIGN KEY (de_id) REFERENCES digital_employees(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -47554,6 +49942,10 @@ DO $$ BEGIN ALTER TABLE public.support_tickets ADD CONSTRAINT support_tickets_ac
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.support_tickets ADD CONSTRAINT support_tickets_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.support_triage_rules ADD CONSTRAINT support_triage_rules_owner_de_fk FOREIGN KEY (tenant_id, owner_de_id) REFERENCES digital_employees(tenant_id, id) ON DELETE SET NULL (owner_de_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.support_triage_rules ADD CONSTRAINT support_triage_rules_source_proposal_id_fkey FOREIGN KEY (source_proposal_id) REFERENCES discovery_proposals(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.support_triage_rules ADD CONSTRAINT support_triage_rules_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.tenant_ai_usage ADD CONSTRAINT tenant_ai_usage_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
@@ -47792,6 +50184,7 @@ CREATE INDEX IF NOT EXISTS audit_events_tenant_idx ON public.audit_events USING 
 CREATE INDEX IF NOT EXISTS idx_close_workspaces_tenant ON public.close_workspaces USING btree (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_exceptions_tenant ON public.exceptions USING btree (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_audit_evidence_tenant ON public.audit_evidence USING btree (tenant_id);
+CREATE INDEX IF NOT EXISTS authority_rules_lookup ON public.authority_rules USING btree (tenant_id, is_active, category);
 CREATE INDEX IF NOT EXISTS idx_vendors_tenant ON public.vendors USING btree (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_bills_tenant ON public.bills USING btree (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_customers_tenant ON public.customers USING btree (tenant_id);
@@ -47923,6 +50316,8 @@ CREATE INDEX IF NOT EXISTS de_playbook_charter_tenant_idx ON public.de_playbook_
 CREATE INDEX IF NOT EXISTS idx_product_knowledge_keywords ON public.de_product_knowledge USING gin (keywords);
 CREATE INDEX IF NOT EXISTS idx_product_knowledge_topic ON public.de_product_knowledge USING btree (topic);
 CREATE INDEX IF NOT EXISTS de_profile_fields_tenant_idx ON public.de_profile_fields USING btree (tenant_id, "position");
+CREATE UNIQUE INDEX IF NOT EXISTS de_review_narrative_settings_per_de ON public.de_review_narrative_settings USING btree (tenant_id, de_id) WHERE (de_id IS NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS de_review_narrative_settings_tenant_default ON public.de_review_narrative_settings USING btree (tenant_id) WHERE (de_id IS NULL);
 CREATE INDEX IF NOT EXISTS idx_role_assignments_de ON public.de_role_assignments USING btree (de_id);
 CREATE INDEX IF NOT EXISTS idx_role_assignments_role ON public.de_role_assignments USING btree (role_name);
 CREATE INDEX IF NOT EXISTS de_skills_de_idx ON public.de_skills USING btree (tenant_id, de_id);
@@ -48093,6 +50488,8 @@ CREATE INDEX IF NOT EXISTS support_tickets_account_idx ON public.support_tickets
 CREATE UNIQUE INDEX IF NOT EXISTS support_tickets_source_ref_uniq ON public.support_tickets USING btree (tenant_id, source, external_ref) WHERE (external_ref IS NOT NULL);
 CREATE INDEX IF NOT EXISTS support_tickets_tenant_idx ON public.support_tickets USING btree (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_support_triage_rules_tenant ON public.support_triage_rules USING btree (tenant_id, rule_order) WHERE active;
+CREATE INDEX IF NOT EXISTS support_triage_rules_owner_de_idx ON public.support_triage_rules USING btree (owner_de_id) WHERE (owner_de_id IS NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS support_triage_rules_source_proposal_uq ON public.support_triage_rules USING btree (source_proposal_id) WHERE (source_proposal_id IS NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_tenant_activity_log_actor ON public.tenant_activity_log USING btree (actor_user_id);
 CREATE INDEX IF NOT EXISTS idx_tenant_activity_log_tenant ON public.tenant_activity_log USING btree (tenant_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tenant_ancestry_ancestor ON public.tenant_ancestry USING btree (ancestor_id);
@@ -48649,6 +51046,7 @@ DECLARE
   v_cat    text;
   v_amt    bigint;
   v_auth   jsonb;
+  v_risk jsonb;
 BEGIN
   perform set_config('app.allow_task_decision', 'on', true);   -- mig 486: sanctioned decision path
   IF v_tenant IS NULL THEN RAISE EXCEPTION 'not_authenticated'; END IF;
@@ -48688,11 +51086,40 @@ BEGIN
       RAISE EXCEPTION 'not_authorised_to_approve: %', v_auth->>'reason';
     END IF;
 
+    -- ── THE SECOND QUESTION (spec §3.6) ──────────────────────────────────
+    -- Entitlement above answered "may you sign this at all?" — a property of
+    -- a PERSON, deny-by-default, because the absence of a grant means nobody
+    -- gave you that authority. This asks "does this action need more
+    -- scrutiny?" — a property of an ACTION, escalate-only, because the
+    -- absence of a restriction means nobody said it was dangerous.
+    -- Composed, never merged: the two models have OPPOSITE polarity, and
+    -- replacing one with the other would flip deny to allow for every
+    -- workspace that has declared authority.
+    --
+    -- With authority_rules EMPTY this is exactly a no-op, which is the point:
+    -- it ships dark and begins to matter only when someone writes a rule.
+    v_risk := evaluate_authority(v_tenant, 'user', auth.uid(), v_cat,
+                                 case when v_amt is null then '{}'::jsonb
+                                      else jsonb_build_object('amount_cents', v_amt) end);
+
+    IF v_risk->>'outcome' = 'deny' THEN
+      RAISE EXCEPTION 'not_authorised_to_approve: %',
+        coalesce(v_risk->'reasons'->0->>'why', 'a workspace rule denies this');
+    END IF;
+
+    -- ⚠ require_human is ALREADY SATISFIED on this path — a human IS
+    -- approving. Treating it as a refusal would make every unmeasured rule
+    -- block every approval. The outcomes that bite here are `deny` above and
+    -- `require_second_approver`, which is OR-ed into the existing needs_second
+    -- below rather than replacing it: a second pair of eyes required by
+    -- EITHER the grant model or a risk rule is still a second pair of eyes.
+
     -- A second pair of eyes. The first approval is RECORDED and the task
     -- stays pending; it completes when a DIFFERENT person approves.
     -- Recording rather than refusing is what stops the first approver
     -- having to remember they already looked at it.
-    IF coalesce((v_auth->>'needs_second')::boolean, false)
+    IF (coalesce((v_auth->>'needs_second')::boolean, false)
+        OR v_risk->>'outcome' = 'require_second_approver')
        AND (v_task.first_approver_id IS NULL OR v_task.first_approver_id = auth.uid()) THEN
       UPDATE human_tasks
          SET first_approver_id = auth.uid(), first_approved_at = now(), updated_at = now()
@@ -49088,22 +51515,41 @@ begin
 end;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.run_de_performance_review_internal(p_tenant_id uuid DEFAULT NULL::uuid, p_de_id uuid DEFAULT NULL::uuid)
+CREATE OR REPLACE FUNCTION public.run_de_performance_review_internal(p_tenant_id uuid DEFAULT NULL::uuid, p_de_id uuid DEFAULT NULL::uuid, p_window_weeks integer DEFAULT 13)
  RETURNS SETOF de_performance_reviews
  LANGUAGE plpgsql
  SECURITY DEFINER
  SET search_path TO 'public', 'extensions'
 AS $function$
 declare
-  v_t record;
-  m record;
-  v_skills jsonb;
-  v_verdict text;
-  v_summary text;
-  v_row de_performance_reviews;
-  v_period_start date := (date_trunc('quarter', now()))::date;
-  v_period_end date := current_date;
+  v_t             record;
+  m               record;
+  v_skills        jsonb;
+  v_verdict       text;
+  v_summary       text;
+  v_row           de_performance_reviews;
+  v_goals         jsonb;
+  v_n_goals       int;
+  v_n_measured    int;
+  v_n_unmet       int;
+  v_unmet_text    text;
+  v_first_name    text;
+  v_first_key     text;
+  v_first_target  numeric;
+  v_first_current numeric;
+  v_window_label  text;
+  v_period_end    date := current_date;
+  v_period_start  date;
 begin
+  if coalesce(p_window_weeks, 0) < 1 then
+    raise exception 'window_weeks_invalid: % — a review window is at least one week', p_window_weeks;
+  end if;
+
+  -- The window the row CLAIMS is the window the numbers COME FROM.
+  v_period_start := v_period_end - (p_window_weeks * 7);
+  v_window_label := format('%s week%s to %s', p_window_weeks,
+                           case when p_window_weeks = 1 then '' else 's' end, v_period_end);
+
   for v_t in
     select distinct de.tenant_id as tid from digital_employees de
     where de.lifecycle_status not in ('retired', 'archived')
@@ -49111,57 +51557,105 @@ begin
       and tenant_is_operational(de.tenant_id)
   loop
     for m in
-      select * from get_de_performance_metrics(v_t.tid, 13)
+      select * from get_de_performance_metrics(v_t.tid, p_window_weeks)
       where (p_de_id is null or de_id = p_de_id)
     loop
-      -- Skip DEs outside the operational world (pre-launch/paused have
-      -- nothing meaningful to review).
       if not exists (select 1 from digital_employees d where d.id = m.de_id
                      and d.lifecycle_status in ('assigned', 'active', 'improving', 'paused')) then
         continue;
       end if;
 
-      select coalesce(jsonb_agg(jsonb_build_object('skill', s.skill_key, 'proficiency', s.proficiency, 'value', s.signal_value)), '[]'::jsonb)
+      select coalesce(jsonb_agg(jsonb_build_object(
+               'skill', s.skill_key, 'proficiency', s.proficiency, 'value', s.signal_value)), '[]'::jsonb)
         into v_skills from de_skills s where s.de_id = m.de_id;
 
-      if m.total_decisions < 10 then
+      -- The goals this workspace actually set, resolved over THIS window. One
+      -- call; every count and every sentence below is derived from it.
+      select coalesce(jsonb_agg(jsonb_build_object(
+               'metric_key', k.metric_key, 'name', k.name, 'target', k.target,
+               'direction', k.direction, 'current', k.current, 'met', k.met) order by k.name), '[]'::jsonb)
+        into v_goals
+        from de_kpi_status_internal(v_t.tid, m.de_id, p_window_weeks) k;
+
+      select count(*),
+             count(*) filter (where g->>'current' is not null),
+             count(*) filter (where g->>'current' is not null and coalesce((g->>'met')::boolean, false) = false)
+        into v_n_goals, v_n_measured, v_n_unmet
+        from jsonb_array_elements(v_goals) g;
+
+      select string_agg(format('%s (%s vs target %s)',
+                               g->>'name', round((g->>'current')::numeric, 1), round((g->>'target')::numeric, 1)),
+                        '; ' order by g->>'name')
+        into v_unmet_text
+        from jsonb_array_elements(v_goals) g
+       where g->>'current' is not null and coalesce((g->>'met')::boolean, false) = false;
+
+      select g->>'name', g->>'metric_key', (g->>'target')::numeric, (g->>'current')::numeric
+        into v_first_name, v_first_key, v_first_target, v_first_current
+        from jsonb_array_elements(v_goals) g
+       where g->>'current' is not null and coalesce((g->>'met')::boolean, false) = false
+       order by g->>'name' limit 1;
+
+      if v_n_goals = 0 then
         v_verdict := 'insufficient_data';
-        v_summary := format('%s handled %s decisions this period — below the 10 needed for a meaningful verdict. No judgment recorded on thin evidence.', m.de_name, m.total_decisions);
-      elsif m.escalation_rate > 50 or m.avg_confidence < 50 or m.error_rate > 15 then
+        v_summary := format('No goals are set for %s, so there is nothing to review it against. Set goals on this employee and the next review (%s) will measure them.',
+                            m.de_name, v_window_label);
+      elsif m.total_decisions < 10 then
+        v_verdict := 'insufficient_data';
+        v_summary := format('%s handled %s decisions over %s — below the 10 needed for a meaningful verdict. No judgment recorded on thin evidence.',
+                            m.de_name, m.total_decisions, v_window_label);
+      elsif v_n_measured = 0 then
+        v_verdict := 'insufficient_data';
+        v_summary := format('%s goal%s set for %s, but none has a measured value over %s yet. No judgment recorded on an unmeasured goal.',
+                            v_n_goals, case when v_n_goals = 1 then ' is' else 's are' end,
+                            m.de_name, v_window_label);
+      elsif v_n_unmet > 0 then
         v_verdict := 'below';
-        v_summary := format('%s is below threshold this period: %s%% escalation (target <50), %s%% avg confidence (target 65+), %s%% error rate (target <15), across %s decisions. A Performance Improvement Plan has been opened.',
-          m.de_name, round(m.escalation_rate), round(m.avg_confidence), round(m.error_rate), m.total_decisions);
+        v_summary := format('%s missed %s of %s measured goal%s over %s: %s. A Performance Improvement Plan has been opened.',
+                            m.de_name, v_n_unmet, v_n_measured,
+                            case when v_n_measured = 1 then '' else 's' end, v_window_label, v_unmet_text);
       else
         v_verdict := 'meets';
-        v_summary := format('%s meets expectations this period: %s%% resolution, %s%% avg confidence, %s%% error rate across %s decisions.',
-          m.de_name, round(m.resolution_rate), round(m.avg_confidence), round(m.error_rate), m.total_decisions);
+        v_summary := format('%s met all %s measured goal%s over %s, across %s decisions.',
+                            m.de_name, v_n_measured, case when v_n_measured = 1 then '' else 's' end,
+                            v_window_label, m.total_decisions);
       end if;
 
       insert into de_performance_reviews (tenant_id, de_id, period_start, period_end, verdict, summary, metrics_snapshot)
       values (v_t.tid, m.de_id, v_period_start, v_period_end, v_verdict, v_summary,
         jsonb_build_object(
+          'window_weeks', p_window_weeks,
           'total_decisions', m.total_decisions, 'resolution_rate', m.resolution_rate,
           'avg_confidence', m.avg_confidence, 'escalation_rate', m.escalation_rate,
           'error_rate', m.error_rate, 'blocked_guardrail_count', m.blocked_guardrail_count,
-          'avg_frustration_score', m.avg_frustration_score, 'skills', v_skills))
+          'avg_frustration_score', m.avg_frustration_score, 'skills', v_skills,
+          -- The goals are evidence now, so a past verdict can be read back
+          -- against what it was actually judged on.
+          'goals', v_goals))
       on conflict (tenant_id, de_id, period_start)
       do update set period_end = excluded.period_end, verdict = excluded.verdict,
                     summary = excluded.summary, metrics_snapshot = excluded.metrics_snapshot
       returning * into v_row;
 
       if v_verdict = 'below' then
-        -- §10.4: the PIP — a Development item with a formal deadline
-        -- and a written consequence. One open PIP per DE (the partial
-        -- unique index on detected items).
         insert into de_development_items (tenant_id, de_id, item_type, source, priority, description,
           target_metric, target_value, baseline_value, status, due_date, consequence)
         values (v_t.tid, m.de_id, 'pip', 'detected', 'high',
-          format('Performance Improvement Plan for %s (quarterly review %s): bring escalation under 50%%, average confidence to 50+, and error rate under 15%% within 30 days. Current: %s%% / %s%% / %s%%.',
-            m.de_name, v_period_start, round(m.escalation_rate), round(m.avg_confidence), round(m.error_rate)),
-          'quarterly_review_thresholds', 1, 0, 'proposed', current_date + 30,
+          format('Performance Improvement Plan for %s (review of %s): meet %s within 30 days. Currently missing: %s.',
+                 m.de_name, v_window_label, v_first_name, v_unmet_text),
+          v_first_key, v_first_target, v_first_current,
+          'proposed', current_date + 30,
           'If targets are not met by the due date, a CRITICAL incident is raised for trust review — possible outcomes decided by a human there: trust reduction, added approval gates, or pause.')
         on conflict (tenant_id, de_id, item_type) where source = 'detected' and status in ('proposed', 'in_progress')
-        do update set description = excluded.description, due_date = excluded.due_date, updated_at = now();
+        -- due_date IS DELIBERATELY NOT REFRESHED. It used to be
+        -- `due_date = excluded.due_date`, which reset the deadline to +30 days
+        -- on every run, so at any cadence faster than monthly the PIP could
+        -- never come due. The description updates; the clock does not restart.
+        do update set description    = excluded.description,
+                      target_metric  = excluded.target_metric,
+                      target_value   = excluded.target_value,
+                      baseline_value = excluded.baseline_value,
+                      updated_at     = now();
       elsif v_verdict = 'meets' then
         update de_development_items set status = 'completed', completed_at = now(), updated_at = now()
         where tenant_id = v_t.tid and de_id = m.de_id and item_type = 'pip'
@@ -50378,6 +52872,10 @@ DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.exceptions;
 CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.exceptions FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
 DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.exceptions;
 CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON public.exceptions FOR EACH ROW EXECUTE FUNCTION log_tenant_activity();
+DROP TRIGGER IF EXISTS authority_rules_require_reader ON public.authority_rules;
+CREATE TRIGGER authority_rules_require_reader BEFORE INSERT OR UPDATE ON public.authority_rules FOR EACH ROW EXECUTE FUNCTION authority_rule_requires_a_reader();
+DROP TRIGGER IF EXISTS authority_rules_updated_at ON public.authority_rules;
+CREATE TRIGGER authority_rules_updated_at BEFORE UPDATE ON public.authority_rules FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.vendors;
 CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.vendors FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
 DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.vendors;
@@ -50662,6 +53160,8 @@ DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.opportunities;
 CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.opportunities FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
 DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.opportunities;
 CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON public.opportunities FOR EACH ROW EXECUTE FUNCTION log_tenant_activity();
+DROP TRIGGER IF EXISTS ops_alerts_push_ping ON public.ops_alerts;
+CREATE TRIGGER ops_alerts_push_ping AFTER INSERT ON public.ops_alerts FOR EACH ROW EXECUTE FUNCTION notify_ops_alert();
 DROP TRIGGER IF EXISTS profiles_updated_at ON public.profiles;
 CREATE TRIGGER profiles_updated_at BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 DROP TRIGGER IF EXISTS trg_guard_demo_tenant ON public.profiles;
@@ -50736,6 +53236,8 @@ DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.support_tickets;
 CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.support_tickets FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
 DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.support_tickets;
 CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON public.support_tickets FOR EACH ROW EXECUTE FUNCTION log_tenant_activity();
+DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.support_triage_rules;
+CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON public.support_triage_rules FOR EACH ROW EXECUTE FUNCTION log_tenant_activity();
 DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.tenant_ai_usage;
 CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.tenant_ai_usage FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
 DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.tenant_ai_usage;
@@ -50836,6 +53338,8 @@ ALTER TABLE public.guardrail_adjudication_cache ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.guardrail_adjudications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.knowledge_conflict_probe_queue ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_connected_systems ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.authority_dimensions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.authority_dimension_comparators ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.playbook_event_rules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.playbook_schedules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.health_score_config ENABLE ROW LEVEL SECURITY;
@@ -50844,6 +53348,7 @@ ALTER TABLE public.onboarding_projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.data_access_grants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_learned_behavior_cluster_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.invoice_activities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.authority_rules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.evidence_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.invoice_writeback_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.adapter_templates ENABLE ROW LEVEL SECURITY;
@@ -50904,8 +53409,8 @@ ALTER TABLE public.de_profile_fields ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.playbook_amendments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.playbook_studies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.conversation_checks ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.discovery_proposals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_kpis ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.discovery_proposals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.digital_employees ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.departments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.draft_responses ENABLE ROW LEVEL SECURITY;
@@ -50918,6 +53423,7 @@ ALTER TABLE public.de_token_usage ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_deployment_stages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_product_knowledge ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_role_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.de_review_narrative_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ai_change_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_certifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_kpi_readings ENABLE ROW LEVEL SECURITY;
@@ -50993,12 +53499,12 @@ ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.outbound_drafts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.platform_runtime_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.support_tickets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.support_triage_rules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_ai_usage ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_api_keys ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.scim_user_links ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.skill_catalog ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.staleness_escalations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.support_triage_rules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_ip_allowlist_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.approval_briefs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_ip_allowlists ENABLE ROW LEVEL SECURITY;
@@ -51031,7 +53537,6 @@ ALTER TABLE public.de_experience ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.escalations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_incidents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_model_routes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.de_performance_reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_task_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_training_feedback ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_training_progress ENABLE ROW LEVEL SECURITY;
@@ -51039,6 +53544,7 @@ ALTER TABLE public.de_work_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.escalation_signals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.eval_batch_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.eval_batch_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.de_performance_reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.eval_judgments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.fin_accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.eval_runs ENABLE ROW LEVEL SECURITY;
@@ -51061,11 +53567,11 @@ ALTER TABLE public.kpi_metric_catalog ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.learned_tool_specs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.onboarding_template_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.opportunity_activities ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ops_alerts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.payment_promises ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.playbook_gaps ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.playbook_trigger_fires ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.playbook_versions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ops_alerts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.posting_draft_lines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.posting_drafts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profile_compensation ENABLE ROW LEVEL SECURITY;
@@ -51274,6 +53780,12 @@ DROP POLICY IF EXISTS audit_logs_tenant_insert ON public.audit_logs;
 CREATE POLICY audit_logs_tenant_insert ON public.audit_logs FOR INSERT WITH CHECK ((tenant_id = auth_tenant_id()));
 DROP POLICY IF EXISTS audit_logs_tenant_read ON public.audit_logs;
 CREATE POLICY audit_logs_tenant_read ON public.audit_logs FOR SELECT USING ((tenant_id = auth_tenant_id()));
+DROP POLICY IF EXISTS authority_dimensions_read ON public.authority_dimensions;
+CREATE POLICY authority_dimensions_read ON public.authority_dimensions FOR SELECT USING ((auth_tenant_id() IS NOT NULL));
+DROP POLICY IF EXISTS authority_dimension_comparators_read ON public.authority_dimension_comparators;
+CREATE POLICY authority_dimension_comparators_read ON public.authority_dimension_comparators FOR SELECT USING ((auth_tenant_id() IS NOT NULL));
+DROP POLICY IF EXISTS authority_rules_read ON public.authority_rules;
+CREATE POLICY authority_rules_read ON public.authority_rules FOR SELECT USING ((tenant_id = auth_tenant_id()));
 DROP POLICY IF EXISTS vendors_ins ON public.vendors;
 CREATE POLICY vendors_ins ON public.vendors FOR INSERT TO authenticated WITH CHECK ((tenant_id = auth_tenant_id()));
 DROP POLICY IF EXISTS vendors_sel ON public.vendors;
@@ -51588,6 +54100,8 @@ CREATE POLICY de_profile_fields_write ON public.de_profile_fields FOR ALL USING 
   WHERE ((p.user_id = auth.uid()) AND (p.tenant_id = de_profile_fields.tenant_id) AND COALESCE(p.is_active, true) AND (p.role = ANY (ARRAY['tenant_owner'::text, 'tenant_admin'::text, 'tenant_manager'::text])))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM profiles p
   WHERE ((p.user_id = auth.uid()) AND (p.tenant_id = de_profile_fields.tenant_id) AND COALESCE(p.is_active, true) AND (p.role = ANY (ARRAY['tenant_owner'::text, 'tenant_admin'::text, 'tenant_manager'::text]))))));
+DROP POLICY IF EXISTS de_review_narrative_settings_read ON public.de_review_narrative_settings;
+CREATE POLICY de_review_narrative_settings_read ON public.de_review_narrative_settings FOR SELECT USING ((tenant_id = auth_tenant_id()));
 DROP POLICY IF EXISTS "read global and own skills" ON public.skill_catalog;
 CREATE POLICY "read global and own skills" ON public.skill_catalog FOR SELECT USING (((tenant_id IS NULL) OR (tenant_id = auth_tenant_id())));
 DROP POLICY IF EXISTS de_skills_tenant_select ON public.de_skills;
@@ -52194,6 +54708,7 @@ REVOKE ALL ON ROUTINE audit_events_immutable() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE audit_events_no_truncate() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE audit_tenant_feature_parity() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE audit_unguarded_dormancy_writers() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE authority_rule_requires_a_reader() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE auto_provision_new_tenant() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE begin_objective_wake(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE caller_has_tenant_relationship(uuid) FROM PUBLIC, anon, authenticated;
@@ -52234,6 +54749,7 @@ REVOKE ALL ON ROUTINE compute_tenant_health_service(uuid) FROM PUBLIC, anon, aut
 REVOKE ALL ON ROUTINE compute_trust_proposal_brief(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE conclude_objective_verified(uuid,uuid,text,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE conclude_objective_wake(uuid,text,text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE connector_circuit_open(integer,timestamp with time zone) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE create_improvement_review(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE create_outbound_draft(uuid,uuid,text,text,text,text,text,text,uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_config_fingerprint(uuid) FROM PUBLIC, anon, authenticated;
@@ -52241,6 +54757,8 @@ REVOKE ALL ON ROUTINE de_development_items_attempts_guard() FROM PUBLIC, anon, a
 REVOKE ALL ON ROUTINE de_eval_quality(uuid,uuid,integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_governance_sweep_internal() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_improvements_entity_guard() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE de_kpi_action_value(uuid,uuid,text,jsonb) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE de_kpi_status_internal(uuid,uuid,integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_may_use_action(uuid,uuid,uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_memory_search_internal(uuid,uuid,vector,text,text,text[],integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_memory_write_internal(uuid,uuid,text,vector,text,text,text,numeric,text,timestamp with time zone) FROM PUBLIC, anon, authenticated;
@@ -52275,6 +54793,7 @@ REVOKE ALL ON ROUTINE enqueue_conflict_probe() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE enqueue_de_work_item_internal(uuid,uuid,text,text,timestamp with time zone,uuid,integer,uuid,jsonb,text,integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE erd_human_task_id(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE erp_ar_mirror_totals(uuid,text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE evaluate_authority(uuid,text,uuid,text,jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE evidence_is_production(text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE expire_trials() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE export_tenant_scope_sql(text,jsonb) FROM PUBLIC, anon, authenticated;
@@ -52363,6 +54882,7 @@ REVOKE ALL ON ROUTINE net_dispatch_log_trg() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE next_approved_browser_task() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE normalise_de_state() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE normalized_content_hash_internal(text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE notify_ops_alert() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE notify_pending_human_task() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE onboarding_check_complete(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE onboarding_progress_recalc() FROM PUBLIC, anon, authenticated;
@@ -52454,13 +54974,14 @@ REVOKE ALL ON ROUTINE resolve_llm_key(uuid,text) FROM PUBLIC, anon, authenticate
 REVOKE ALL ON ROUTINE resolve_llm_keys(uuid,text[]) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE resolve_remote_access_tenant(uuid,uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE resolve_review_minutes(uuid,text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE resolve_review_narrative_settings(uuid,uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE resolve_work_item_framing(uuid,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE resume_de_work_from_decision(uuid,text,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE retire_playbook_knowledge() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE revoke_de_delegation_token(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE run_analytics_query_internal(uuid,text,jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE run_case_timeline(uuid) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON ROUTINE run_de_performance_review_internal(uuid,uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE run_de_performance_review_internal(uuid,uuid,integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE run_dormancy_writer_audit() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE run_dunning_sweep(uuid,integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE run_reply_mode_gate_internal() FROM PUBLIC, anon, authenticated;
@@ -52486,6 +55007,7 @@ REVOKE ALL ON ROUTINE set_connector_secret_sysadmin(uuid,text) FROM PUBLIC, anon
 REVOKE ALL ON ROUTINE set_conversation_fact(uuid,uuid,text,jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE set_de_objective_status_internal(uuid,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE set_knowledge_freshness_config(text,numeric) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE set_review_narrative(uuid,text,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE settle_billable_outcomes() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE settle_due_payment_promises() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE snapshot_all_de_kpi_readings() FROM PUBLIC, anon, authenticated;
@@ -52560,6 +55082,9 @@ REVOKE ALL ON TABLE public.audit_chain_state FROM anon;
 REVOKE ALL ON TABLE public.audit_chain_state FROM authenticated;
 REVOKE ALL ON TABLE public.auth_login_lockouts FROM anon;
 REVOKE ALL ON TABLE public.auth_login_lockouts FROM authenticated;
+REVOKE ALL ON TABLE public.authority_dimension_comparators FROM anon;
+REVOKE ALL ON TABLE public.authority_dimensions FROM anon;
+REVOKE ALL ON TABLE public.authority_rules FROM anon;
 REVOKE ALL ON TABLE public.benchmark_samples FROM anon;
 REVOKE ALL ON TABLE public.benchmark_samples FROM authenticated;
 REVOKE ALL ON TABLE public.connector_providers FROM anon;
@@ -52576,6 +55101,7 @@ REVOKE ALL ON TABLE public.de_learned_behavior_cluster_members FROM anon;
 REVOKE ALL ON TABLE public.de_learned_behavior_clusters FROM anon;
 REVOKE ALL ON TABLE public.de_learning_edits FROM anon;
 REVOKE ALL ON TABLE public.de_learning_policies FROM anon;
+REVOKE ALL ON TABLE public.de_review_narrative_settings FROM anon;
 REVOKE ALL ON TABLE public.de_task_requests FROM anon;
 REVOKE ALL ON TABLE public.discovery_capability_demand_log FROM anon;
 REVOKE ALL ON TABLE public.discovery_capability_demand_log FROM authenticated;
@@ -52593,6 +55119,8 @@ REVOKE ALL ON TABLE public.knowledge_gap_clusters FROM anon;
 REVOKE ALL ON TABLE public.knowledge_gap_policies FROM anon;
 REVOKE ALL ON TABLE public.knowledge_ingestion_items FROM anon;
 REVOKE ALL ON TABLE public.knowledge_ingestion_jobs FROM anon;
+REVOKE ALL ON TABLE public.migration_number_claims FROM anon;
+REVOKE ALL ON TABLE public.migration_number_claims FROM authenticated;
 REVOKE ALL ON TABLE public.platform_access_events FROM anon;
 REVOKE ALL ON TABLE public.platform_capability_grants FROM anon;
 REVOKE ALL ON TABLE public.platform_capability_grants FROM authenticated;

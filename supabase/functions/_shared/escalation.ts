@@ -54,6 +54,43 @@ export function escalationHeadline(text: string | null | undefined, limit = 120)
   return cut + '…';
 }
 
+/** ── 778 Q2: KEEP THE NAME, ADD THE PROBLEM ───────────────────────────────
+ *
+ *  de-work:1301 had TWO arms and the previous round fixed only one:
+ *
+ *      p_title: entityName ? `Needs a decision — ${entityName}` : <headline>
+ *
+ *  The entityName arm names the customer and never says what the ask is, so
+ *  five live rows read "Needs a decision — Grant Plastics Ltd." and a person
+ *  still had to open the card to learn what was wanted. It also title-cases
+ *  the N, which is HOW THE FIRST SWEEP MISSED THEM: a case-sensitive
+ *  `like '%needs a decision%'` cannot match a phrase the other branch
+ *  capitalises. 42 rows became 47 the moment that sweep was run `ilike`.
+ *
+ *  The composition is deliberately LITERAL — `<entity> — <headline>`, with no
+ *  "the headline already mentions the entity, so drop the prefix" shortcut.
+ *  That shortcut is how the NAME gets lost, and the name is the half the
+ *  founder asked to keep. The cost is mild redundancy on two live rows
+ *  ("Grant Plastics Ltd. — ...is recorded for Grant Plastics Ltd"); the
+ *  benefit is that no input can silently produce a title with no customer on
+ *  it. Legible-and-redundant beats clever-and-lossy.
+ *
+ *  Returns null ONLY when there is neither an entity nor a usable reason — in
+ *  which case SQL's de_escalation_title ladder takes over and can still name
+ *  the work item, which nothing on this side can see.
+ */
+export function escalationTitle(
+  entityName: string | null | undefined,
+  reason: string | null | undefined,
+  limit = 120,
+): string | null {
+  const entity = String(entityName ?? '').replace(/\s+/g, ' ').trim();
+  const head = escalationHeadline(reason, limit);
+  if (!entity) return head;
+  if (!head) return entity;        // no reason to state — the name is still the one truth we have
+  return `${entity} — ${head}`;
+}
+
 export type EscOp =
   | 'gt' | 'gte' | 'lt' | 'lte' | 'eq'          // numbers (eq also text)
   | 'contains' | 'not_contains' | 'contains_any' // text
