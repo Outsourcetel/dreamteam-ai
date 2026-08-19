@@ -226,7 +226,7 @@
         "date": "2026-08-12",
         "source": "docs/50-review-scorecard.md (F-5)"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
@@ -239,7 +239,9 @@
           "n": 1
         },
         "note": "Pinned on the return shape of the branch. Residual, stated rather than hidden: a fix that raises a human task but leaves this return untouched would not close the item mechanically — the item is pinned on the shape, and closing it should mean changing that shape."
-      }
+      },
+      "closed_by": "widget-ask no-docs branch now escalates: message escalated:true, human task, activity + audit event, conversation needs_human. Proven on a fresh tenant with zero knowledge docs — needs_escalation=true, task raised, 1 escalated event",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "B-6",
@@ -251,7 +253,7 @@
         "date": "2026-08-09",
         "source": "commit 10bbc641; measured docs/50 D"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "sql-lag",
         "production_sql": "select count(*)::int as n from public.schema_migrations",
@@ -261,7 +263,9 @@
           "n": 1
         },
         "note": "n is production ledger rows MINUS dev ledger rows. Deliberately not a fixed threshold: docs/53 measured 74 behind on 2026-08-12 and the true figure that morning was 88 and rising, so any pinned number would have been stale before the commit landed. This closes only when dev is level or ahead."
-      }
+      },
+      "closed_by": "dev rebuilt from supabase/baseline/full_schema.sql + reference catalog seeded: 304/7/965/295/402/3505 all match production, ledger 804/804 level, golden-path 10/10 against it",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "B-7",
@@ -273,7 +277,7 @@
         "date": "2026-08-12",
         "source": "docs/50-review-scorecard.md D (F-8)"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
@@ -286,7 +290,9 @@
           "n": 1
         },
         "note": "Matches the literal digits, not the word 'production'. A real query would interpolate, so the digits disappearing IS the fix."
-      }
+      },
+      "closed_by": "commit d7451747 — golden-path's footer now queries production and prints NOT MEASURED when unreachable",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "B-8",
@@ -422,7 +428,7 @@
         "date": "2026-08-12",
         "source": "docs/51-measurement-organs-audit.md (ranked 7th)"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace where ns.nspname = 'public' and p.proname = 'de_records_gate' and p.prosrc ilike '%evidence_runs%' and p.prosrc not ilike '%evidence_is_production%'",
@@ -431,7 +437,9 @@
           "n": 1
         },
         "note": "The origin column has existed since mig 682; this body does not use it. Both conjuncts matter — reading evidence_runs is what makes the missing predicate a defect."
-      }
+      },
+      "closed_by": "mig 777 — de_records_gate branch (d) now ANDs evidence_is_production(er.origin); 75 non-production runs no longer count toward the rate that flips external_reply_mode",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "C-4",
@@ -443,7 +451,7 @@
         "date": "2026-08-12",
         "source": "docs/51-measurement-organs-audit.md (ranked 7th)"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace where ns.nspname = 'public' and p.proname = 'get_workforce_trust_metrics' and p.prosrc ilike '%human_tasks%' and p.prosrc not ilike '%evidence_is_production%'",
@@ -451,7 +459,9 @@
           "op": ">=",
           "n": 1
         }
-      }
+      },
+      "closed_by": "mig 777 — get_workforce_trust_metrics' human_tasks read now ANDs evidence_is_production(origin)",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "C-5",
@@ -585,7 +595,7 @@
         "date": "2026-08-09",
         "source": "docs/47-debt-map.md"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
@@ -598,7 +608,9 @@
           "n": 0
         },
         "note": "INVERTED POLARITY: open while CI names golden-path nowhere. CI today runs certify:offline, which says in its own banner that it is a subset."
-      }
+      },
+      "closed_by": ".github/workflows/ci.yml — golden-path job added, reusing the same three secrets the isolation and invariants jobs already hold; fails loudly if any is missing rather than skipping",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "D-4",
@@ -661,7 +673,7 @@
         "date": "2026-08-06",
         "source": "commit d01f952a"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
@@ -676,7 +688,9 @@
           "n": 1
         },
         "note": "⚠ CORRECTED WHILE SEEDING. docs/53 D-6 reported 'callModel has 7 non-shared definitions'. Re-read 2026-08-12: all seven are `const callModel = makeCallModelText(...)` — BINDINGS to the shared factory in supabase/functions/_shared/modelCall.ts, i.e. the consolidated shape, not drift. A grep for the identifier counted them as duplicates. The callModel half of this item was already closed; the renderTemplate and stripHtml halves stand and are what this verification counts."
-      }
+      },
+      "closed_by": "resolved by naming, not merging: the three locals are NOT copies of the shared helpers — the shared PLACEHOLDER_RE is single-brace {key} and cannot match {{account.name}}, playbook-execute's takes a RunContext, and the local stripHtml does content-root extraction (nav/cookie/semantic-root) the shared one does not. Renamed to renderAccountTemplate, renderRunTemplate and extractPageText so the names stop implying duplication",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "D-7",
@@ -688,7 +702,7 @@
         "date": "2026-08-09",
         "source": "docs/47-debt-map.md; re-carried docs/50 D"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
@@ -701,7 +715,9 @@
           "n": 0
         },
         "note": "INVERTED POLARITY: open while no test file imports a rendering library. The first component test that exists closes it, which is the right bar — 'some' is the whole distance from zero here."
-      }
+      },
+      "closed_by": "tests/platform-demand-empty-state.test.ts (parallel session, 3 days ago) renders a component with @testing-library — the first component test, so 'zero component tests' is no longer true",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "D-8",
@@ -1034,7 +1050,7 @@
         "date": "2026-08-12",
         "source": "docs/50-review-scorecard.md C"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "none",
         "why_unverifiable": "this is owed WORK (run an anon-role attack probe, walk a checklist), not a state of the system. Nothing in the database or the repo changes when it is done except the artefact it produces, and pinning it to that artefact's existence would let an empty file close it.",
@@ -1042,7 +1058,9 @@
           "file": "docs/50-review-scorecard.md",
           "anchor": "anon-role probe (not"
         }
-      }
+      },
+      "closed_by": "scripts/anon-probe.mjs (npm run audit:anon) — 37 checks against production holding only the publishable key: 20 table reads, 6 writes, 9 SECDEF RPCs and the storage schema, all refused. Found and closed the latent grant it existed to find: mig 787 revoked anon+authenticated from six credential-bearing tables that were safe only by RLS default-deny",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "G-7",
@@ -1074,7 +1092,7 @@
         "date": "2026-08-18",
         "source": "docs/50 Workstream E, 2026-08-17"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from cron.job_run_details d join cron.job j on j.jobid=d.jobid where j.jobname='reconcile-blocked-goals-30min' and d.status='failed' and d.start_time > now() - interval '24 hours'",
@@ -1082,7 +1100,9 @@
           "op": ">=",
           "n": 1
         }
-      }
+      },
+      "closed_by": "mig 769 — reconcile_blocked_goals writes waiting_too_long; cron failures in the last 24h are now zero",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "C-8",
@@ -1174,7 +1194,7 @@
         "date": "2026-08-18",
         "source": "docs/60 Workstream Q, 2026-08-18"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname ~ 'forget_end_user|erase_data_subject|delete_end_user_data'",
@@ -1182,7 +1202,9 @@
           "op": "==",
           "n": 0
         }
-      }
+      },
+      "closed_by": "migs 779-782: forget_end_user(tenant, end_user_ref, reason) — owner/admin or platform gated, pseudonymises the subject's conversations and erases every message body in them, deletes sessions and contact rows, returns a receipt counted before the writes and audits it. Proven with realistic PII: card digits and phone number both absent afterwards from user AND assistant turns; conversation row survives; guards refuse a blank ref and a foreign tenant",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "B-13",
@@ -1238,7 +1260,7 @@
         "date": "2026-08-18",
         "source": "docs/63 Workstream M, 2026-08-18"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from digital_employees d where d.status='active' and (select count(*) from de_conversations c where c.de_id=d.id and c.created_at>now()-interval '30 days') > 0 and coalesce((public.get_de_performance_summary(d.id)->>'responses_this_month')::int,0) = 0",
@@ -1246,7 +1268,9 @@
           "op": ">=",
           "n": 1
         }
-      }
+      },
+      "closed_by": "mig 773 — responses_this_month counts assistant replies; Technical Support now reports 161, idle employees still 0",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "B-14",
@@ -1278,7 +1302,7 @@
         "date": "2026-08-18",
         "source": "docs/65 Workstream K, 2026-08-18"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
@@ -1291,7 +1315,9 @@
           "op": "==",
           "n": 0
         }
-      }
+      },
+      "closed_by": "commit d7451747 — color-scheme: dark on :root and light on :root.light in src/design/tokens.css",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "D-14",

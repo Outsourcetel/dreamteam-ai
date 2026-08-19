@@ -127,3 +127,43 @@ Committed in 8851277.
 The remaining decision is unchanged and still owed: restore a physical backup into a throwaway
 project and boot the app against it. That is the only step that converts "we have backups" into
 "we can recover", and it costs money.
+
+---
+
+## 8. B-6 — how to close the dev/prod gap (assessment, 2026-08-19)
+
+Dev is now **147 migrations behind** production (ledger: prod 804, dev 657; newest applied on
+dev is `636_cross_tenant_write_holes.sql`, on production `784_a_second_question_before_a_signature.sql`).
+That matters more since D-3: **golden-path now runs in CI on every push**, so the only automated
+end-to-end proof of the product's core loop is executing against a schema 147 migrations stale.
+
+**Replaying the backlog is the obvious approach and it is the wrong one.** Measured:
+
+* **136 migration files are pending** on dev (`637_benchmark_samples.sql` → `782_…`).
+* **85 of those 136 carry their own `begin;` / `commit;`.** They are self-transacting by design,
+  so they cannot be wrapped in one outer transaction — there is no way to dry-run the set, and no
+  way to roll the set back.
+* Total payload ≈ **5 MB**, far past a single query.
+
+So a replay is 136 sequential steps, 85 of which commit themselves, against a **shared** resource:
+parallel sessions use dev, and CI's golden-path job now depends on it. A failure at step 60 leaves
+dev half-migrated, with golden-path red for everyone and no clean way back.
+
+### The recommendation: rebuild, don't replay
+
+`supabase/baseline/full_schema.sql` was regenerated during the restore drill (§7) and **proved to
+reproduce production exactly** — 299 tables, 7 views, 840 functions, 291 triggers, 398 policies,
+3,431 columns, all matching, with 388 explicit REVOKEs preserved. Rebuilding dev's schema from
+that artefact is **one operation using something already verified**, rather than 136 unverifiable ones.
+
+**What it costs:** dev's existing data. That is likely acceptable — golden-path provisions its own
+probe tenant per run and marks it spent, so it needs no pre-existing fixtures — but it is not my
+call, because other sessions may hold fixtures there.
+
+**Founder decision needed on:**
+1. Rebuild dev from the verified baseline (recommended), or replay 136 migrations accepting the
+   half-migration risk, or leave dev stale and accept that CI's golden-path proves a 2026-07 schema.
+2. If rebuilding: a window when no parallel session is mid-flight on dev.
+
+Until one of those happens, the CI job added in D-3 is real but is proving an old loop — worth
+knowing before anyone reads a green tick as coverage of today's product.

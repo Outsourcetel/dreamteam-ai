@@ -676,7 +676,7 @@ async function validateSubPlaybookRefs(
 //                                      (same resolver decisions use)
 // Unknown tokens render as '' (never leak braces to a customer-facing
 // string). `steps` is optional so pre-run callers keep working.
-function renderTemplate(t: string, ctx: RunContext, runId: string, steps?: RunStep[]): string {
+function renderRunTemplate(t: string, ctx: RunContext, runId: string, steps?: RunStep[]): string {
   return t.replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (_all, token: string) => {
     if (token === 'account.name') return ctx.account_name ?? 'account';
     if (token === 'invoice.amount') return fmtMoney(ctx.invoice_amount_cents ?? 0);
@@ -949,7 +949,7 @@ async function executeDefinitionSteps(
     }
     const actionParams: Record<string, unknown> = {};
     const templates = (p.param_templates ?? {}) as Record<string, string>;
-    for (const [k, tpl] of Object.entries(templates)) actionParams[k] = renderTemplate(tpl, ctx, run.id, run.steps).trim();
+    for (const [k, tpl] of Object.entries(templates)) actionParams[k] = renderRunTemplate(tpl, ctx, run.id, run.steps).trim();
     try {
       const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
         method: 'POST',
@@ -1041,7 +1041,7 @@ async function executeDefinitionSteps(
   async function execCheckKnowledge(
     stepLike: StepLike, p: Record<string, unknown>, stepLabel: string,
   ): Promise<StepOutcome> {
-    const query = renderTemplate(String(p.query_template ?? ''), ctx, run.id, run.steps).trim();
+    const query = renderRunTemplate(String(p.query_template ?? ''), ctx, run.id, run.steps).trim();
     const matchCount = Math.min(10, Math.max(1, Number(p.match_count ?? 5)));
     const onMiss = ['continue', 'escalate', 'fail'].includes(String(p.on_miss)) ? String(p.on_miss) : 'escalate';
     if (!query) {
@@ -1221,7 +1221,7 @@ async function executeDefinitionSteps(
         break;
       }
       case 'log_activity': {
-        const text = renderTemplate((p.text_template as string) ?? 'Playbook step executed', ctx, run.id, run.steps);
+        const text = renderRunTemplate((p.text_template as string) ?? 'Playbook step executed', ctx, run.id, run.steps);
         if (!run.preview) {
           await admin.from('activity_events').insert({
             tenant_id: tenantId, actor: 'Playbook DE', actor_type: 'de', event_type: 'resolved', text,
@@ -1501,7 +1501,7 @@ async function executeDefinitionSteps(
             step.detail = 'Not required — invoice auto-approved within guardrail and trust dial';
             break;
           }
-          const title = renderTemplate(
+          const title = renderRunTemplate(
             (params.title_template as string) || 'Playbook approval — {{account.name}}', ctx, run.id, run.steps);
           const { data: task, error: taskErr } = await admin
             .from('human_tasks')
@@ -1668,8 +1668,8 @@ async function executeDefinitionSteps(
               break;
             }
             const opParams: Record<string, unknown> = {};
-            if (params.query_template) opParams.query = renderTemplate(params.query_template as string, ctx, run.id, run.steps).trim();
-            if (params.ref_template) opParams.external_ref = renderTemplate(params.ref_template as string, ctx, run.id, run.steps).trim();
+            if (params.query_template) opParams.query = renderRunTemplate(params.query_template as string, ctx, run.id, run.steps).trim();
+            if (params.ref_template) opParams.external_ref = renderRunTemplate(params.ref_template as string, ctx, run.id, run.steps).trim();
             try {
               const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
                 method: 'POST',
@@ -1746,7 +1746,7 @@ async function executeDefinitionSteps(
             }
             const actionParams: Record<string, unknown> = {};
             const templates = (params.param_templates ?? {}) as Record<string, string>;
-            for (const [k, tpl] of Object.entries(templates)) actionParams[k] = renderTemplate(tpl, ctx, run.id, run.steps).trim();
+            for (const [k, tpl] of Object.entries(templates)) actionParams[k] = renderRunTemplate(tpl, ctx, run.id, run.steps).trim();
             try {
               const res = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/connector-hub`, {
                 method: 'POST',
@@ -1800,7 +1800,7 @@ async function executeDefinitionSteps(
             .eq('tenant_id', tenantId).eq('provider', 'zendesk').eq('status', 'connected')
             .limit(1).maybeSingle();
           const externalRef = params.external_ref_template
-            ? renderTemplate(params.external_ref_template as string, ctx, run.id, run.steps).trim()
+            ? renderRunTemplate(params.external_ref_template as string, ctx, run.id, run.steps).trim()
             : '';
           let skip: string | null = null;
           if (!connector) skip = 'skipped: no connected Zendesk connector for this workspace';
@@ -1840,7 +1840,7 @@ async function executeDefinitionSteps(
               try {
                 const creds = JSON.parse(secretRow.secret) as { email: string; api_token: string };
                 const auth = 'Basic ' + btoa(`${creds.email}/token:${creds.api_token}`);
-                const payloadText = renderTemplate((params.payload_template as string) ?? '', ctx, run.id, run.steps);
+                const payloadText = renderRunTemplate((params.payload_template as string) ?? '', ctx, run.id, run.steps);
                 const body = params.op === 'add_internal_note'
                   ? { ticket: { comment: { body: payloadText, public: false } } }
                   : { ticket: { status: payloadText || 'open' } };
@@ -1878,7 +1878,7 @@ async function executeDefinitionSteps(
 
         // ────────────────────────────────────────────────
         case 'log_activity': {
-          const text = renderTemplate((params.text_template as string) ?? 'Playbook step executed', ctx, run.id, run.steps);
+          const text = renderRunTemplate((params.text_template as string) ?? 'Playbook step executed', ctx, run.id, run.steps);
           if (run.preview) {
             step.status = 'done'; step.at = now(); step.detail = `PREVIEW — would log: ${text}`;
             break;
@@ -1896,7 +1896,7 @@ async function executeDefinitionSteps(
           // wired to this event runs on the next dispatch cycle — the same
           // rails polled events ride. Honest no-op if the event isn't found.
           const eventKey = String(params.event_key ?? '').trim();
-          const note = renderTemplate((params.payload_template as string) ?? '', ctx, run.id, run.steps);
+          const note = renderRunTemplate((params.payload_template as string) ?? '', ctx, run.id, run.steps);
           if (run.preview) {
             step.status = 'done'; step.at = now();
             step.detail = `PREVIEW — would emit event "${eventKey}"`;
@@ -2138,7 +2138,7 @@ async function executeDefinitionSteps(
             await stepAudit(i); await saveRun(admin, run);
             continue;
           }
-          const goal = renderTemplate(briefTpl, ctx, run.id, run.steps).trim()
+          const goal = renderRunTemplate(briefTpl, ctx, run.id, run.steps).trim()
             || `Complete step ${i + 1} of this playbook.`;
           const runDeId = await resolveRunDeId();
           if (!runDeId) {

@@ -57,7 +57,7 @@ interface VerifyConfig {
 interface ItemDef { key: string; label: string; owner_type: string; verify?: VerifyConfig }
 interface HubItem { external_ref: string; title: string; snippet: string; url: string | null }
 
-function renderTemplate(tpl: string, accountName: string): string {
+function renderAccountTemplate(tpl: string, accountName: string): string {
   return tpl.replace(/\{\{account\.name\}\}/g, accountName).trim();
 }
 
@@ -128,8 +128,8 @@ async function checkOneItem(
   const accountName = (acct?.name as string) ?? '';
 
   const params: Record<string, string> = {};
-  if (verify.query_template) params.query = renderTemplate(verify.query_template, accountName);
-  if (verify.ref_template) params.external_ref = renderTemplate(verify.ref_template, accountName);
+  if (verify.query_template) params.query = renderAccountTemplate(verify.query_template, accountName);
+  if (verify.ref_template) params.external_ref = renderAccountTemplate(verify.ref_template, accountName);
 
   const r = await callCategoryOp(tenantId, conn.id, verify.op, params, deId);
   if (r.error === 'access_denied') {

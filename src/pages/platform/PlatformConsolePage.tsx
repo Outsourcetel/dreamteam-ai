@@ -1,3 +1,4 @@
+import { DEFAULT_ACCENT } from '../../design/branding';
 import React, { useState, useEffect } from 'react';
 import type { AuthUser, Tenant, PlatformPage, Page } from '../../types';
 import { Badge, StatCard, Modal } from '../../components';
@@ -21,7 +22,7 @@ const dbTenantToTenant = (t: DBTenant): Tenant => ({
   name: t.name,
   slug: t.slug,
   logo: t.logo_url || undefined,
-  primaryColor: (t.settings && (t.settings as any).primaryColor) || t.accent_color || '#6366f1',
+  primaryColor: (t.settings && (t.settings as any).primaryColor) || t.accent_color || DEFAULT_ACCENT,
   accentColor: t.accent_color || undefined,
   plan: t.plan,
   status: t.status,

@@ -10,7 +10,7 @@ short instrument for the questions only people can answer.
 |---|---|---|---|---|---|
 | escalation | 221 | 12 (5%) | **21** | 188 | **3 hours** |
 | action_approval | 111 | 14 (13%) | 6 | 91 | **2 hours** |
-| **inquiry_review** | **58** | **0 (0%)** | 0 | 58 | **never** |
+| **inquiry_review** | **58** (57 = suspended demo tenant) | **0 (0%)** | 0 | 58 | **never** |
 | checklist | 49 | 1 | 0 | 48 | 0 h |
 | trust_demotion_notice | 11 | 1 | 0 | 10 | 16 h |
 | knowledge_revision | 9 | 1 | 0 | 8 | 16 h |
@@ -26,9 +26,11 @@ And the selection has a clear shape:
 * **Governance decisions get the highest engagement** — trust promotion **67%**, review gates
   **50%**, answered within the hour.
 * **Routine customer work gets the lowest** — escalations **5%**, and 21 of those expired.
-* **`inquiry_review` has never once been answered.** 58 raised, zero touched, none expired — it
-  simply sits. A category with a 0% engagement rate over six weeks is the product asking a
-  question nobody wants to be asked.
+* **`inquiry_review` has never once been answered** — 58 raised, zero touched. ⚠ **Corrected
+  2026-08-19: 57 of those 58 are on `acme-telecom`, a SUSPENDED demo tenant, raised 05–06 July.**
+  The real operational figure is **one** task, on kinetic. The 0% engagement rate is demo debris,
+  not a product signal, and this line originally read as though it were the latter. docs/55 split
+  the queue by tenant correctly; this workstream did not, and the split changes the meaning.
 
 **The behavioural verdict:** the founder behaves like an owner who wants to make *policy* calls and
 not *per-item* calls. That is exactly the profile the trust ladder was designed to serve — and
@@ -101,7 +103,8 @@ useful answer you can give me."*
 **On the decision queue**
 1. When a decision appears in the queue, what makes you answer it now versus leave it? Be concrete
    about the last one you skipped.
-2. There are 58 "inquiry review" tasks and none has ever been answered. What are they, and what
+2. There is one real "inquiry review" task never answered (the other 57 are demo debris on a
+   suspended tenant — see the correction above). What is it, and what
    would make them worth opening — or should they stop being raised?
 
 **On trust**

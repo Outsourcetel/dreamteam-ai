@@ -6,7 +6,8 @@ import { execSync } from 'node:child_process';
 const sh = (cmd) => { try { return execSync(cmd, { encoding: 'utf8', shell: 'bash' }).trim(); } catch { return '0'; } };
 // src/design/ IS the system — its canonical definitions are exempt from drift.
 const G = `src/ --include='*.tsx' --exclude-dir=design`;
-const uniq = (pat) => Number(sh(`grep -rhoE "${pat}" ${G} | sort -u | wc -l`));
+// Defined below NO_COMMENTS (hoisting would read as if the order mattered).
+let uniq;
 // ⚠ COMMENTS ARE NOT CODE. `hand-rolled dialogs` counts the string
 // `fixed inset-0`, so the moment someone DOCUMENTS why they removed one — as
 // happened writing the phone shell — the metric reports the documentation as
@@ -14,11 +15,22 @@ const uniq = (pat) => Number(sh(`grep -rhoE "${pat}" ${G} | sort -u | wc -l`));
 // stop explaining. Drop lines that are pure comment (`// …` or a JSDoc ` * …`
 // continuation); real markup always has the token inside a className string,
 // never after a leading comment marker.
-// ⚠ This covers count() ONLY. uniq() uses `grep -o`, which discards the line,
-// so `radius variants` and `raw hex colors` still see commented-out examples.
-// Named here rather than quietly left — that is a real remaining hole.
+// ⚠ WAS: "this covers count() ONLY — uniq() uses `grep -o`, which discards the
+// line, so `radius variants` and `raw hex colors` still see commented-out
+// examples. That is a real remaining hole."
+//
+// HOLE CLOSED. It was not theoretical: it fired on 2026-08-19, when a comment
+// explaining why an overlay had moved off a translucent token quoted the hex
+// value it was moving away from, and `raw hex colors` reported the explanation
+// as the defect — the exact failure mode the paragraph below already describes
+// for count(). Writing the explanation down was punished, which is how repos
+// teach people to stop writing them.
+//
+// The fix is to drop comment lines FIRST and only then extract matches, rather
+// than extracting from every line and losing the context needed to judge it.
 const NO_COMMENTS = `| grep -v '^[[:space:]]*\\(//\\|\\*\\)'`;
 const count = (pat) => Number(sh(`grep -rh "${pat}" ${G} ${NO_COMMENTS} | wc -l`));
+uniq = (pat) => Number(sh(`grep -rhE "${pat}" ${G} ${NO_COMMENTS} | grep -oE "${pat}" | sort -u | wc -l`));
 const files = (pat) => Number(sh(`grep -rlE "${pat}" ${G} | wc -l`));
 
 // Baseline RATCHETED 2026-07-30. Counts only go DOWN — when a sweep lowers
@@ -43,11 +55,25 @@ const files = (pat) => Number(sh(`grep -rlE "${pat}" ${G} | wc -l`));
 // 'hand-rolled dialogs' counts the markup instead — `fixed inset-0` outside
 // src/design. That is what a hand-rolled dialog IS, it falls as each one is
 // migrated, and it cannot be satisfied by renaming anything.
+// 'hand-rolled toasts' is the same shape of metric as dialogs and exists for
+// the same reason: eight pages had hand-rolled one, five of them the same class
+// string copied verbatim, so every copy inherited a translucent surface that
+// let page content bleed through the confirmation — and two had drifted further
+// to raw `bg-emerald-900/90`. Migrating them onto the Toast primitive fixes the
+// eight; this line is what stops the ninth. Counting the MARKUP (the fixed
+// bottom-right anchor a toast IS) rather than a component name, for exactly the
+// reason recorded above about 'local Modals (files)'.
+// RATCHETED AGAIN 2026-08-19. The floors had drifted out of date exactly as
+// the note above warns: five metrics sat below their baseline, 24 units of
+// slack in total and 20 of it in `inline style objects` (65 floor, 45 actual).
+// Every one of those was a real improvement someone made that was not
+// protected, so it could have silently drifted back to 65 and the checker
+// would have called it green the whole way.
 const BASELINE = {
-  'bg-slate variants': 8, 'border-slate variants': 3, 'radius variants': 13,
-  'card padding variants': 10, 'local StatCard-likes (files)': 7,
-  'hand-rolled dialogs': 0,
-  'inline style objects': 65, 'raw hex colors': 18,
+  'bg-slate variants': 7, 'border-slate variants': 2, 'radius variants': 13,
+  'card padding variants': 9, 'local StatCard-likes (files)': 6,
+  'hand-rolled dialogs': 0, 'hand-rolled toasts': 0,
+  'inline style objects': 45, 'raw hex colors': 18,
 };
 const NOW = {
   'bg-slate variants': uniq('bg-slate-[0-9/]*'),
@@ -61,18 +87,42 @@ const NOW = {
   // The markup, not the name. src/design is already excluded by G, so the
   // primitive's own shell is not counted against the estate.
   'hand-rolled dialogs': count('fixed inset-0'),
+  'hand-rolled toasts': count('fixed bottom-6 right-6'),
   'inline style objects': count('style={{'),
   'raw hex colors': uniq('#[0-9a-fA-F]{6}'),
 };
 
 let regressions = 0;
+const unratcheted = [];
 console.log('── Design drift (must only go DOWN) ──────────────────────────');
 for (const k of Object.keys(BASELINE)) {
   const b = BASELINE[k], n = NOW[k];
   const mark = n > b ? '▲ REGRESSION' : n < b ? '▼ improved' : '· unchanged';
   if (n > b) regressions++;
+  if (n < b) unratcheted.push([k, n]);
   console.log(`${k.padEnd(32)} baseline ${String(b).padStart(3)} → now ${String(n).padStart(3)}  ${mark}`);
 }
 console.log('──────────────────────────────────────────────────────────────');
 if (regressions) { console.log(`✗ ${regressions} metric(s) regressed — see docs/design-system.md`); process.exit(1); }
-console.log('✓ no drift regressions');
+
+// ── AN IMPROVEMENT THAT IS NOT LOCKED IN IS NOT PROTECTED ────────────────
+// This hunk is separable: delete it and the checker behaves as it did before.
+//
+// The file has told people to tighten floors in the same commit since
+// 2026-07-30, and it was skipped anyway — twice, leaving 20 units of slack on
+// one metric. Of course it was: '▼ improved' is congratulation, and nothing
+// congratulatory has ever been a control. The only version of this rule that
+// holds is the one that stops the build, so it now does, and prints the exact
+// block to paste so obeying it takes one edit rather than a hunt.
+//
+// A branch that improves a metric as a side effect will hit this. That is the
+// intent — that branch is precisely the one whose gain would otherwise be
+// unprotected the moment it merges.
+if (unratcheted.length) {
+  console.log(`✗ ${unratcheted.length} metric(s) improved but the floor was NOT moved.`);
+  console.log('  An improvement nobody pinned can drift back in silence — pin it here:\n');
+  for (const [k, n] of unratcheted) console.log(`    '${k}': ${n},`);
+  console.log('\n  Update BASELINE in scripts/design-drift.mjs, in THIS commit.');
+  process.exit(1);
+}
+console.log('✓ no drift regressions, and every improvement is pinned');

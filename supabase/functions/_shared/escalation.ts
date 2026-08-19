@@ -11,6 +11,86 @@
  * present. Legacy keyword topics + `{ when }` rows still evaluate.
  */
 
+/** ── 778: a headline from the employee's own account of why it stopped ────
+ *
+ *  ⚠ THE AUTHORITY FOR THIS RULE IS SQL, NOT THIS FILE.
+ *  `public.de_escalation_headline(text, integer)` (migration 778) is what runs
+ *  on the fallback path and what rebuilt the 42 rows already in the queue.
+ *  This is the client-side twin so that de-work's `escalate_to_human` never
+ *  passes a null title in the first place. The two are pinned to the SAME
+ *  seven fixtures — the SQL ones live in migration 778's PROBE 1, the TS ones
+ *  in tests/escalation-headline.test.ts — so a divergence turns one of them
+ *  red rather than quietly producing two different titles for one input.
+ *
+ *  Two branches, both of which cut only where a WORD ends:
+ *   (a) the first COMPLETE sentence, if one ends inside the budget. A
+ *       terminator counts only when >= 3 alphanumerics run up to it (through
+ *       one optional closing bracket or quote) AND whitespace or end-of-text
+ *       follows. Three alphanumerics rejects "vs.", "e.g." and "No."; the
+ *       whitespace requirement rejects every decimal point, because "439.3k"
+ *       has no space after its dot.
+ *   (b) otherwise truncate on a SPACE, never on punctuation. Splitting on '.'
+ *       is what produced "Ledger does not balance (debits PKR 322k vs" and
+ *       "...both exceed the $10,000" — headlines cut mid-figure.
+ *
+ *  Returns null when there is nothing to derive from, so the caller (and, on
+ *  the SQL side, the ladder) decides what to do with an employee that said
+ *  nothing — which is a different question from how to shorten a sentence.
+ */
+export function escalationHeadline(text: string | null | undefined, limit = 120): string | null {
+  const s = String(text ?? '').replace(/\s+/g, ' ').trim();
+  if (!s) return null;
+  const lim = Math.max(24, Math.min(limit, 300));
+
+  const sentence = s.match(/^(.{20,}?[\p{L}\p{N}]{3}[)\]"']?)[.!?](\s|$)/u);
+  if (sentence && sentence[1].length <= lim) return sentence[1];
+
+  if (s.length <= lim) return s;
+  let cut = s.slice(0, lim).replace(/\s+\S*$/, '');
+  if (!cut.trim()) cut = s.slice(0, lim);          // one word longer than lim
+  cut = cut.replace(/\s*\((\d{1,2}|[a-z])\)$/, ''); // no dangling "(2)"
+  cut = cut.replace(/[\s,;:./&(…–—-]+$/, '');       // no dangling joiner
+  if (!cut.trim()) return null;
+  return cut + '…';
+}
+
+/** ── 778 Q2: KEEP THE NAME, ADD THE PROBLEM ───────────────────────────────
+ *
+ *  de-work:1301 had TWO arms and the previous round fixed only one:
+ *
+ *      p_title: entityName ? `Needs a decision — ${entityName}` : <headline>
+ *
+ *  The entityName arm names the customer and never says what the ask is, so
+ *  five live rows read "Needs a decision — Grant Plastics Ltd." and a person
+ *  still had to open the card to learn what was wanted. It also title-cases
+ *  the N, which is HOW THE FIRST SWEEP MISSED THEM: a case-sensitive
+ *  `like '%needs a decision%'` cannot match a phrase the other branch
+ *  capitalises. 42 rows became 47 the moment that sweep was run `ilike`.
+ *
+ *  The composition is deliberately LITERAL — `<entity> — <headline>`, with no
+ *  "the headline already mentions the entity, so drop the prefix" shortcut.
+ *  That shortcut is how the NAME gets lost, and the name is the half the
+ *  founder asked to keep. The cost is mild redundancy on two live rows
+ *  ("Grant Plastics Ltd. — ...is recorded for Grant Plastics Ltd"); the
+ *  benefit is that no input can silently produce a title with no customer on
+ *  it. Legible-and-redundant beats clever-and-lossy.
+ *
+ *  Returns null ONLY when there is neither an entity nor a usable reason — in
+ *  which case SQL's de_escalation_title ladder takes over and can still name
+ *  the work item, which nothing on this side can see.
+ */
+export function escalationTitle(
+  entityName: string | null | undefined,
+  reason: string | null | undefined,
+  limit = 120,
+): string | null {
+  const entity = String(entityName ?? '').replace(/\s+/g, ' ').trim();
+  const head = escalationHeadline(reason, limit);
+  if (!entity) return head;
+  if (!head) return entity;        // no reason to state — the name is still the one truth we have
+  return `${entity} — ${head}`;
+}
+
 export type EscOp =
   | 'gt' | 'gte' | 'lt' | 'lte' | 'eq'          // numbers (eq also text)
   | 'contains' | 'not_contains' | 'contains_any' // text

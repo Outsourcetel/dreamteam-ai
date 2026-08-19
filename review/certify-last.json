@@ -1,35 +1,34 @@
 {
-  "at": "2026-08-19T19:47:21.208Z",
+  "at": "2026-08-19T16:59:11.758Z",
   "mode": "full",
-  "failed": 6,
+  "failed": 3,
   "results": [
     {
       "section": "typecheck",
       "ok": true,
-      "seconds": 22.4
+      "seconds": 24.4
     },
     {
       "section": "ring0-probes",
       "ok": false,
-      "seconds": 74.6,
-      "detail": "execute-perimeter: NEW/CHANGED grant not in allowlist: forget_end_user(p_tenant_id uuid, p_end_user_ref text, p_reason text)|anon=false|authed=true\nexecute-perimeter: NEW/CHANGED grant not in allowlist: platform_capability_demand()|anon=false|authed=true\nexam-evidence-stays-out-of-production-metrics: verify_decide_discovery_proposal() counts de_conversations without the exam axis. Add channel IS DISTINCT FROM 'exam' (mig 671 split the corpus on channel), or pin it in scripts/production-evidence.mjs COUNT_READ_PINS with its reason.\nexam-evidence-stays-out-of-production-metrics: forget_end_user(p_tenant_id uuid, p_end_user_ref text, p_reason text) counts de_conversations without the exam axis. Add channel IS DISTINCT FROM 'exam' (mig 671 split the corpus on channel), or pin it in scripts/production-evidence.mjs COUNT_READ_PINS with its reason.\nno-pending-approval-the-platform-cannot-carry-out: mismatched-pair — kinetic / Approve action — Create a specialist desk (DreamTeam AI (self)) [execution bfb462a0-1e22-48cf-a3a0-fa60edd666f4]: the row names definition 18a92cdd-ba11-4c11-8bcc-96a3b8e120b4 (create_specialist), but its status is \"disabled\" and the resolver only ever sees active definitions. connector-hub answers action_definition_not_found and nothing is sent.\nno-pending-approval-the-platform-cannot-carry-out: no-executor — outsourcetel-hq / Send a $15,600 invoice to Meridian Group — test ping [task 03aaa6dd-379b-438a-aadd-d9b8e262638b, raised 2026-08-10]: no action_executions row references this task by EITHER linkage column (task_id, resolves_task_id). There is no executor behind the approval at all: deciding it flips the task to \"approved\", hands connector-hub nothing, and sends nothing — while the queue empties and the screen reads as done. A human must withdraw or re-raise it; this probe reports, it never decides.\nrls-on-every-public-table: migration_number_claims\nonboarding-bindings-are-runnable: outsourcetel-hq / SaaS onboarding — starter / locations_configured → propose_connector — needs the \"workforce_assistant\" role, which the employee(s) this workspace gives onboarding work to (Onni) do not have"
+      "seconds": 75.4,
+      "detail": "execute-perimeter: NEW/CHANGED grant not in allowlist: platform_capability_demand()|anon=false|authed=true\nexecute-perimeter: NEW/CHANGED grant not in allowlist: set_review_narrative_settings(p_enabled boolean, p_instructions text, p_de_id uuid)|anon=false|authed=true\nexecute-perimeter: NEW/CHANGED grant not in allowlist: upsert_kpi_metric(p_metric_key text, p_label text, p_direction text, p_unit text, p_description text, p_source text, p_source_config jsonb)|anon=false|authed=true\nexecute-perimeter: allowlisted grant VANISHED (revoked or fn dropped): upsert_kpi_metric(p_metric_key text, p_label text, p_direction text, p_unit text, p_description text)|anon=false|authed=true\nlanded-reads-use-the-shared-predicate: de_kpi_action_value(p_tenant_id uuid, p_de_id uuid, p_source text, p_source_config jsonb) names a terminal-successful decision literal but never calls public.action_execution_landed(). If it READS whether an action landed, call the shared predicate (mig 679). If it is a writer, a counter or a lock, pin it in scripts/landed-predicate.mjs with the reason.\nlanded-reads-use-the-shared-predicate: get_de_kpi_status is PINNED in scripts/landed-predicate.mjs but no longer names either decision literal (or no longer exists). Delete the pin.\nlanded-reads-use-the-shared-predicate: snapshot_de_kpi_readings is PINNED in scripts/landed-predicate.mjs but no longer names either decision literal (or no longer exists). Delete the pin.\nexam-evidence-stays-out-of-production-metrics: verify_decide_discovery_proposal() counts de_conversations without the exam axis. Add channel IS DISTINCT FROM 'exam' (mig 671 split the corpus on channel), or pin it in scripts/production-evidence.mjs COUNT_READ_PINS with its reason.\nexam-evidence-stays-out-of-production-metrics: de_kpi_status_internal(p_tenant_id uuid, p_de_id uuid, p_window_weeks integer) counts de_conversations without the exam axis. Add channel IS DISTINCT FROM 'exam' (mig 671 split the corpus on channel), or pin it in scripts/production-evidence.mjs COUNT_READ_PINS with its reason.\nexam-evidence-stays-out-of-production-metrics: get_de_kpi_status is PINNED in COUNT_READ_PINS but no longer aggregates evidence_run_decisions or de_conversations (or no longer exists). Delete the pin.\nno-pending-approval-the-platform-cannot-carry-out: mismatched-pair — kinetic / Approve action — Create a specialist desk (DreamTeam AI (self)) [execution bfb462a0-1e22-48cf-a3a0-fa60edd666f4]: the row names definition 18a92cdd-ba11-4c11-8bcc-96a3b8e120b4 (create_specialist), but its status is \"disabled\" and the resolver only ever sees active definitions. connector-hub answers action_definition_not_found and nothing is sent.\nno-pending-approval-the-platform-cannot-carry-out: no-executor — outsourcetel-hq / Send a $15,600 invoice to Meridian Group — test ping [task 03aaa6dd-379b-438a-aadd-d9b8e262638b, raised 2026-08-10]: no action_executions row references this task by EITHER linkage column (task_id, resolves_task_id). There is no executor behind the approval at all: deciding it flips the task to \"approved\", hands connector-hub nothing, and sends nothing — while the queue empties and the screen reads as done. A human must withdraw or re-raise it; this probe reports, it never decides.\nrls-on-every-public-table: migration_number_claims\nonboarding-bindings-are-runnable: outsourcetel-hq / SaaS onboarding — starter / locations_configured → propose_connector — needs the \"workforce_assistant\" role, which the employee(s) this workspace gives onboarding work to (Onni) do not have"
     },
     {
       "section": "deferred-register",
-      "ok": false,
-      "seconds": 9.9,
-      "detail": "F1 REGISTER SAYS OPEN, REALITY SAYS CLOSED — B-7 \"F-8 — golden-path's drift footer prints the production figures as a string LITERAL. Production is never queri…\". Its grep verification returned n=0, and the item is open only when n >= 1. This is docs/45's 28-fail-open-guards shape: a real finding that got fixed and went on being carried as live backlog. FIX: set \"state\":\"closed\" on B-7 and record closed_by (the commit or migration that did it) — the evidence is this line.\nF1 REGISTER SAYS OPEN, REALITY SAYS CLOSED — C-3 \"de_records_gate branch (d) counts raw evidence_runs failures with no origin predicate, so an exam run failing…\". Its sql verification returned n=0, and the item is open only when n >= 1. This is docs/45's 28-fail-open-guards shape: a real finding that got fixed and went on being carried as live backlog. FIX: set \"state\":\"closed\" on C-3 and record closed_by (the commit or migration that did it) — the evidence is this line.\nF1 REGISTER SAYS OPEN, REALITY SAYS CLOSED — C-4 \"get_workforce_trust_metrics' human_tasks read lacks the origin predicate. Immaterial today (one exercise task…\". Its sql verification returned n=0, and the item is open only when n >= 1. This is docs/45's 28-fail-open-guards shape: a real finding that got fixed and went on being carried as live backlog. FIX: set \"state\":\"closed\" on C-4 and record closed_by (the commit or migration that did it) — the evidence is this line.\nF1 REGISTER SAYS OPEN, REALITY SAYS CLOSED — D-7 \"Debt #35 — zero component tests over roughly 73,790 lines of UI. Twenty test files, none renders a component.\". Its grep verification returned n=1, and the item is open only when n == 0. This is docs/45's 28-fail-open-guards shape: a real finding that got fixed and went on being carried as live backlog. FIX: set \"state\":\"closed\" on D-7 and record closed_by (the commit or migration that did it) — the evidence is this line.\nF2 REGISTER SAYS CLOSED, REALITY SAYS OPEN — D-12 \"Debt #57 — floating version imports across the edge functions (71 remote imports carry no pinned semver). The…\". Its grep verification returned n=4, which satisfies open_if >= 1. Something recorded as fixed is answering back. Either the fix regressed or it was never there; the register credits all 70 floating supabase-js@2 imports pinned to @2.112.3 — the exact version esm.sh resolves @2 to today, so the pin is behaviour-neutral; zero floating remote imports remain and edge-typecheck passes. This is the worse direction: a defect marked done in the one artefact people trust. FIX IT or re-open D-12.\nF1 REGISTER SAYS OPEN, REALITY SAYS CLOSED — B-11 \"reconcile_blocked_goals writes attention_flag='wait_unanswered', a value its own table's CHECK forbids (allow…\". Its sql verification returned n=0, and the item is open only when n >= 1. This is docs/45's 28-fail-open-guards shape: a real finding that got fixed and went on being carried as live backlog. FIX: set \"state\":\"closed\" on B-11 and record closed_by (the commit or migration that did it) — the evidence is this line.\nF1 REGISTER SAYS OPEN, REALITY SAYS CLOSED — A-7 \"No per-data-subject erasure exists. Whole-tenant deletion is solid (delete_tenant: platform-capability gated,…\". Its sql verification returned n=1, and the item is open only when n == 0. This is docs/45's 28-fail-open-guards shape: a real finding that got fixed and went on being carried as live backlog. FIX: set \"state\":\"closed\" on A-7 and record closed_by (the commit or migration that did it) — the evidence is this line.\nF1 REGISTER SAYS OPEN, REALITY SAYS CLOSED — C-11 \"get_de_performance_summary reports responses_this_month=0 for the only employee that has any traffic. Technic…\". Its sql verification returned n=0, and the item is open only when n >= 1. This is docs/45's 28-fail-open-guards shape: a real finding that got fixed and went on being carried as live backlog. FIX: set \"state\":\"closed\" on C-11 and record closed_by (the commit or migration that did it) — the evidence is this line.\nF1 REGISTER SAYS OPEN, REALITY SAYS CLOSED — D-13 \"The app is dark-themed (ground rgb(12,17,35)) but declares color-scheme nowhere, so the computed value stays …\". Its grep verification returned n=2, and the item is open only when n == 0. This is docs/45's 28-fail-open-guards shape: a real finding that got fixed and went on being carried as live backlog. FIX: set \"state\":\"closed\" on D-13 and record closed_by (the commit or migration that did it) — the evidence is this line."
+      "ok": true,
+      "seconds": 11.2
     },
     {
       "section": "migration-ledger",
       "ok": false,
-      "seconds": 5.8,
-      "detail": "  786_a_deny_that_could_not_be_checked_is_not_an_approval.sql\nORPHANED:\n  777_a_gate_counts_production_only.sql\n  779_a_person_can_be_forgotten.sql\n  780_forget_end_user_writes_columns_that_exist.sql\n  781_an_erasure_is_an_access_control_event.sql\n  782_erasure_reaches_the_reply_that_quotes_them.sql\n  787_a_secret_store_the_internet_cannot_ask_for.sql"
+      "seconds": 7.4,
+      "detail": "ORPHANED:\n  756_one_action_arm_written_once.sql\n  757_both_callers_ask_the_one_arm.sql\n  758_a_metric_this_workspace_defines_can_be_computed.sql\n  764_the_review_reads_the_same_kpi_values_the_panel_shows.sql\n  765_a_review_judges_the_goals_you_set_over_the_window_it_names.sql\n  766_a_goal_belongs_to_one_employee_in_one_workspace.sql\n  767_a_narrative_that_can_never_become_the_verdict.sql"
     },
     {
       "section": "migration-files-match-ledger-checksums",
       "ok": true,
-      "seconds": 3.8
+      "seconds": 4
     },
     {
       "section": "migration-numbering",
@@ -39,7 +38,7 @@
     {
       "section": "provider-catalog",
       "ok": true,
-      "seconds": 9
+      "seconds": 9.7
     },
     {
       "section": "discovery-spine",
@@ -49,49 +48,47 @@
     {
       "section": "discovery-proposal-decisions",
       "ok": true,
-      "seconds": 15.7
+      "seconds": 13.3
     },
     {
       "section": "decide-discovery-proposal-behaviour",
       "ok": true,
-      "seconds": 7.7
+      "seconds": 9.1
     },
     {
       "section": "guardrail-pattern-differential",
       "ok": true,
-      "seconds": 1.9
+      "seconds": 3.7
     },
     {
       "section": "edge-typecheck",
       "ok": true,
-      "seconds": 5.8
+      "seconds": 6.3
     },
     {
       "section": "golden-path",
       "ok": true,
-      "seconds": 37.5
+      "seconds": 43.8
     },
     {
       "section": "role-gates",
-      "ok": false,
-      "seconds": 8.1,
-      "detail": "  of those, controls that OPEN a page: 28\nUI call sites offering a gated action with no role check: 2\n  set_review_narrative_settings  ←  src/pages/tenant/EmployeeFileSections.tsx:637\n      needs tenant_owner/tenant_admin   ·   refuses tenant_manager, knowledge_manager, approver, tenant_user, read_only\n  set_review_narrative_settings  ←  src/pages/tenant/EmployeeFileSections.tsx:651\n      needs tenant_owner/tenant_admin   ·   refuses tenant_manager, knowledge_manager, approver, tenant_user, read_only\nself-test ok — 157 gated functions, self-branch detection live\npolicy reader ok — 91 role-gated table writes, open and self-policy tables correctly excluded"
+      "ok": true,
+      "seconds": 9.4
     },
     {
       "section": "silent-refusals",
       "ok": true,
-      "seconds": 3
+      "seconds": 2.9
     },
     {
       "section": "gate-parity",
       "ok": true,
-      "seconds": 13.8
+      "seconds": 13.1
     },
     {
       "section": "branch-parity",
-      "ok": false,
-      "seconds": 0.9,
-      "detail": "playbook-branch-parity — decision-branch executor arms vs the keys its validator accepts\n  ARM 1 source    : compared 8 validator-accepted key(s) against 8 executor arm(s) in runBranchStep\n                    accepted = [instruction, checklist, log_activity, update_record, connector_action, guardrail_check, check_knowledge, read_reference]\n                    arms     = [instruction, checklist, update_record, check_knowledge, read_reference, log_activity, guardrail_check, connector_action]\n  ARM 2 twin      : compared 16 key membership(s) across 2 lists (client 8, server 8)\nplaybook-branch-parity ERROR: SQL HTTP 429: {\"message\":\"ThrottlerException: Too Many Requests\"}\nAssertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\\win\\async.c, line 94"
+      "ok": true,
+      "seconds": 27.7
     },
     {
       "section": "design-drift",
@@ -101,13 +98,13 @@
     {
       "section": "migration-append",
       "ok": true,
-      "seconds": 1
+      "seconds": 1.1
     },
     {
       "section": "suite",
       "ok": false,
-      "seconds": 38.6,
-      "detail": "     78|     if (!TRANSIENT.has(res.status)) break;\n     79|   }\n     80|   throw new Error(lastErr);\n       |         ^\n     81| }\n     82|\n ❯ tests/write-bindings.test.ts:432:19\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[89/100]⎯"
+      "seconds": 52.3,
+      "detail": " ❯ tests/tenant-isolation.test.ts:71:13\n     69|     ).filter((f): f is string => f !== null);\n     70|     if (failures.length > 0) {\n     71|       throw new Error(`teardown failed after 3 attempts each:\\n${failu…\n       |             ^\n     72|     }\n     73|   }, 60000);\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯"
     }
   ]
 }

@@ -1,3 +1,4 @@
+import { DEFAULT_ACCENT } from '../../design/branding';
 import React, { useState, useRef, useEffect } from 'react';
 import type { AuthUser, Tenant, Page } from '../../types';
 import { submitCSAT } from '../../lib/api';
@@ -43,7 +44,7 @@ const EndUserChatPage = ({
   tenant?: Tenant;
   setPage?: (p: Page) => void;
 }) => {
-  const accentColor = tenant?.primaryColor || '#6366f1';
+  const accentColor = tenant?.primaryColor || DEFAULT_ACCENT;
   const tenantName = tenant?.name || 'AI Support';
   const tenantId = tenant?.id || (user as any)?.tenantId || null;
 

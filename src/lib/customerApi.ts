@@ -1098,6 +1098,47 @@ async function verifyConsequence(
   }
 }
 
+// ── Withdrawing (mig 790) ─────────────────────────────────────────
+//
+// "Remove this from my list" is not "I decided this". The RPC delegates to
+// decide_human_task(rejected, withdrawn) so every guard and audit event still
+// applies, and marks disposition='cancelled' so the row is excluded from the
+// approval-rate denominator instead of poisoning it.
+//
+// ⚠ NO SIDE-EFFECT HOOKS HERE, deliberately. decideHumanTask runs a dozen of
+// them (invoice send, gated execute, delivery confirmation) because approving
+// OWES something. A withdrawal owes nothing by definition — that is what makes
+// it safe to offer in bulk.
+
+/** Withdraw one task. Returns false when it was already decided. */
+export async function withdrawHumanTask(taskId: string, note?: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc('withdraw_human_task', {
+    p_task_id: taskId,
+    p_note: note ?? null,
+  });
+  if (error) raise('withdrawHumanTask', error);
+  // ⚠ TEST THE PRIMARY KEY, NOT THE OBJECT — same trap decideHumanTask
+  // documents above. This RPC also RETURNS human_tasks, and PostgREST
+  // serializes a NULL composite as a row of all-null columns, so `!data`
+  // would never fire and an already-decided task would report success.
+  return !!data && (data as { id?: string | null }).id != null;
+}
+
+/** Withdraw many. Reports partial results as partial — never as success. */
+export async function withdrawHumanTasks(
+  taskIds: string[],
+  note?: string,
+): Promise<{ withdrawn: number; failed: { id: string; error: string }[] }> {
+  if (taskIds.length === 0) return { withdrawn: 0, failed: [] };
+  const { data, error } = await supabase.rpc('withdraw_human_tasks', {
+    p_task_ids: taskIds,
+    p_note: note ?? null,
+  });
+  if (error) raise('withdrawHumanTasks', error);
+  const row = (data ?? {}) as { withdrawn?: number; failed?: { id: string; error: string }[] };
+  return { withdrawn: row.withdrawn ?? 0, failed: row.failed ?? [] };
+}
+
 // ── Activity ──────────────────────────────────────────────────────
 
 export async function listActivity(limit = 20): Promise<ActivityEvent[]> {

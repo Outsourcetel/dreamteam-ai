@@ -463,9 +463,21 @@ export default function DEChatDock() {
 
   return (
     <div className="fixed bottom-5 right-5 z-40 flex flex-col items-end gap-3">
-      {/* Panel */}
+      {/* Panel.
+          OPAQUE, deliberately. --dt-card carries a 40% alpha, which is right
+          for a card sitting ON the canvas, because what shows through is the
+          canvas. This dock is `fixed` and floats over whatever the page
+          happens to be showing, so that same token let tables and body text
+          bleed through the conversation. --dt-page is the only fully opaque
+          surface of the four — panel and card are both 40%, inset is 60% —
+          and it stays opaque under tenant branding too (src/design/
+          branding.ts). The strong border and shadow are what separate the
+          dock from the canvas; the fill was never doing that job.
+          (Alphas stated in words, not hex: certify's design-drift ratchet
+          counts raw hex in source and does not strip comments — by design,
+          so examples cannot hide there either.) */}
       {open && (
-        <div className="w-96 h-[560px] rounded-2xl bg-dt-card border border-dt-border-strong shadow-2xl shadow-black/50 flex flex-col overflow-hidden">
+        <div className="w-96 h-[560px] rounded-2xl bg-dt-page border border-dt-border-strong shadow-2xl shadow-black/50 flex flex-col overflow-hidden">
           {/* Header */}
           <div className="flex items-center gap-3 px-4 py-3 border-b border-dt-border-strong flex-shrink-0">
             <div className={`w-8 h-8 rounded-full ${de.color} flex items-center justify-center text-white text-xs font-bold flex-shrink-0`}>
@@ -498,7 +510,7 @@ export default function DEChatDock() {
                 ⋯
               </button>
               {menuOpen && (
-                <div className="absolute right-0 top-7 bg-dt-panel border border-dt-border-strong rounded-lg py-1 w-40 shadow-xl">
+                <div className="absolute right-0 top-7 bg-dt-page border border-dt-border-strong rounded-lg py-1 w-40 shadow-xl">
                   <button
                     onClick={clearThread}
                     className="w-full text-left px-3 py-1.5 text-xs text-dt-support hover:text-white hover:bg-dt-panel/50 transition-colors"
@@ -735,7 +747,7 @@ export default function DEChatDock() {
       {!open && nudge && (
         <button
           onClick={openFromNudge}
-          className="max-w-[260px] text-left bg-dt-card border border-dt-border-strong rounded-xl px-3 py-2.5 shadow-xl shadow-black/40 hover:border-indigo-500/50 transition-colors"
+          className="max-w-[260px] text-left bg-dt-page border border-dt-border-strong rounded-xl px-3 py-2.5 shadow-xl shadow-black/40 hover:border-indigo-500/50 transition-colors"
         >
           <div className="flex items-center gap-2 mb-1">
             <span className={`w-5 h-5 rounded-full ${de.color} flex items-center justify-center text-white text-[10px] font-bold`}>{de.name[0]}</span>
@@ -755,7 +767,7 @@ export default function DEChatDock() {
           onMouseLeave={() => setHovered(false)}
         >
           {hovered && (
-            <div className="absolute right-14 top-1/2 -translate-y-1/2 whitespace-nowrap bg-dt-panel border border-dt-border-strong text-dt-body text-xs px-2.5 py-1.5 rounded-lg shadow-xl">
+            <div className="absolute right-14 top-1/2 -translate-y-1/2 whitespace-nowrap bg-dt-page border border-dt-border-strong text-dt-body text-xs px-2.5 py-1.5 rounded-lg shadow-xl">
               Ask {de.name}
             </div>
           )}

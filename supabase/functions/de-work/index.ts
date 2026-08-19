@@ -27,7 +27,7 @@ import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { recordSpan } from '../_shared/otel.ts';
-import { evaluateEscalation, loadEscalationRuleset, type EscRuleset } from '../_shared/escalation.ts';
+import { escalationHeadline, escalationTitle, evaluateEscalation, loadEscalationRuleset, type EscRuleset } from '../_shared/escalation.ts';
 import { defOfDoneGate, assessAndLog } from '../_shared/defOfDone.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { budgetBlocked } from '../_shared/rpcSafety.ts';
@@ -1298,16 +1298,55 @@ async function dispatchTool(
       const { data: esc, error: escErr } = await admin.rpc('open_de_escalation', {
         p_tenant_id: tenantId, p_de_id: deId,
         p_work_item_id: workItemId ?? null, p_objective_id: objectiveId ?? null,
-        p_title: entityName ? `Needs a decision — ${entityName}` : null,
+        // ⚠ 778: THIS TERNARY WROTE EVERY ILLEGIBLE HEADLINE IN THE QUEUE,
+        // through BOTH of its arms, and the first sweep only found one of them.
+        //
+        //   null arm      -> open_de_escalation's fallback "<name> needs a
+        //                    decision": 42 rows, the same sentence on each.
+        //   entityName arm -> "Needs a decision — <entity>": 5 more rows that
+        //                    name the customer and never say what the ask is.
+        //
+        // The 5 were missed because the sweep asked `like '%needs a decision%'`
+        // and this arm capitalises the N. A case-sensitive match for a phrase
+        // the sibling branch title-cases cannot find it; `ilike` turns 42
+        // into 47. That is the generalisable lesson, not the five rows.
+        //
+        // escalationTitle() now owns both arms: <entity> — <headline>, or the
+        // headline alone when there is no entity, or the entity alone when
+        // there is no reason. It returns null ONLY when it has neither, and in
+        // that one case null is deliberately still passed, because SQL's
+        // de_escalation_title can then name the work item this stopped on,
+        // which nothing here can see. No arm can produce the old sentence.
+        p_title: escalationTitle(entityName, String(input.reason ?? '')),
         p_reason: String(input.reason ?? ''),
         p_proposed_action: typeof input.proposed_action === 'string' ? input.proposed_action : null,
         p_justification: typeof input.justification === 'string' ? input.justification : null,
         p_needs_input: false, p_sla_hours: STALL_HOURS,
       });
       if (escErr) console.error('open_de_escalation:', escErr.message);
-      const e = (esc ?? {}) as { task_id?: string; exception_id?: string };
+      const e = (esc ?? {}) as {
+        task_id?: string; exception_id?: string; deduped?: boolean;
+        repeat_count?: number; first_raised_at?: string;
+        distinct_reports?: number; report_appended?: boolean;
+      };
+      // 778 Q1: the RPC now REFRESHES an open task that already covers this
+      // problem instead of adding another. Say so in the tool result — an
+      // employee told "escalated" for the fourteenth time has no way to know
+      // it did not just make the pile one longer, and the queue's own comment
+      // at :1101 says the guard has to live where the write happens.
       return {
-        result: { escalated: true, task_id: e.task_id ?? null, exception_id: e.exception_id ?? null },
+        result: e.deduped
+          ? { escalated: true, task_id: e.task_id ?? null, exception_id: e.exception_id ?? null,
+              deduped: true, asked_times: e.repeat_count ?? null, first_raised_at: e.first_raised_at ?? null,
+              reports_on_this_task: e.distinct_reports ?? null, report_recorded: e.report_appended ?? true,
+              // ⚠ THE SECOND SENTENCE IS NOT REASSURANCE, IT IS THE CONTRACT.
+              // The RPC folds the QUEUE ROW and never the report: this account
+              // was written to the employee's exception log and appended to the
+              // open card. Telling a model only "refreshed, not duplicated"
+              // invites it to re-send the same words in the hope of being
+              // heard, which is how a fold turns back into a pile.
+              note: 'A person has ALREADY been asked about this blocker and has not answered yet — the open task was refreshed, not duplicated. YOUR ACCOUNT WAS STILL RECORDED: it is on that task and on your exception log, so nothing you reported has been dropped. Do not raise it again; work on something else.' }
+          : { escalated: true, task_id: e.task_id ?? null, exception_id: e.exception_id ?? null },
         escalated: true, done: true, summary: `Escalated: ${input.reason}`,
       };
     }

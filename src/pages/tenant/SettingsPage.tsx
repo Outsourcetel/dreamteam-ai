@@ -1,3 +1,4 @@
+import { DEFAULT_ACCENT } from '../../design/branding';
 import DataExportPanel from '../../components/DataExportPanel';
 import BooksImportCard from '../../components/BooksImportCard';
 import ReviewMinutesCard from '../../components/ReviewMinutesCard';
@@ -84,7 +85,7 @@ const SettingsPage = ({
   // Least privilege on an unknown role: read_only, never a default that can see
   // billing. isDTUser stays in use below for platform-only content.
   const role = (user?.role ?? 'read_only') as Parameters<typeof canAccessSettingsTab>[0];
-  const accentColor = tenant?.primaryColor || '#6366f1';
+  const accentColor = tenant?.primaryColor || DEFAULT_ACCENT;
   const [activeTab, setActiveTab] = useState<'general' | 'ai_engine' | 'usage' | 'widget' | 'billing' | 'security' | 'identity' | 'data' | 'trust'>(() => {
     // One-shot deep-link hint (e.g. Getting Started "Get your widget key"
     // lands on the Widget tab instead of the org-name form). Consumed once.
@@ -104,7 +105,7 @@ const SettingsPage = ({
   const [orgName, setOrgName] = useState(tenant?.name || '');
   const [industry, setIndustry] = useState(tenant?.industry || 'Technology');
   const [contactEmail, setContactEmail] = useState(tenant?.contactEmail || user?.email || '');
-  const [brandColor, setBrandColor] = useState(tenant?.primaryColor || '#6366f1');
+  const [brandColor, setBrandColor] = useState(tenant?.primaryColor || DEFAULT_ACCENT);
   // Wave 4 — work-object vocabulary draft (see lib/vocabulary.ts).
   const [vocabDraft, setVocabDraft] = useState<Record<string, string>>(tenant?.vocabulary ?? {});
   const [saving, setSaving] = useState(false);
@@ -166,7 +167,7 @@ const SettingsPage = ({
     setOrgName(tenant?.name || '');
     setIndustry(tenant?.industry || 'Technology');
     setContactEmail(tenant?.contactEmail || user?.email || '');
-    setBrandColor(tenant?.primaryColor || '#6366f1');
+    setBrandColor(tenant?.primaryColor || DEFAULT_ACCENT);
     setVocabDraft(tenant?.vocabulary ?? {});
   }, [tenant, user]);
 

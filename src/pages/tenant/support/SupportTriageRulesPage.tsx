@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Toast } from '../../../design/primitives';
 import type { Page } from '../../../types';
 import { listTriageRules, upsertTriageRule, deleteTriageRule } from '../../../lib/supportInboxApi';
 import type { TriageRule } from '../../../lib/supportInboxApi';
@@ -228,7 +229,7 @@ const SupportTriageRulesPage = ({ setPage, embedded }: { setPage: (p: Page) => v
       )}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 z-[100] px-4 py-3 rounded-xl border shadow-xl text-sm font-medium bg-emerald-900/90 border-emerald-700/50 text-emerald-300">{toast}</div>
+        <Toast>{toast}</Toast>
       )}
     </div>
   );

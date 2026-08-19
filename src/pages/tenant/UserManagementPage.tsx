@@ -1,3 +1,4 @@
+import { DEFAULT_ACCENT } from '../../design/branding';
 import React, { useState, useEffect } from 'react';
 import EmployeeProfileDrawer from '../../components/EmployeeProfileDrawer';
 import { Modal } from '../../design/primitives';
@@ -11,7 +12,7 @@ import type { Page } from '../../types';
 import { LiveEmptyState } from '../../components/LiveDataStates';
 
 
-const DEPT_COLORS = ['#6366f1','#3b82f6','#10b981','#f59e0b','#06b6d4','#8b5cf6','#ec4899','#ef4444','#84cc16','#f97316'];
+const DEPT_COLORS = [DEFAULT_ACCENT,'#3b82f6','#10b981','#f59e0b','#06b6d4','#8b5cf6','#ec4899','#ef4444','#84cc16','#f97316'];
 
 const ROLE_COLOR: Record<TenantRole, string> = {
   tenant_owner: 'text-amber-400 bg-amber-400/10',
@@ -204,7 +205,7 @@ const UserManagementPage = ({ user, tenant, setPage }: { user?: AuthUser; tenant
     setTimeout(() => setResetMsg(''), 5000);
   };
 
-  const accentColor = tenant?.primaryColor || '#6366f1';
+  const accentColor = tenant?.primaryColor || DEFAULT_ACCENT;
 
   const filtered = members.filter(m => {
     const matchRole = roleFilter === 'all' || m.role === roleFilter;
