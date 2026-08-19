@@ -52,3 +52,14 @@ get a decision from today's vocabulary. d1b exists because d1 passes vacuously
 on zero employees. d5 exists because d2-d4 call decide_action_execution and
 would report today's answers if the composition never happened. d6 proves the
 earned-trust resolution was not replaced.
+
+FIX ROUND 1: d3 (a `require_human` rule must not auto-execute) was vacuous
+against the live fixture — that employee's real `de_autonomy` state is
+`enabled=false` for `crm`, so its baseline was already not `auto_executed`
+and the assertion passed whether or not the rule was ever consulted. Fixed by
+seeding a `de_autonomy` row inside the aborting transaction so the baseline
+is provably `auto_executed` before the rule is added, never by hunting
+production for a DE that happens to be enabled (that would make the suite
+depend on data that can change under it). d3a proves the seed worked; d3
+proves the rule takes exactly that away. Both are scrubbed before d4 runs so
+they cannot leak into it.

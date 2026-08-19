@@ -12,6 +12,7 @@ do $d$
 declare
   v_tenant uuid; v_de uuid; v_user uuid;
   v_gate jsonb; v_n int := 0; v_changed int := 0; v_before text; v_after text;
+  v_seed_id uuid; v_seeded_baseline text;
 begin
   -- ── d1: with NO rules, the decision for every (tenant, employee) pair must
   -- ──     be exactly what it is today. Captured BEFORE any rule is written.
@@ -64,13 +65,44 @@ begin
      format('was %s, now %s', v_before, v_after));
 
   -- ── d3: a require_human rule must NOT auto-execute ──────────────────────
+  -- FIX ROUND 1: this employee's real de_autonomy state is enabled=false for
+  -- 'crm', so its baseline was ALREADY not auto_executed and the assertion
+  -- below used to pass whether or not any rule was ever consulted — the core
+  -- safety property went untested. Fixed by SEEDING autonomy inside this
+  -- aborting transaction, never by hunting production for a DE that happens
+  -- to be enabled (that would make the suite depend on data that can change
+  -- under it). The seed matches what decide_action_execution actually asks
+  -- resolve_de_autonomy_chain to resolve: keys tried specific-first as
+  -- ['action:'||category, action_type, 'action_execute'], and no playbook_id
+  -- is ever passed, so a de_autonomy row keyed on action_type='action:crm' +
+  -- this de_id + source_category='crm' is the first key tried and the
+  -- employee+category tier inside resolve_de_autonomy is what reads it.
   delete from authority_rules where tenant_id = v_tenant;
+
+  insert into de_autonomy (tenant_id, action_type, de_id, source_category, enabled, max_amount_cents)
+  values (v_tenant, 'action:crm', v_de, 'crm', true, 100000)
+  returning id into v_seed_id;
+
+  -- d3a: prove the seed actually WORKS before trusting d3's result — if this
+  -- is not auto_executed, the fixture has not achieved auto-execution and d3
+  -- would still be vacuous.
+  v_seeded_baseline := decide_action_execution(v_tenant,'probe action','crm',false,v_de,50000,'action_execute',null)->>'decision';
+  insert into dae_results values
+    ('d3a_seeded_baseline_is_auto_executed',
+     case when v_seeded_baseline = 'auto_executed' then 'pass' else 'FAIL' end,
+     format('seeded de_autonomy(action_type=''action:crm'', enabled=true, max_amount_cents=100000) for this employee; decision is %s', v_seeded_baseline));
+
   perform set_authority_rule('de','amount_cents','>',1,'require_human','crm',v_de);
   v_after := decide_action_execution(v_tenant,'probe action','crm',false,v_de,50000,'action_execute',null)->>'decision';
   insert into dae_results values
     ('d3_require_human_never_auto_executes',
      case when v_after <> 'auto_executed' then 'pass' else 'FAIL' end,
-     format('decision is %s', v_after));
+     format('baseline %s, with a require_human rule %s', v_seeded_baseline, v_after));
+
+  -- Scrub the seed so it cannot leak into d4 — d4's comparison is against
+  -- v_before, captured before this employee was ever seeded as enabled.
+  delete from authority_rules where tenant_id = v_tenant;
+  delete from de_autonomy where id = v_seed_id;
 
   -- ── d4: a rule for a DIFFERENT category must not fire ───────────────────
   delete from authority_rules where tenant_id = v_tenant;
