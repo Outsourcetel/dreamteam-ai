@@ -215,7 +215,27 @@ for (const [comp, prop, want] of [
 }
 
 function localGateNames(src) {
-  return [...new Set([...src.matchAll(/const\s+([a-zA-Z0-9_]+)\s*=\s*use(?:Is|Can)[A-Za-z0-9_]*\s*\(/g)].map((m) => m[1]))];
+  const names = [...src.matchAll(/const\s+([a-zA-Z0-9_]+)\s*=\s*use(?:Is|Can)[A-Za-z0-9_]*\s*\(/g)].map((m) => m[1]);
+  // ⚠ A NAME BOUND FROM A GATE IS ITSELF A GATE. The hook pattern above only
+  // learns `const canX = useIsTenantAdmin()`. It does not learn the other way
+  // this codebase writes the same idea:
+  //
+  //   const canConfigure = isDTUser || ['tenant_owner','tenant_admin'].includes(authedUser?.role ?? '')
+  //
+  // which is a role check by any reading — `isDTUser` and `tenant_owner` are
+  // both already in GATE_RE. Missing it made the auditor report DeReviewsPanel's
+  // own gate as an ungated control, which is the exact failure the comment at
+  // the tag-level test warns about: a detector that does not learn a new idiom
+  // reports the fix as the bug.
+  //
+  // Deliberately narrow: the INITIALISER must itself satisfy GATE_RE. A const
+  // bound from anything else is not admitted, because widening this to "any
+  // boolean near a control" would start marking ungated controls as gated —
+  // and for a role auditor, a false negative is the expensive direction.
+  for (const m of src.matchAll(/const\s+([a-zA-Z0-9_]+)\s*=\s*([^;\n]+)/g)) {
+    if (GATE_RE.test(m[2])) names.push(m[1]);
+  }
+  return [...new Set(names)];
 }
 function fileHasGate(src) {
   if (GATE_RE.test(src)) return true;
@@ -623,8 +643,24 @@ function controlsMissingGate(src, wrapperMap) {
   const localRe = local.length ? new RegExp('\\b(?:' + local.join('|') + ')\\b') : null;
   const isGate = (s) => GATE_RE.test(s) || (localRe !== null && localRe.test(s));
   // Component boundaries: a top-level `function Name(` at column 0.
+  //
+  // ⚠ `export` COUNTS. The pattern was /^function [A-Z]/, which misses
+  // `export function Name(` and `export default function Name(` — 59 of this
+  // codebase's 241 top-level components, 24%, declared that way.
+  //
+  // The visible symptom was a false positive: DeReviewsPanel gates its review
+  // settings behind `canConfigure`, and both call sites inside that block were
+  // reported ungated, because the component's boundary was never recorded and
+  // compAt() attributed its lines to whatever component happened to precede it.
+  //
+  // The direction that matters is the other one. compAt() falls back to the
+  // NEAREST PRECEDING recognised boundary, so a control inside an unrecognised
+  // component inherits the previous component's handlers and gate bindings — an
+  // ungated control scoring as gated because its neighbour above was careful.
+  // A role-gate auditor that under-reports is worse than one that over-reports,
+  // and this one could do both from the same missing keyword.
   const bounds = [];
-  L.forEach((l, i) => { if (/^function [A-Z][A-Za-z0-9_]*\s*[({]/.test(l)) bounds.push(i); });
+  L.forEach((l, i) => { if (/^(?:export\s+(?:default\s+)?)?function [A-Z][A-Za-z0-9_]*\s*[({]/.test(l)) bounds.push(i); });
   const compAt = (line) => {
     let lo = 0;
     for (const b of bounds) { if (b <= line) lo = b; else break; }
