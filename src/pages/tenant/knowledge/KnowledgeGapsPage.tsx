@@ -1,6 +1,6 @@
 import { useCanCurateKnowledge } from '../../../lib/useRoleGate';
 import React, { useEffect, useState } from 'react';
-import { Drawer, Chip } from '../../../design/primitives';
+import { Chip, Drawer, Toast } from '../../../design/primitives';
 import type { Tone } from '../../../design/primitives';
 import AISessionPanel from '../../../components/AISessionPanel';
 import { useAuth } from '../../../context/AuthContext';
@@ -501,9 +501,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
       )}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-dt-page border border-emerald-500/40 text-sm text-dt-title rounded-xl px-4 py-3 shadow-xl">
-          {toast}
-        </div>
+        <Toast>{toast}</Toast>
       )}
     </div>
   );

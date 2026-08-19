@@ -10,7 +10,7 @@ import type {
   CommercialAgreement, ContinuityCase, ContinuityStage, ContinuityCaseEvent,
 } from '../../../lib/continuityApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
-import { Modal as DtModal, Drawer } from '../../../design/primitives';
+import { Drawer, Modal as DtModal, Toast } from '../../../design/primitives';
 
 // ============================================================
 // Commercial Continuity — the renewal EMPLOYEE's full desk (EXEC-2c).
@@ -473,9 +473,7 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
       )}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 z-[100] px-4 py-3 rounded-xl border shadow-xl text-sm font-medium bg-dt-page border-dt-border-strong text-dt-body max-w-sm">
-          {toast}
-        </div>
+        <Toast tone="neutral">{toast}</Toast>
       )}
     </div>
   );
