@@ -3586,6 +3586,95 @@ const freshdeskActions: Record<string, NativeAction> = {
 const ERPNEXT_CUSTOMER_SETTABLE = ['customer_group', 'territory', 'default_price_list', 'payment_terms'] as const;
 
 const erpnextActions: Record<string, NativeAction> = {
+  // ── M1 (practical-work program 2026-08-11): the FRONT of order-to-cash. ──
+  // Everything below chases or books money that already exists; these three
+  // create it: quote → (submit = the committing act) → sales order. A draft
+  // in the client's ERP is the deliverable — visible, editable and deletable
+  // there — so the create verbs are reversible while SUBMIT is the
+  // destructive one, exactly like posting_drafts on the ledger side.
+  // v1 is single-line-item BY DESIGN: the tool-offer machinery renders flat
+  // scalar params only, and an honest one-line quote beats a stringly-typed
+  // items blob the approver cannot read.
+  erpnext_create_quotation: {
+    render(c, p) {
+      if (!p.customer?.trim()) return { ok: false, error: 'param_required', detail: 'customer (the ERPNext Customer name) is required.' };
+      if (!p.item_code?.trim()) return { ok: false, error: 'param_required', detail: 'item_code (the ERPNext Item) is required.' };
+      const qty = Number(p.qty ?? 1), rate = Number(p.rate ?? 0);
+      if (!Number.isFinite(qty) || qty <= 0) return { ok: false, error: 'bad_param', detail: 'qty must be a positive number.' };
+      if (!Number.isFinite(rate) || rate < 0) return { ok: false, error: 'bad_param', detail: 'rate must be zero or more.' };
+      return {
+        ok: true, method: 'POST',
+        url: c.baseUrl + '/api/resource/Quotation',
+        body: { quotation_to: 'Customer', party_name: p.customer.trim(),
+                ...(p.valid_till?.trim() ? { valid_till: p.valid_till.trim() } : {}),
+                items: [{ item_code: p.item_code.trim(), qty, rate }] },
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const res = await httpJson(r.url!, { method: 'POST', headers: { Authorization: erpnext.auth(c), 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      const doc = (res.body as { data?: { name?: string; grand_total?: number; currency?: string } } | null)?.data;
+      return { ok: true, status: res.status, raw: res.body,
+        receipt: 'Drafted quotation ' + (doc?.name ?? '(unnamed)') + ' for ' + p.customer + ' in ERPNext — ' + (p.qty ?? 1) + ' × ' + p.item_code + ' at ' + p.rate
+          + (doc?.grand_total != null ? ' (total ' + doc.grand_total + ' ' + (doc.currency ?? '') + ')' : '')
+          + '. It is a DRAFT: nothing is promised to the customer until it is submitted.' };
+    },
+  },
+  erpnext_submit_quotation: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (the quotation number) is required.' };
+      return { ok: true, method: 'PUT',
+        url: c.baseUrl + '/api/resource/Quotation/' + encodeURIComponent(p.external_ref.trim()),
+        body: { docstatus: 1 } };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      // Read before write: the receipt must name what was submitted, and a
+      // quote that is not a draft must refuse rather than double-submit.
+      const before = await httpJson(r.url!, { headers: erpnext.hdrs(c) });
+      const doc = (before.body as { data?: { docstatus?: number; grand_total?: number; currency?: string; party_name?: string } } | null)?.data;
+      if (before.ok && doc?.docstatus !== 0) return { ok: false, error: 'not_a_draft', detail: 'Quotation ' + p.external_ref + ' is not a draft (docstatus ' + doc?.docstatus + ') — nothing was submitted.' };
+      const res = await httpJson(r.url!, { method: 'PUT', headers: { Authorization: erpnext.auth(c), 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      return { ok: true, status: res.status, raw: res.body,
+        receipt: 'Submitted quotation ' + p.external_ref + (doc?.party_name ? ' to ' + doc.party_name : '')
+          + (doc?.grand_total != null ? ' for ' + doc.grand_total + ' ' + (doc.currency ?? '') : '')
+          + ' in ERPNext — it is now a live offer.' };
+    },
+  },
+  erpnext_quotation_to_sales_order: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (the quotation number) is required.' };
+      if (!p.delivery_date?.trim()) return { ok: false, error: 'param_required', detail: 'delivery_date (YYYY-MM-DD) is required.' };
+      return { ok: true, method: 'POST', url: c.baseUrl + '/api/resource/Sales%20Order', body: {} };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      // The order is BUILT FROM the quotation — read it, refuse an
+      // unsubmitted source, and copy its lines verbatim so the two documents
+      // cannot disagree about what was offered.
+      const qUrl = c.baseUrl + '/api/resource/Quotation/' + encodeURIComponent(p.external_ref.trim());
+      const qRes = await httpJson(qUrl, { headers: erpnext.hdrs(c) });
+      if (!qRes.ok) return { ok: false, status: qRes.status, error: qRes.error, raw: qRes.body };
+      const q = (qRes.body as { data?: { docstatus?: number; party_name?: string; items?: Array<{ item_code?: string; qty?: number; rate?: number }> } } | null)?.data;
+      if (q?.docstatus !== 1) return { ok: false, error: 'quotation_not_submitted', detail: 'Quotation ' + p.external_ref + ' is not submitted (docstatus ' + q?.docstatus + ') — an order can only be taken against a live offer.' };
+      const items = (q.items ?? []).map((it) => ({ item_code: it.item_code, qty: it.qty, rate: it.rate, delivery_date: p.delivery_date.trim() }));
+      if (items.length === 0) return { ok: false, error: 'no_items', detail: 'The quotation has no items to order.' };
+      const res = await httpJson(r.url!, { method: 'POST', headers: { Authorization: erpnext.auth(c), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customer: q.party_name, delivery_date: p.delivery_date.trim(), items }) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      const so = (res.body as { data?: { name?: string; grand_total?: number; currency?: string } } | null)?.data;
+      return { ok: true, status: res.status, raw: res.body,
+        receipt: 'Drafted sales order ' + (so?.name ?? '(unnamed)') + ' from quotation ' + p.external_ref + ' for ' + q.party_name
+          + ' (' + items.length + (items.length === 1 ? ' line' : ' lines')
+          + (so?.grand_total != null ? ', total ' + so.grand_total + ' ' + (so.currency ?? '') : '') + ') in ERPNext. It is a DRAFT for a person to submit there.' };
+    },
+  },
+
   erpnext_invoice_comment: {
     render(c, p) {
       if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (invoice number) is required.' };
