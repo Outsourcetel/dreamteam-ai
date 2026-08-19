@@ -869,7 +869,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
             {selected && (
               <div className="col-span-2 bg-dt-card border border-dt-border rounded-2xl p-5 sticky top-0 max-h-[calc(100vh-3rem)] overflow-y-auto">
                 <div className="flex items-center justify-between mb-3">
-                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${taskBadgeStyle(selected.type)}`}>{taskBadgeLabel(selected.type)}</span>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${taskBadgeStyle(selected.type)}`}>{taskBadgeLabel(selected.type)}</span>
                   <button onClick={() => setSelectedId(null)} className="w-6 h-6 rounded bg-dt-panel text-dt-muted hover:text-white flex items-center justify-center text-xs">×</button>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap mb-1">

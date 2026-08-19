@@ -1,34 +1,35 @@
 {
-  "at": "2026-08-18T01:26:28.209Z",
+  "at": "2026-08-18T10:12:44.389Z",
   "mode": "full",
-  "failed": 6,
+  "failed": 4,
   "results": [
     {
       "section": "typecheck",
       "ok": true,
-      "seconds": 43.4
+      "seconds": 15.3
     },
     {
       "section": "ring0-probes",
       "ok": false,
-      "seconds": 66.5,
-      "detail": "execute-perimeter: NEW/CHANGED grant not in allowlist: platform_capability_demand()|anon=false|authed=true\nno-pending-approval-the-platform-cannot-carry-out: mismatched-pair — kinetic / Approve action — Create a specialist desk (DreamTeam AI (self)) [execution bfb462a0-1e22-48cf-a3a0-fa60edd666f4]: the row names definition 18a92cdd-ba11-4c11-8bcc-96a3b8e120b4 (create_specialist), but its status is \"disabled\" and the resolver only ever sees active definitions. connector-hub answers action_definition_not_found and nothing is sent.\nno-pending-approval-the-platform-cannot-carry-out: no-executor — outsourcetel-hq / Send a $15,600 invoice to Meridian Group — test ping [task 03aaa6dd-379b-438a-aadd-d9b8e262638b, raised 2026-08-10]: no action_executions row references this task by EITHER linkage column (task_id, resolves_task_id). There is no executor behind the approval at all: deciding it flips the task to \"approved\", hands connector-hub nothing, and sends nothing — while the queue empties and the screen reads as done. A human must withdraw or re-raise it; this probe reports, it never decides.\nonboarding-bindings-are-runnable: outsourcetel-hq / SaaS onboarding — starter / locations_configured → propose_connector — needs the \"workforce_assistant\" role, which the employee(s) this workspace gives onboarding work to (Onni) do not have"
+      "seconds": 80.2,
+      "detail": "execute-perimeter: NEW/CHANGED grant not in allowlist: platform_capability_demand()|anon=false|authed=true\nexecute-perimeter: NEW/CHANGED grant not in allowlist: set_review_narrative_settings(p_enabled boolean, p_instructions text, p_de_id uuid)|anon=false|authed=true\nexecute-perimeter: NEW/CHANGED grant not in allowlist: upsert_kpi_metric(p_metric_key text, p_label text, p_direction text, p_unit text, p_description text, p_source text, p_source_config jsonb)|anon=false|authed=true\nexecute-perimeter: allowlisted grant VANISHED (revoked or fn dropped): upsert_kpi_metric(p_metric_key text, p_label text, p_direction text, p_unit text, p_description text)|anon=false|authed=true\nlanded-reads-use-the-shared-predicate: de_kpi_action_value(p_tenant_id uuid, p_de_id uuid, p_source text, p_source_config jsonb) names a terminal-successful decision literal but never calls public.action_execution_landed(). If it READS whether an action landed, call the shared predicate (mig 679). If it is a writer, a counter or a lock, pin it in scripts/landed-predicate.mjs with the reason.\nlanded-reads-use-the-shared-predicate: get_de_kpi_status is PINNED in scripts/landed-predicate.mjs but no longer names either decision literal (or no longer exists). Delete the pin.\nlanded-reads-use-the-shared-predicate: snapshot_de_kpi_readings is PINNED in scripts/landed-predicate.mjs but no longer names either decision literal (or no longer exists). Delete the pin.\nexam-evidence-stays-out-of-production-metrics: verify_decide_discovery_proposal() counts de_conversations without the exam axis. Add channel IS DISTINCT FROM 'exam' (mig 671 split the corpus on channel), or pin it in scripts/production-evidence.mjs COUNT_READ_PINS with its reason.\nexam-evidence-stays-out-of-production-metrics: de_kpi_status_internal(p_tenant_id uuid, p_de_id uuid, p_window_weeks integer) counts de_conversations without the exam axis. Add channel IS DISTINCT FROM 'exam' (mig 671 split the corpus on channel), or pin it in scripts/production-evidence.mjs COUNT_READ_PINS with its reason.\nexam-evidence-stays-out-of-production-metrics: get_de_kpi_status is PINNED in COUNT_READ_PINS but no longer aggregates evidence_run_decisions or de_conversations (or no longer exists). Delete the pin.\nno-pending-approval-the-platform-cannot-carry-out: mismatched-pair — kinetic / Approve action — Create a specialist desk (DreamTeam AI (self)) [execution bfb462a0-1e22-48cf-a3a0-fa60edd666f4]: the row names definition 18a92cdd-ba11-4c11-8bcc-96a3b8e120b4 (create_specialist), but its status is \"disabled\" and the resolver only ever sees active definitions. connector-hub answers action_definition_not_found and nothing is sent.\nno-pending-approval-the-platform-cannot-carry-out: no-executor — outsourcetel-hq / Send a $15,600 invoice to Meridian Group — test ping [task 03aaa6dd-379b-438a-aadd-d9b8e262638b, raised 2026-08-10]: no action_executions row references this task by EITHER linkage column (task_id, resolves_task_id). There is no executor behind the approval at all: deciding it flips the task to \"approved\", hands connector-hub nothing, and sends nothing — while the queue empties and the screen reads as done. A human must withdraw or re-raise it; this probe reports, it never decides.\nrls-on-every-public-table: migration_number_claims\nonboarding-bindings-are-runnable: outsourcetel-hq / SaaS onboarding — starter / locations_configured → propose_connector — needs the \"workforce_assistant\" role, which the employee(s) this workspace gives onboarding work to (Onni) do not have"
     },
     {
       "section": "deferred-register",
       "ok": false,
-      "seconds": 9.3,
-      "detail": "F1 REGISTER SAYS OPEN, REALITY SAYS CLOSED — D-7 \"Debt #35 — zero component tests over roughly 73,790 lines of UI. Twenty test files, none renders a component.\". Its grep verification returned n=1, and the item is open only when n == 0. This is docs/45's 28-fail-open-guards shape: a real finding that got fixed and went on being carried as live backlog. FIX: set \"state\":\"closed\" on D-7 and record closed_by (the commit or migration that did it) — the evidence is this line."
+      "seconds": 9.7,
+      "detail": "F1 REGISTER SAYS OPEN, REALITY SAYS CLOSED — B-7 \"F-8 — golden-path's drift footer prints the production figures as a string LITERAL. Production is never queri…\". Its grep verification returned n=0, and the item is open only when n >= 1. This is docs/45's 28-fail-open-guards shape: a real finding that got fixed and went on being carried as live backlog. FIX: set \"state\":\"closed\" on B-7 and record closed_by (the commit or migration that did it) — the evidence is this line.\nF1 REGISTER SAYS OPEN, REALITY SAYS CLOSED — D-7 \"Debt #35 — zero component tests over roughly 73,790 lines of UI. Twenty test files, none renders a component.\". Its grep verification returned n=1, and the item is open only when n == 0. This is docs/45's 28-fail-open-guards shape: a real finding that got fixed and went on being carried as live backlog. FIX: set \"state\":\"closed\" on D-7 and record closed_by (the commit or migration that did it) — the evidence is this line.\nF1 REGISTER SAYS OPEN, REALITY SAYS CLOSED — C-11 \"get_de_performance_summary reports responses_this_month=0 for the only employee that has any traffic. Technic…\". Its sql verification returned n=0, and the item is open only when n >= 1. This is docs/45's 28-fail-open-guards shape: a real finding that got fixed and went on being carried as live backlog. FIX: set \"state\":\"closed\" on C-11 and record closed_by (the commit or migration that did it) — the evidence is this line.\nF1 REGISTER SAYS OPEN, REALITY SAYS CLOSED — D-13 \"The app is dark-themed (ground rgb(12,17,35)) but declares color-scheme nowhere, so the computed value stays …\". Its grep verification returned n=2, and the item is open only when n == 0. This is docs/45's 28-fail-open-guards shape: a real finding that got fixed and went on being carried as live backlog. FIX: set \"state\":\"closed\" on D-13 and record closed_by (the commit or migration that did it) — the evidence is this line."
     },
     {
       "section": "migration-ledger",
-      "ok": true,
-      "seconds": 5.5
+      "ok": false,
+      "seconds": 5.7,
+      "detail": "ORPHANED:\n  756_one_action_arm_written_once.sql\n  757_both_callers_ask_the_one_arm.sql\n  758_a_metric_this_workspace_defines_can_be_computed.sql\n  764_the_review_reads_the_same_kpi_values_the_panel_shows.sql\n  765_a_review_judges_the_goals_you_set_over_the_window_it_names.sql\n  766_a_goal_belongs_to_one_employee_in_one_workspace.sql\n  767_a_narrative_that_can_never_become_the_verdict.sql"
     },
     {
       "section": "migration-files-match-ledger-checksums",
       "ok": true,
-      "seconds": 4.2
+      "seconds": 3.8
     },
     {
       "section": "migration-numbering",
@@ -38,75 +39,72 @@
     {
       "section": "provider-catalog",
       "ok": true,
-      "seconds": 8.1
+      "seconds": 8.9
     },
     {
       "section": "discovery-spine",
       "ok": true,
-      "seconds": 8
+      "seconds": 6.9
     },
     {
       "section": "discovery-proposal-decisions",
-      "ok": false,
-      "seconds": 14.6,
-      "detail": "public.support_triage_rules carries no log_tenant_activity trigger firing ON DELETE, so nothing outside decide_discovery_proposal records a row of this table being removed. The retired relief for kind \"conversation_type\" requires exactly that record; without the trigger it can never be granted, and the first customer who deletes an accepted conversation_type turns this section red with a message about a uuid that was never created — which would be false. Restore the trigger, or withdraw the relief deliberately and say so here."
+      "ok": true,
+      "seconds": 15
     },
     {
       "section": "decide-discovery-proposal-behaviour",
-      "ok": false,
-      "seconds": 4.9,
-      "detail": "only 17 of 18 probes completed. The missing ones proved nothing, and a partial run with no findings is not a pass.\nnote: probes_completed=17 probes_attempted=17 assertions=239 caller=postgres role=authenticated tenants=5bb802e1-8e92-4eef-9a7a-ac348785d43f,d6c46583-fd66-4aa6-901b-e52609c9a863 archetype=cs_manager — EIGHTEEN accepts driven to SUCCESS so the refusals mean something (probe 1 owner+routable kind; 4 a parked proposal after a second Park was refused; 5d the owner on the row a tenant_user was refused; 6 the other tenant's owner in their OWN workspace; 7 the routable sibling; 7e the twice-failed row once routable; 9 the row an unidentified caller was refused on; 10b the same owner with a connector that IS theirs; 11c the workspace's own owner on the row a platform operator was refused on; 12 the employee hire itself; 13a the hire whose systems step raised 22023 and survived; 14 the owner on the employee row a tenant_user was refused; 15a a pattern-bearing guardrail, created under RLS by the owner and stamped; 15e5 the SAME accept on a whitespace-padded payload, which is the inversion that proves the trim; 15l the owner on the guardrail row a tenant_user was refused; 16a a procedure, drafted and key-stamped under RLS by the owner and stamped here; 16g the owner on the procedure row a tenant_user was refused; 17a a trust rule, on an employee hired through the ordinary accept in the SAME session, recorded at level 0 with NO ladder; 17e13 the owner on the trust_rule row a tenant_user was refused). Rows unchanged in the two probe tenants: 0 proposals, 0 sessions, 4 connectors, 0 decision audit events, 21 employees (excluding the Workspace Assistant), 17 playbook definitions, 52 guardrail rules, 53 trust policies, 5 autonomy dials; 0 tagged connector(s), 0 tagged proposal(s), 0 tagged employee(s), 0 tagged archetype(s), 0 tagged guardrail rule(s), 0 tagged playbook definition(s), 0 tagged trust polic(ies) and 0 tagged autonomy dial(s) survive. NOT proven here: PostgREST's JWT transport (the probes set request.jwt.claim.sub themselves), CONCURRENT as opposed to sequential double-click, whether the four edge-function enforcement paths actually withhold an answer, THE TRUST LADDER ACTUALLY ENFORCING ANYTHING (no policy on this platform is above level 0, so probe 17 proves what a level-0 policy does NOT do and inverts it by calling trust_apply_level directly — it does not prove what a PROMOTED policy would do end to end through decide_action_execution), and THE PLAYBOOK DRAFTER ITSELF — playbook-draft is Deno and needs a live model, so probe 16 performs the two writes it makes rather than calling it (they are all Deno; what is proven is that the rows these accepts create are the shape those readers select for, and for a procedure that means the shape THREE of the eight published gates were driven against here, and the shape the other five read for too)."
+      "ok": true,
+      "seconds": 7.3
     },
     {
       "section": "guardrail-pattern-differential",
       "ok": true,
-      "seconds": 1.7
+      "seconds": 2
     },
     {
       "section": "edge-typecheck",
       "ok": true,
-      "seconds": 2.8
+      "seconds": 1.9
     },
     {
       "section": "golden-path",
       "ok": true,
-      "seconds": 32.5
+      "seconds": 42.3
     },
     {
       "section": "role-gates",
-      "ok": false,
-      "seconds": 9.1,
-      "detail": "  guardrail_rules.update  ←  src/pages/tenant/governance/CompliancePage.tsx:808\n      needs tenant_owner/tenant_admin   ·   refuses tenant_manager\n  answer_playbook_gap  ←  src/pages/tenant/systems/LivePlaybookBuilder.tsx:1531\n      needs tenant_owner/tenant_admin   ·   refuses tenant_manager, knowledge_manager, approver, tenant_user, read_only\n  answer_playbook_gap  ←  src/pages/tenant/systems/LivePlaybookBuilder.tsx:1599\n      needs tenant_owner/tenant_admin   ·   refuses tenant_manager, knowledge_manager, approver, tenant_user, read_only\nself-test ok — 154 gated functions, self-branch detection live\npolicy reader ok — 91 role-gated table writes, open and self-policy tables correctly excluded"
+      "ok": true,
+      "seconds": 7.9
     },
     {
       "section": "silent-refusals",
       "ok": true,
-      "seconds": 3
+      "seconds": 2.5
     },
     {
       "section": "gate-parity",
       "ok": true,
-      "seconds": 8.7
+      "seconds": 10.2
     },
     {
       "section": "branch-parity",
       "ok": true,
-      "seconds": 18.8
+      "seconds": 21.6
     },
     {
       "section": "design-drift",
       "ok": true,
-      "seconds": 0.9
+      "seconds": 0.8
     },
     {
       "section": "migration-append",
       "ok": true,
-      "seconds": 0.9
+      "seconds": 0.7
     },
     {
       "section": "suite",
       "ok": false,
-      "seconds": 48.1,
+      "seconds": 46.9,
       "detail": " ❯ tests/tenant-isolation.test.ts:71:13\n     69|     ).filter((f): f is string => f !== null);\n     70|     if (failures.length > 0) {\n     71|       throw new Error(`teardown failed after 3 attempts each:\\n${failu…\n       |             ^\n     72|     }\n     73|   }, 60000);\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯"
     }
   ]

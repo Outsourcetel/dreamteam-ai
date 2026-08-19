@@ -86,7 +86,7 @@ function RunTimeline({ run, setPage }: { run: PlaybookRun; setPage: (p: Page) =>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className={s.status === 'pending' ? 'text-dt-muted' : 'text-dt-body'}>{s.label}</span>
-                <span className={`text-[9px] px-1.5 py-px rounded ${stepChip[s.status].cls}`}>{stepChip[s.status].label}</span>
+                <span className={`text-[10px] px-1.5 py-px rounded ${stepChip[s.status].cls}`}>{stepChip[s.status].label}</span>
               </div>
               {s.detail && <p className="text-[10px] text-dt-muted mt-0.5">{s.detail}</p>}
             </div>

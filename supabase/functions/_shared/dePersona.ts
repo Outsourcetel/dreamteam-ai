@@ -21,7 +21,7 @@
  * at DE-creation time, simply never wired into the one place that
  * actually talks to the customer.
  */
-import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { loadTenantBrand, brandVoiceDirective } from './brandIdentity.ts';
 
 export interface DePersona {

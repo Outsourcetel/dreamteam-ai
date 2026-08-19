@@ -15,7 +15,7 @@
 // loader — which vitest runs on — refuses any import whose scheme is not
 // file: or data:, unconditionally, before a single line of the importing
 // module's own code runs. The reason _shared/llm.ts's identical-looking
-// `import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'`
+// `import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3'`
 // already survives a direct vitest import today (six existing test files do
 // exactly this — confidence-parity.test.ts, contract-parity.test.ts, etc.)
 // is that SupabaseClient is used SOLELY as a type annotation there; esbuild

@@ -8,12 +8,13 @@
 // Founder decisions baked in: plan gate ALWAYS; approvals one-by-one;
 // budget = SOFT warning only (tenant AI budget stays the hard ceiling).
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
-import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted } from '../_shared/injectionSafety.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { budgetBlocked, rpcLoud } from '../_shared/rpcSafety.ts';
+import { serviceCaller } from '../_shared/serviceCaller.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -478,7 +479,7 @@ serve(async (req) => {
     let tenantId: string | null = null;
     let userId: string | null = null;
     const bearer = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
-    if (bearer === svc) {
+    if (serviceCaller(bearer).service) {
       tenantId = typeof body.tenant_id === 'string' ? body.tenant_id : null;
       if (!tenantId) return json({ error: 'tenant_id required for service calls' }, 400);
     } else {

@@ -21,7 +21,7 @@
  * POST { tenant_id, de_id, mode?, count? } -> { sim_run_id, status, passed, total, avg_score }
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';

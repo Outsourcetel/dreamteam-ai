@@ -89,7 +89,7 @@
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 // PB2.0 — check_knowledge uses the same free built-in embeddings every
 // DE answer uses; read_reference URL fetches pass the shared SSRF guard.
@@ -105,6 +105,7 @@ import { rpcLoud } from '../_shared/rpcSafety.ts';
 // `pending_credentials` rows the discovery accept path now creates, plus no
 // ORDER BY at all. See that file's header for the measured consequence.
 import { CALLABLE_CONNECTOR_STATUSES, pickCallableConnector } from '../_shared/connectorSelection.ts';
+import { serviceCaller } from '../_shared/serviceCaller.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -2558,7 +2559,7 @@ serve(async (req) => {
       let caller = 'cron';
       if (dispatchSecret && headerSecret === dispatchSecret) {
         caller = 'cron';
-      } else if (jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')) {
+      } else if (serviceCaller(jwt).service) {
         caller = 'service_role';
       } else {
         const { data: userData, error: userErr } = await admin.auth.getUser(jwt);
@@ -2789,7 +2790,7 @@ serve(async (req) => {
     // through the normal validated actions below; it cannot widen tenant scope.
     const pbDispatchSecret = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
     const pbHeaderSecret = req.headers.get('x-dispatch-secret') ?? '';
-    if (jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || (pbDispatchSecret && pbHeaderSecret === pbDispatchSecret)) {
+    if (serviceCaller(jwt).service || (pbDispatchSecret && pbHeaderSecret === pbDispatchSecret)) {
       tenantId = body?.tenant_id ?? null;
       if (!tenantId) return json({ error: 'tenant_id required for service/dispatch calls' }, 400);
     } else {

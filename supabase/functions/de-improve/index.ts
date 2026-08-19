@@ -23,7 +23,7 @@
  * Auth: dispatch secret or tenant-member JWT. Budget-gated.
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';

@@ -5,7 +5,7 @@
 // link), exchange the code for tokens using the platform app's client id/secret,
 // store the tokens on the connector (Vault), and mark it connected.
 // ============================================================
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { OAUTH_PROVIDERS, OAUTH_CALLBACK_PATH } from '../_shared/oauthProviders.ts';
 
 // Title/body may contain provider-supplied error text — escape it so a

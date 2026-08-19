@@ -24,7 +24,7 @@
  *     kinds?, match_count? }                               -> { matches:[...] }
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { secureEqual } from '../_shared/secureCompare.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';

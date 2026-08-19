@@ -14,7 +14,7 @@
  * per-tenant flag; master-off => fully inert regardless of the per-tenant flag.
  * SHADOW mode runs the judge and logs the verdict but NEVER blocks (observe-only).
  */
-import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { contentHash } from './contentHash.ts';
 import { hasLLMProvider, llmMessages } from './llm.ts';
 import { wrapUntrusted, FIREWALL_RULES } from './injectionSafety.ts';

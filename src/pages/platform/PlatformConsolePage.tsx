@@ -3,12 +3,12 @@ import type { AuthUser, Tenant, PlatformPage, Page } from '../../types';
 import { Badge, StatCard, Modal } from '../../components';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabase';
-import type { DBTenant, TenantProvisioningRequest, FeatureRegistryEntry, TenantFeatureOverride, PlatformConnectorHealthRow, TenantOverviewRow } from '../../lib/api';
+import type { DBTenant, TenantProvisioningRequest, FeatureRegistryEntry, TenantFeatureOverride, PlatformConnectorHealthRow, TenantOverviewRow, DispatchHealth } from '../../lib/api';
 import {
   fetchPendingProvisioningRequests, approveSubtenantRequest, rejectSubtenantRequest,
   setTenantSelfServe, setTenantStatus, setTenantPlan, deleteTenant, requestSubtenant, fetchTenants,
   fetchFeatureRegistry, fetchTenantFeatureOverrides, setTenantFeatureOverride,
-  fetchPlatformConnectorHealth, fetchPlatformTenantOverview, setTenantLlmKeyMode,
+  fetchPlatformConnectorHealth, fetchPlatformTenantOverview, fetchDispatchHealth, setTenantLlmKeyMode,
 } from '../../lib/api';
 import MfaEnrollmentPanel from '../../components/MfaEnrollmentPanel';
 import PlatformEmailKeyPanel from '../../components/PlatformEmailKeyPanel';
@@ -758,10 +758,17 @@ const relativeTime = (iso: string | null | undefined): string => {
 // ─────────────────────────────────────────────────────────────────
 const PlatformHealthPage = () => {
   const [rows, setRows] = useState<PlatformConnectorHealthRow[] | null>(null);
+  // Register C-2: get_dispatch_health was written in mig 366 and read by
+  // NOTHING for months. It counts exactly the two failures this review found
+  // running for days unseen — a scheduled job failing 48 times a day, and a
+  // connector retried thousands of times at a dead endpoint. An organ nobody
+  // reads cannot raise an alarm, so this page now reads it.
+  const [dispatch, setDispatch] = useState<DispatchHealth | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     fetchPlatformConnectorHealth().then((r) => { if (!cancelled) setRows(r); });
+    fetchDispatchHealth(24).then((d) => { if (!cancelled) setDispatch(d); });
     return () => { cancelled = true; };
   }, []);
 
@@ -829,9 +836,42 @@ const PlatformHealthPage = () => {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">System Health</h1>
         <p className="text-dt-support text-sm mt-1">
-          Connector health across every tenant — the one system-health signal this platform actually tracks today.
+          Connector health across every tenant, and whether the platform's own outbound calls and
+          scheduled jobs are succeeding.
         </p>
       </div>
+
+      {/* ── Dispatch & scheduled jobs, last 24h (register C-2) ──────────────
+          get_dispatch_health existed since migration 366 and nothing read it.
+          These four numbers are precisely what went unnoticed during the
+          review: a reconcile job failing every half hour for thirteen days,
+          and a connector retried ~29 times an hour against a dead endpoint.
+          A zero here is a real zero — the function counts rows, it does not
+          infer health from silence. */}
+      {dispatch && (
+        <div className="mb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard label="Outbound Calls (24h)" value={String(dispatch.http_total)} icon="⟷" color="indigo"
+              trend={`${dispatch.http_failed} failed`} />
+            <StatCard label="Outbound Failures" value={String(dispatch.http_failed)} icon={dispatch.http_failed > 0 ? '⚠' : '✓'}
+              color={dispatch.http_failed > 0 ? 'amber' : 'emerald'}
+              trend={dispatch.http_timed_out > 0 ? `${dispatch.http_timed_out} timed out` : 'No timeouts'} />
+            <StatCard label="Scheduled Runs (24h)" value={String(dispatch.cron_runs)} icon="◷" color="indigo"
+              trend={`${dispatch.cron_failed} failed`} />
+            <StatCard label="Job Failures" value={String(dispatch.cron_failed)} icon={dispatch.cron_failed > 0 ? '⚠' : '✓'}
+              color={dispatch.cron_failed > 0 ? 'amber' : 'emerald'}
+              trend={dispatch.cron_failed > 0 ? 'A job is failing repeatedly' : 'All jobs clean'} />
+          </div>
+          {(dispatch.cron_failed > 0 || dispatch.http_failed > 0) && dispatch.worst_error && (
+            <div className="mt-3 bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
+              <p className="text-xs text-amber-200 font-semibold mb-1">
+                Most recent failure{dispatch.last_failure_at ? ` — ${new Date(dispatch.last_failure_at).toLocaleString()}` : ''}
+              </p>
+              <p className="text-[11px] text-amber-100/80 font-mono break-words">{dispatch.worst_error.slice(0, 400)}</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Five tiles, and they SUM to the total — every row lands in exactly
           one class, and any row that lands in none of them is named in the

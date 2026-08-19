@@ -25,7 +25,7 @@
  * records nothing and acts on nothing.
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { secureEqual } from '../_shared/secureCompare.ts';
 import { loadTenantGate } from '../_shared/tenantStatus.ts';
 import { rpcLoud } from '../_shared/rpcSafety.ts';

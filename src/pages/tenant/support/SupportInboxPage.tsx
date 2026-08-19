@@ -24,7 +24,7 @@ import type { Page } from '../../../types';
 // reply, and resolve — all on the same thread the customer is watching.
 
 // One 12px chip carrying the status, in the shared tone vocabulary. Was four
-// separate text-[9px] pills per row — status, channel, language, priority,
+// separate text-[10px] pills per row — status, channel, language, priority,
 // verified — competing for the same eye at a size the design system does not
 // allow anywhere. Everything but the status moves to a plain-text line.
 const STATUS_META: Record<SupportConversation['status'], { label: string; tone: 'ok' | 'warn' | 'info' | 'neutral' }> = {

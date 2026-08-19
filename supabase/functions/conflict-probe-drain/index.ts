@@ -23,9 +23,10 @@
  * POST { tenant_id?, limit? }  ->  { processed, findings, llm_calls, remaining, done }
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { llmMessages } from '../_shared/llm.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { serviceCaller } from '../_shared/serviceCaller.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -105,7 +106,7 @@ serve(async (req) => {
     const dispatch = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
     const svc = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const bearer = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
-    if (!((dispatch && req.headers.get('x-dispatch-secret') === dispatch) || bearer === svc)) {
+    if (!((dispatch && req.headers.get('x-dispatch-secret') === dispatch) || serviceCaller(bearer).service)) {
       return json({ error: 'unauthorized' }, 401);
     }
 

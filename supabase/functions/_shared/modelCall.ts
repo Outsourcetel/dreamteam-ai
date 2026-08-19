@@ -26,7 +26,7 @@
 // pass between them. That produced 2 permanently-unattributed errors here, and
 // a third the moment any function on `@2` (brand-extract) passed a client in.
 // Type-only import: no runtime change.
-import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { llmMessages } from './llm.ts';
 
 const DEFAULT_MODEL = 'claude-sonnet-5';

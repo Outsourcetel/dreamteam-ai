@@ -7,7 +7,7 @@
  * it logs the verdict and never changes behavior, in ENFORCE it withholds a false done.
  * Enforce NEVER grants a done — it only withholds one. Two-tier flag, default OFF.
  */
-import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 // deno-lint-ignore no-explicit-any
 type Admin = SupabaseClient | any;
 

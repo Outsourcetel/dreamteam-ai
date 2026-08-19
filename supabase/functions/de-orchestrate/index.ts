@@ -8,10 +8,22 @@
  * de-answer) is shared context: the teammate sees what the thread already
  * established, and the supervisor remembers who handled what.
  *
+ * ⚠⚠⚠ WHO OUTRANKS WHOM (mig 760 fix round, founder ruling R2):
+ *   THE CUSTOMER'S TOPIC OWNER BEATS THE AI ROUTER. Where a support triage
+ *   rule names the employee who answers this kind of question, that employee
+ *   answers and the supervisor's model call never happens. The router chooses
+ *   ONLY where no topic matched. Before this, the model's responsibility-fit
+ *   judgement silently overrode the person the customer named in the interview,
+ *   because this function always calls de-answer with `de_id: chosen` and a
+ *   named employee wins in there. Dormant — is_supervisor is false on all 109
+ *   employees across all 18 tenants — which is exactly why it is pinned.
+ *
  * Governance is inherited, not reinvented:
  *   • The routing graph IS the consultation allow-list
  *     (de_consultation_grants, mig 111) — a supervisor can only route to
- *     teammates a human explicitly granted. No grants → no routing.
+ *     teammates a human explicitly granted. No grants → no routing. It bounds
+ *     what the SUPERVISOR may pick; it does not bound the customer's own
+ *     triage rule, which is a human instruction rather than a model's choice.
  *   • The chosen DE answers through de-answer: its own persona, model,
  *     guardrails, confidence, escalation, budgets. Routing never widens
  *     authority — it only picks WHICH governed employee responds.
@@ -25,7 +37,7 @@
  * Auth: dispatch secret or tenant-member JWT (frontend-callable).
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
@@ -33,6 +45,7 @@ import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { loadTenantGate } from '../_shared/tenantStatus.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { budgetBlocked } from '../_shared/rpcSafety.ts';
+import { classifyAndRoute, routerMayChoose } from '../_shared/topicRouting.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -132,10 +145,81 @@ serve(async (req) => {
       mates = ((rows ?? []) as Mate[]).filter(m => !INELIGIBLE.includes(String(m.lifecycle_status)));
     }
 
+    // ── ⚠⚠⚠ THE CUSTOMER'S TOPIC OWNER BEATS THE AI ROUTER (mig 760 FIX
+    // ROUND, R2). Founder ruling, settled.
+    //
+    // This function always names an employee — `de_id: chosen` on the
+    // callDeAnswer below — and a named employee wins inside de-answer. So the
+    // day anyone sets `is_supervisor`, an LLM's responsibility-fit judgement
+    // would silently override the owner a customer named in the interview or
+    // wrote into Support › Triage rules. The default was AI-overrides-customer.
+    //
+    // It is DORMANT today: `is_supervisor` is false on all 109 employees across
+    // all 18 tenants, so `active_supervisors = 0` and this branch is only ever
+    // reached after somebody deliberately designates a supervisor. That is
+    // precisely why the precedence is written down and pinned rather than left
+    // to be discovered the first time the router wakes up.
+    //
+    // THE ROUTER CHOOSES ONLY WHERE NO TOPIC MATCHED, and the classification is
+    // cheap SQL (classify_support_text), so a matched topic also SAVES the
+    // haiku call rather than costing one.
+    //
+    // ⚠ SAME CHANNEL RULE AS de-answer, DERIVED THE SAME WAY. de-answer maps a
+    // missing/unknown channel to 'dock' (index.ts:426-428) and classifyAndRoute
+    // refuses anything outside the five channels the triage trigger accepts, so
+    // this consults a topic for exactly the traffic de-answer would have
+    // classified — and for `exam`, neither does.
+    //
+    // ⚠ AND WHAT IT DELIBERATELY DOES *NOT* DO. The topic owner is not filtered
+    // through `de_consultation_grants`. That list governs what a SUPERVISOR may
+    // pick; a topic owner is a human instruction, resolved by the database with
+    // the tenant, lifecycle and Workspace-Assistant filters already applied, and
+    // routing "never widens authority — it only picks WHICH governed employee
+    // responds" (this file's own header): the chosen employee still answers
+    // through de-answer under its own persona, guardrails, floors and budgets.
+    //
+    // ⚠ THE MONEY GATES BELOW ARE NOT SKIPPED, THEY ARE NOT NEEDED. They guard
+    // the haiku routing call, and a matched topic does not make one:
+    // classify_support_text is free SQL. The suspension refusal, the tenant AI
+    // budget and the ANSWERING employee's budget are all enforced again inside
+    // de-answer — a suspended workspace still comes back 402
+    // {error:'tenant_suspended'}, propagated verbatim by the `aj.error` line
+    // below. What is genuinely not charged is the SUPERVISOR's own per-DE
+    // budget, because the supervisor did not do any paid work.
+    // ⚠⚠⚠ AND NOT ON A THREAD THAT ALREADY EXISTS — the founder's R1 rule
+    // applied to the call site R2 adds, because this is a call site and the
+    // rule is about all of them. It matters MORE here than it looks:
+    // knowledgeApi.ts:625 sends the request to de-orchestrate rather than
+    // de-answer WHENEVER THE TENANT IS KNOWN, which is every portal turn
+    // (EndUserChatPage.tsx:190/:259 pass a stored conversationId with de_id
+    // null). Classifying here on turn 2 would hand the thread to a topic owner
+    // and name them to de-answer, and a named employee beats the row — the
+    // exact defect the three writers just closed, arriving through the back
+    // door the moment a supervisor exists.
+    //
+    // The id is not validated first, deliberately: a bogus one is refused by
+    // de-answer with 404 conversation_not_found, and "do not classify what you
+    // are reusing" needs no round trip to be true.
+    //
+    // ⚠ WHAT THIS DOES NOT CLOSE, and it predates every part of this work: on a
+    // reused thread the SUPERVISOR'S MODEL still routes, so a teammate can
+    // still take over mid-thread while de_conversations.de_id stays put. That
+    // is de-orchestrate's documented purpose ("the chosen employee answers on
+    // the SAME thread (shared memory)") and the founder's ruling did not name
+    // it, so it is left exactly as it was and said out loud instead.
+    const reusedThread = typeof conversation_id === 'string' && !!conversation_id;
+    const convChannel = channel === 'exam' ? 'exam' : channel === 'portal' ? 'portal' : 'dock';
+    const topicRouted = reusedThread
+      ? { triage: null, owner: null }
+      : await classifyAndRoute(admin, tenant_id, String(question), convChannel);
+
     // Routing decision — only when there is somewhere to route.
     let chosen = supervisor_de_id as string;
     let routeReason = 'no teammates granted — answered directly';
-    if (mates.length > 0) {
+    if (!routerMayChoose(topicRouted)) {
+      chosen = topicRouted.owner!.id;
+      routeReason = 'this workspace named an employee for this topic in Support › Triage rules — the supervisor did not choose';
+    } else if (mates.length > 0) {
       // Suspended tenant does no paid AI work — refuse BEFORE the routing call.
       const gate = await loadTenantGate(admin, tenant_id);
       if (gate.suspended) return json({ error: 'tenant_suspended' }, 402);

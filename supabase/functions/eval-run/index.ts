@@ -23,9 +23,10 @@
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
+import { serviceCaller } from '../_shared/serviceCaller.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -96,7 +97,7 @@ serve(async (req) => {
 
     const dispatchSecret = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
     const headerSecret = req.headers.get('x-dispatch-secret') ?? '';
-    const isServiceRole = jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const isServiceRole = serviceCaller(jwt).service;
     const isServiceCaller = isServiceRole || (dispatchSecret !== '' && headerSecret === dispatchSecret);
 
     let tenantId: string | null = null;

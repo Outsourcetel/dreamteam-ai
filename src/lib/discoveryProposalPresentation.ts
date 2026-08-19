@@ -24,23 +24,35 @@
 //   - conversation_type / procedure / connector are low-stakes enough that
 //     their SECOND gate (publish / credential) is the real consent, so they
 //     get "accept all N" with per-item unchecking.
-//     ⚠ RE-EXAMINED FOR conversation_type ON 2026-08-18, because migration 754
-//     gave that kind a real writer and the old justification named a "SECOND
-//     gate" it does not have — there is no publish step and no credential for a
-//     triage rule. accept_all is KEPT, on a different and stronger argument:
-//     an accepted topic CHANGES NO DECISION. It writes a label the inbox filter
-//     and the History report count by; it blocks nothing (unlike a guardrail),
-//     removes no human (unlike a trust rule), grants no access (unlike a
-//     connector), creates no colleague (unlike an employee), and does not
-//     choose who answers — de_conversations.de_id is stamped when the
-//     conversation row is inserted, before the first message exists. It is also
-//     the ONE kind that routinely arrives ten at a time, which is the case this
-//     mode exists for, and every one of the ten is individually removable in
-//     Support › Triage rules afterwards. If a future change ever lets a topic
-//     set priority, severity or ownership, this decision has to be re-made:
-//     those DO change what happens to traffic. createTriageRuleFromProposal
-//     therefore writes the column defaults for priority and severity and takes
-//     neither from the payload.
+//     ⚠⚠ RE-MADE FOR conversation_type ON 2026-08-18 (migration 760), BECAUSE
+//     THE PREVIOUS VERSION OF THIS PARAGRAPH SAID IT WOULD HAVE TO BE. Its
+//     words: "If a future change ever lets a topic set priority, severity or
+//     ownership, this decision has to be re-made: those DO change what happens
+//     to traffic." 760 is that change — a topic can now name who answers it —
+//     so here is the re-decision and what it rests on.
+//
+//     accept_all is KEPT. Three things, each measured rather than asserted:
+//       · §11b's OWN TABLE puts "label + owner — one line" on this card AND
+//         puts this kind in "accept all N with per-item unchecking". The two
+//         were specified together; 754 removed the owner because nothing routed
+//         on a topic, and 760 restores exactly what the design law asked for.
+//       · THE SECOND GATE IS REAL AFTER ALL, and it was MEASURED on 2026-08-18
+//         rather than argued: an owner_ref resolves to an employee the SAME
+//         session just hired, the ordinary discovery hire lands at
+//         lifecycle_status 'designed', and classify_support_text returns NO
+//         owner for a never-published employee. So accepting ten topics with
+//         ten owners changes NOTHING about who answers until those employees
+//         are published — one at a time, each behind its own certification
+//         gate. That is a firmer second gate than the connector's credential.
+//       · IT IS REVERSIBLE ON A SCREEN THE FOUNDER NAMED: "a customer must be
+//         able to change their mind on the screen without re-running the
+//         interview" — Support › Triage rules, per rule, owner included.
+//     What accepting still does NOT do is set priority or severity:
+//     createTriageRuleFromProposal writes the column defaults and takes neither
+//     from the payload, so a topic from an interview can never silently mark a
+//     class of traffic urgent. If THAT ever changes this decision has to be
+//     re-made again. And the owner is on the CARD FACE, not in the drawer, so
+//     it is a fact the customer sees before the click rather than after it.
 //   - employee batches by department, but every card stays individually
 //     visible — batching here is a GROUPING device, never a bulk-decide one.
 // ============================================================
@@ -116,7 +128,7 @@ export function acceptAllSectionBlurb(kind: ProposalKind): string {
     case 'procedure':
       return 'Accepting one writes a draft under Playbooks and runs nothing: publishing it is the step that lets it run, and that is a separate decision. Uncheck anything you don\'t want proposed at all.';
     case 'conversation_type':
-      return 'There is no later step for these. Accepting one adds a triage rule straight away, and new conversations using those words are filed under that topic from then on — it changes who answers nothing, it sits behind your built-in categories like Safety and Security, and you can reword or remove any of them under Support › Triage rules. Uncheck anything you don\'t want.';
+      return 'Accepting one adds a triage rule straight away, and new conversations using those words are filed under that topic from then on. Where one names a person, they take those conversations over once that person is live in your workspace — not before. They sit behind your built-in categories like Safety and Security, and you can reword, reassign or remove any of them under Support › Triage rules. Uncheck anything you don\'t want.';
     default:
       return 'Uncheck anything you don\'t want proposed at all.';
   }
@@ -758,13 +770,16 @@ export interface ProposalCardCopy {
 }
 
 /** The one function every card in the screen calls for its copy. Takes only
- *  data — kind + payload + an employee-name lookup for the ONE kind
- *  (trust_rule's de_ref) that references an employee by "archetype:<key>"
- *  rather than carrying a name of their own. ⚠ It was TWO until migration 754:
- *  conversation_type carried an `owner_ref` and the card rendered "Routes to:
- *  <name>". Nothing routes on a topic — de_conversations.de_id is stamped when
- *  the conversation row is inserted, before any message exists — so the field
- *  and the sentence are both gone rather than made optional.
+ *  data — kind + payload + an employee-name lookup for the TWO kinds
+ *  (trust_rule's de_ref and conversation_type's owner_ref) that reference an
+ *  employee by "archetype:<key>" rather than carrying a name of their own.
+ *  ⚠ That count has been 2, then 1, and is 2 again, and the history is the
+ *  point: 754 removed conversation_type's owner because NOTHING ROUTED ON A
+ *  TOPIC — de_id was stamped when the conversation row was inserted, before any
+ *  message existed — so "Routes to: <name>" was a promise the platform did not
+ *  keep. 760 built the routing, so the field and the sentence come back, with
+ *  the one thing the original never said: it takes effect when that employee
+ *  goes live, not when the card is accepted.
  *
  *  ⚠ `context` IS THE CONSENT, AND IT IS ON THE CARD BECAUSE ACCEPT IS ON THE
  *  CARD. Until this parameter existed, the entire compliance-pack disclosure
@@ -801,9 +816,17 @@ export function cardCopyFor(
     //     readers are four filters and a label).
     //  2. "Routes to: <employee>" — FALSE for the same reason, and worse,
     //     because it names a specific person the topic will supposedly reach.
-    //     `owner_ref` is gone from the payload entirely (validatePayload, 754):
-    //     a required field whose only job was to satisfy a promise the platform
-    //     does not keep.
+    //     `owner_ref` was removed from the payload entirely (validatePayload,
+    //     754): a required field whose only job was to satisfy a promise the
+    //     platform did not keep.
+    //     ⚠⚠ 760 REVERSED THIS ONE, AND ONLY THIS ONE. The promise is now kept
+    //     — classify_support_text returns the matched rule's owner and all
+    //     three conversation writers read it before the row exists — so the
+    //     card names the person again, as "Answered by", and says the thing the
+    //     original never did: it starts when that employee is live. The other
+    //     three sentences below stay dead. `owner_ref` is OPTIONAL now, not
+    //     required, so a topic nobody owns is a topic the workspace answers the
+    //     way it does today rather than a card that cannot be emitted.
     //  3. "you can assign one when you publish" — FALSE TWICE. There is no
     //     publish step for a triage rule and no owner to assign.
     //  4. "You can rename or reassign this topic later." RENAME is true — the
@@ -821,13 +844,31 @@ export function cardCopyFor(
       const label = str(payload.label) || 'New topic';
       const category = str(payload.set_category);
       const pattern = str(payload.match_pattern);
+      // ⚠⚠ 760 PUTS THE OWNER BACK ON THE CARD FACE, which is what §11b asked
+      // for in the first place ("label + owner — one line"). 754 was right to
+      // take it off — nothing routed then, so it was a promise the platform did
+      // not keep — and it is right to be here now, because it is the largest
+      // thing accepting this card does. It is rendered from the SAME map the
+      // trust_rule case uses (owner_ref is "archetype:<key>", never a name),
+      // and "nobody in particular" is said OUT LOUD rather than left blank: an
+      // absent owner and an unnamed one read identically, and one of them means
+      // "your workspace answers this the way it does today".
+      const ownerRef = str(payload.owner_ref);
+      const ownerName = ownerRef ? employeeNameByArchetype.get(archetypeOf(ownerRef)) ?? '' : '';
       return {
         title: `File "${label}" as its own conversation topic`,
-        detail: 'Support conversations mentioning these words get labelled with this topic, so you can filter and count them. It does not change who answers them.',
-        meta: pattern
-          ? `Looks for: ${pattern.split('|').map((p) => p.trim()).filter(Boolean).join(' · ')}${category ? ` → filed as "${category}"` : ''}`
-          : 'No words to look for yet',
-        nudge: 'Runs after your built-in categories like Safety and Security, so those still win. You can rename it, change the words or remove it in Triage rules.',
+        detail: ownerRef
+          ? 'Support conversations mentioning these words get labelled with this topic, and go to the person named below once they are live in your workspace.'
+          : 'Support conversations mentioning these words get labelled with this topic, so you can filter and count them. Whoever usually answers still answers them.',
+        meta: [
+          pattern
+            ? `Looks for: ${pattern.split('|').map((p) => p.trim()).filter(Boolean).join(' · ')}${category ? ` → filed as "${category}"` : ''}`
+            : 'No words to look for yet',
+          `Answered by: ${ownerRef ? (ownerName || 'the person recommended for this') : 'whoever usually answers'}`,
+        ].join(' · '),
+        nudge: ownerRef
+          ? 'Nothing changes until that person is live — until then these carry on being answered exactly as they are now. Runs after your built-in categories like Safety and Security, so those still win. You can rename it, change the words, hand it to someone else or remove it in Triage rules.'
+          : 'Runs after your built-in categories like Safety and Security, so those still win. You can rename it, change the words, give it to someone or remove it in Triage rules.',
       };
     }
 
@@ -1308,14 +1349,26 @@ export function whatAcceptingWrites(
     }
     // ⚠ 754: this read "Adds this as a routable conversation topic." It added
     // NOTHING — there was no writer at all until migration 754 — and "routable"
-    // was false besides. Now it adds a real row and the sentence says which one,
-    // what looks at it, and the two things it does not do.
+    // was false besides. Now it adds a real row and the sentence says which one
+    // and what looks at it.
+    // ⚠⚠ 760: and the "does not decide who answers" half is now a BRANCH rather
+    // than a fact, because it depends on whether this card named somebody. Both
+    // sentences carry the part a customer would otherwise discover by surprise:
+    // routing starts when that employee goes LIVE, and conversations already
+    // open keep the person they have (de_id is write-once — moving it would
+    // retroactively re-attribute a whole thread, economics and CSAT included).
     case 'conversation_type': {
       const gate = topicAcceptability(payload);
       if (!gate.ok) {
         return `Creates nothing. ${gate.reason} Accepting it records that reason against this recommendation and leaves it here for you.`;
       }
-      return `Adds a triage rule under Support › Triage rules. From then on, a support conversation whose first message contains any of those words is labelled "${gate.category}", which is what the inbox topic filter and the History report count by. It does NOT decide who answers — the digital employee is chosen when the conversation starts, before the first message arrives — and it is consulted AFTER your built-in categories, so Safety, Security and the rest still win where the words overlap. You can edit or delete it there at any time.`;
+      {
+        const ownerRef = str(payload.owner_ref);
+        const whoLine = ownerRef
+          ? ' It also decides WHO ANSWERS them: from the moment the person on this card is live in your workspace, a conversation matching those words starts with them instead of whoever usually picks it up. Until then nothing about who answers changes, and conversations that are already open keep the person they have — this only applies to new ones.'
+          : ' It does not change who answers: conversations matching it start with whoever usually picks them up, and you can hand the topic to someone in Triage rules whenever you want.';
+        return `Adds a triage rule under Support › Triage rules. From then on, a support conversation whose first message contains any of those words is labelled "${gate.category}", which is what the inbox topic filter and the History report count by.${whoLine} It is consulted AFTER your built-in categories, so Safety, Security and the rest still win where the words overlap. You can edit or delete it there at any time.`;
+      }
     }
     case 'guardrail': {
       // ⚠ 751: the threshold branch used to say "Creates a guardrail that

@@ -29,7 +29,7 @@
  * recorded against the caller's requested model id, so cost attribution
  * under cross-vendor failover is approximate.
  */
-import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { getAIKey, getAIKeys } from './aiKeys.ts';
 
 type Provider = 'anthropic' | 'bedrock' | 'openai' | 'google';

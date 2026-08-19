@@ -424,7 +424,7 @@ export default function DiscoveryProposalsPage({ setPage: _setPage }: { setPage?
               : p.kind === 'conversation_type'
                 ? (outcome.reusedExisting
                   ? `${title} — you already had exactly this topic, so nothing new was created. It is switched on and filing conversations under "${topicAcceptability(p.payload).category}", and it is under Support › Triage rules.`
-                  : `${title} — switched on now. From this moment a new conversation whose first message uses those words is filed under "${topicAcceptability(p.payload).category}"; your built-in categories like Safety and Security still come first, and this does not change who answers. You can reword it or take it off under Support › Triage rules.`)
+                  : `${title} — switched on now. From this moment a new conversation whose first message uses those words is filed under "${topicAcceptability(p.payload).category}"; your built-in categories like Safety and Security still come first. ${outcome.routesToEmployee ? `${outcome.ownerName || 'The person on that card'} takes these over as soon as they are live in your workspace — nothing about who answers changes before that, and conversations already open keep the person they have.` : 'Whoever usually answers still answers them.'} You can reword it, hand it to someone or take it off under Support › Triage rules.`)
               // ⚠ TWO different true things, not one convenient one. An accept
               // that RE-USED a connector the workspace already had inserted
               // nothing — telling that person to go and enter a credential sends

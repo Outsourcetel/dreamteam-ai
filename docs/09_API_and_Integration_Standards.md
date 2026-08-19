@@ -1,5 +1,12 @@
 # 09 — API and Integration Standards
 
+> ⚠ **SUPERSEDED — this documents an API that was never built.**
+> Verified on 2026-08-18: the **16 REST endpoints below do not exist**, and there
+> is no `/v1` surface of any kind. The product is served by PostgREST plus the
+> edge functions under `supabase/functions/`. Do not hand this to an integration
+> partner — every endpoint in it is fiction. (register D-15, docs/68)
+
+
 **DreamTeam AI — Enterprise API & Integration Blueprint**
 Version 1.0 | 2026-07-01
 

@@ -18,7 +18,7 @@
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { resolveDePersona, type DePersonaOverrides } from '../_shared/dePersona.ts';
@@ -36,6 +36,8 @@ import { reportEdgeError } from '../_shared/errorReport.ts';
 import { budgetBlocked } from '../_shared/rpcSafety.ts';
 import { rankDocs, parseAnswerEnvelope } from '../_shared/answerEnvelope.ts';
 import { checkAnswerGuardrails, GUARDRAIL_RESOLVER_ERROR } from '../_shared/answerGuardrails.ts';
+import { classifyAndRoute, chooseAnswerer, triageColumns, type Answerer, type RoutedTopic } from '../_shared/topicRouting.ts';
+import { serviceCaller } from '../_shared/serviceCaller.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -448,7 +450,7 @@ serve(async (req) => {
 
     const dispatchSecret = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
     const headerSecret = req.headers.get('x-dispatch-secret') ?? '';
-    const isServiceRole = jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const isServiceRole = serviceCaller(jwt).service;
     const isDispatchCron = dispatchSecret !== '' && headerSecret === dispatchSecret;
 
     let tenantId: string | null = null;
@@ -491,7 +493,25 @@ serve(async (req) => {
     // one of those stages is an honest refusal, not a silent swap;
     // the auto-resolved fallback picks the next eligible one.
     let subjectDeId: string | null = null;
-    if (typeof de_id === 'string' && de_id) {
+    // mig 760 — declared out here because the INSERT below needs the same
+    // object the routing decision was made from. One classification, one answer.
+    let routed: RoutedTopic = { triage: null, owner: null };
+    // Today's fallback, resolved through ONE function because the fix gave it a
+    // second caller. Note it does NOT exclude 'designed', unlike widget-ask and
+    // email-inbound — that difference predates migration 760 and is left alone,
+    // because "no match behaves exactly as today" means exactly this query.
+    // classify_support_text applies the STRICTER set to a topic owner, so
+    // routing can only ever hand back somebody this fallback would also have
+    // accepted.
+    const oldestEligibleDe = async (): Promise<string | null> => {
+      const { data: firstDe } = await admin.from('digital_employees')
+        .select('id').eq('tenant_id', tenantId)
+        .not('lifecycle_status', 'in', '(paused,retired,archived)')
+        .order('created_at', { ascending: true }).limit(1).maybeSingle();
+      return firstDe?.id ?? null;
+    };
+    const callerNamedDe = typeof de_id === 'string' && !!de_id;
+    if (callerNamedDe) {
       const { data: reqDe } = await admin.from('digital_employees')
         .select('id, lifecycle_status').eq('id', de_id).eq('tenant_id', tenantId).maybeSingle();
       if (!reqDe) return json({ error: 'de_not_in_tenant' }, 403);
@@ -499,12 +519,98 @@ serve(async (req) => {
         return json({ error: 'de_not_available', detail: `This employee is ${reqDe.lifecycle_status} and cannot answer.` }, 409);
       }
       subjectDeId = reqDe.id;
-    } else {
-      const { data: firstDe } = await admin.from('digital_employees')
-        .select('id').eq('tenant_id', tenantId)
-        .not('lifecycle_status', 'in', '(paused,retired,archived)')
-        .order('created_at', { ascending: true }).limit(1).maybeSingle();
-      subjectDeId = firstDe?.id ?? null;
+    }
+
+    // ── THE THREAD, RESOLVED BEFORE THE EMPLOYEE (mig 760 FIX ROUND, R1) ─────
+    // This read used to live at :597 — SEVENTY LINES AFTER the routing call —
+    // which is how classification came to fire on every turn of an open thread.
+    // It is hoisted here because a conversation that already exists ANSWERS THE
+    // QUESTION the routing was being asked: `de_conversations.de_id` is the
+    // employee this thread belongs to.
+    //
+    // ⚠ IT SITS AFTER THE de_not_in_tenant / de_not_available REFUSALS ON
+    // PURPOSE. A caller that sends both a bad de_id and a bad conversation_id
+    // gets the same status it got yesterday; hoisting the whole thing above
+    // them would have silently swapped a 403 for a 404.
+    //
+    // ⚠ REPLAY: unchanged and still null — a dry run never adopts, creates or
+    // writes a conversation, and every convId-guarded write downstream stays
+    // disarmed.
+    let existingConv: { id: string; de_id: string | null } | null = null;
+    if (!replayMode && typeof conversation_id === 'string' && conversation_id) {
+      // Caller-supplied thread: must be a UUID the caller's tenant owns —
+      // otherwise messages/outcomes would attach to a foreign or nonexistent
+      // conversation ref.
+      if (!/^[0-9a-f-]{36}$/i.test(conversation_id)) {
+        return json({ error: 'invalid_conversation_id' }, 400);
+      }
+      const { data: owned } = await admin.from('de_conversations')
+        .select('id, de_id').eq('id', conversation_id).eq('tenant_id', tenantId).maybeSingle();
+      if (!owned) return json({ error: 'conversation_not_found' }, 404);
+      existingConv = { id: String(owned.id), de_id: (owned.de_id as string | null) ?? null };
+    }
+
+    if (!callerNamedDe) {
+      // ⚠⚠ mig 760: A CONVERSATION TOPIC DECIDES WHO ANSWERS — HERE, AND ONLY
+      // HERE ON THIS PATH. This branch runs when THE CALLER NAMED NOBODY, which
+      // is the only case where a topic has any business choosing: the dock
+      // passes an explicit de_id (knowledgeApi.ts:640, DEChatDock.tsx:355 — the
+      // Workspace Assistant), and de-orchestrate passes `de_id: chosen`. An
+      // employee somebody named always wins.
+      //
+      // ⚠⚠⚠ AND ONLY ON A THREAD THAT DOES NOT EXIST YET. A reused thread is
+      // NOT classified — not "classified and then ignored", not classified at
+      // all — because the answer is already recorded on the row. Before this
+      // fix the portal's second turn re-ran the classifier and could hand the
+      // conversation to a different employee while de_conversations.de_id still
+      // named the first: the answer, the token spend, the billable outcome, the
+      // human task and the eval check all moved, and the seven readers that
+      // count by de_id did not. EndUserChatPage.tsx:190 and :259 pass a stored
+      // conversationId with de_id null on every turn after the first, so this
+      // was live-reachable, not theoretical.
+      //
+      // ⚠ AND ONLY ON A TRIAGED CHANNEL. classifyAndRoute returns nothing for
+      // `exam`, which trg_triage_support_conversation also refuses — migration
+      // 671 took exams out of the support taxonomy deliberately, and routing a
+      // channel the platform will not label would be a second taxonomy with no
+      // screen behind it. What actually reaches the new code is `portal`.
+      //
+      // ⚠ THIS FUNCTION MADE 446 OF THE 460 CONVERSATIONS ON THIS PLATFORM.
+      // Leaving it out because "widget-ask and email-inbound are the two insert
+      // sites" would have been two paths with one counted.
+      if (!replayMode && !existingConv) {
+        routed = await classifyAndRoute(admin, tenantId, question, convChannel);
+      }
+
+      // ⚠ AND WHEN THE RECORDED OWNER HAS GONE. A thread whose de_id is NULL,
+      // or names somebody since paused/retired/archived, still has to be
+      // answered — so it falls to TODAY'S FALLBACK, and never to a
+      // classification. "Conversations that are already open keep the person
+      // they have" cannot mean "and if that person left, a triage rule may
+      // reassign the thread": that is the same mid-thread move, arriving one
+      // roster change later. Same eligibility set as the explicit-de_id branch
+      // above, so the two cannot drift.
+      let threadOwner: Answerer | null = null;
+      if (existingConv?.de_id) {
+        const { data: recorded } = await admin.from('digital_employees')
+          .select('id, lifecycle_status, external_reply_mode')
+          .eq('id', existingConv.de_id).eq('tenant_id', tenantId).maybeSingle();
+        if (recorded && !['paused', 'retired', 'archived'].includes(String(recorded.lifecycle_status))) {
+          threadOwner = { id: String(recorded.id), external_reply_mode: recorded.external_reply_mode ?? null };
+        }
+      }
+
+      const fallbackId = await oldestEligibleDe();
+      const pick = chooseAnswerer({
+        // `named` is null here by construction — the branch above owns that
+        // case, refusals included. Passed explicitly so the precedence reads
+        // the same in all four callers rather than being implied by an if.
+        named: null,
+        thread: threadOwner,
+        topic: routed.owner,
+        fallback: fallbackId ? { id: fallbackId, external_reply_mode: null } : null,
+      });
+      subjectDeId = pick.who?.id ?? null;
     }
     // Resolved once, used twice: the no-docs deflection below must not fire for
     // an employee that can answer from the platform product guide, and the shelf
@@ -561,17 +667,12 @@ serve(async (req) => {
     // also disarms every convId-guarded write downstream).
     let convId: string | null = null;
     if (!replayMode) {
-      if (typeof conversation_id === 'string' && conversation_id) {
-        // Caller-supplied thread: must be a UUID the caller's tenant owns —
-        // otherwise messages/outcomes would attach to a foreign or
-        // nonexistent conversation ref.
-        if (!/^[0-9a-f-]{36}$/i.test(conversation_id)) {
-          return json({ error: 'invalid_conversation_id' }, 400);
-        }
-        const { data: owned } = await admin.from('de_conversations')
-          .select('id').eq('id', conversation_id).eq('tenant_id', tenantId).maybeSingle();
-        if (!owned) return json({ error: 'conversation_not_found' }, 404);
-        convId = conversation_id;
+      if (existingConv) {
+        // Validated and READ above, where it had to be — the row's de_id is
+        // what chose the employee. One lookup, one source of truth; the second
+        // copy of this check that used to live here is exactly how the two
+        // halves came to disagree about whether a thread was new.
+        convId = existingConv.id;
       } else {
         // A certification exam runs the REAL pipeline on purpose — replay mode
         // would skip the platform knowledge shelf, the grounded-confidence gate
@@ -582,7 +683,12 @@ serve(async (req) => {
         // Support Inbox rather than being suppressed or deleted.
         const { data: conv } = await admin
           .from('de_conversations')
-          .insert({ tenant_id: tenantId, channel: convChannel, de_id: subjectDeId })
+          // ⚠ mig 760: ALL FOUR TRIAGE COLUMNS, together or not at all —
+          // trg_triage_support_conversation returns early on a non-null
+          // category and would leave severity NULL. `{}` for `exam`, for a
+          // caller who named an employee (nothing was classified), and for any
+          // classification failure — which is byte-for-byte today's insert.
+          .insert({ tenant_id: tenantId, channel: convChannel, de_id: subjectDeId, ...triageColumns(routed.triage) })
           .select('id').single();
         convId = conv?.id ?? null;
       }

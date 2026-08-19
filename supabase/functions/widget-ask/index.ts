@@ -22,7 +22,7 @@
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { getAIKey } from '../_shared/aiKeys.ts';
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
@@ -41,6 +41,7 @@ import { reportEdgeError } from '../_shared/errorReport.ts';
 import { budgetBlocked } from '../_shared/rpcSafety.ts';
 import { rankDocs, parseAnswerEnvelope } from '../_shared/answerEnvelope.ts';
 import { checkAnswerGuardrails, loadBlockingRules, matchBlockingRule, GUARDRAIL_RESOLVER_ERROR } from '../_shared/answerGuardrails.ts';
+import { classifyAndRoute, chooseAnswerer, triageColumns, NEVER_FRONTS_CUSTOMER_CHAT, type RoutedTopic } from '../_shared/topicRouting.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -251,6 +252,30 @@ serve(async (req) => {
     if (gate.suspended) return json(TENANT_SUSPENDED_BODY, 402);
     const tenantName = gate.name;
 
+    // ── THE THREAD, RESOLVED BEFORE THE EMPLOYEE (mig 760 FIX ROUND, R1) ─────
+    // This ownership check used to sit at :354 — SIXTY-SEVEN LINES AFTER the
+    // classification at :287 — so `routed` was computed on every turn and the
+    // reuse check came too late to stop it. A supplied conversation_id must
+    // belong to THIS widget key's tenant (external review 2026-07-20, P1-6);
+    // that is unchanged. What is new is that the row's `de_id` is read WITH it,
+    // because on a thread that already exists the row is who answers.
+    //
+    // ⚠ NOTHING RETURNS BETWEEN THE SUSPENSION GATE ABOVE AND THE OLD POSITION
+    // OF THIS CHECK, so a caller sees the same 404 in the same order it saw
+    // yesterday. What changes is that a reused thread no longer pays for a
+    // classification whose answer it must not use.
+    let existingConv: { id: string; de_id: string | null } | null = null;
+    if (conversationId) {
+      const { data: owned } = await admin
+        .from('de_conversations')
+        .select('id, de_id')
+        .eq('id', conversationId)
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
+      if (!owned) return json({ error: 'conversation_not_found' }, 404);
+      existingConv = { id: String(owned.id), de_id: (owned.de_id as string | null) ?? null };
+    }
+
     // ── Resolve the answering DE (first eligible) + persona ──
     // Front DE for the public widget: a DE explicitly set to auto-answer
     // customers outranks draft-mode internal DEs, and 'designed' (never
@@ -265,7 +290,63 @@ serve(async (req) => {
     // retired DE can never keep fronting customer chat; otherwise fall back to the
     // old heuristic, which keeps every pre-existing key behaving exactly as before.
     const boundDe = keyBoundDeId ? (frontDes ?? []).find((d) => d.id === keyBoundDeId) ?? null : null;
-    const firstDe = boundDe ?? (frontDes ?? []).find((d) => d.external_reply_mode === 'auto') ?? (frontDes ?? [])[0] ?? null;
+
+    // ⚠⚠ mig 760: A CONVERSATION TOPIC DECIDES WHO ANSWERS. The question is
+    // classified BEFORE the conversation row exists, and that ONE result is used
+    // for both the routing and the four triage columns stamped at insert.
+    //
+    // ⚠ THE TEXT IS `question` AND NOTHING ELSE. Below, the first message is
+    // stored as `[${channel} · ${endUserTag}] ${question}` and the conversation
+    // subject is the question's first 120 characters — and the trigger used to
+    // classify subject + content together. classify_support_text matches BARE
+    // SUBSTRINGS, so an end user at an account called "Fireside Media" asking
+    // about invoice payment terms classified Safety/urgent/sev1 because `fire`
+    // is in the Safety pattern and Safety sits at rule_order 10 (proven live
+    // 2026-08-18). A company NAME must not decide who answers.
+    //
+    // ⚠⚠ PRECEDENCE — an explicitly BOUND KEY (mig 323) > the THREAD'S RECORDED
+    // OWNER > the TOPIC OWNER > today's fallback. A customer who pointed this
+    // widget key at one employee said something more specific than a triage
+    // rule does, so the binding still wins.
+    //
+    // ⚠⚠⚠ AND A REUSED THREAD IS NOT CLASSIFIED AT ALL. public/widget.js:144
+    // sends conversation_id on EVERY turn, so before this fix turn 2 of an open
+    // widget thread was re-classified and could be answered, charged and
+    // escalated by a different employee while de_conversations.de_id still
+    // named the first. The row is the answer; asking the classifier for a
+    // second opinion on a decision already recorded is what created the gap.
+    const routed: RoutedTopic = existingConv
+      ? { triage: null, owner: null }
+      : await classifyAndRoute(admin, tenantId, question, channel);
+
+    // The employee this thread already belongs to, held to the SAME bar the
+    // front desk holds everyone to — a conversation whose employee has since
+    // been paused, retired, archived or un-published must still be answered,
+    // and it is answered by today's fallback, never by a classification.
+    let threadOwner: { id: string; external_reply_mode: string | null } | null = null;
+    if (existingConv?.de_id) {
+      const { data: recorded } = await admin.from('digital_employees')
+        .select('id, external_reply_mode, lifecycle_status')
+        .eq('id', existingConv.de_id).eq('tenant_id', tenantId).maybeSingle();
+      if (recorded && !NEVER_FRONTS_CUSTOMER_CHAT.includes(String(recorded.lifecycle_status))) {
+        threadOwner = { id: String(recorded.id), external_reply_mode: recorded.external_reply_mode ?? null };
+      }
+    }
+
+    const picked = chooseAnswerer({
+      named: boundDe ? { id: String(boundDe.id), external_reply_mode: boundDe.external_reply_mode ?? null } : null,
+      thread: threadOwner,
+      topic: routed.owner,
+      // ⚠ THE `auto` BRANCH HAS NEVER SELECTED ANYTHING — external_reply_mode
+      // is 'draft' on all 109 employees across all 18 tenants, so `?? frontDes[0]`
+      // resolves every time. It is left exactly as it was: this migration is
+      // additive, and "no match behaves as today" has to mean the branch that
+      // actually runs.
+      fallback: ((f) => (f ? { id: String(f.id), external_reply_mode: f.external_reply_mode ?? null } : null))(
+        (frontDes ?? []).find((d) => d.external_reply_mode === 'auto') ?? (frontDes ?? [])[0] ?? null,
+      ),
+    });
+    const firstDe = picked.who;
     const subjectDeId: string | null = firstDe?.id ?? null;
     // Per-DE send mode — DE config, the channel just reads it.
     const replyMode: 'draft' | 'auto' = firstDe?.external_reply_mode === 'auto' ? 'auto' : 'draft';
@@ -319,19 +400,12 @@ serve(async (req) => {
     const endUserTag = [displayName, accountRef ? `account ${accountRef}` : null].filter(Boolean).join(' · ');
 
     // ── Conversation (create with lifecycle fields, or reuse) ──
-    // A supplied conversation_id must belong to THIS widget key's tenant —
-    // otherwise a leaked/guessed UUID lets an attacker append messages into
-    // another tenant's conversation (external review 2026-07-20, P1-6).
-    let convId: string | null = conversationId;
-    if (convId) {
-      const { data: owned } = await admin
-        .from('de_conversations')
-        .select('id')
-        .eq('id', convId)
-        .eq('tenant_id', tenantId)
-        .maybeSingle();
-      if (!owned) return json({ error: 'conversation_not_found' }, 404);
-    }
+    // Validated and READ above, where it had to be: the row's de_id is what
+    // chose the employee, so the tenant check that used to live here now
+    // happens before anything depends on the answer. One lookup, one source of
+    // truth — two copies of "is this thread ours" is how the classification and
+    // the reuse check came to disagree about whether a thread was new.
+    let convId: string | null = existingConv?.id ?? null;
     let isNewConv = false;
     if (!convId) {
       isNewConv = true;
@@ -340,6 +414,13 @@ serve(async (req) => {
         subject: question.trim().slice(0, 120),
         account_external_ref: accountRef, end_user_ref: endUserRef, end_user_name: displayName,
         last_message_at: nowIso(),
+        // ⚠ mig 760: ALL FOUR TRIAGE COLUMNS, TOGETHER OR NOT AT ALL.
+        // trg_triage_support_conversation returns early on `category IS NOT
+        // NULL`, so stamping only the category here would leave severity NULL
+        // and priority stuck at its 'normal' default forever. `{}` when there
+        // is nothing to stamp, which leaves the trigger to do exactly what it
+        // does today.
+        ...triageColumns(routed.triage),
       }).select('id').single();
       if (convErr) console.error('conversation create failed', convErr.message);
       convId = conv?.id ?? null;

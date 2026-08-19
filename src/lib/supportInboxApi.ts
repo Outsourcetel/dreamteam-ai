@@ -316,13 +316,17 @@ export interface TriageRule {
   set_priority: 'low' | 'normal' | 'high' | 'urgent';
   set_severity: string;
   active: boolean;
+  /** WHO ANSWERS conversations this rule matches (migration 760), or null for
+   *  "the workspace's usual choice" — which is what every rule created before
+   *  that migration carries and what every workspace did before it. */
+  owner_de_id: string | null;
 }
 
 /** List this tenant's triage rules (precedence order). */
 export async function listTriageRules(): Promise<TriageRule[]> {
   const tid = await requireTenantId();
   const { data, error } = await supabase.from('support_triage_rules')
-    .select('id, rule_order, name, match_pattern, set_category, set_priority, set_severity, active')
+    .select('id, rule_order, name, match_pattern, set_category, set_priority, set_severity, active, owner_de_id')
     .eq('tenant_id', tid)
     .order('rule_order', { ascending: true });
   if (error) throw new Error(error.message);
@@ -341,6 +345,13 @@ export async function upsertTriageRule(r: Partial<TriageRule> & { name: string; 
     set_priority: r.set_priority ?? 'normal',
     set_severity: (r.set_severity || 'sev3').trim(),
     active: r.active ?? true,
+    // ⚠ mig 760 — THE OTHER HALF OF THE FOUNDER'S DECISION. The interview SEEDS
+    // an owner; THIS SCREEN EDITS it, so a customer can change their mind
+    // without re-running the interview. `?? null` rather than a conditional
+    // spread on purpose: clearing an owner back to "whoever usually answers"
+    // has to be something this form can DO, and a spread that skipped undefined
+    // would make the field one-way.
+    owner_de_id: r.owner_de_id ?? null,
   };
   if (r.id) {
     const { error } = await supabase.from('support_triage_rules').update(row).eq('id', r.id).eq('tenant_id', tid);
@@ -388,6 +399,9 @@ export async function createTriageRuleFromProposal(input: {
   name: string;
   matchPattern: string;
   setCategory: string;
+  /** The employee the card named, already resolved to an id by the caller, or
+   *  null when the card named nobody (migration 760). */
+  ownerDeId?: string | null;
 }): Promise<{ id: string; rule_order: number; reused: boolean }> {
   const tid = await requireTenantId();
 
@@ -439,6 +453,12 @@ export async function createTriageRuleFromProposal(input: {
       set_severity: 'sev3',
       active: true,
       source_proposal_id: input.proposalId,
+      // ⚠ mig 760 — and this one IS the card's, unlike priority and severity.
+      // decide_discovery_proposal compares it byte for byte against the owner
+      // the payload named and refuses either mismatch: a rule that routes when
+      // the card promised nobody, or a rule that routes nowhere when the card
+      // named somebody. Undefined here would be the first of those.
+      owner_de_id: input.ownerDeId ?? null,
     })
     .select('id, rule_order')
     .single();

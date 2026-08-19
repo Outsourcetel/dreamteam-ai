@@ -487,25 +487,51 @@ export interface DocChunkStatus {
 }
 
 /** Per-doc chunk/embedding counts, keyed by doc_id. Docs with no entry
- *  have not been indexed yet (keyword-only retrieval). */
+ *  have not been indexed yet (keyword-only retrieval).
+ *
+ *  ⚠ THIS USED TO BE WRONG ABOVE 1,000 CHUNKS, SILENTLY (register B-14).
+ *  It selected `doc_id, chunk_index, embedding` from knowledge_doc_chunks
+ *  filtered only by tenant, with NO limit, and counted the rows in the browser.
+ *  PostgREST caps a response at 1,000 rows, so any tenant past that counted a
+ *  truncated set with no error and no warning — acme-telecom holds 4,223
+ *  chunks, so its badges were wrong by 76%. It also shipped the embedding
+ *  VECTORS (1,540 bytes each) across the wire purely to test them for null.
+ *
+ *  Two changes. First, the counts come from `knowledge_docs.chunk_count` and
+ *  `embedded_count`, which a trigger already maintains — verified against every
+ *  document in production before trusting them: 2,006 docs, ZERO mismatches on
+ *  either column. Second, the read is explicitly PAGED, because the largest
+ *  tenant has 1,878 documents and swapping one silent 1,000-row cap for another
+ *  would fix nothing. */
+const CHUNK_STATUS_PAGE = 1000;
+
 export async function listChunkStatus(): Promise<Record<string, DocChunkStatus>> {
   const tid = await requireTenantId();
-  const { data, error } = await supabase
-    .from('knowledge_doc_chunks')
-    .select('doc_id, chunk_index, embedding')
-    .eq('tenant_id', tid);
-  if (error) {
-    // Missing table (migration 013 not applied) is non-fatal — no badges.
-    console.error('listChunkStatus:', error.message);
-    return {};
+  const rows: { id: string; chunk_count: number | null; embedded_count: number | null }[] = [];
+  // Bounded loop: 200 pages × 1,000 = 200k documents, far beyond any real
+  // tenant, and it stops as soon as a short page proves the end was reached.
+  for (let page = 0; page < 200; page++) {
+    const from = page * CHUNK_STATUS_PAGE;
+    const { data, error } = await supabase
+      .from('knowledge_docs')
+      .select('id, chunk_count, embedded_count')
+      .eq('tenant_id', tid)
+      .range(from, from + CHUNK_STATUS_PAGE - 1);
+    if (error) {
+      // Missing column/table (migration not applied) is non-fatal — no badges.
+      console.error('listChunkStatus:', error.message);
+      return {};
+    }
+    rows.push(...(data ?? []));
+    if (!data || data.length < CHUNK_STATUS_PAGE) break;
   }
-  const map: Record<string, DocChunkStatus> = {};
-  for (const row of data ?? []) {
-    const s = (map[row.doc_id] ??= { chunks: 0, embedded: 0 });
-    s.chunks += 1;
-    if (row.embedding != null) s.embedded += 1;
+  const out: Record<string, DocChunkStatus> = {};
+  for (const r of rows) {
+    const chunks = r.chunk_count ?? 0;
+    if (chunks === 0) continue;          // never indexed → no entry, as before
+    out[r.id] = { chunks, embedded: r.embedded_count ?? 0 };
   }
-  return map;
+  return out;
 }
 
 /** Fire the ingest-chunks edge function for a doc (chunk + embed).

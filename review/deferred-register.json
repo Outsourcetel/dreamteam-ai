@@ -77,7 +77,7 @@
         "date": "2026-08-10",
         "source": "docs/45-certification-scoreboard.md"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace where ns.nspname = 'public' and p.proname = 'get_de_cost_metrics' and p.prosrc not ilike '%can_access_de%'",
@@ -86,7 +86,9 @@
           "n": 1
         },
         "note": "Narrowing changes what people see, so it is a product call, not a bug fix. Pinned on the responsibility predicate (can_access_de) because that is what narrowing it would have to use. Residual: if the function is dropped entirely this reads CLOSED, which is the correct verdict for the exposure but not for the feature."
-      }
+      },
+      "closed_by": "mig 775: get_de_cost_metrics now ANDs can_access_de(u.de_id); verified with a real authenticated JWT that a tenant owner still sees their own workforce (1 row)",
+      "closed_on": "2026-08-18"
     },
     {
       "id": "A-5",
@@ -392,7 +394,7 @@
         "date": "2026-08-12",
         "source": "docs/51-measurement-organs-audit.md"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
@@ -406,7 +408,9 @@
           "n": 0
         },
         "note": "INVERTED POLARITY, deliberately: this item is open while the count is ZERO. Closing it means either wiring a reader or dropping the function — either way the grep changes. A register that could only express 'open when nonzero' would have to carry this one on a claim."
-      }
+      },
+      "closed_by": "src/lib/api.ts fetchDispatchHealth + PlatformConsolePage System Health panel — the function now has a reader on the platform-admin page whose subtitle previously admitted connector health was the only signal tracked",
+      "closed_on": "2026-08-18"
     },
     {
       "id": "C-3",
@@ -505,7 +509,7 @@
         "date": "2026-08-12",
         "source": "certify's own edge-typecheck ratchet offer"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
@@ -518,7 +522,9 @@
           "n": 1
         },
         "note": "Reads the pin file, which is what 'not re-pinned' means. Residual, stated: this does not re-run deno check, so it verifies the ceiling is still slack — not that the four functions are still at 0. certify's edge-typecheck section is what measures that, every run, and prints the ratchet offer."
-      }
+      },
+      "closed_by": "re-pinned via certify --pin-edge: ceiling dropped from 45 total type errors to 0, so every edge function is now pinned at zero",
+      "closed_on": "2026-08-18"
     },
     {
       "id": "D-1",
@@ -604,7 +610,7 @@
         "date": "2026-08-07",
         "source": "commits 7c24a42b / b90db57e / e29348cd"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
@@ -616,7 +622,9 @@
           "op": ">=",
           "n": 1
         }
-      }
+      },
+      "closed_by": "all 25 text-[9px] uses across 12 files raised to text-[10px], the micro-label size docs/design-system.md defines as the floor; typecheck clean, no design-drift regressions",
+      "closed_on": "2026-08-18"
     },
     {
       "id": "D-5",
@@ -794,7 +802,7 @@
         "date": "2026-08-09",
         "source": "docs/47-debt-map.md; re-carried docs/50 D"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
@@ -808,7 +816,9 @@
           "n": 1
         },
         "note": "docs/53 carried the count unverified (⏸) at 68. Re-counted 2026-08-12: 71 of 133 remote imports carry no @x.y.z pin. The count moved; the class did not."
-      }
+      },
+      "closed_by": "all 70 floating supabase-js@2 imports pinned to @2.112.3 — the exact version esm.sh resolves @2 to today, so the pin is behaviour-neutral; zero floating remote imports remain and edge-typecheck passes",
+      "closed_on": "2026-08-18"
     },
     {
       "id": "E-1",
@@ -1153,6 +1163,186 @@
           "n": 0
         }
       }
+    },
+    {
+      "id": "A-7",
+      "what": "No per-data-subject erasure exists. Whole-tenant deletion is solid (delete_tenant: platform-capability gated, must be suspended first, exact-slug confirm, pre-counted receipt) and telemetry retention IS automated (otel-spans-prune, adjudication-retention, dispatch-log-prune run daily). But if one END USER asks to be forgotten there is no function for it — only forget_de_memory and redact_old_adjudications exist — and customer content (conversations, messages, knowledge) has no retention policy at all. Exposure is small TODAY (7 conversations carry end-user identifiers) only because the external channels are barely used; it grows with the first real pilot. docs/56 overstated this as 'cannot honour a deletion request' — the accurate claim is 'cannot honour a per-person one, and keeps content forever'",
+      "where": "pg_proc: no forget_end_user/erase_data_subject; cron has no content-retention job; docs/60",
+      "severity": "security",
+      "why_skipped": "founder-decision",
+      "first_named": {
+        "date": "2026-08-18",
+        "source": "docs/60 Workstream Q, 2026-08-18"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "sql",
+        "sql": "select count(*)::int as n from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname ~ 'forget_end_user|erase_data_subject|delete_end_user_data'",
+        "open_if": {
+          "op": "==",
+          "n": 0
+        }
+      }
+    },
+    {
+      "id": "B-13",
+      "what": "The only real external integration has been dead for a week and nobody noticed: ERPNext last succeeded 2026-08-11 21:30, has failed continuously since with http_402 (the dev Frappe Cloud instance hit a payment wall), and has accumulated 6714 consecutive failures — roughly 43 retries an hour against a dead endpoint for 7 days, with no circuit breaker. The connectors.status column still reads 'connected' (stale stored marker; the UI derives health correctly and would show 'Not working', so the display is honest). This is C-8 again: the failure alarmed nowhere a human reads",
+      "where": "connectors.provider='erpnext' on outsourcetel-hq; docs/61",
+      "severity": "correctness",
+      "why_skipped": "walked-past",
+      "first_named": {
+        "date": "2026-08-18",
+        "source": "docs/61 Workstream P, 2026-08-18"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "sql",
+        "sql": "select coalesce(max(consecutive_failures),0)::int as n from connectors where provider='erpnext'",
+        "open_if": {
+          "op": ">=",
+          "n": 3
+        }
+      }
+    },
+    {
+      "id": "A-8",
+      "what": "Subprocessor disclosure is pinned to today's configuration, not to the code's capability. The LLM failover chain is anthropic -> bedrock (AWS) -> openai -> google and a provider joins the chain the moment its key is set in Settings, with no policy change and no customer notice. Today only Anthropic receives customer content (30-day usage shows Anthropic models only, and no OpenAI/Google key rows exist), and the privacy policy names only Anthropic — so adding one key in a settings screen would silently route customer conversations to an undisclosed processor",
+      "where": "supabase/functions/_shared/llm.ts chain (anthropic|bedrock|openai|google) vs src/pages/legal/PrivacyPolicyPage.tsx; docs/62",
+      "severity": "security",
+      "why_skipped": "founder-decision",
+      "first_named": {
+        "date": "2026-08-18",
+        "source": "docs/62 Workstream N, 2026-08-18"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "grep",
+        "paths": [
+          "supabase/functions/_shared/llm.ts"
+        ],
+        "pattern": "bedrock|openai|google",
+        "count": "matches",
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        }
+      }
+    },
+    {
+      "id": "C-11",
+      "what": "get_de_performance_summary reports responses_this_month=0 for the only employee that has any traffic. Technical Support on outsourcetel-hq handled 159 conversations in 30 days and carries 111 eval judgments; the summary a human reads to judge that employee says zero responses, and avg_csat, escalation_rate and resolution_rate are all null. Denominator stated: 6 active HQ employees compared, 5 genuinely have 0 conversations and are reported correctly, so the counter is wrong on 1 of the 1 rows capable of testing it. roi_hours_saved now returns null rather than a fabricated figure (an honest repair since docs/51), but the volume line beneath it is broken",
+      "where": "public.get_de_performance_summary -> responses_this_month; docs/63",
+      "severity": "measurement",
+      "why_skipped": "walked-past",
+      "first_named": {
+        "date": "2026-08-18",
+        "source": "docs/63 Workstream M, 2026-08-18"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "sql",
+        "sql": "select count(*)::int as n from digital_employees d where d.status='active' and (select count(*) from de_conversations c where c.de_id=d.id and c.created_at>now()-interval '30 days') > 0 and coalesce((public.get_de_performance_summary(d.id)->>'responses_this_month')::int,0) = 0",
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        }
+      }
+    },
+    {
+      "id": "B-14",
+      "what": "listChunkStatus silently computes knowledge badges from at most 1000 chunks. src/lib/knowledgeApi.ts selects doc_id, chunk_index AND embedding from knowledge_doc_chunks filtered only by tenant_id with NO limit; PostgREST caps the response at 1000 rows (measured), so any tenant above that gets chunk/embedded counts computed from a truncated set with no error and no warning. acme-telecom already holds 4223 chunks — its badges would be wrong by 76%. It also ships the embedding vectors themselves (1540 bytes/row) to the browser purely to count non-null values",
+      "where": "src/lib/knowledgeApi.ts listChunkStatus; docs/64",
+      "severity": "correctness",
+      "why_skipped": "walked-past",
+      "first_named": {
+        "date": "2026-08-18",
+        "source": "docs/64 Workstream J, 2026-08-18"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "sql",
+        "sql": "select count(*)::int as n from (select tenant_id from knowledge_doc_chunks group by tenant_id having count(*) > 1000) x",
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        }
+      }
+    },
+    {
+      "id": "D-13",
+      "what": "The app is dark-themed (ground rgb(12,17,35)) but declares color-scheme nowhere, so the computed value stays 'normal' and every browser-painted surface renders in light mode against it: scrollbars, native select dropdowns, date and time pickers, checkboxes, and autofill backgrounds. There are 350 raw input elements across the app that inherit this. Fix is one declaration (color-scheme: dark on :root). Separately and more minor: 465 transition/animate classes exist and prefers-reduced-motion is handled nowhere in style.css or tokens.css",
+      "where": "src/design/tokens.css / src/style.css — no color-scheme declaration; docs/65",
+      "severity": "hygiene",
+      "why_skipped": "walked-past",
+      "first_named": {
+        "date": "2026-08-18",
+        "source": "docs/65 Workstream K, 2026-08-18"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "grep",
+        "paths": [
+          "src/design/tokens.css",
+          "src/style.css"
+        ],
+        "pattern": "color-scheme",
+        "count": "matches",
+        "open_if": {
+          "op": "==",
+          "n": 0
+        }
+      }
+    },
+    {
+      "id": "D-14",
+      "what": "The incident runbook covers the incident type that has never happened and not the type that happens constantly. docs/INCIDENT-RESPONSE-RUNBOOK.md is breach-shaped (PHI determination, regulator notification clocks, cyber-insurance hotline) and carries 14 unfilled placeholders — all five roles are [name] and every contact is [____], including Security Officer, Privacy Officer, Counsel and the Supabase/Anthropic/Vercel support routes. It self-describes as an engineering starter. Meanwhile this review found three real operational incidents that ran for days undetected and are covered by no runbook at all: B-11 (reconcile cron dead 13 days), B-13 (only live connector dead 7 days), C-8 (133 alerts unread, one firing 20 days). None of those is a breach",
+      "where": "docs/INCIDENT-RESPONSE-RUNBOOK.md — 14 bracketed placeholders, no operational failure modes; docs/67",
+      "severity": "hygiene",
+      "why_skipped": "founder-decision",
+      "first_named": {
+        "date": "2026-08-18",
+        "source": "docs/67 Workstream R, 2026-08-18"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "grep",
+        "paths": [
+          "docs/INCIDENT-RESPONSE-RUNBOOK.md"
+        ],
+        "pattern": "\\[name\\]|\\[____\\]",
+        "count": "matches",
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        }
+      }
+    },
+    {
+      "id": "D-15",
+      "what": "Two foundational docs describe a system that does not exist, and neither carries the banner the corpus otherwise uses. docs/08_Database_Design.md names 53 tables of which 46 are absent from production — its names (agents, actions, approval_requests, billing_subscriptions, audit_trail, ai_token_usage) are the original v1 design, superseded by digital_employees, action_definitions, human_tasks, audit_events. docs/09_API_and_Integration_Standards.md documents 16 REST endpoints under /v1 (capabilities, capability-runs, tools, webhooks, jobs) and no /v1 surface exists in any form; the product is PostgREST plus edge functions. 76 of 177 docs (42%) now carry a '> WARNING ... HISTORY' banner, so the convention is established — these two never got one, and they are the two a new engineer or an integration partner would read first",
+      "where": "docs/08_Database_Design.md, docs/09_API_and_Integration_Standards.md; docs/68",
+      "severity": "hygiene",
+      "why_skipped": "walked-past",
+      "first_named": {
+        "date": "2026-08-18",
+        "source": "docs/68 Workstream S, 2026-08-18"
+      },
+      "state": "closed",
+      "verification": {
+        "kind": "grep",
+        "paths": [
+          "docs/08_Database_Design.md",
+          "docs/09_API_and_Integration_Standards.md"
+        ],
+        "pattern": "^> ⚠|SUPERSEDED|superseded by|no longer describes|does not reflect",
+        "count": "matches",
+        "open_if": {
+          "op": "==",
+          "n": 0
+        }
+      },
+      "closed_by": "docs commit: superseded banners added to docs/08 and docs/09, each stating the measured gap (46 of 53 tables absent; 16 endpoints and no /v1 surface)",
+      "closed_on": "2026-08-18"
     }
   ]
 }

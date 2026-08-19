@@ -16,7 +16,7 @@
  * before, and the Settings UI becomes the effective source of truth the
  * moment a founder sets a key there.
  */
-import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 
 /**
  * Per-tenant keys (mig 541). When a tenantId is given, that workspace's own

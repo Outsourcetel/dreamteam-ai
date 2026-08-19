@@ -31,10 +31,11 @@
  * reason logged.
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { getAIKey } from '../_shared/aiKeys.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { loadTenantGate } from '../_shared/tenantStatus.ts';
+import { classifyAndRoute, chooseAnswerer, triageColumns, NEVER_FRONTS_CUSTOMER_CHAT } from '../_shared/topicRouting.ts';
 
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } });
@@ -175,28 +176,92 @@ serve(async (req) => {
       .select('id, external_reply_mode, created_at').eq('tenant_id', tenantId)
       .not('lifecycle_status', 'in', '(paused,retired,archived,designed)')
       .order('created_at', { ascending: true }).limit(20);
-    const firstDe = (frontDes ?? []).find((d) => d.external_reply_mode === 'auto') ?? (frontDes ?? [])[0] ?? null;
+    // ⚠ mig 760: THE MESSAGE IS COMPOSED BEFORE THE CONVERSATION IS CREATED,
+    // and that hoist is the whole change on this path. It used to be built two
+    // statements AFTER the insert, which made routing on it impossible — you
+    // cannot classify a question you have not read yet, and de_id is chosen at
+    // INSERT and never moved (moving it would retroactively re-attribute the
+    // whole thread; see the migration header). cleanBody is pure, so this is a
+    // move and nothing else.
+    const bodyText = cleanBody(em.text ?? '') || cleanBody(String(em.html ?? '').replace(/<[^>]+>/g, ' '));
+    const question = [subject ? `Subject: ${subject}` : null, bodyText || '(empty message body)'].filter(Boolean).join('\n\n');
+
+    // ── Thread: reuse this sender's open email conversation (14d), else new. ──
+    // ⚠⚠⚠ A REUSED THREAD IS NOT RE-ROUTED AND NOT RE-LABELLED — AND THIS
+    // LOOKUP HAS MOVED SO THAT SENTENCE IS TRUE. It used to sit BELOW the
+    // classification and below `deId`, so the comment describing it was the
+    // opposite of what the code did: every inbound mail on an open thread was
+    // re-classified, and `deId` — the freshly-routed owner, not the thread's —
+    // was what got passed to de-answer AND to create_outbound_draft. Reply two
+    // in a fourteen-day thread could therefore be written, charged and drafted
+    // by a different employee while de_conversations.de_id still named the
+    // first. Topic routing is a decision made once, when the conversation
+    // starts; the row is where that decision lives.
+    const cutoff = new Date(Date.now() - 14 * 86400_000).toISOString();
+    const { data: openConv } = await admin.from('de_conversations')
+      .select('id, de_id').eq('tenant_id', tenantId).eq('channel', 'email').eq('end_user_ref', from.email)
+      .not('status', 'in', '(closed,resolved)').gte('last_message_at', cutoff)
+      .order('last_message_at', { ascending: false }).limit(1).maybeSingle();
+
+    // ⚠ For email the subject line IS part of what the customer wrote, so it
+    // stays in the classified text — unlike the widget's `[channel · display
+    // name · account]` tag, which is OURS and is what made "Fireside Media"
+    // classify as a safety emergency. `question` is exactly the string
+    // de-answer will store as the user message, so the label the customer sees
+    // and the text that produced it are the same thing.
+    //
+    // ⚠ AND IT ONLY RUNS FOR A THREAD THAT DOES NOT EXIST YET. Not "runs and is
+    // then ignored" — a reused thread is not classified at all, because the
+    // answer is already on the row and the trigger already refuses to overwrite
+    // a category.
+    const routed = openConv
+      ? { triage: null, owner: null }
+      : await classifyAndRoute(admin, tenantId, question, 'email');
+
+    // The employee this thread already belongs to, held to the same bar the
+    // front desk holds everyone to. A thread whose owner has since been paused,
+    // retired, archived or un-published still has to be answered — by today's
+    // fallback, never by a classification.
+    let threadOwner: { id: string; external_reply_mode: string | null } | null = null;
+    if (openConv?.de_id) {
+      const { data: recorded } = await admin.from('digital_employees')
+        .select('id, external_reply_mode, lifecycle_status')
+        .eq('id', openConv.de_id).eq('tenant_id', tenantId).maybeSingle();
+      if (recorded && !NEVER_FRONTS_CUSTOMER_CHAT.includes(String(recorded.lifecycle_status))) {
+        threadOwner = { id: String(recorded.id), external_reply_mode: recorded.external_reply_mode ?? null };
+      }
+    }
+
+    const firstDe = chooseAnswerer({
+      named: null,           // inbound mail names nobody; the address named the workspace
+      thread: threadOwner,
+      topic: routed.owner,
+      // Unchanged, and it is the branch that actually runs: external_reply_mode
+      // is 'draft' on all 109 employees across all 18 tenants, so the `auto`
+      // find has never selected anything and `?? frontDes[0]` resolves every
+      // time. "No match behaves as today" has to mean this branch.
+      fallback: ((f) => (f ? { id: String(f.id), external_reply_mode: f.external_reply_mode ?? null } : null))(
+        (frontDes ?? []).find((d) => d.external_reply_mode === 'auto') ?? (frontDes ?? [])[0] ?? null,
+      ),
+    }).who;
+    // ⚠ THE SAME `deId` FLOWS TO BOTH SIDES OF THE HANDOFF — de-answer at the
+    // fetch below, and create_outbound_draft's p_de_id further down. On a
+    // reused thread it is now the thread's own employee, so the draft a human
+    // approves is attributed to whoever the conversation belongs to.
     const deId: string | null = firstDe?.id ?? null;
     if (!deId) return json({ ok: true, ignored: 'no_eligible_de' });
 
-    // ── Thread: reuse this sender's open email conversation (14d), else new. ──
-    const cutoff = new Date(Date.now() - 14 * 86400_000).toISOString();
-    const { data: openConv } = await admin.from('de_conversations')
-      .select('id').eq('tenant_id', tenantId).eq('channel', 'email').eq('end_user_ref', from.email)
-      .not('status', 'in', '(closed,resolved)').gte('last_message_at', cutoff)
-      .order('last_message_at', { ascending: false }).limit(1).maybeSingle();
     let convId = openConv?.id ?? null;
     if (!convId) {
       const { data: conv, error: convErr } = await admin.from('de_conversations').insert({
         tenant_id: tenantId, channel: 'email', de_id: deId, subject: subject || '(no subject)',
         end_user_ref: from.email, end_user_name: from.name, last_message_at: new Date().toISOString(),
+        // ALL FOUR, together or not at all — see topicRouting.ts's header.
+        ...triageColumns(routed.triage),
       }).select('id').single();
       if (convErr || !conv) return json({ error: 'conversation_create_failed', detail: convErr?.message }, 500);
       convId = conv.id;
     }
-
-    const bodyText = cleanBody(em.text ?? '') || cleanBody(String(em.html ?? '').replace(/<[^>]+>/g, ' '));
-    const question = [subject ? `Subject: ${subject}` : null, bodyText || '(empty message body)'].filter(Boolean).join('\n\n');
 
     // ── The governed brain — identical to widget/chat: guardrails, floors,
     // escalation rules, budget, metering all enforced inside de-answer. ──

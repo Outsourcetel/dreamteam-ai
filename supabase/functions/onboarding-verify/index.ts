@@ -36,10 +36,11 @@
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.ts';
+import { serviceCaller } from '../_shared/serviceCaller.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -183,7 +184,7 @@ serve(async (req) => {
       const dispatchSecret = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
       const headerSecret = req.headers.get('x-dispatch-secret') ?? '';
       const isCron = !!dispatchSecret && headerSecret === dispatchSecret;
-      const isServiceRole = jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      const isServiceRole = serviceCaller(jwt).service;
       if (!isCron && !isServiceRole) return json({ error: 'unauthorized' }, 401);
 
       const { data: projects } = await admin.from('onboarding_projects')
@@ -223,7 +224,7 @@ serve(async (req) => {
 
     // ── check_item: tenant-scoped, on-demand ──
     let tenantId: string | null = null;
-    if (jwt === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')) {
+    if (serviceCaller(jwt).service) {
       tenantId = body?.tenant_id ?? null;
       if (!tenantId) return json({ error: 'tenant_id required for service-role calls' }, 400);
     } else {

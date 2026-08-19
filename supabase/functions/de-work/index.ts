@@ -22,7 +22,7 @@
  *      { action:'run_one', work_item_id }        — work a specific item (testing)
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
@@ -36,6 +36,7 @@ import { loadTenantBrand, brandVoiceDirective } from '../_shared/brandIdentity.t
 // src/. The two copies are kept contract-identical and compared behaviourally by
 // tests/contract-parity.test.ts, which is what certify runs.
 import { resolveParams } from '../_shared/onboardingTypes.ts';
+import { serviceCaller } from '../_shared/serviceCaller.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -2113,7 +2114,7 @@ serve(async (req) => {
     // Auth: dispatch secret or service-role bearer.
     const dispatch = Deno.env.get('PLAYBOOK_DISPATCH_SECRET') ?? '';
     const bearer = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
-    if (!((dispatch && req.headers.get('x-dispatch-secret') === dispatch) || bearer === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'))) {
+    if (!((dispatch && req.headers.get('x-dispatch-secret') === dispatch) || serviceCaller(bearer).service)) {
       return json({ error: 'unauthorized' }, 401);
     }
     if (!(await hasLLMProvider(admin))) return json({ error: 'llm_not_configured' }, 503);

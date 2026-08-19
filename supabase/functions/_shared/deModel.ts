@@ -12,7 +12,7 @@
  * default — a stale or mistyped model_id must degrade to the platform
  * default, never break a live answer path.
  */
-import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 
 export const DEFAULT_MODEL = 'claude-sonnet-5';
 

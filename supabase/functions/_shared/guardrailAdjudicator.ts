@@ -30,7 +30,7 @@
  * and trust gates run, so clearing there would auto-execute with three gates
  * unevaluated), or any in-Postgres block. Those keep today's exact strictness.
  */
-import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { contentHash } from './contentHash.ts';
 import { hasLLMProvider, llmMessages } from './llm.ts';
 import { wrapUntrusted, FIREWALL_RULES } from './injectionSafety.ts';

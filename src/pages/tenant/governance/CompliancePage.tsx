@@ -715,7 +715,14 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
       {/* Add / edit rule form — ONE composer. An edit screen that is a second
           copy of the add screen is two places for the money conversion and the
           pattern rules to drift apart. */}
-      {showAdd && (
+      {/* `canEditGuardrails` is repeated here on purpose. Both doors into this
+          composer — "+ Add rule" and the per-rule Edit — are already gated, so
+          a manager cannot reach it today. But that is an argument about control
+          flow, and audit:role-gates reads STRUCTURE: it saw fields that write
+          guardrail_rules with no gate between them and the user, and it was
+          right to. Gating the composer itself makes the invariant local, so a
+          third way in cannot quietly bypass it later. */}
+      {showAdd && canEditGuardrails && (
         <Modal size="md" onClose={closeComposer} title={editing ? 'Edit guardrail rule' : 'Add guardrail rule'}>
             <div className="space-y-3 text-xs">
               <div>

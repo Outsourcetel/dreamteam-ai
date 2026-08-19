@@ -21,7 +21,7 @@
  *   • consecutive same-role turns merged, leading assistant turns dropped
  *     (the Messages API requires alternating turns starting with `user`)
  */
-import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 
 export interface Turn { role: 'user' | 'assistant'; content: string }
 

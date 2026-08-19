@@ -107,8 +107,8 @@
  * all. Not deployed by this task (deployment ships with the UI, Plan 3b).
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
+import type { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { hasLLMProvider } from '../_shared/llm.ts';
 import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
@@ -116,6 +116,7 @@ import { loadTenantGate, TENANT_SUSPENDED_BODY } from '../_shared/tenantStatus.t
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { budgetBlocked, rpcOrThrow } from '../_shared/rpcSafety.ts';
 import { makeCallModelText } from '../_shared/modelCall.ts';
+import { serviceCaller, STALE_SERVICE_KEY_DETAIL } from '../_shared/serviceCaller.ts';
 import {
   coverageAfter,
   stillOwed,
@@ -364,6 +365,23 @@ async function fillProposalLiterals(
     '"guardrail": return "pattern" (a short "|"-separated list of the literal words or phrases the rule matches, lowercase, e.g. "refund|chargeback|free month" — at most a handful of tokens, never a sentence) OR "threshold" (a bare number, no words) — whichever the evidence actually supports. Never both, never neither if the evidence gives you anything concrete to work with.',
     '"procedure": return "name" (a short title), "trigger" (the concrete event or schedule that starts it, in the evidence\'s own terms) and "steps" (an ordered array of 2 to 6 short, concrete steps the evidence actually implies).',
     `"trust_rule": return "de_ref" — the single best match from this session's proposed employees, one of ${JSON.stringify(employeeArchetypeKeys)}, formatted EXACTLY as "archetype:<key>". If none of those employees plausibly owns this approval, OMIT de_ref entirely (and therefore the whole item) — never write "unassigned" or invent a reference. Also return "action_category" chosen EXACTLY from this workspace's real category list: ${JSON.stringify(validActionCategories)} — if none of them fits, OMIT action_category rather than inventing a new one. Also return "cap" (a bare number — the literal amount or threshold named in the evidence, no words) and "above_cap" (one short sentence: what happens above it).`,
+    // ⚠⚠ THIS LINE DID NOT EXIST BEFORE MIGRATION 760, AND ITS ABSENCE WAS A
+    // REAL DEFECT, NOT AN OMISSION IN THIS FILE'S STYLE. Migration 754 emits
+    // TOPIC_SLOTS blank conversation_type shapes with needs_model_fill: true and
+    // put label/set_category/match_pattern in FILL_WHITELIST — but the fill
+    // prompt listed only employee, guardrail, procedure and trust_rule. A model
+    // told nothing about an item returns nothing for it, so every topic slot
+    // came back unfilled, failed validatePayload on the missing set_category,
+    // and was dropped. The founder's "a customer might ask for 10 different
+    // things" could not produce ONE. Found while wiring owner_ref, which would
+    // otherwise have been a whitelist entry for a field nothing ever writes.
+    //
+    // ⚠ THE OWNER IS OPTIONAL AND IS SAID TO BE, in the prompt's own words,
+    // because the failure mode here is the opposite of the employee kind's:
+    // a model that feels obliged to name somebody will name whoever is nearest,
+    // and that decides who a customer talks to. Omitting is the safe answer and
+    // is stated as such.
+    `"conversation_type": return "label" (what the customer calls this kind of question, in THEIR words, 2-4 words, e.g. "Late delivery"), "set_category" (the same thing as a filing token: lower-case words joined by underscores, at most 40 characters, e.g. "late_delivery" — this is what the inbox filters and counts by, so it must be plain and stable), and "match_pattern" (a "|"-separated list of the literal phrases a customer would actually type, lowercase, taken from THEIR words where you have them, e.g. "where is my order|not arrived|still waiting for delivery" — 3 to 8 phrases, never a sentence and never a regular expression: the platform matches each phrase as a plain substring). Each item is ONE topic; if the evidence names fewer topics than there are items, fill the ones it names and OMIT the rest entirely rather than inventing filler. Optionally also return "owner_ref" — WHO ANSWERS this kind of question — as the single best match from this session's proposed employees, one of ${JSON.stringify(employeeArchetypeKeys)}, formatted EXACTLY as "archetype:<key>". OMIT owner_ref unless the customer's own words clearly say who handles this: an omitted owner means the workspace keeps answering these the way it already does, which is always safe, whereas a guessed one decides who a real customer ends up talking to. Never write "unassigned", a person's name, or a job title — only "archetype:<key>" or nothing.`,
     '',
     'If an item\'s evidence genuinely does not support a real value for a required field, OMIT that field rather than guessing — an omitted field means the platform will correctly decline to show that item to the customer, which is the safe outcome, not a failure.',
     '',
@@ -740,12 +758,24 @@ serve(async (req) => {
     // setup-time action any tenant member can run for their own workspace,
     // not a manager-only mutation like compile-trust-plan's trust ladders. ──
     const bearer = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
-    if ((dispatch && req.headers.get('x-dispatch-secret') === dispatch) || bearer === svc) {
+    if ((dispatch && req.headers.get('x-dispatch-secret') === dispatch) || serviceCaller(bearer).service) {
       tenantId = typeof body.tenant_id === 'string' ? body.tenant_id : null;
       if (!tenantId) return fail('bad_request', 'tenant_id required for service/dispatch calls', 400);
     } else {
       const { data: u } = await admin.auth.getUser(bearer);
-      if (!u?.user) return fail('unauthorized', 'user JWT required', 401);
+      if (!u?.user) {
+        // ⚠ SAY WHICH FAILURE THIS IS. A caller holding a genuine but ROTATED
+        // service key used to get "user JWT required", which reads as a caller
+        // mistake and sent someone hunting a code bug for an hour on 2026-08-18
+        // — the platform had rotated SUPABASE_SERVICE_ROLE_KEY at 08:57 that
+        // morning, without a deploy. The verdict below grants nothing; it only
+        // chooses wording.
+        const v = serviceCaller(bearer);
+        if (!v.service && v.looksLikeStaleServiceKey) {
+          return fail('unauthorized', STALE_SERVICE_KEY_DETAIL, 401);
+        }
+        return fail('unauthorized', 'user JWT required', 401);
+      }
       const { data: prof } = await admin.from('profiles').select('tenant_id, layer').eq('user_id', u.user.id).maybeSingle();
       tenantId = await resolveTenantWithRemoteAccess(admin, u.user.id, prof?.tenant_id, prof?.layer, body?.tenant_id);
       if (!tenantId) return fail('no_tenant', 'no tenant resolved for this user', 403);

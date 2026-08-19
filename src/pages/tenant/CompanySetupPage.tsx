@@ -203,7 +203,7 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
                 : 'bg-dt-card border border-dt-border text-dt-muted'
               }`}
             >
-              <span className="w-4 h-4 rounded-full bg-dt-inset flex items-center justify-center text-[9px] font-bold">
+              <span className="w-4 h-4 rounded-full bg-dt-inset flex items-center justify-center text-[10px] font-bold">
                 {i < step ? '✓' : i + 1}
               </span>
               {s}

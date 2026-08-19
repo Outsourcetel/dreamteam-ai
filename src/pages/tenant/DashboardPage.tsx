@@ -503,7 +503,7 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
                   <div className="space-y-1">
                     {tasks.slice(0, 6).map(task => (
                       <div key={task.id} className="grid grid-cols-[100px_1fr_60px_24px] gap-2 items-center px-2 py-2 rounded-lg hover:bg-dt-panel transition-colors">
-                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded w-fit ${taskBadgeStyle(task.type)}`}>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded w-fit ${taskBadgeStyle(task.type)}`}>
                           {taskBadgeLabel(task.type)}
                         </span>
                         <div className="min-w-0 flex items-center gap-1.5">
