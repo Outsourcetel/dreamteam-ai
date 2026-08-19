@@ -194,14 +194,29 @@ ONLY profile** — deactivating it, as I proposed, would lock a real person out 
 product entirely, for no live gain, since a profile with no tenant already fails
 `auth_tenant_id()` everywhere.
 
-Checking whether it was dangerous found something that matters more, now registered as
-**A-9**: `auth_has_tenant_role()` filters on user and role but **not on tenant**, so it
-answers "does this user hold this role anywhere". A caller that separately proves
-membership in workspace B still takes the ROLE from workspace A. Latent today — 0
-users hold profiles in two workspaces, verified — and live the first time one person
-joins a second workspace. Deliberately not fixed inside a hygiene batch: it is a core
-auth function called everywhere, and `platform_super_admin` carries NULL `tenant_id` by
-design, so a naive tenant filter breaks it.
+Checking whether it was dangerous found something that looked worse and turned out
+better, registered and then closed the same day as **A-10** (it was filed as A-9 and
+renumbered — a parallel session had claimed that id in the same hour).
+
+`auth_has_tenant_role()` filters on user and role but **not on tenant**, so read alone
+it answers "does this user hold this role anywhere". A caller that separately proves
+membership of workspace B still takes the ROLE from workspace A — sharpest in
+`set_tenant_llm_key`, where an LLM key adds a subprocessor that receives customer
+conversations (item 5).
+
+**It is not reachable, and I was wrong about why it might be.** `profiles_user_id_key`
+is UNIQUE on `user_id` **alone** — a constraint, not a bare index, with 12 foreign keys
+depending on it. One user, at most one profile. So the role held "anywhere" and the role
+held "here" cannot differ, and `auth_tenant_id()`'s unordered `limit 1` is deterministic
+rather than arbitrary, because it selects from at most one row. I proposed shipping that
+invariant as a new guardrail without checking whether it already existed. It did.
+
+What was genuinely missing: **neither object mentioned the other.** Someone widening
+`profiles` so one person can join two workspaces would be reviewing a membership change,
+not an authorisation model, and nothing would tell them they had just converted 89
+callers from "your role here" to "your role anywhere". Migration 793 puts that warning on
+both objects and asserts the index shape, so the widening fails loudly. A-10 stays closed
+only while that shape holds — the register re-checks it every certify run.
 
 **23. The orphaned migrations (B-10) — DONE, and it was 16, not 12.** The register
 named 715 and 717 on branch `goofy-swanson`; that was stale. The real set was 756–789,
