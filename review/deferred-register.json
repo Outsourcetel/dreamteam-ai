@@ -253,7 +253,7 @@
         "date": "2026-08-09",
         "source": "commit 10bbc641; measured docs/50 D"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "sql-lag",
         "production_sql": "select count(*)::int as n from public.schema_migrations",
@@ -263,7 +263,9 @@
           "n": 1
         },
         "note": "n is production ledger rows MINUS dev ledger rows. Deliberately not a fixed threshold: docs/53 measured 74 behind on 2026-08-12 and the true figure that morning was 88 and rising, so any pinned number would have been stale before the commit landed. This closes only when dev is level or ahead."
-      }
+      },
+      "closed_by": "dev rebuilt from supabase/baseline/full_schema.sql + reference catalog seeded: 304/7/965/295/402/3505 all match production, ledger 804/804 level, golden-path 10/10 against it",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "B-7",
