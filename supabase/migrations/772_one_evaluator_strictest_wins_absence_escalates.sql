@@ -110,11 +110,22 @@ begin
   -- row — and fall out through v_worst's default of 0, returning the most
   -- permissive answer available. Do NOT silently narrow to whatever rules
   -- happen to still match; escalate instead.
+  -- ⛔ AND IT MUST BE ACTIVE. Without `coalesce(is_active, true)` this guard
+  -- escalates for a profile that does not EXIST but waves through one that has
+  -- been DEACTIVATED — and the role arm below filters on exactly that flag, so
+  -- an offboarded user resolves here, matches no role-scoped rule there, and
+  -- receives the most permissive answer available. That is the likelier real
+  -- case of the two: people are offboarded far more often than user ids are
+  -- fabricated. It is also the same polarity trap the org-unit comment sixty
+  -- lines below warns about — a filter that means "fewer grants" in
+  -- has_approval_authority means "fewer restrictions" here.
   if p_actor_kind = 'user' and not exists (
-       select 1 from profiles where user_id = p_actor_id and tenant_id = p_tenant_id) then
+       select 1 from profiles
+        where user_id = p_actor_id and tenant_id = p_tenant_id
+          and coalesce(is_active, true)) then
     return jsonb_build_object('outcome','require_human',
       'reasons', jsonb_build_array(jsonb_build_object(
-        'why', format('unidentified actor: no profile for user %s in this workspace', p_actor_id))));
+        'why', format('unidentified actor: no active profile for user %s in this workspace', p_actor_id))));
   end if;
 
   if p_actor_kind = 'de' and not exists (

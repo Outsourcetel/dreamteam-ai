@@ -223,6 +223,20 @@ begin
   -- ===           non-existent DE id escalates rather than falling through =
   insert into widen_probe_results(name, outcome, reasons) select 'i12b_unresolvable_de_is_require_human',
     r->>'outcome', r->'reasons' from (select public.evaluate_authority(v_t2,'de',gen_random_uuid(),'probe_anything','{}'::jsonb) r) x;
+
+  -- === item 13: a DEACTIVATED profile must ESCALATE, not resolve ==========
+  -- The guard used to ask only whether a profile EXISTED. An offboarded user
+  -- therefore resolved here, matched no role-scoped rule below (the role arm
+  -- filters on coalesce(is_active, true)), and received the most permissive
+  -- answer available — the likelier real case of the two, since people are
+  -- offboarded far more often than user ids are fabricated.
+  -- ⚠ THIS MUST STAY LAST IN THIS BLOCK. It deactivates v_user_match, whom
+  -- the role-arm assertions above depend on; moving it earlier would break
+  -- them silently rather than loudly.
+  update profiles set is_active = false
+   where user_id = v_user_match and tenant_id = v_t2;
+  insert into widen_probe_results(name, outcome, reasons) select 'i13_deactivated_user_is_require_human',
+    r->>'outcome', r->'reasons' from (select public.evaluate_authority(v_t2,'user',v_user_match,'probe_anything','{}'::jsonb) r) x;
 end
 $widen$;
 
@@ -403,6 +417,7 @@ join (values
   ('i11_role_actor_kind_is_require_human',            'require_human',       'unknown actor kind:',   null),
   ('i12_unresolvable_user_is_require_human',          'require_human',       'unidentified actor:',   null),
   ('i12b_unresolvable_de_is_require_human',           'require_human',       'unidentified actor:',   null),
+  ('i13_deactivated_user_is_require_human',           'require_human',       'unidentified actor:',   null),
   ('i13_boolean_threshold_7_is_rejected_at_insert',   'require_human',       'threshold_cannot_fire:', null),
   ('i14_confidence_threshold_negative_is_rejected_at_insert', 'require_human', 'threshold_cannot_fire:', null),
   ('i15_certify_absence_arm_is_silent_while_evaluator_exists', 'allow',      null,                    null),
