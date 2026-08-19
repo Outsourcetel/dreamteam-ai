@@ -263,7 +263,7 @@
           "op": ">=",
           "n": 1
         },
-        "note": "Unchanged pin, but note its known weakness: it compares ledger COUNTS, and two ledgers can hold the same number of DIFFERENT rows — dev carrying one production never had while missing one it does — which would read level while dev was wrong. scripts/sync-dev-migrations.mjs compares the SETS and reports dev-only rows separately; this pin is the cheap approximation certify runs."
+        "note": "Unchanged pin, but note its known weakness: it compares ledger COUNTS, and two ledgers can hold the same number of DIFFERENT rows — dev carrying one production never had while missing one it does — which would read level while dev was wrong. scripts/sync-dev-migrations.mjs compares the SETS and reports dev-only rows separately; this pin is the cheap approximation certify runs. ── 2026-08-20: two mechanisms now exist. ci.yml runs scripts/sync-dev-migrations.mjs --apply --best-effort before golden-path (incremental, gets most of the way, cannot close the gap because of the data-asserting migrations), and .github/workflows/dev-rebuild.yml rebuilds dev nightly from a freshly regenerated baseline (a schema dump replays no assertions, so it is the only route to true parity). This item stays OPEN until a nightly has actually run and the two ledgers are level — the machinery existing is not the same as the gap being closed."
       }
     },
     {

@@ -118,6 +118,15 @@ jobs:
     name: Golden path (the product, as an executable trace — dev project)
     runs-on: ubuntu-latest
     needs: build
+    # ⚠ SHARED WITH .github/workflows/dev-rebuild.yml. That job DROPS and
+    # recreates dev's public schema; this one signs up a tenant and drives the
+    # whole loop against it. Concurrently, one of them is working against a
+    # schema disappearing underneath it. Same group serialises them, and
+    # cancel-in-progress is false so the loser queues instead of being
+    # discarded — a cancelled rebuild could leave dev emptied and not restored.
+    concurrency:
+      group: dev-project
+      cancel-in-progress: false
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       VITE_TEST_SUPABASE_URL: ${{ secrets.VITE_TEST_SUPABASE_URL }}
@@ -133,4 +142,21 @@ jobs:
         # Shape, not just presence. See scripts/ci-require-secrets.sh for why
         # a value that is merely non-empty is not a value that works.
         run: bash scripts/ci-require-secrets.sh golden-path
+      # ── Bring dev as close to production as it can get, FIRST ──────────────
+      # golden-path proves whatever schema dev happens to have, so without this
+      # a green tick can be proving a schema weeks old (register B-6: dev was
+      # 147 migrations behind in August, and drifts again within days because
+      # production is written to constantly from several sessions at once).
+      #
+      # --best-effort, deliberately. Three migrations in this repo assert on
+      # production DATA and can NEVER apply to an empty dev, so a strict run
+      # would leave CI permanently red and be routed around within a week. This
+      # applies what it can and raises a ::warning:: naming each one it cannot,
+      # so the shortfall lands on the run summary rather than only in a log.
+      #
+      # It still FAILS hard on a pending migration with no source file — that is
+      # register B-10, a repository problem rather than an environment one, and
+      # it means main can no longer rebuild production.
+      - name: Sync dev to production (best effort)
+        run: node scripts/sync-dev-migrations.mjs --apply --best-effort
       - run: node scripts/golden-path.mjs

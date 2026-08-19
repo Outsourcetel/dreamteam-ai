@@ -50,6 +50,25 @@ const PROD_REF = 'rfsvmhcqeiyrxivbmpel';
 const MAX_INCREMENTAL = 25;
 
 const APPLY = process.argv.includes('--apply');
+// ── --best-effort: for CI ───────────────────────────────────────────────────
+// Apply everything that CAN apply, report everything that cannot, exit 0.
+//
+// It exists because neither default is acceptable in a CI job that runs before
+// golden-path. Failing on any drift turns CI permanently red — three of the
+// migrations in this repo assert on production DATA and can never apply to an
+// empty dev, so that red would never clear and would be routed around within a
+// week. Warning silently is worse: a check that cannot fail is theatre.
+//
+// The line this holds: it tolerates an ENVIRONMENT problem (a migration that
+// will not replay here) and refuses a REPOSITORY problem (a migration whose
+// source is missing — register B-10). The first is a known, named, reported
+// gap. The second means main cannot rebuild production, and no run should
+// glide past it.
+//
+// Every unreplayable migration is printed in full AND raised as a GitHub
+// annotation, so the shortfall appears on the run summary rather than only in
+// a log nobody opens.
+const BEST_EFFORT = process.argv.includes('--best-effort');
 // Files to step over, named in full. There is deliberately no --skip-all and
 // no pattern form: skipping a migration decides what dev is allowed to differ
 // from production by, and a decision should have to be typed out.
@@ -143,6 +162,7 @@ if (!APPLY) {
 
 let applied = 0;
 const skipped = [];
+const unreplayable = [];
 for (const f of pending) {
   // Re-read dev's ledger per file rather than trusting the snapshot taken at
   // start: another CI run or session may be applying the same backlog right
@@ -175,8 +195,19 @@ for (const f of pending) {
     //
     // Stopping is correct. Applying the REST silently would leave dev in a
     // state nobody chose, and skipping must be a decision somebody made.
+    const msg = String(e.message).slice(0, 500);
+    if (BEST_EFFORT) {
+      // Recorded, announced, and carried on from — never swallowed.
+      unreplayable.push({ file: f, error: msg });
+      console.error(`   ✗ ${f} could not be applied to dev`);
+      console.error(`     ${msg}`);
+      if (process.env.GITHUB_ACTIONS) {
+        console.log(`::warning title=dev is behind production::${f} could not be applied to dev — ${msg.replace(/\r?\n/g, ' ').slice(0, 300)}`);
+      }
+      continue;
+    }
     console.error(`\n✗ ${f} failed against dev.`);
-    console.error(`  ${String(e.message).slice(0, 500)}`);
+    console.error(`  ${msg}`);
     console.error(`\n  If this migration asserts on PRODUCTION DATA it can never be replayed into an empty`);
     console.error(`  environment, and that is a defect in the migration, not in this sync. Re-run with`);
     console.error(`  --skip ${f}   to proceed past it deliberately — dev then stays behind by that one,`);
@@ -189,13 +220,34 @@ for (const f of pending) {
 const after = (await ledger(DEV_REF)).length;
 console.log(`\napplied ${applied}; dev ledger now ${after} vs production ${prod.length}`);
 
+if (unreplayable.length) {
+  // The whole point of --best-effort is that this paragraph gets printed. A
+  // run that applies 1 of 4 and says nothing is the failure mode; a run that
+  // applies 1 of 4 and says which 3 it could not, and why, is a report.
+  console.log(`\n⚠ ${unreplayable.length} migration(s) could NOT be applied to dev:`);
+  for (const u of unreplayable) console.log(`   ${u.file}`);
+  console.log('\nThese are almost always migrations whose assertions read production DATA rather than');
+  console.log('schema, so they cannot apply to an environment without that data — and by the same');
+  console.log('token they cannot be replayed into a restored backup or a new environment either.');
+  console.log('That is a defect in those migrations, not in this sync. Register B-6 stays open.');
+  if (process.env.GITHUB_ACTIONS) {
+    console.log(`::warning title=golden-path is proving a stale schema::dev is ${prod.length - (await ledger(DEV_REF)).length} migration(s) behind production; ${unreplayable.length} could not be applied. See register B-6.`);
+  }
+}
+
 if (skipped.length) {
   // Reported as a shortfall, never netted away. The point of this script is
   // that golden-path stops proving a schema nobody chose; a skip means it is
   // still proving one, just by a smaller and known margin.
   console.log(`\nSKIPPED ${skipped.length} deliberately: ${skipped.join(', ')}`);
-  console.log('dev is NOT level with production, and register B-6 stays open until the skipped migration can be replayed into an empty environment.');
-  process.exit(0);
+}
+
+if (skipped.length || unreplayable.length) {
+  console.log('\ndev is NOT level with production. That is the accurate state.');
+  // Exit 0 under --best-effort so the golden-path job still runs against the
+  // closest dev we could get it to; non-zero otherwise so a human invocation
+  // still fails loudly.
+  process.exit(BEST_EFFORT ? 0 : 1);
 }
 
 if (after < prod.length) {

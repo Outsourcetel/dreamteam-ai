@@ -1,0 +1,125 @@
+# ── Nightly: rebuild dev from a freshly regenerated baseline ────────────────
+#
+# WHY THIS EXISTS (register B-6)
+#
+# golden-path is the only automated end-to-end proof of the product's core loop
+# and it runs against DEV, so a green tick proves whatever schema dev happens
+# to have. Dev drifts constantly — production is written to from several
+# sessions at once — and the incremental sync that runs before golden-path in
+# ci.yml CANNOT close the gap on its own: three migrations in this repo assert
+# on production DATA and can never apply to an environment without that data
+# (778, 789, 790). They are already applied and the ledger keys on filename
+# plus checksum, so they cannot be edited to fix it either.
+#
+# The baseline path does not have that problem, and that is the whole point of
+# running it. supabase/baseline/full_schema.sql is a SCHEMA DUMP: restoring it
+# installs the objects without replaying anyone's assertions. It is the only
+# route to true parity, and it is why this job exists alongside the sync rather
+# than instead of it.
+#
+#   sync (every push)   — cheap, incremental, gets most of the way
+#   rebuild (nightly)   — expensive, destructive, actually reaches parity
+#
+# ⚠ REGENERATE FIRST, ALWAYS. Rebuilding from the CHECKED-IN baseline would
+# restore dev to whenever that file was last generated, which is a different
+# wrong state wearing a green tick. Step 1 regenerates it from production so
+# the thing being restored is today's schema.
+name: Nightly dev rebuild
+
+on:
+  schedule:
+    # 22:00 UTC = 03:00 PKT, the quietest hour for this team. Cron here is UTC
+    # regardless of anyone's timezone.
+    - cron: '0 22 * * *'
+  workflow_dispatch:
+
+# ⚠ SHARED WITH ci.yml's golden-path JOB. This drops and recreates dev's public
+# schema; golden-path signs up a tenant and drives the whole loop against it.
+# Running both at once means one of them is working against a schema being
+# deleted underneath it. Same group name in both places serialises them, and
+# cancel-in-progress is false so the loser QUEUES rather than being discarded —
+# a cancelled rebuild could leave dev emptied and not restored.
+concurrency:
+  group: dev-project
+  cancel-in-progress: false
+
+jobs:
+  rebuild:
+    name: Regenerate baseline, rebuild dev, prove it with golden-path
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      VITE_TEST_SUPABASE_URL: ${{ secrets.VITE_TEST_SUPABASE_URL }}
+      VITE_TEST_SUPABASE_ANON_KEY: ${{ secrets.VITE_TEST_SUPABASE_ANON_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install
+
+      - name: Require credentials
+        # Same shape check the other dev-touching jobs use: a value that is
+        # merely non-empty is not a value that works.
+        run: bash scripts/ci-require-secrets.sh golden-path
+
+      # ── 1. Regenerate the baseline FROM PRODUCTION ────────────────────────
+      # Written to a temp file first and only moved into place once it looks
+      # like a schema dump. A truncated or errored dump silently replacing a
+      # good 2.9MB baseline would be the worst outcome available here: the next
+      # rebuild would restore dev to a fragment and report success.
+      - name: Regenerate the baseline from production
+        run: |
+          set -euo pipefail
+          node scripts/backup-schema.mjs > /tmp/full_schema.sql
+          bytes=$(wc -c < /tmp/full_schema.sql)
+          tables=$(grep -c '^CREATE TABLE' /tmp/full_schema.sql || true)
+          echo "regenerated baseline: ${bytes} bytes, ${tables} CREATE TABLE statements"
+          if [ "$bytes" -lt 1000000 ] || [ "$tables" -lt 250 ]; then
+            echo "::error::Regenerated baseline looks truncated (${bytes} bytes, ${tables} tables; production has ~304). REFUSING to overwrite the good one or rebuild from this."
+            exit 1
+          fi
+          mv /tmp/full_schema.sql supabase/baseline/full_schema.sql
+
+      # ── 2. Rebuild dev from it ────────────────────────────────────────────
+      # DESTRUCTIVE, dev only. The script itself refuses without --confirm,
+      # captures the two cross-schema triggers from production before the drop
+      # and recreates them after, and leaves the public SCHEMA in place because
+      # pgvector's 118 extension-owned functions cannot be dropped.
+      - name: Rebuild dev from the baseline
+        run: node scripts/rebuild-dev-from-baseline.mjs --confirm
+
+      # ── 3. Give it the catalog ────────────────────────────────────────────
+      # A schema dump carries no rows, and the product cannot start a workspace
+      # without role_archetypes and friends — a structurally perfect database
+      # that cannot hire anyone is not a usable environment. Nothing
+      # customer-shaped crosses; see the script's header for what is excluded.
+      - name: Seed the reference catalog
+        run: node scripts/seed-dev-reference-data.mjs --confirm
+
+      # ── 4. Prove it, rather than declaring it ─────────────────────────────
+      # A rebuild that leaves dev unable to run the product is not a successful
+      # rebuild. This is the same proof ci.yml runs, against the environment
+      # this job just created.
+      - name: Prove the rebuilt environment runs the product
+        run: node scripts/golden-path.mjs
+
+      # ── 5. Report the residue ─────────────────────────────────────────────
+      # After a baseline rebuild dev should be level. If it is not, say so on
+      # the run summary — this is the job whose whole purpose is parity, so a
+      # silent shortfall here would be the exact failure it exists to prevent.
+      - name: Report any remaining drift
+        if: always()
+        run: node scripts/sync-dev-migrations.mjs || true
+
+      # The regenerated baseline is kept as an artifact rather than committed.
+      # See the note in the PR/commit: whether this should also land on main is
+      # a repo-policy call, not a technical one.
+      - name: Keep the regenerated baseline
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full_schema-${{ github.run_id }}
+          path: supabase/baseline/full_schema.sql
+          retention-days: 14
