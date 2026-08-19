@@ -47,6 +47,10 @@ jobs:
   rebuild:
     name: Regenerate baseline, rebuild dev, prove it with golden-path
     runs-on: ubuntu-latest
+    # contents: write is needed only for the baseline commit in step 5. Nothing
+    # else here writes to the repository, and the default token is read-only.
+    permissions:
+      contents: write
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       VITE_TEST_SUPABASE_URL: ${{ secrets.VITE_TEST_SUPABASE_URL }}
@@ -105,7 +109,53 @@ jobs:
       - name: Prove the rebuilt environment runs the product
         run: node scripts/golden-path.mjs
 
-      # ── 5. Report the residue ─────────────────────────────────────────────
+      # ── 5. Bless the baseline, but only now ───────────────────────────────
+      # DELIBERATELY AFTER golden-path. Committing before it runs would mean a
+      # baseline that builds a broken environment could land on main and be
+      # what the next rebuild — and restore-drill's comparison — trusts. The
+      # rule this encodes: a baseline is only blessed once an environment built
+      # from it has been shown to run the product.
+      #
+      # Only when the schema actually changed. Most days it will have; on a day
+      # it has not, a 2.9MB no-op commit is noise in a file whose history
+      # people occasionally have to read.
+      #
+      # Identity is the GitHub Actions bot, NOT a person. An automated commit
+      # wearing a human's email reads as that human's work in every blame and
+      # log, which is a small lie the repository would keep telling.
+      - name: Commit the regenerated baseline if the schema changed
+        if: success()
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- supabase/baseline/full_schema.sql; then
+            echo "production schema unchanged since the last run — nothing to commit"
+            exit 0
+          fi
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add supabase/baseline/full_schema.sql
+          # Two -m flags rather than one multi-line string: inside a YAML block
+          # scalar the continuation lines keep their indentation and it lands in
+          # the commit body as ragged leading whitespace.
+          git commit \
+            -m 'chore(baseline): regenerate full_schema.sql from production' \
+            -m 'Automated by .github/workflows/dev-rebuild.yml. The dump was restored into the dev project and golden-path drove the whole product loop against the result before this commit was made, so this file is known to build a working environment rather than merely to have been produced without error.'
+          # ⚠ main MOVES. Several sessions push to this repo through the day and
+          # a bare push loses the race often enough to matter. Rebase and retry:
+          # the only file in this commit is the baseline, so a rebase onto other
+          # people's work cannot conflict with anything they touched.
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then
+              echo "baseline committed and pushed on attempt ${attempt}"
+              exit 0
+            fi
+            echo "push rejected (main moved) — rebasing, attempt ${attempt}"
+            git pull --rebase origin main
+          done
+          echo "::error::Could not push the regenerated baseline after 3 attempts. The rebuild itself SUCCEEDED and dev is correct; only the checked-in baseline is stale. It is attached to this run as an artifact."
+          exit 1
+
+      # ── 6. Report the residue ─────────────────────────────────────────────
       # After a baseline rebuild dev should be level. If it is not, say so on
       # the run summary — this is the job whose whole purpose is parity, so a
       # silent shortfall here would be the exact failure it exists to prevent.
@@ -113,9 +163,11 @@ jobs:
         if: always()
         run: node scripts/sync-dev-migrations.mjs || true
 
-      # The regenerated baseline is kept as an artifact rather than committed.
-      # See the note in the PR/commit: whether this should also land on main is
-      # a repo-policy call, not a technical one.
+      # Kept as an artifact AS WELL AS committed, and the "as well as" is the
+      # point: if golden-path failed, or the push lost its race three times,
+      # step 5 did not commit — and this is then the only copy of a dump that
+      # took several minutes of production reads to produce. if: always() so it
+      # survives exactly the failures that make it worth having.
       - name: Keep the regenerated baseline
         if: always()
         uses: actions/upload-artifact@v4
