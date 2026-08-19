@@ -19,12 +19,28 @@ VITE_TEST_SUPABASE_URL=https://nmuntxrcdksyhsdywpan.supabase.co
 VITE_TEST_SUPABASE_ANON_KEY=<dev project anon key>
 ```
 
-Regenerate with the anon key only (no service-role key needed anywhere
-in this suite):
+The anon key only — no service-role key is needed anywhere in this suite.
 
 ```
-node <scratchpad>/fetch_dev_keys.js .supabase-token .env.test
+npx supabase projects api-keys --project-ref nmuntxrcdksyhsdywpan
 ```
+
+> **This goes stale on its own.** Supabase rotates project keys with no deploy
+> and no warning — it happened on 2026-08-19 at 08:57 UTC, and the copy here
+> (issued 2026-07-07) started returning 401. Nothing in the repo changed, so the
+> tests looked like a grants regression: they signed nobody in, ran as `anon`,
+> and every insert failed with `permission denied for table human_tasks`. Four
+> files went red and the same rotation had already been misdiagnosed once that
+> morning against 24 edge functions.
+>
+> `tests/setup.ts` now asks the key whether it still works before any test runs,
+> so this surfaces as one honest sentence naming the key and its issue date
+> rather than N confusing permission errors. If you see that message, refresh
+> the key with the command above; the schema is fine.
+
+> The previous version of this section pointed at
+> `node <scratchpad>/fetch_dev_keys.js` — a file in a per-session scratchpad that
+> no longer exists, so the documented recovery path was itself broken.
 
 ## Design
 
