@@ -1,3 +1,10 @@
+begin;
+-- ⚠ THIS `begin;` IS LOAD-BEARING, and it duplicates the one in the README on
+-- purpose. Without it, running this file the obvious way — a plain
+-- `db-query.mjs <file>` — autocommits every statement, the `rollback;` at the
+-- bottom becomes a no-op, and any mid-block raise leaves the seeded rows
+-- COMMITTED to production. One of them is a real autonomy grant on a live
+-- employee. Safety must not live in a neighbouring markdown file.
 -- Composition probes for step 3. Run as ONE aborting transaction; see the
 -- README in this directory for the command.
 --
@@ -78,6 +85,14 @@ begin
   -- this de_id + source_category='crm' is the first key tried and the
   -- employee+category tier inside resolve_de_autonomy is what reads it.
   delete from authority_rules where tenant_id = v_tenant;
+
+  -- Defensive, exactly like every authority_rules write in this file. There is
+  -- no row at this scope today, but idx_de_autonomy_one_rule_per_scope is
+  -- unique: if a real one ever appears, a bare insert raises and takes d4-d6
+  -- down with it.
+  delete from de_autonomy
+   where tenant_id = v_tenant and de_id = v_de
+     and action_type = 'action:crm' and playbook_id is null and source_category = 'crm';
 
   insert into de_autonomy (tenant_id, action_type, de_id, source_category, enabled, max_amount_cents)
   values (v_tenant, 'action:crm', v_de, 'crm', true, 100000)

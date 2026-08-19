@@ -39,6 +39,32 @@ zero pairs. c5 exists because c1-c4 call evaluate_authority DIRECTLY and would
 all pass against an UNCOMPOSED decide_human_task — c5 is the only one that
 checks the composition happened at all.
 
+## compose-decide-human-task-endtoend.sql (added by mig 786)
+
+The file above greps decide_human_task's source; this one RUNS it. That
+distinction is not academic — the suite above passed the entire time the hole
+mig 786 closes was open, and structurally could not have caught it: c1-c4 call
+evaluate_authority directly, so a decide_human_task that computed the risk and
+then threw it away satisfied every assertion in it.
+
+It approves real pending tasks in order to prove the refusal is real, so the
+`begin;` at the top of that file is load-bearing rather than decorative.
+
+RUN IT BOTH WAYS — a run where e2 passes both ways is measuring nothing:
+
+    node scripts/db-query.mjs supabase/tests/authority/compose-decide-human-task-endtoend.sql
+    { sed 's/^commit;$//' supabase/migrations/786_a_deny_that_could_not_be_checked_is_not_an_approval.sql; \
+      tail -n +2 supabase/tests/authority/compose-decide-human-task-endtoend.sql; \
+    } > SCRATCH/after.sql && node scripts/db-query.mjs SCRATCH/after.sql
+
+Before 786, e2 reports `APPROVED — the workspace’s deny rule enforced
+nothing`. After it: `raised: not_authorised_to_approve: unmeasured: this
+action did not report amount_cents, and a rule depends on it`.
+
+e1 and e3 are the guards that stop 786 passing by simply refusing everything:
+e1 proves an unruled approval still succeeds, e3 proves a deny it CAN check
+still denies.
+
 ## compose-decide-action-execution.sql (step 3)
 
 Requires 768, 770, 772, 783, 784 and step 3's migration. Run as one aborting

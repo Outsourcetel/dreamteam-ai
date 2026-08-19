@@ -1,3 +1,10 @@
+begin;
+-- ⚠ THIS `begin;` IS LOAD-BEARING, and it duplicates the one in the README on
+-- purpose. Without it, running this file the obvious way — a plain
+-- `db-query.mjs <file>` — autocommits every statement, the `rollback;` at the
+-- bottom becomes a no-op, and any mid-block raise leaves the seeded rows
+-- COMMITTED to production. One of them is a real autonomy grant on a live
+-- employee. Safety must not live in a neighbouring markdown file.
 -- evaluate-authority-probes.sql
 -- ==========================================================================
 -- Behavioural coverage for public.evaluate_authority (migs 768/770/772),
