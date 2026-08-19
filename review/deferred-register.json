@@ -1343,6 +1343,66 @@
       },
       "closed_by": "docs commit: superseded banners added to docs/08 and docs/09, each stating the measured gap (46 of 53 tables absent; 16 endpoints and no /v1 surface)",
       "closed_on": "2026-08-18"
+    },
+    {
+      "id": "A-9",
+      "what": "Migration 786 closes a governance hole and is committed but NOT APPLIED: a workspace deny rule whose measure the action does not report was downgraded to require_human, which decide_human_task deliberately treats as already satisfied, so the deny enforced nothing. Reproduced end to end before the fix was written; 409 of 412 pending approvals report no amount_cents. authority_rules is empty in production so nothing is breached yet, but mig 783 is granted to owners and admins, so a customer can reach that state unaided. Applying is the founder's call.",
+      "where": "supabase/migrations/786_a_deny_that_could_not_be_checked_is_not_an_approval.sql; public.evaluate_authority, public.decide_human_task",
+      "severity": "security",
+      "why_skipped": "founder-decision",
+      "first_named": {
+        "date": "2026-08-19",
+        "source": "whole-branch review of migs 768-785, 2026-08-19"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "sql",
+        "sql": "select (not coalesce((select regexp_replace(prosrc,'--[^\\n]*','','g') ~ 'rule_outcome' from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='evaluate_authority'),false))::int as n",
+        "open_if": {
+          "op": "==",
+          "n": 1
+        }
+      }
+    },
+    {
+      "id": "C-12",
+      "what": "Mig 765's review summary and the PIP it opens both say the verdict covers 'the last N weeks', but two of the metrics it judges ignore that window entirely: the CSAT read has no time filter at all, and the action arm de_kpi_action_value is hard-fixed at 91 days and never references p_window_weeks. Only the four get_de_performance_metrics-derived metrics honour it. Numerically latent today, but 765 made the window a parameter precisely so shorter windows become usable, and a PIP is a governance action.",
+      "where": "public.de_kpi_action_value (mig 756), public.de_kpi_status_internal (mig 764); summary text in mig 765",
+      "severity": "measurement",
+      "why_skipped": "out-of-scope",
+      "first_named": {
+        "date": "2026-08-19",
+        "source": "whole-branch review of migs 768-785, 2026-08-19"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "sql",
+        "sql": "select coalesce((select regexp_replace(prosrc,'--[^\\n]*','','g') ~ '91 days' from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='de_kpi_action_value'),false)::int as n",
+        "open_if": {
+          "op": "==",
+          "n": 1
+        }
+      }
+    },
+    {
+      "id": "B-15",
+      "what": "Mig 765 made a review return insufficient_data for an employee with no goals set, which removed the only path that CLOSES an open performance improvement plan: neither the below-threshold branch (refresh) nor the meets branch (complete) is reached. Two quarterly_review_thresholds items are stuck overdue on employees with zero de_kpis rows, and no pip_failed incident has ever been raised for them. NOT independently confirmed by me: the reviewer's further claim that the daily governance sweep still adjudicates these against the constants 765 declared illegitimate — I checked only that the sweep does not name the metric, which is not the same test.",
+      "where": "public.de_development_items rows with target_metric='quarterly_review_thresholds'; mig 765 vs de_governance_sweep_internal",
+      "severity": "correctness",
+      "why_skipped": "out-of-scope",
+      "first_named": {
+        "date": "2026-08-19",
+        "source": "whole-branch review of migs 768-785, 2026-08-19"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "sql",
+        "sql": "select count(*)::int as n from de_development_items i where i.status in ('proposed','in_progress') and i.target_metric = 'quarterly_review_thresholds' and i.due_date < current_date and (select count(*) from de_kpis k where k.de_id = i.de_id) = 0",
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        }
+      }
     }
   ]
 }
