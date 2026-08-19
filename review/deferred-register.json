@@ -1398,7 +1398,7 @@
         "date": "2026-08-19",
         "source": "whole-branch review of migs 768-785, 2026-08-19"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from de_development_items i where i.status in ('proposed','in_progress') and i.target_metric = 'quarterly_review_thresholds' and i.due_date < current_date and (select count(*) from de_kpis k where k.de_id = i.de_id) = 0",
@@ -1406,7 +1406,9 @@
           "op": ">=",
           "n": 1
         }
-      }
+      },
+      "closed_by": "mig 789_one_improvement_policy_two_readers.sql applied to production 2026-08-20. Verified live: the sweep no longer carries the constants mig 765 removed (escalation_rate <= 50 gone), it now reads de_kpi_status_internal like the review does, and v_passing is gone so absence of evidence can no longer read as failure. The review can withdraw a plan it cannot judge. The two stranded plans are dismissed: unjudgeable open plans went 2 -> 0, plans on goal-having employees untouched at 0, and 0 probe rows leaked",
+      "closed_on": "2026-08-19"
     }
   ]
 }
