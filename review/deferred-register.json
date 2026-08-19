@@ -424,7 +424,7 @@
         "date": "2026-08-12",
         "source": "docs/51-measurement-organs-audit.md (ranked 7th)"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace where ns.nspname = 'public' and p.proname = 'de_records_gate' and p.prosrc ilike '%evidence_runs%' and p.prosrc not ilike '%evidence_is_production%'",
@@ -433,7 +433,9 @@
           "n": 1
         },
         "note": "The origin column has existed since mig 682; this body does not use it. Both conjuncts matter — reading evidence_runs is what makes the missing predicate a defect."
-      }
+      },
+      "closed_by": "mig 777 — de_records_gate branch (d) now ANDs evidence_is_production(er.origin); 75 non-production runs no longer count toward the rate that flips external_reply_mode",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "C-4",
@@ -445,7 +447,7 @@
         "date": "2026-08-12",
         "source": "docs/51-measurement-organs-audit.md (ranked 7th)"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace where ns.nspname = 'public' and p.proname = 'get_workforce_trust_metrics' and p.prosrc ilike '%human_tasks%' and p.prosrc not ilike '%evidence_is_production%'",
@@ -453,7 +455,9 @@
           "op": ">=",
           "n": 1
         }
-      }
+      },
+      "closed_by": "mig 777 — get_workforce_trust_metrics' human_tasks read now ANDs evidence_is_production(origin)",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "C-5",
