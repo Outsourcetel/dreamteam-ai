@@ -273,7 +273,7 @@
         "date": "2026-08-12",
         "source": "docs/50-review-scorecard.md D (F-8)"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
@@ -286,7 +286,9 @@
           "n": 1
         },
         "note": "Matches the literal digits, not the word 'production'. A real query would interpolate, so the digits disappearing IS the fix."
-      }
+      },
+      "closed_by": "commit d7451747 — golden-path's footer now queries production and prints NOT MEASURED when unreachable",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "B-8",
@@ -688,7 +690,7 @@
         "date": "2026-08-09",
         "source": "docs/47-debt-map.md; re-carried docs/50 D"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
@@ -701,7 +703,9 @@
           "n": 0
         },
         "note": "INVERTED POLARITY: open while no test file imports a rendering library. The first component test that exists closes it, which is the right bar — 'some' is the whole distance from zero here."
-      }
+      },
+      "closed_by": "tests/platform-demand-empty-state.test.ts (parallel session, 3 days ago) renders a component with @testing-library — the first component test, so 'zero component tests' is no longer true",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "D-8",
@@ -1074,7 +1078,7 @@
         "date": "2026-08-18",
         "source": "docs/50 Workstream E, 2026-08-17"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from cron.job_run_details d join cron.job j on j.jobid=d.jobid where j.jobname='reconcile-blocked-goals-30min' and d.status='failed' and d.start_time > now() - interval '24 hours'",
@@ -1082,7 +1086,9 @@
           "op": ">=",
           "n": 1
         }
-      }
+      },
+      "closed_by": "mig 769 — reconcile_blocked_goals writes waiting_too_long; cron failures in the last 24h are now zero",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "C-8",
@@ -1238,7 +1244,7 @@
         "date": "2026-08-18",
         "source": "docs/63 Workstream M, 2026-08-18"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from digital_employees d where d.status='active' and (select count(*) from de_conversations c where c.de_id=d.id and c.created_at>now()-interval '30 days') > 0 and coalesce((public.get_de_performance_summary(d.id)->>'responses_this_month')::int,0) = 0",
@@ -1246,7 +1252,9 @@
           "op": ">=",
           "n": 1
         }
-      }
+      },
+      "closed_by": "mig 773 — responses_this_month counts assistant replies; Technical Support now reports 161, idle employees still 0",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "B-14",
@@ -1278,7 +1286,7 @@
         "date": "2026-08-18",
         "source": "docs/65 Workstream K, 2026-08-18"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
@@ -1291,7 +1299,9 @@
           "op": "==",
           "n": 0
         }
-      }
+      },
+      "closed_by": "commit d7451747 — color-scheme: dark on :root and light on :root.light in src/design/tokens.css",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "D-14",
