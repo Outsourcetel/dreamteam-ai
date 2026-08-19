@@ -178,50 +178,73 @@ was not.
 
 ---
 
-## Block 5 — I recommend, you say one word, I do it.
+## Block 5 — worked 2026-08-20. Four premises did not survive contact.
 
-Everything here is reversible and I have a clear call. Say **"go on block 5"** and I
-execute all of it, or name the ones you want held back.
+**21. Rotate the Resend API key (A-6) — YOURS, three clicks.** Still right, still
+unstarted, and still nil blast radius (zero outbound drafts ever), which is why now is
+the cheap moment. In order: create a new key in the Resend dashboard; set it with
+`npx supabase secrets set RESEND_API_KEY=<new>` (or Supabase dashboard › Edge
+Functions › Secrets); then revoke the old key in Resend. Revoking first would take
+email down between the steps. I cannot do any of it — that is credential entry.
 
-**21. Rotate the Resend API key (A-6).** The installed key is the one pasted into chat.
-Blast radius is still nil — zero outbound drafts ever — which is exactly why now is the
-cheap moment. Three steps, all clicks in your account; I will write them out.
+**22. The stranded `tenant_owner` (A-5) — MY RECOMMENDATION WAS WRONG. Not done.**
+Two of the three NULL-tenant profiles are `platform_super_admin`, where NULL is
+correct by design; only one is stranded. That one is **Bashir Khan, and it is their
+ONLY profile** — deactivating it, as I proposed, would lock a real person out of the
+product entirely, for no live gain, since a profile with no tenant already fails
+`auth_tenant_id()` everywhere.
 
-**22. The stranded `tenant_owner` (A-5).** Three profiles carry `tenant_id` NULL, one of
-them an owner — a real person's half-finished signup. `ON DELETE SET NULL` manufactures
-another on every workspace deletion. Deactivate the profile; fix the FK behaviour so it
-stops happening.
+Checking whether it was dangerous found something that matters more, now registered as
+**A-9**: `auth_has_tenant_role()` filters on user and role but **not on tenant**, so it
+answers "does this user hold this role anywhere". A caller that separately proves
+membership in workspace B still takes the ROLE from workspace A. Latent today — 0
+users hold profiles in two workspaces, verified — and live the first time one person
+joins a second workspace. Deliberately not fixed inside a hygiene batch: it is a core
+auth function called everywhere, and `platform_super_admin` carries NULL `tenant_id` by
+design, so a naive tenant filter breaks it.
 
-**23. The 12 orphaned migrations (B-10).** Production's ledger holds migrations whose
-source is only on an unmerged branch, and `main` holds *different* files at the same
-numbers. Live consequence: main's execute-perimeter is red. This needs the other
-session's branch merged — coordination, not code — and I should not merge someone
-else's in-flight work without your say-so.
+**23. The orphaned migrations (B-10) — DONE, and it was 16, not 12.** The register
+named 715 and 717 on branch `goofy-swanson`; that was stale. The real set was 756–789,
+all on `origin/claude/docs54-stage-c`, and it had been growing — 7, then 12, then 16 —
+as parallel sessions applied from worktrees without merging. Recovered the migration
+FILES only, not that branch's other in-flight work. Proof rather than assumption: all
+16 hash, under the ledger's own `migrationChecksum()`, to exactly what production
+recorded when it applied them; 0 ledger rows remain orphaned and 0 of all 811
+mismatch. **main can rebuild production again.**
 
-**24. `docs/HIPAA-SECURITY-POLICY.md`.** It claims a programme that does not exist.
-*Recommendation: delete it.* A policy nobody follows is worse than no policy, on the
-day someone reads it in diligence.
+**24. `docs/HIPAA-SECURITY-POLICY.md` — MY RECOMMENDATION WAS WRONG. Left in place.**
+I called it a programme that does not exist. Reading it, it is honestly self-labelled:
+*"starter template, not legal advice… must be reviewed and completed by qualified
+HIPAA counsel"*, and it flags its own organizational gaps. That is not a diligence
+liability, it is a useful artefact for item 4. The product's only other HIPAA mentions
+describe compliance **packs**, a real feature, not certification. Deleting it would
+have destroyed work worth having.
 
-**25. Fill the incident runbook's 14 placeholders (D-14).** Every role is `[name]`,
-every contact `[____]` — Security Officer, Privacy Officer, Counsel, vendor support
-routes. The honest fill is **your name in all five roles**, and writing that down is
-itself the useful act.
+**25. The incident runbook's placeholders (D-14) — BLOCKED ON ONE FACT.** Four
+`[name]`, four `[____]`, plus Security Officer, Privacy Officer and Counsel. The honest
+fill is one person in all five roles, but the only `tenant_owner` on outsourcetel-hq is
+a generic "Outsourcetel Owner", and I will not put a guessed human name into a security
+document. **Tell me the name and I will fill all fourteen.**
 
-**26. Decommission the legacy `outsourcetel` tenant and the probe tenants.** Eleven
-idle employees generating alert noise and skewing every metric we read.
+**26. Decommission the legacy tenant and the probes — NOT DONE, needs your call.**
+`outsourcetel` is **status=active** with 11 employees; `review-lab-disposable` is trial
+with 4; `b5-probe-…` is already suspended with 2. ⚠ Deleting a workspace is precisely
+what manufactures the stranded profiles in item 22 — so the safe verb is **suspend**,
+not delete. Name which of the three and I will suspend them.
 
-**27. Alert triage (C-1).** 136 open alerts; the banner shows 6; the weekly value
-digest — your actual value read — is buried underneath. Route by severity so the digest
-surfaces. ⚠ Not by resolving alerts: `resolve_cleared_ops_alerts` already runs every 15
-minutes, so anything still open is a condition that has **not** cleared.
+**27. Alert triage (C-1) — DONE.** Not by severity: `ops_alerts` has no severity
+column, only (kind, message, detail, created_at, resolved_at). The actual bug was that
+the banner rendered `alerts.slice(0, 6)` — the first six — so with 52
+`de_objective_wake_spin` and 23 `edge_function_error` rows, the three weekly
+`value_digest` alerts were never once on screen. It now ranks by kind before slicing:
+service-affecting first, then the digest, then everything else newest-first.
 
-**28. Two builds that raise the decision rate, which is the real bottleneck:**
-
-- **Batch decisions.** You answer at 50–67% within the hour when you engage; the loss
-  is per-item friction. Approve-many in one pass.
-- **Capture the reason.** Almost no decision so far recorded *why*. That rationale is
-  exactly the evidence a trust promotion needs — without it, item 2 has nothing to
-  promote on.
+**28. The two decision-rate builds — NOT STARTED, and one number was overstated.** I
+wrote "almost no decision recorded why"; it is **12 of 43** — low, but not almost none.
+Batch *approve* is deliberately not built alongside batch withdraw: withdrawing owes
+nothing, approving owes an invoice send or a real external charge, and those two must
+not share a code path or a habit. Both are features rather than hygiene — say the word
+and they get planned properly.
 
 **14 workspaces on the starter checklist (G-3)** stays open deliberately: migrating a
 customer's live template is their opt-in, not ours.
