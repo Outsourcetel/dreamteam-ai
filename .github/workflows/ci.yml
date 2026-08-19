@@ -90,13 +90,9 @@ jobs:
           cache: npm
       - run: npm install
       - name: Require secrets
-        run: |
-          if [ -z "$VITE_TEST_SUPABASE_URL" ] || [ -z "$VITE_TEST_SUPABASE_ANON_KEY" ]; then
-            echo "::error::Tenant-isolation tests cannot run — VITE_TEST_SUPABASE_URL and VITE_TEST_SUPABASE_ANON_KEY are not set."
-            echo "::error::This job FAILS rather than passing silently: these are the only automated proof that one tenant cannot read another's data."
-            echo "::error::Add them under Settings -> Secrets and variables -> Actions. Values are in .env.test locally."
-            exit 1
-          fi
+        # Shape, not just presence. See scripts/ci-require-secrets.sh for why
+        # a value that is merely non-empty is not a value that works.
+        run: bash scripts/ci-require-secrets.sh isolation
       - run: npm run test:isolation
 
   invariants:
@@ -113,14 +109,9 @@ jobs:
           cache: npm
       - run: npm install
       - name: Require token
-        run: |
-          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
-            echo "::error::ACL invariant tests cannot run — SUPABASE_ACCESS_TOKEN is not set."
-            echo "::error::This suite asserts the SHAPE of the live security layer (no FOR ALL policies, escalation guards present, nothing anon-reachable). It found a real hole on its first run."
-            echo "::error::The queries are read-only by construction — helpers/adminQuery.ts refuses anything that is not a lone SELECT/WITH."
-            echo "::error::Add SUPABASE_ACCESS_TOKEN under Settings -> Secrets and variables -> Actions."
-            exit 1
-          fi
+        # Shape, not just presence. See scripts/ci-require-secrets.sh for why
+        # a value that is merely non-empty is not a value that works.
+        run: bash scripts/ci-require-secrets.sh invariants
       - run: npm run test:invariants
 
   golden-path:
@@ -139,16 +130,7 @@ jobs:
           cache: npm
       - run: npm install
       - name: Require credentials
-        run: |
-          if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$VITE_TEST_SUPABASE_URL" ] || [ -z "$VITE_TEST_SUPABASE_ANON_KEY" ]; then
-            echo "::error::Golden path cannot run — SUPABASE_ACCESS_TOKEN, VITE_TEST_SUPABASE_URL and VITE_TEST_SUPABASE_ANON_KEY must all be set."
-            echo "::error::This job FAILS rather than passing silently: golden-path is the only end-to-end proof that the product's core loop runs — signup, hire, equip, intake, escalate, a HUMAN DECIDES, gate, evidence, trust."
-            echo "::error::Every step asserts an observable consequence, so a step that 'succeeds' without changing state fails here."
-            echo "::error::These are the same secrets the isolation and invariant jobs already use. Values are in .env.test and .env.local locally."
-            exit 1
-          fi
-      # DEV PROJECT ONLY. The loop creates its own probe tenant through the real
-      # signup path and marks it spent afterwards; production is never written
-      # to. The one production touch is a read-only count for the drift footer,
-      # which degrades to "NOT MEASURED" rather than failing the run.
+        # Shape, not just presence. See scripts/ci-require-secrets.sh for why
+        # a value that is merely non-empty is not a value that works.
+        run: bash scripts/ci-require-secrets.sh golden-path
       - run: node scripts/golden-path.mjs
