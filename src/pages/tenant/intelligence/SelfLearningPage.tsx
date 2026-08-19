@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Drawer } from '../../../design/primitives';
+import { Drawer, Toast } from '../../../design/primitives';
 import { useAuth } from '../../../context/AuthContext';
 import { PageHeader, th, td } from '../../../components/ui';
 import type { Page } from '../../../types';
@@ -566,9 +566,7 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
       )}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-dt-panel border border-emerald-500/40 text-sm text-dt-title rounded-xl px-4 py-3 shadow-xl">
-          {toast}
-        </div>
+        <Toast>{toast}</Toast>
       )}
     </div>
   );

@@ -58,7 +58,7 @@ function BreakdownPopover({ c }: { c: HealthComponents }) {
     { label: 'Activity recency', count: c.activity_recency?.days_since == null ? 'never' : `${c.activity_recency.days_since}d ago`, penalty: c.activity_recency?.penalty ?? 0, weight: c.activity_recency?.weight ?? 0 },
   ];
   return (
-    <div className="absolute z-30 top-full left-0 mt-1.5 w-72 rounded-xl border border-dt-border-strong bg-dt-card shadow-2xl p-3">
+    <div className="absolute z-30 top-full left-0 mt-1.5 w-72 rounded-xl border border-dt-border-strong bg-dt-page shadow-2xl p-3">
       <p className="text-[11px] font-semibold text-white mb-2">Health breakdown — score {c.score}</p>
       <div className="space-y-1">
         {rows.map(r => (
@@ -686,7 +686,7 @@ export default function CustomerSuccessLive() {
                             </button>
                             {popoverId === a.id && a.health_components && <BreakdownPopover c={a.health_components} />}
                             {popoverId === a.id && !a.health_components && (
-                              <div className="absolute z-30 top-full left-0 mt-1.5 w-56 rounded-xl border border-dt-border-strong bg-dt-card shadow-2xl p-3 text-[11px] text-dt-support">
+                              <div className="absolute z-30 top-full left-0 mt-1.5 w-56 rounded-xl border border-dt-border-strong bg-dt-page shadow-2xl p-3 text-[11px] text-dt-support">
                                 Not computed yet — use “Recompute now” in the health config panel.
                               </div>
                             )}

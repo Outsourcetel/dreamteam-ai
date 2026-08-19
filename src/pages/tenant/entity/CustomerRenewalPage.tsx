@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Modal } from '../../../design/primitives';
+import { Modal, Toast } from '../../../design/primitives';
 import { useAuth } from '../../../context/AuthContext';
 import type { Page } from '../../../types';
 import {
@@ -364,9 +364,7 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
       )}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 z-[100] px-4 py-3 rounded-xl border shadow-xl text-sm font-medium bg-emerald-900/90 border-emerald-700/50 text-emerald-300">
-          {toast}
-        </div>
+        <Toast>{toast}</Toast>
       )}
     </div>
   );

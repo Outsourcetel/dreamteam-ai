@@ -3,7 +3,7 @@ import { useIsTenantAdmin, useIsTenantManager } from '../../../lib/useRoleGate';
 // Straight from the design system now, not via components/ui — that shim only
 // ever re-exported PageHeaderV2 and TH under older names, and the last table
 // on this page became step cards, so th/td have no remaining call site here.
-import { Modal, Button, Chip, PageHeaderV2 as PageHeader } from '../../../design/primitives';
+import { Button, Chip, Modal, PageHeaderV2 as PageHeader, Toast } from '../../../design/primitives';
 import type { Page } from '../../../types';
 import { CustomerApiError, listAccounts } from '../../../lib/customerApi';
 import type { CustomerAccount } from '../../../lib/customerApi';
@@ -655,7 +655,7 @@ function TemplateHelp() {
         {'{{ templates }}'} ▾
       </button>
       {open && (
-        <div className="absolute z-20 mt-1 left-0 w-72 rounded-xl border border-dt-border-strong bg-dt-card p-3 shadow-xl">
+        <div className="absolute z-20 mt-1 left-0 w-72 rounded-xl border border-dt-border-strong bg-dt-page p-3 shadow-xl">
           <p className="text-[11px] font-medium text-dt-support mb-2">Available template variables</p>
           {TEMPLATE_VARS.map(v => (
             <div key={v.token} className="flex gap-2 text-[11px] mb-1">
@@ -2426,9 +2426,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
       )}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-dt-panel border border-emerald-500/40 text-sm text-dt-title rounded-xl px-4 py-3 shadow-xl">
-          {toast}
-        </div>
+        <Toast>{toast}</Toast>
       )}
     </div>
   );
