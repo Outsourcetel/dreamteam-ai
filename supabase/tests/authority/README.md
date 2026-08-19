@@ -38,3 +38,17 @@ what makes the composition a no-op. c1b exists because c1 passes vacuously on
 zero pairs. c5 exists because c1-c4 call evaluate_authority DIRECTLY and would
 all pass against an UNCOMPOSED decide_human_task — c5 is the only one that
 checks the composition happened at all.
+
+## compose-decide-action-execution.sql (step 3)
+
+Requires 768, 770, 772, 783, 784 and step 3's migration. Run as one aborting
+transaction (concatenate the step-3 migration if it is not yet applied):
+
+    { echo 'begin;'; cat supabase/tests/authority/compose-decide-action-execution.sql; } \
+      > <scratchpad>/dry-dae.sql && node scripts/db-query.mjs <scratchpad>/dry-dae.sql
+
+d1 is load-bearing: with authority_rules empty, every live employee must still
+get a decision from today's vocabulary. d1b exists because d1 passes vacuously
+on zero employees. d5 exists because d2-d4 call decide_action_execution and
+would report today's answers if the composition never happened. d6 proves the
+earned-trust resolution was not replaced.
