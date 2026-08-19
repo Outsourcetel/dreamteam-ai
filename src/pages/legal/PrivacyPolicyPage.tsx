@@ -59,12 +59,23 @@ const PrivacyPolicyPage = ({ onBack }: { onBack?: () => void }) => (
         <section>
           <h2 className="text-lg font-semibold text-white mb-2">4. Third parties we share data with</h2>
           <p>
-            To generate AI responses, the Service sends relevant portions of your data to third-party AI model
-            providers — currently Anthropic (Claude), and optionally OpenAI and Google, depending on which providers
-            you configure. These providers process the data to generate a response and are bound by their own data
-            usage terms. [Placeholder: confirm and link each provider's data-processing terms, and state whether
-            any provider is used to train their own models on your data — as of this draft, that should be
-            explicitly disabled/opted-out wherever the provider allows it.] We do not sell your data to anyone.
+            To generate AI responses, the Service sends relevant portions of your data to a third-party AI model
+            provider. Today that is <strong>Anthropic (Claude)</strong> — it is the only provider currently
+            receiving any customer content.
+          </p>
+          <p className="mt-3">
+            The Service can also fail over to <strong>Amazon Web Services (Bedrock)</strong>, <strong>OpenAI</strong>{' '}
+            and <strong>Google</strong>. A provider only ever joins that chain once its API key is configured in
+            Settings → AI Engine, and none of the three is configured today. We list all four here rather than only
+            the one in use, because adding a key is a settings change: without this paragraph it could route your
+            conversations to a processor this policy had never named.
+          </p>
+          <p className="mt-3">
+            Beyond the model providers, the Service relies on <strong>Supabase</strong> (database and hosting),{' '}
+            <strong>Vercel</strong> (application hosting) and <strong>Resend</strong> (outbound and inbound email).
+            [Placeholder for counsel: confirm and link each provider's data-processing terms, and state whether any
+            provider trains its own models on your data — as of this draft that should be explicitly opted out
+            wherever the provider allows it.] We do not sell your data to anyone.
           </p>
         </section>
 
