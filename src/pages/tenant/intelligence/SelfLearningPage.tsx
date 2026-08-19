@@ -566,7 +566,7 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
       )}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-dt-panel border border-emerald-500/40 text-sm text-dt-title rounded-xl px-4 py-3 shadow-xl">
+        <div className="fixed bottom-6 right-6 z-50 bg-dt-page border border-emerald-500/40 text-sm text-dt-title rounded-xl px-4 py-3 shadow-xl">
           {toast}
         </div>
       )}

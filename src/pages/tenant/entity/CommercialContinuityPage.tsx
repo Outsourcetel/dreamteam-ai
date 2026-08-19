@@ -473,7 +473,7 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
       )}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 z-[100] px-4 py-3 rounded-xl border shadow-xl text-sm font-medium bg-dt-card/95 border-dt-border-strong text-dt-body max-w-sm">
+        <div className="fixed bottom-6 right-6 z-[100] px-4 py-3 rounded-xl border shadow-xl text-sm font-medium bg-dt-page border-dt-border-strong text-dt-body max-w-sm">
           {toast}
         </div>
       )}
