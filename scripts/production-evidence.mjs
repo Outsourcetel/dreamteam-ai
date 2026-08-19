@@ -75,8 +75,8 @@ export const COUNT_READ_PINS = {
     "TRIAGE TRIGGER — mig 671's channel guard allowlists support channels ('widget','hosted','portal','email','dock') BEFORE classifying, which excludes exams without naming them; its only count(*) is a first-user-message check on de_messages",
   snapshot_de_kpi_readings:
     'CSAT-ONLY READ — its de_conversations count requires csat_submitted_at, and an exam thread has no customer to rate it: 0 exam-channel CSAT rows have ever existed (verified live 2026-08-12). If CSAT semantics ever change, add the axis instead of widening this pin',
-  get_de_kpi_status:
-    'CSAT-ONLY READ — same population as snapshot_de_kpi_readings (csat_submitted_at required; 0 exam CSAT rows ever); its decision-shaped KPIs come from exam-filtered get_de_performance_metrics (571)',
+  de_kpi_status_internal:
+    'CSAT-ONLY READ — mig 764 moved the body of get_de_kpi_status in here, so the pin moved with it; get_de_kpi_status is now a thin wrapper that aggregates nothing. Same population as snapshot_de_kpi_readings (csat_submitted_at required; 0 exam CSAT rows have ever existed), and its decision-shaped KPIs come from exam-filtered get_de_performance_metrics (571)',
   check_de_retirement_readiness:
     'DEPENDENCY CHECK — counts OPEN human_tasks/assignments before retirement; the de_conversations subselect only resolves which tasks belong to this employee. Exam-linked open work SHOULD block retirement — losing it silently would be the lie',
   get_de_work_product:

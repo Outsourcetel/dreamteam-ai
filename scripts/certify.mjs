@@ -632,6 +632,43 @@ const PROBES = [
     why: 'the OPPOSITE question about the same surface, and a different class: of the write grants authenticated still holds, is any one of them a write RLS can only ever refuse? A table with RLS on and no PERMISSIVE policy for that command matches zero rows and PostgREST returns SUCCESS WITH NO ERROR — supabase-js sees error === null and the client reports a write that never happened. This repo has paid for that shape twice (project_role_gated_ui_audit; the four removed `tenants` writes whose comments still sit at src/lib/api.ts:97/297/675/734). docs/52 §5 measured exactly ONE live instance out of 82 kept command-grants — de_deployment_stages UPDATE, driving promoteDeploymentStage — and mig 720 closed it with a governed RPC. This is what stops instance #2. It is NOT arm 1 restated: arm 1 pins the grant surface and can be silenced by a re-pin, whereas this reads the POLICIES, so a migration that adds a grant, forgets the policy and re-pins is green there and red here. It cannot see a policy whose USING clause matches nothing in practice (docs/52 §9) — that half is not decidable from the catalogue',
     sql: silentNoopWriteSql(),
   },
+  {
+    name: 'authority-has-one-evaluator-and-no-decorative-dimension',
+    why: 'two paths measuring separately diverge — mig 755 had to unpick exactly that between list_de_trust_surface and decide_action_execution. And a dimension that can be written into a rule with nothing reading it is max_discount_pct again: configurable, zero readers, enforced by asking a model nicely. Both arms report their denominator, because zero findings from zero comparisons looks exactly like a clean result. ⚠ THE FIRST VERSION OF THE EVALUATOR ARM MATCHED A VARIABLE NAME, AND THAT IS THE DEFECT THIS PARAGRAPH EXISTS TO REMEMBER: it tested comment-stripped source for `strictest|v_worst`, and public.check_idle_in_transaction_internal (mig 466 — an idle-in-transaction watchdog with nothing to do with authority) declares its own local `v_worst` (an oldest-offender tracker). That would have false-positived as a second evaluator the moment 768/770/772 reached production, before any real second evaluator was ever written — caught in dry run, not in production, but only because it was dry-run first. Renaming the watchdog\'s variable to suit this probe was considered and rejected: it makes unrelated code serve a test\'s regex, and the next function that happens to declare v_worst breaks the gate again the same way. Fixed instead by testing what a second evaluator must actually DO rather than what it happens to be named: its comment-stripped source must reference authority_rules (it has to read the table the rules live in) AND require_second_approver (it has to be able to emit the ladder\'s middle rung) — BOTH, not either. A watchdog cannot satisfy that pair by coincidence; a real evaluator cannot avoid it while doing its job. Comments are stripped before matching for the same reason mig 749 needed it: these two terms are ordinary words that this very probe\'s prose and 772\'s own comments both use, so an unstripped scan would match itself. DO NOT SIMPLIFY THIS BACK TO A SINGLE IDENTIFIER MATCH — that is exactly the version that was wrong. ⚠ A THIRD DISEASE SITS UNDER BOTH ARMS ABOVE, AND IT IS THE SAME SHAPE AGAIN: both are "no violation found" queries, so if public.evaluate_authority were dropped entirely — not replaced, just gone — `evaluators` returns zero rows (there is no second one; there is not even a first one) and `readerless` is untouched by the drop, so the whole probe finds nothing, prints its denominator note, and certify goes GREEN over an authority surface with NO evaluator behind it at all. That is this project\'s own "passes for reasons unrelated to what it claims to test" shape, named by the paragraph above for this exact probe and now reproduced by it. The third arm below is the only one that checks the evaluator EXISTS rather than assuming it, via to_regprocedure against its exact signature — the same catalog check 768/770 use for a reader_fn, never a stored boolean',
+    sql: `
+      with evaluators as (
+        select fn.proname
+          from (
+            select p.proname, regexp_replace(p.prosrc, '--[^\\n]*', '', 'g') as src
+              from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public'
+          ) fn
+         where fn.src ~ 'authority_rules'
+           and fn.src ~ 'require_second_approver'
+           and fn.proname <> 'evaluate_authority'
+      ),
+      readerless as (
+        select distinct ar.dimension
+          from authority_rules ar
+          join authority_dimensions ad on ad.dimension = ar.dimension
+         where ar.is_active
+           and (ad.reader_fn is null or to_regprocedure(ad.reader_fn) is null)
+      )
+      select 'the authority evaluator is MISSING' as violation, null::text as note
+       where to_regprocedure('public.evaluate_authority(uuid,text,uuid,text,jsonb)') is null
+      union all
+      select 'a SECOND authority evaluator exists: ' || proname, null
+        from evaluators
+      union all
+      select 'an active rule names a dimension nothing reads: ' || dimension, null
+        from readerless
+      union all
+      select null, format('compared %s rules across %s dimensions against %s registered readers',
+                          (select count(*) from authority_rules where is_active),
+                          (select count(distinct dimension) from authority_rules where is_active),
+                          (select count(*) from authority_dimensions where reader_fn is not null))
+    `,
+  },
 ];
 
 // ── Edge functions: a per-function type-error ratchet ──────────────────────
