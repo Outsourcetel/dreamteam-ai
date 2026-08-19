@@ -1354,7 +1354,7 @@
         "date": "2026-08-19",
         "source": "whole-branch review of migs 768-785, 2026-08-19"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "sql",
         "sql": "select (not coalesce((select regexp_replace(prosrc,'--[^\\n]*','','g') ~ 'rule_outcome' from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='evaluate_authority'),false))::int as n",
@@ -1362,7 +1362,9 @@
           "op": "==",
           "n": 1
         }
-      }
+      },
+      "closed_by": "mig 786_a_deny_that_could_not_be_checked_is_not_an_approval.sql applied to production 2026-08-20; verified live by supabase/tests/authority/compose-decide-human-task-endtoend.sql, whose e2 went from 'APPROVED — the workspace's deny rule enforced nothing' to 'raised: not_authorised_to_approve: unmeasured: this action did not report amount_cents, and a rule depends on it', with e1 and e3 still green",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "C-12",
