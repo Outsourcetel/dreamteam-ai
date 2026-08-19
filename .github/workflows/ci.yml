@@ -133,6 +133,13 @@ jobs:
       VITE_TEST_SUPABASE_ANON_KEY: ${{ secrets.VITE_TEST_SUPABASE_ANON_KEY }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # audit:replayable diffs origin/main...HEAD to find migrations this
+          # branch ADDS. checkout defaults to depth 1, where that diff finds
+          # nothing and the gate passes every time without checking anything —
+          # a gate that cannot fail, which is the shape this repo has paid for
+          # before. Full history is what makes the comparison real.
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
