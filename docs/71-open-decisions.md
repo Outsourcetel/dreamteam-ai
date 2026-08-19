@@ -12,7 +12,7 @@ Live as of 2026-08-20:
 | Signal | Now |
 |---|---|
 | Tenants with a price configured | **0** |
-| Employees at trust level `supervised` | **129 of 129** |
+| Employees whose replies can reach a customer unsent by a human | **0 of 129** (see item 2 — `trust_level` is a derived badge, not the gate) |
 | Decisions waiting on a human | **412** pending, 27 expired |
 | Objectives blocked | **46** |
 | Unresolved ops alerts | **136** |
@@ -34,15 +34,47 @@ an explicit "pilots are free until N customers".
 *My recommendation:* per-employee-per-month, because that is what the product actually
 meters and what the customer already thinks they are buying.
 
-**2. Open the trust ladder — on which action class first?** 129 of 129 employees sit
-at `supervised`, which means every act asks. This one dial explains the 412 pending
-decisions, the 46 blocked objectives and most of the alert noise.
-*Decision:* the first class of action an employee may take without asking. The three
-I would put in front of you: (a) internal-only acts — notes, task updates, drafts
-saved but not sent; (b) outbound replies to a customer, no money moved; (c) money
-below a threshold you set.
-*My recommendation:* (a) first, for two weeks. It is the only one where a mistake
-costs nothing, and it still removes a large share of the 412.
+**2. Open the trust ladder — DECIDED 2026-08-20: outbound replies, no money.**
+Reading the machinery to execute this found that "supervised" is **three separate
+dials**, and my earlier "129 of 129 supervised" was a derived badge, not the gate.
+What actually runs:
+
+| Dial | What it controls | State today |
+|---|---|---|
+| `de_autonomy` (enabled, `min_confidence`) | the right to **produce** an answer instead of escalating | open at 70% on 22 rows — but 20 are the internal Workspace Assistant (mig 339). Every other employee has **no row**, and no row means floor 101, which is unreachable: everything escalates. |
+| `digital_employees.external_reply_mode` | the right to **send** it to the customer | `draft` on **129 of 129**. No reply has ever reached a customer unsent by a human. |
+| `trust_policies.current_level` | the governed, audited ladder that *should* set dial 1 | **0 on all 90 rows** — and level 0 means `enabled=false`, which contradicts the live 70% rows. The ladder and the dial were seeded by different paths and never reconciled. A floor of 70 is not a value the ladder can even produce; its levels are 90 / 75 / 60. |
+
+The founder’s chosen class maps to `external_reply_mode = 'auto'`: the reply reaches the
+customer, `max_amount_cents` stays null by construction, so no money can move.
+
+**Turning it on is safe by construction.** `run_reply_mode_gate_internal` sweeps every
+`auto` employee and pulls it back to `draft` — raising a `trust_demotion_notice` that
+says why — on a failed records gate, an open critical incident, or 8-week metrics
+showing >50% escalation or >15% errors. Restoring it is deliberately a human act.
+
+**But on our operating tenant it would currently be inert, and that is the finding.**
+Running `de_records_gate` across outsourcetel-hq’s twelve live employees:
+
+- **9 pass the gate** — Accounting, Billing & Invoicing, Business Development, Finance,
+  Marketing, Onboarding, Renewal, Account Success, Workspace Assistant — and **8 of the
+  9 have no autonomy row at all**, so their confidence floor is 101 and every answer
+  escalates no matter what the reply mode says.
+- **Technical Support** is the only customer-facing employee with a working answer dial
+  (70%), and it is **blocked by the gate for `stale_certification`**.
+- **Front Desk and IT Helpdesk** are blocked `never_certified` — that is item 12.
+
+So today there is **no employee where flipping reply-mode to auto would produce a single
+auto-answer.** Executing the decision takes two steps per employee, in order:
+
+1. **Grant the answer dial** — trust ladder level 1 (90% floor) on `answer_dock` /
+   `answer_widget`. This is the governed path and I can prepare it.
+2. **Flip the reply mode** — `set_de_external_reply_mode` demands `auth.uid()` and
+   owner/admin (mig 433), because "switching to auto does not approve one reply, it
+   removes the approval step for every future one." **I cannot call it and will not
+   route around it.** It is a click per employee, in that employee’s Channels settings.
+
+Technical Support additionally needs re-certification before the gate will let it stay.
 
 **3. The email channel.** `RESEND_INBOUND_SECRET` is unset; the inbound function is
 deployed and honestly returns 503. Email is the default support channel for the
