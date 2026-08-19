@@ -6,8 +6,9 @@ import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { loadChatEscalations, setChatEscalationStatus, chatEscalationAge } from '../../../lib/chatEscalations';
 import type { GatedExecutionPreview } from '../../../lib/connectorApi';
-import { listHumanTasks, decideHumanTask, withdrawHumanTask, withdrawHumanTasks, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, getImprovementProposal, getImprovementReviewSignals, DECISION_REASON_CODES, getBlockedWorkForTask, rerouteEscalation, retryAnswerableBlockers, getPendingConversationDraft } from '../../../lib/customerApi';
+import { listHumanTasks, decideHumanTask, withdrawHumanTask, withdrawHumanTasks, previewDecideHumanTasks, decideHumanTasks, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, getImprovementProposal, getImprovementReviewSignals, DECISION_REASON_CODES, getBlockedWorkForTask, rerouteEscalation, retryAnswerableBlockers, getPendingConversationDraft } from '../../../lib/customerApi';
 import type { BlockedWork, PendingConversationDraft } from '../../../lib/customerApi';
+import type { DecisionPreview } from '../../../lib/customerApi';
 import type { DecisionCapture, DecisionReasonCode } from '../../../lib/customerApi';
 import type { DBHumanTask, StalenessEscalation } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
@@ -313,6 +314,17 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   // snapshot rather than what is on screen.
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [withdrawing, setWithdrawing] = useState(false);
+  // Batch decide (mig 795). The preview is held separately from the commit
+  // on purpose: seeing what will refuse BEFORE approving 45 things is the
+  // whole point, and a single button that previews-then-commits would take
+  // that choice away.
+  const [batchPreview, setBatchPreview] = useState<DecisionPreview | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [batchDeciding, setBatchDeciding] = useState(false);
+  // A preview describes ONE selection. Change the selection and it is stale,
+  // so it goes — showing '23 will go through' next to a different 23 would be
+  // worse than showing nothing.
+  useEffect(() => { setBatchPreview(null); }, [picked]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [deciding, setDeciding] = useState(false);
   const [gatedExec, setGatedExec] = useState<GatedExecutionPreview | null>(null);
@@ -584,6 +596,47 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   // one runs a dozen side-effect hooks because approving owes something, and
   // a withdrawal owes nothing. Reusing it would make "remove this from my
   // list" the most side-effecting button on the page.
+  // ── Batch decide (mig 795) ───────────────────────────────────────────────
+  // Two steps, deliberately. The preview runs the REAL decision per task and
+  // rolls it back, so what it reports is what the rules actually say — not a
+  // second opinion about them that could drift.
+  const doPreview = async (ids: string[]) => {
+    if (ids.length === 0 || previewing) return;
+    setPreviewing(true);
+    setBatchPreview(null);
+    try {
+      setBatchPreview(await previewDecideHumanTasks(ids, 'approved'));
+    } catch (e) {
+      setOutcome({ text: e instanceof Error ? e.message : 'Could not preview.', ok: false });
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  const doBatchApprove = async (ids: string[]) => {
+    if (ids.length === 0 || batchDeciding) return;
+    setBatchDeciding(true);
+    try {
+      // ⚠ EVERY selected id is sent, including the ones the preview said would
+      // refuse. The preview describes the state of play a moment ago; the RPC
+      // re-runs every guard now. Filtering to the "safe" subset here would be
+      // building on a snapshot and would quietly hide a task that has since
+      // become approvable.
+      const r = await decideHumanTasks(ids, 'approved', null, 'Approved in a batch from the queue');
+      setPicked(new Set());
+      setBatchPreview(null);
+      if (ids.includes(selectedId ?? '')) setSelectedId(null);
+      setOutcome(r.failed.length
+        ? { text: `Approved ${r.decided}. ${r.failed.length} refused — ${r.failed[0].error}`, ok: false }
+        : { text: `Approved ${r.decided} ${r.decided === 1 ? 'task' : 'tasks'}.`, ok: true });
+      await refresh();
+    } catch (e) {
+      setOutcome({ text: e instanceof Error ? e.message : 'Could not approve.', ok: false });
+    } finally {
+      setBatchDeciding(false);
+    }
+  };
+
   const doWithdraw = async (ids: string[]) => {
     if (ids.length === 0 || withdrawing) return;
     setWithdrawing(true);
@@ -864,6 +917,18 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
               {picked.size > 0 && (
                 <>
                   <span className="text-dt-faint">{picked.size} selected</span>
+                  {/* Preview first. Approving 45 things without being told which
+                      two will refuse is the behaviour this replaces. */}
+                  {!batchPreview && (
+                    <Button
+                      kind="secondary"
+                      size="sm"
+                      disabled={previewing}
+                      onClick={() => void doPreview([...picked])}
+                    >
+                      {previewing ? 'Checking…' : `Check what approving ${picked.size} would do`}
+                    </Button>
+                  )}
                   <Button
                     kind="secondary"
                     size="sm"
@@ -874,6 +939,49 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                   </Button>
                   <span className="text-dt-faint">Removes them without approving or sending anything.</span>
                 </>
+              )}
+              {picked.size > 0 && batchPreview && (
+                <div className="w-full mt-2 rounded-dt border border-dt-line bg-dt-surface p-3">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="text-dt-body font-medium">
+                      {batchPreview.would_succeed} will go through
+                      {batchPreview.would_refuse > 0 && `, ${batchPreview.would_refuse} will refuse`}.
+                    </span>
+                    <Button
+                      kind="primary"
+                      size="sm"
+                      disabled={batchDeciding || batchPreview.would_succeed === 0}
+                      onClick={() => void doBatchApprove([...picked])}
+                    >
+                      {batchDeciding ? 'Approving…' : `Approve ${picked.size}`}
+                    </Button>
+                    <button
+                      onClick={() => setBatchPreview(null)}
+                      className="text-dt-support hover:text-dt-body underline"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  {batchPreview.would_refuse > 0 && (
+                    <ul className="mt-2 space-y-1">
+                      {batchPreview.refusals.slice(0, 5).map(r => (
+                        <li key={r.id} className="text-dt-faint">
+                          <span className="text-dt-support">{r.title}</span> — {r.why}
+                        </li>
+                      ))}
+                      {batchPreview.refusals.length > 5 && (
+                        <li className="text-dt-faint">
+                          …and {batchPreview.refusals.length - 5} more.
+                        </li>
+                      )}
+                    </ul>
+                  )}
+                  <p className="mt-2 text-dt-faint">
+                    This is the real decision run against each task and rolled back, not a guess.
+                    All {picked.size} are still sent when you approve — the checks run again, so
+                    anything that changed in the meantime is caught rather than assumed.
+                  </p>
+                </div>
               )}
             </div>
           )}

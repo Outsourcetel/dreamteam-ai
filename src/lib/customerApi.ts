@@ -1139,6 +1139,81 @@ export async function withdrawHumanTasks(
   return { withdrawn: row.withdrawn ?? 0, failed: row.failed ?? [] };
 }
 
+export type DecisionRefusal = { id: string; title: string; why: string };
+export type DecisionPreview = {
+  would_succeed: number;
+  would_refuse: number;
+  refusals: DecisionRefusal[];
+};
+
+/** What WOULD happen, changing nothing (mig 795).
+ *
+ *  The RPC runs the real decide_human_task per task and rolls each one back,
+ *  so this is not a second opinion about the rules — it IS the rules. It
+ *  reports the state of play NOW: someone else deciding a task, or a rule
+ *  changing, between this call and the commit will move the answer, which is
+ *  why decideHumanTasks re-runs every guard rather than trusting this. */
+export async function previewDecideHumanTasks(
+  taskIds: string[],
+  decision: 'approved' | 'rejected',
+  reasonCode?: DecisionReasonCode | null,
+): Promise<DecisionPreview> {
+  if (taskIds.length === 0) return { would_succeed: 0, would_refuse: 0, refusals: [] };
+  const { data, error } = await supabase.rpc('preview_decide_human_tasks', {
+    p_task_ids: taskIds,
+    p_decision: decision,
+    p_reason_code: reasonCode ?? null,
+  });
+  if (error) raise('previewDecideHumanTasks', error);
+  const row = (data ?? {}) as Partial<DecisionPreview>;
+  return {
+    would_succeed: row.would_succeed ?? 0,
+    would_refuse: row.would_refuse ?? 0,
+    refusals: row.refusals ?? [],
+  };
+}
+
+/** Decide many (mig 795). N decisions, not one decision with a bigger blast
+ *  radius: the RPC calls decide_human_task once per task, so every guard fires
+ *  per task and every approval writes its own audit row. */
+export async function decideHumanTasks(
+  taskIds: string[],
+  decision: 'approved' | 'rejected',
+  reasonCode?: DecisionReasonCode | null,
+  note?: string,
+): Promise<{ decided: number; failed: { id: string; title: string; error: string }[] }> {
+  if (taskIds.length === 0) return { decided: 0, failed: [] };
+  const { data, error } = await supabase.rpc('decide_human_tasks', {
+    p_task_ids: taskIds,
+    p_decision: decision,
+    p_reason_code: reasonCode ?? null,
+    p_note: note ?? null,
+  });
+  if (error) raise('decideHumanTasks', error);
+  const row = (data ?? {}) as { decided?: number; failed?: { id: string; title: string; error: string }[] };
+  return { decided: row.decided ?? 0, failed: row.failed ?? [] };
+}
+
+export type DecisionGroup = {
+  task_type: string;
+  de_id: string | null;
+  de_name: string | null;
+  pending: number;
+  oldest_at: string;
+  oldest_days: number;
+  overdue: number;
+  unpriced: number;
+  sample_title: string | null;
+  task_ids: string[];
+};
+
+/** The queue as about a dozen decisions instead of 412 rows (mig 795). */
+export async function listDecisionGroups(): Promise<DecisionGroup[]> {
+  const { data, error } = await supabase.rpc('list_decision_groups');
+  if (error) raise('listDecisionGroups', error);
+  return (data ?? []) as DecisionGroup[];
+}
+
 // ── Activity ──────────────────────────────────────────────────────
 
 export async function listActivity(limit = 20): Promise<ActivityEvent[]> {
