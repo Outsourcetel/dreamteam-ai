@@ -56,7 +56,7 @@ const MyAccountBadge = () => {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-56 bg-dt-card border border-dt-border-strong rounded-xl shadow-2xl overflow-hidden z-40">
+        <div className="absolute right-0 top-full mt-2 w-56 bg-dt-page border border-dt-border-strong rounded-xl shadow-2xl overflow-hidden z-40">
           <div className="px-3 py-2.5 border-b border-dt-border">
             <p className="text-xs text-white font-medium truncate">{authedUser.name || authedUser.email}</p>
             <p className="text-[11px] text-dt-muted truncate">{authedUser.email}</p>
