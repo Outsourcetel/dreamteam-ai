@@ -105,3 +105,43 @@ engineering plus a lawyer's afternoon — not architecture.
 The underlying posture is better than the paperwork suggests: isolation proven by attack,
 credentials in Vault, access logged, audit chain verified, backups running. **The gap is
 documentation and one missing function, not a weak system.**
+
+---
+
+## 8. A-1 / A-2 / A-3 are one blocked class, now proven rather than assumed (2026-08-19)
+
+Three security items were carried separately. They share a single root cause, and the register
+described two of them as though a REVOKE would fix them. Each was tested by **attempting the
+revoke** rather than reading the privilege table:
+
+| Item | Object | Owner | Revoke as `postgres` |
+|---|---|---|---|
+| A-1 | `storage.objects` | **supabase_storage_admin** | ran clean, **changed nothing** |
+| A-3 | `net.http_post/get/delete` | **supabase_admin** | ran clean, **changed nothing** |
+| A-2 | `public` default ACL, grantor `supabase_admin` | supabase_admin | the half of mig 715 that returned 42501 |
+
+`postgres` cannot alter privileges on objects it does not own, and PostgreSQL does not error when
+you revoke a privilege you have no standing to revoke — it silently succeeds and changes nothing.
+**That silence is why these read as fixable.** A privilege check after a "successful" revoke still
+shows the grant, which looks like the revoke failing to apply rather than never having applied.
+
+### What is actually exposed, and how reachable it is
+
+`anon` and `authenticated` hold `DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE`
+on `storage.objects`. **TRUNCATE is the one that matters: it bypasses row-level security entirely**,
+so no storage policy can constrain it.
+
+Reachability, measured: the `storage` schema is **not exposed through PostgREST**
+(`/rest/v1/objects` as anon → **404**), the same result the `net` schema gave. So this is a
+standing privilege that the public API surface does not currently reach — defence-in-depth, not a
+live hole. Production holds 2 buckets and **0 objects** today.
+
+### What would actually close them
+
+Not a migration. One of:
+1. **Supabase support** — ask them to narrow the default ACLs and revoke TRUNCATE from anon on
+   `storage.objects`, since only the owning roles can.
+2. **A platform-level setting**, if one is exposed for storage grants.
+
+Recording it this way so nobody spends another session writing a migration that will run clean and
+do nothing — which is exactly what these three items invite.
