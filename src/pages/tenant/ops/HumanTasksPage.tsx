@@ -878,6 +878,25 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
             </div>
           )}
 
+          {/* ⚠ WITHDRAWING AN ESCALATION DOES NOT CLEAR IT, and a person who
+              withdraws 29 of them and watches them return within the hour will
+              conclude this button is broken. It isn't: reconcile_blocked_goals
+              and de_stall_sweep_internal both dedupe on status='pending', so a
+              withdrawn escalation stops matching and the next sweep — every 30
+              minutes — raises it again.
+              That is correct behaviour, because an escalation is a live readout
+              of work that is still stuck, not a message you can dismiss. The
+              thing that clears it is deciding what the work is waiting on.
+              Withdrawal is for the residue: dead approvals, testing artefacts,
+              asks whose underlying record is gone. */}
+          {picked.size > 0 && visible.some(t => picked.has(t.id) && t.type === 'escalation') && (
+            <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+              {visible.filter(t => picked.has(t.id) && t.type === 'escalation').length} of these are escalations.
+              Withdrawing one does not unblock the work behind it, and the next sweep will raise it again
+              within 30 minutes. To clear them for good, decide what the work is waiting on.
+            </div>
+          )}
+
           {/* One control, not seven. The six type chips that used to sit here
               were the human_tasks taxonomy — Approvals, Reviews, Escalations,
               Overrides, Feedback, Checklists — and an owner does not think in
