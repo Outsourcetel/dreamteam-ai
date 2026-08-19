@@ -226,7 +226,7 @@
         "date": "2026-08-12",
         "source": "docs/50-review-scorecard.md (F-5)"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
@@ -239,7 +239,9 @@
           "n": 1
         },
         "note": "Pinned on the return shape of the branch. Residual, stated rather than hidden: a fix that raises a human task but leaves this return untouched would not close the item mechanically — the item is pinned on the shape, and closing it should mean changing that shape."
-      }
+      },
+      "closed_by": "widget-ask no-docs branch now escalates: message escalated:true, human task, activity + audit event, conversation needs_human. Proven on a fresh tenant with zero knowledge docs — needs_escalation=true, task raised, 1 escalated event",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "B-6",
@@ -591,7 +593,7 @@
         "date": "2026-08-09",
         "source": "docs/47-debt-map.md"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
@@ -604,7 +606,9 @@
           "n": 0
         },
         "note": "INVERTED POLARITY: open while CI names golden-path nowhere. CI today runs certify:offline, which says in its own banner that it is a subset."
-      }
+      },
+      "closed_by": ".github/workflows/ci.yml — golden-path job added, reusing the same three secrets the isolation and invariants jobs already hold; fails loudly if any is missing rather than skipping",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "D-4",
