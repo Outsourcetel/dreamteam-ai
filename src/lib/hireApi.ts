@@ -381,6 +381,9 @@ const CRITERIA_LABELS: Record<string, string> = {
   active_guardrails: 'Have at least one active guardrail protecting it',
   knowledge_embedded: 'Let its knowledge finish indexing (usually automatic within minutes)',
   golden_qa_passed: 'Pass its golden exam in the Proving Ground',
+  // Mig 796: grounding is a gate. The per-category detail rides in
+  // grounding_by_category; this is the one-line to-do the wizard shows.
+  grounding_connected: 'Connect the systems this role needs (its required categories) before it takes work',
   certified_by_human: 'A human certifies it after reviewing its test results',
   has_work_channel: 'Connect it to a work channel (chat widget, email, or queue)',
   first_live_execution: 'Complete its first real task under supervision',
