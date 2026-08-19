@@ -246,7 +246,7 @@
     },
     {
       "id": "B-6",
-      "what": "F-4 — dev is far behind production's migration ledger, so golden-path (certify's only write-path proof) runs against a schema that predates the fixes for the F-1/F-2 class. Those fixes have no loop coverage at all.",
+      "what": "F-4 — dev lags production, so golden-path (certify’s only end-to-end write-path proof, and a CI job on every push) proves whatever schema dev happens to have. REOPENED 2026-08-20: closing this by rebuilding dev once was always going to decay, and the reason it cannot be fixed by replay is now measured. Of the 4 migrations dev was missing, THREE could not be applied to an empty environment because their assertions read production DATA rather than schema: 778 (\"found no tenant with two distinctly named non-assistant employees\", \"the live-corpus replay saw ZERO pending escalations\"), 789 (\"no goal-having employee without an open plan\"), and 790 (\"no row carries disposition=cancelled\") — the last of which is mine. Only 794, whose assertions read pg_proc, replayed. This is bigger than dev: a migration that asserts on production rows cannot be replayed into a restored backup or a new environment either, so it also undermines the restore drill. The migrations cannot simply be edited — they are applied, and the ledger keys on filename + checksum, so changing the files would break migration-files-match-ledger-checksums. The route forward is therefore to rebuild dev from the BASELINE (a schema dump, which does not replay assertions) on a schedule, not to replay migrations, and to stop new migrations asserting on operational rows.",
       "where": "dev project nmuntxrcdksyhsdywpan",
       "severity": "correctness",
       "why_skipped": "out-of-scope",
@@ -254,7 +254,7 @@
         "date": "2026-08-09",
         "source": "commit 10bbc641; measured docs/50 D"
       },
-      "state": "closed",
+      "state": "open",
       "verification": {
         "kind": "sql-lag",
         "production_sql": "select count(*)::int as n from public.schema_migrations",
@@ -263,10 +263,8 @@
           "op": ">=",
           "n": 1
         },
-        "note": "n is production ledger rows MINUS dev ledger rows. Deliberately not a fixed threshold: docs/53 measured 74 behind on 2026-08-12 and the true figure that morning was 88 and rising, so any pinned number would have been stale before the commit landed. This closes only when dev is level or ahead."
-      },
-      "closed_by": "dev rebuilt from supabase/baseline/full_schema.sql + reference catalog seeded: 304/7/965/295/402/3505 all match production, ledger 804/804 level, golden-path 10/10 against it",
-      "closed_on": "2026-08-19"
+        "note": "Unchanged pin, but note its known weakness: it compares ledger COUNTS, and two ledgers can hold the same number of DIFFERENT rows — dev carrying one production never had while missing one it does — which would read level while dev was wrong. scripts/sync-dev-migrations.mjs compares the SETS and reports dev-only rows separately; this pin is the cheap approximation certify runs."
+      }
     },
     {
       "id": "B-7",
