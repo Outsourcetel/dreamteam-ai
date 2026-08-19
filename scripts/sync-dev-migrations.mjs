@@ -37,7 +37,7 @@
 //   node scripts/sync-dev-migrations.mjs --apply    # actually apply
 // ============================================================================
 import { readFileSync, existsSync } from 'node:fs';
-import { migrationChecksum } from './migration-committed-check.mjs';
+import { spawnSync } from 'node:child_process';
 
 const DEV_REF = 'nmuntxrcdksyhsdywpan';
 const PROD_REF = 'rfsvmhcqeiyrxivbmpel';
@@ -153,10 +153,17 @@ for (const f of pending) {
 
   if (SKIP.includes(f)) { console.log(`   SKIP ${f} (named on --skip; dev will stay behind production by this one)`); skipped.push(f); continue; }
 
-  const sql = readFileSync(`supabase/migrations/${f}`, 'utf8');
   console.log(`   apply ${f}`);
   try {
-    await run(DEV_REF, sql);
+    // ⚠ DELEGATED, NOT REIMPLEMENTED. scripts/dev-apply.mjs (added by a
+    // parallel session the same day) already applies one migration to dev and
+    // records it — through the SAME record_migration_applied() RPC production
+    // uses, so certify's checksum section compares like with like. The first
+    // version of this script did its own apply plus a raw INSERT into
+    // schema_migrations, which was a second definition of "applied to dev" and
+    // a worse one. This repo has paid for two-paths-one-counted before.
+    const res = spawnSync(process.execPath, ['scripts/dev-apply.mjs', `supabase/migrations/${f}`], { encoding: 'utf8' });
+    if (res.status !== 0) throw new Error(`${(res.stderr || '').trim() || (res.stdout || '').trim()}`);
   } catch (e) {
     // ⚠ THE INTERESTING FAILURE, and worth naming rather than dumping a stack.
     // A migration whose assertions read LIVE DATA cannot be replayed anywhere
@@ -176,9 +183,6 @@ for (const f of pending) {
     console.error(`  which is the honest state rather than a green tick over a gap.`);
     process.exit(1);
   }
-  await run(DEV_REF, `insert into public.schema_migrations (filename, checksum, applied_at, applied_by, provenance)
-    values ('${f.replace(/'/g, "''")}', '${migrationChecksum(sql)}', now(), 'sync-dev-migrations.mjs', 'applied_by_runner')
-    on conflict (filename) do nothing`);
   applied += 1;
 }
 
