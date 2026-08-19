@@ -351,6 +351,46 @@ export function Drawer({ title, onClose, children, wide, padded = true, chrome =
   );
 }
 
+/* ── Toast — a transient confirmation, floating above everything ────────── */
+/* Eight pages had hand-rolled this, five of them the same class string copied
+ * verbatim, and every copy inherited the same two bugs.
+ *
+ * ⚠ IT CANNOT REUSE CHIP_TONE, which is what a Banner does. Those recipes are
+ * built on `*-soft` backgrounds, and soft means TRANSLUCENT — right for a chip
+ * or banner sitting ON the canvas, because what shows through is the canvas.
+ * A toast floats over arbitrary page content, so the same recipe let tables and
+ * body text bleed through the confirmation. Hence an opaque --dt-page fill with
+ * only the border and text carrying the tone. Two of the eight had reached for
+ * raw `bg-emerald-900/90` instead, which is off-system AND still 10% see-through.
+ *
+ * z-[100] is deliberately ABOVE Modal and Drawer (z-50): a toast confirming an
+ * action taken inside a dialog has to be visible over that dialog, and the two
+ * pages that had this right were the ones that had hit the problem.
+ *
+ * role="status" + aria-live="polite" because a toast is the ONLY confirmation
+ * some actions give. None of the eight had it, so every one of those actions
+ * completed silently for a screen-reader user. Polite, not assertive — a saved
+ * confirmation should wait for a pause, not interrupt what is being read. */
+const TOAST_TONE: Record<Extract<Tone, 'ok' | 'warn' | 'danger' | 'info' | 'neutral'>, string> = {
+  ok:      'border-dt-ok-border text-dt-ok',
+  warn:    'border-dt-warn-border text-dt-warn',
+  danger:  'border-dt-danger-border text-dt-danger',
+  info:    'border-dt-info-border text-dt-info',
+  neutral: 'border-dt-border-strong text-dt-body',
+};
+export function Toast({ tone = 'ok', children, className = '' }:
+  { /** `ok` is the default because a toast almost always confirms something
+     *  that worked; a failure belongs in a Banner where it persists. */
+    tone?: keyof typeof TOAST_TONE;
+    children: React.ReactNode; className?: string }) {
+  return (
+    <div role="status" aria-live="polite"
+      className={`fixed bottom-6 right-6 z-[100] max-w-sm px-4 py-3 rounded-xl border shadow-xl text-sm font-medium bg-dt-page ${TOAST_TONE[tone]} ${className}`}>
+      {children}
+    </div>
+  );
+}
+
 /* ── Page scaffolding — header + the InHub demotion contract ────────────── */
 export const InHubContextV2 = createContext(false);
 export function PageHeaderV2({ title, subtitle, actions }:

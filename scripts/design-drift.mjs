@@ -43,10 +43,18 @@ const files = (pat) => Number(sh(`grep -rlE "${pat}" ${G} | wc -l`));
 // 'hand-rolled dialogs' counts the markup instead — `fixed inset-0` outside
 // src/design. That is what a hand-rolled dialog IS, it falls as each one is
 // migrated, and it cannot be satisfied by renaming anything.
+// 'hand-rolled toasts' is the same shape of metric as dialogs and exists for
+// the same reason: eight pages had hand-rolled one, five of them the same class
+// string copied verbatim, so every copy inherited a translucent surface that
+// let page content bleed through the confirmation — and two had drifted further
+// to raw `bg-emerald-900/90`. Migrating them onto the Toast primitive fixes the
+// eight; this line is what stops the ninth. Counting the MARKUP (the fixed
+// bottom-right anchor a toast IS) rather than a component name, for exactly the
+// reason recorded above about 'local Modals (files)'.
 const BASELINE = {
   'bg-slate variants': 8, 'border-slate variants': 3, 'radius variants': 13,
   'card padding variants': 10, 'local StatCard-likes (files)': 7,
-  'hand-rolled dialogs': 0,
+  'hand-rolled dialogs': 0, 'hand-rolled toasts': 0,
   'inline style objects': 65, 'raw hex colors': 18,
 };
 const NOW = {
@@ -61,6 +69,7 @@ const NOW = {
   // The markup, not the name. src/design is already excluded by G, so the
   // primitive's own shell is not counted against the estate.
   'hand-rolled dialogs': count('fixed inset-0'),
+  'hand-rolled toasts': count('fixed bottom-6 right-6'),
   'inline style objects': count('style={{'),
   'raw hex colors': uniq('#[0-9a-fA-F]{6}'),
 };

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Toast } from '../../../design/primitives';
 import { PageHeader, th, td } from '../../../components/ui';
 import { ConfidenceBar } from './KnowledgeLibraryPage';
 import { CustomerApiError } from '../../../lib/customerApi';
@@ -499,9 +500,7 @@ function LiveKnowledgeQuality() {
       )}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-dt-page border border-emerald-500/40 text-sm text-dt-title rounded-xl px-4 py-3 shadow-xl">
-          {toast}
-        </div>
+        <Toast>{toast}</Toast>
       )}
     </div>
   );
