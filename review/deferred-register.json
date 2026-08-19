@@ -1190,7 +1190,7 @@
         "date": "2026-08-18",
         "source": "docs/60 Workstream Q, 2026-08-18"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname ~ 'forget_end_user|erase_data_subject|delete_end_user_data'",
@@ -1198,7 +1198,9 @@
           "op": "==",
           "n": 0
         }
-      }
+      },
+      "closed_by": "migs 779-782: forget_end_user(tenant, end_user_ref, reason) — owner/admin or platform gated, pseudonymises the subject's conversations and erases every message body in them, deletes sessions and contact rows, returns a receipt counted before the writes and audits it. Proven with realistic PII: card digits and phone number both absent afterwards from user AND assistant turns; conversation row survives; guards refuse a blank ref and a foreign tenant",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "B-13",
