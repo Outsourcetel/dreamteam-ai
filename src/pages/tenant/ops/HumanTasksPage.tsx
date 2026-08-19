@@ -6,7 +6,7 @@ import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { loadChatEscalations, setChatEscalationStatus, chatEscalationAge } from '../../../lib/chatEscalations';
 import type { GatedExecutionPreview } from '../../../lib/connectorApi';
-import { listHumanTasks, decideHumanTask, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, getImprovementProposal, getImprovementReviewSignals, DECISION_REASON_CODES, getBlockedWorkForTask, rerouteEscalation, retryAnswerableBlockers, getPendingConversationDraft } from '../../../lib/customerApi';
+import { listHumanTasks, decideHumanTask, withdrawHumanTask, withdrawHumanTasks, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, getImprovementProposal, getImprovementReviewSignals, DECISION_REASON_CODES, getBlockedWorkForTask, rerouteEscalation, retryAnswerableBlockers, getPendingConversationDraft } from '../../../lib/customerApi';
 import type { BlockedWork, PendingConversationDraft } from '../../../lib/customerApi';
 import type { DecisionCapture, DecisionReasonCode } from '../../../lib/customerApi';
 import type { DBHumanTask, StalenessEscalation } from '../../../lib/customerApi';
@@ -302,6 +302,17 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   // decided. Defaults to 'needs_you' because that is why anyone opens this page;
   // the decided history is one click away, not gone.
   const [decision, setDecision] = useState<'needs_you' | 'decided' | 'all'>('needs_you');
+  // Whose queue. 408 of 412 pending tasks carry an assigned_user_id, so this
+  // is a real axis and not a mostly-empty one — measured before it was built.
+  // 'all' rather than defaulting to the viewer: a manager opening this page to
+  // see what their team is sitting on should not have to find the control
+  // first.
+  const [owner, setOwner] = useState<string>('all');
+  // Bulk withdraw. Ids rather than tasks: the list re-fetches after every
+  // decision, and holding stale task objects across that would withdraw a
+  // snapshot rather than what is on screen.
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [withdrawing, setWithdrawing] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [deciding, setDeciding] = useState(false);
   const [gatedExec, setGatedExec] = useState<GatedExecutionPreview | null>(null);
@@ -553,16 +564,70 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   };
 
   const pending = tasks.filter(t => t.status === 'pending');
-  const decidedCount = tasks.filter(t => t.status !== 'pending').length;
-  const approvedCount = tasks.filter(t => t.status === 'approved').length;
+  // ⚠ WITHDRAWALS ARE NOT JUDGEMENTS (mig 790). A withdrawn task is
+  // status='rejected' + disposition='cancelled'. Counting it here would let
+  // clearing 300 testing artefacts drive the approval rate toward zero and
+  // present that as a quality signal about the workforce. The rate answers
+  // "of the things you actually ruled on, how many did you say yes to" — so
+  // the things you never ruled on are excluded from BOTH halves of it.
+  const wasJudged = (t: DBHumanTask) => t.status !== 'pending' && t.disposition !== 'cancelled';
+  const decidedCount = tasks.filter(wasJudged).length;
+  const approvedCount = tasks.filter(t => wasJudged(t) && t.status === 'approved').length;
   const approvalRate = decidedCount > 0 ? Math.round((approvedCount / decidedCount) * 100) : 0;
+  const isWithdrawn = (t: DBHumanTask) => t.status !== 'pending' && t.disposition === 'cancelled';
+  // Owner buckets, counted on what the other filters already allow so the
+  // number on a chip is a number you can click to.
+  const ownerName = (t: DBHumanTask) =>
+    t.assigned_user_id ? (peopleById.get(t.assigned_user_id) ?? 'Unnamed user') : 'Nobody yet';
+  const ownerKey = (t: DBHumanTask) => t.assigned_user_id ?? 'unassigned';
+  // Withdraw. Deliberately NOT routed through the decide handler above: that
+  // one runs a dozen side-effect hooks because approving owes something, and
+  // a withdrawal owes nothing. Reusing it would make "remove this from my
+  // list" the most side-effecting button on the page.
+  const doWithdraw = async (ids: string[]) => {
+    if (ids.length === 0 || withdrawing) return;
+    setWithdrawing(true);
+    try {
+      const r = await withdrawHumanTasks(ids, 'Withdrawn from the queue by the owner');
+      setPicked(new Set());
+      if (ids.includes(selectedId ?? '')) setSelectedId(null);
+      // ⚠ A PARTIAL RESULT IS REPORTED AS PARTIAL. The RPC withdraws each task
+      // in its own subtransaction, so "8 of 10" is a real outcome — saying
+      // "withdrawn" here would leave two on screen with no explanation.
+      setOutcome(r.failed.length
+        ? { text: `Withdrew ${r.withdrawn}. ${r.failed.length} could not be — ${r.failed[0].error}.`, ok: false }
+        : { text: `Withdrew ${r.withdrawn} ${r.withdrawn === 1 ? 'task' : 'tasks'}. Nothing was sent or actioned.`, ok: true });
+      await refresh();
+    } catch (e) {
+      setOutcome({ text: e instanceof Error ? e.message : 'Could not withdraw.', ok: false });
+    } finally {
+      setWithdrawing(false);
+    }
+  };
+
   const stalledCount = pending.filter(t => staleness.has(t.id)).length;
   const matchesDecision = (t: DBHumanTask) =>
     decision === 'all' ? true : decision === 'needs_you' ? t.status === 'pending' : t.status !== 'pending';
+  // Owner buckets, counted on what the other filters already allow — a count
+  // on a chip should be a count you can click to. Declared after
+  // matchesDecision on purpose: this runs immediately, and a const arrow
+  // function read before its declaration is a TDZ crash, not a hoist.
+  const ownerBuckets = (() => {
+    const m = new Map<string, { key: string; name: string; count: number }>();
+    for (const t of tasks) {
+      if (!inScope(t, scope) || !matchesDecision(t)) continue;
+      const k = ownerKey(t);
+      const e = m.get(k) ?? { key: k, name: ownerName(t), count: 0 };
+      e.count += 1;
+      m.set(k, e);
+    }
+    return [...m.values()].sort((a, b) => b.count - a.count);
+  })();
   const visible = tasks.filter(t =>
     inScope(t, scope)
     && matchesDecision(t)
     && (filter === 'all' || t.type === filter)
+    && (owner === 'all' || ownerKey(t) === owner)
     && (!stalledOnly || staleness.has(t.id)))
     // Risk-ranked (mig 705): the safest approvals first — the one-glance
     // clears — the risky ones last but wearing a danger chip. Tasks without a
@@ -750,6 +815,69 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
             ))}
           </div>
 
+          {/* Whose queue this is. The scope row asks WHAT kind of thing is
+              waiting; this asks WHO it is waiting on — the question a manager
+              actually opens this page with, and the one the founder asked for:
+              "a task approval list by owner so there is a clean way of
+              sorting". A select rather than a pill strip because the owner
+              list grows with the team while the scope list never will. */}
+          {ownerBuckets.length > 1 && (
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
+              <label htmlFor="owner-filter" className="text-xs text-dt-support">Waiting on</label>
+              <select
+                id="owner-filter"
+                className={INPUT_CLS + ' w-auto text-xs py-1.5'}
+                value={owner}
+                onChange={e => { setOwner(e.target.value); setPicked(new Set()); }}
+              >
+                <option value="all">Everyone ({ownerBuckets.reduce((n, o) => n + o.count, 0)})</option>
+                {ownerBuckets.map(o => (
+                  <option key={o.key} value={o.key}>{o.name} ({o.count})</option>
+                ))}
+              </select>
+              {owner !== 'all' && (
+                <button onClick={() => setOwner('all')} className="text-xs text-dt-faint hover:text-dt-body underline">
+                  clear
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Bulk withdraw. The founder's words were "an option to delete a
+              task otherwise the list gets too long", and the length is the
+              complaint — so the control is built for many, not for one.
+              ⚠ It withdraws, it does not delete: the row survives, marked
+              cancelled, and never counts toward the approval rate. */}
+          {visible.some(t => t.status === 'pending') && (
+            <div className="flex items-center gap-3 mb-3 flex-wrap text-xs">
+              <button
+                onClick={() => {
+                  const ids = visible.filter(t => t.status === 'pending').map(t => t.id);
+                  setPicked(picked.size === ids.length ? new Set() : new Set(ids));
+                }}
+                className="text-dt-support hover:text-dt-body underline"
+              >
+                {picked.size === visible.filter(t => t.status === 'pending').length && picked.size > 0
+                  ? 'Clear selection'
+                  : `Select all ${visible.filter(t => t.status === 'pending').length} shown`}
+              </button>
+              {picked.size > 0 && (
+                <>
+                  <span className="text-dt-faint">{picked.size} selected</span>
+                  <Button
+                    kind="secondary"
+                    size="sm"
+                    disabled={withdrawing}
+                    onClick={() => void doWithdraw([...picked])}
+                  >
+                    {withdrawing ? 'Withdrawing…' : `Withdraw ${picked.size} from the queue`}
+                  </Button>
+                  <span className="text-dt-faint">Removes them without approving or sending anything.</span>
+                </>
+              )}
+            </div>
+          )}
+
           {/* One control, not seven. The six type chips that used to sit here
               were the human_tasks taxonomy — Approvals, Reviews, Escalations,
               Overrides, Feedback, Checklists — and an owner does not think in
@@ -823,9 +951,25 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                   ? (peopleById.get(task.assigned_user_id) ?? 'Unnamed user') + (task.assigned_role ? ` · ${task.assigned_role}` : '')
                   : task.status === 'pending' ? "nobody's job yet" : null;
                 return (
+                  <div key={task.id} className="flex items-start gap-2">
+                    {/* Only pending rows are selectable — withdrawing something
+                        already decided is not a thing, and offering the box
+                        would imply it is. */}
+                    {task.status === 'pending' && (
+                      <input
+                        type="checkbox"
+                        className="mt-5 shrink-0 accent-dt-accent"
+                        checked={picked.has(task.id)}
+                        aria-label={`Select "${task.title}" for withdrawal`}
+                        onChange={() => setPicked(prev => {
+                          const next = new Set(prev);
+                          if (next.has(task.id)) next.delete(task.id); else next.add(task.id);
+                          return next;
+                        })}
+                      />
+                    )}
                   <div
-                    key={task.id}
-                    className={`rounded-xl transition-shadow ${selectedId === task.id ? 'ring-2 ring-dt-accent' : ''} ${task.status !== 'pending' ? 'opacity-70 hover:opacity-100' : ''}`}
+                    className={`flex-1 min-w-0 rounded-xl transition-shadow ${selectedId === task.id ? 'ring-2 ring-dt-accent' : ''} ${task.status !== 'pending' ? 'opacity-70 hover:opacity-100' : ''}`}
                   >
                     <DecisionCard
                       tone={stale ? (stale.tier === 'breach' ? 'danger' : 'warn') : task.status !== 'pending' ? 'neutral' : 'warn'}
@@ -843,7 +987,21 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                             onClick={() => setSelectedId(task.id)}>
                             {task.status === 'pending' ? 'Decide this' : 'Open it'}
                           </Button>
-                          {task.status !== 'pending' && statusBadge(task.status as TaskStatus)}
+                          {/* A withdrawal is stored as a rejection (mig 790),
+                              so without this chip the queue would report
+                              "Rejected" for something nobody ruled on. */}
+                          {isWithdrawn(task)
+                            ? <Chip tone="neutral">Withdrawn</Chip>
+                            : task.status !== 'pending' && statusBadge(task.status as TaskStatus)}
+                          {task.status === 'pending' && (
+                            <button
+                              onClick={() => void doWithdraw([task.id])}
+                              disabled={withdrawing}
+                              className="text-xs text-dt-faint hover:text-dt-body underline disabled:opacity-50"
+                            >
+                              Withdraw
+                            </button>
+                          )}
                           {task.first_approver_id && <Chip tone="info">One of two approved</Chip>}
                           {brief && <Chip tone={BRIEF_CHIP[brief.risk].tone}>{BRIEF_CHIP[brief.risk].label}</Chip>}
                         </>
@@ -853,6 +1011,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                          renewal…"). Labeled as advice; it decides nothing. */
                       nudge={brief ? `Advisory: ${brief.headline}` : undefined}
                     />
+                  </div>
                   </div>
                 );
               })}
@@ -876,7 +1035,14 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                   <h3 className="text-sm font-semibold text-white">{selected.title}</h3>
                   {selectedStale && stalledBadge(selectedStale.tier)}
                 </div>
-                {selected.detail && <p className="text-xs text-dt-support mb-3">{selected.detail}</p>}
+                {/* ⚠ whitespace-pre-wrap is LOAD-BEARING, not styling. An
+                    escalation folded into this task appends its account here
+                    behind a blank line (mig 778's "— also reported <date>:").
+                    Without pre-wrap those separate reports collapse into one
+                    run-on paragraph — the words are still reachable, but the
+                    boundary between two different reports is not, which is
+                    most of what makes the second one findable. */}
+                {selected.detail && <p className="text-xs text-dt-support mb-3 whitespace-pre-wrap">{selected.detail}</p>}
                 {/* ⚠ READ IT BEFORE YOU SEND IT. `detail` carries the draft cut
                     to 240 characters; approving now delivers the WHOLE thing,
                     so the whole thing is what the approver sees. */}
