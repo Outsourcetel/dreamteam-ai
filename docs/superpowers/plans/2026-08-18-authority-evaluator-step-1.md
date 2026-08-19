@@ -750,5 +750,13 @@ git commit -m "test(certify): authority has one evaluator and no decorative dime
 
 - Any change to `decide_human_task` or `decide_action_execution` — that is step 2.
 - The rule-writing RPC and any UI — they arrive with the cutover, so no browser surface is added here and the pinned EXECUTE allowlist does not move.
-- Translating the 151 `approval_authority` rows — step 2, behind a differential.
+- ~~Translating the 151 `approval_authority` rows — step 2, behind a differential.~~
+  **SUPERSEDED 2026-08-18 (spec §3.5, §6): they are NOT translated, ever.**
+  `approval_authority` is a GRANT model (match nothing → deny); `authority_rules` is a
+  RESTRICTION model (match nothing → allow). Translating one into the other would flip
+  deny to allow for the 18 workspaces with declared authority. Step 2 COMPOSES the risk
+  check alongside the entitlement check instead of replacing it, so there is no
+  differential to run — the thing to prove is that with `authority_rules` empty, nothing
+  changes at all. **The code in this plan is unaffected**; `evaluate_authority` only ever
+  evaluated risk. The error was in the spec's plan for how to use it.
 - `subject_count`, `reversible` and `rate_per_hour` readers — step 4. They are registered with `reader_fn = null` on purpose, and the Task 2 trigger refuses rules about them until a reader exists.

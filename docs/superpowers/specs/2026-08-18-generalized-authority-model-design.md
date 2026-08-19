@@ -109,8 +109,14 @@ A `measures jsonb` column on `action_executions` and on `human_tasks`, written b
 creates the row.
 
 This is what makes the audit real. Today zero executions carry an amount, so **no past
-decision can be re-checked against what was known when it was made.** `task_approval_facts`
-stops deriving and becomes a reader of this field.
+decision can be re-checked against what was known when it was made.**
+
+⚠ *Corrected 2026-08-18:* this section previously said `task_approval_facts` "stops
+deriving and becomes a reader of this field". It does not. Under §3.6 it keeps its current
+job — deriving `(category, amount_cents)` for the **entitlement** check — unchanged. The
+new `measures` column feeds the **risk** check alongside it. Populating `measures` is
+what finally lets the money limb of `approval_authority` bind on more than 0.6% of
+approvals, but that is a *repair to the existing path*, not a replacement of it.
 
 ### 3.3 `authority_rules`
 
@@ -145,7 +151,8 @@ unvalidated combination does not error, it quietly measures the wrong thing.
 
 ### 3.4 `evaluate_authority(tenant, actor, category, measures) → jsonb`
 
-The single evaluator both gates call.
+The single **risk** evaluator both gates call. It does NOT decide entitlement — see §3.6,
+added 2026-08-18 after this section was found to contradict decision 1.
 
 1. Collect every applicable rule (actor matches directly, by role, or by org-unit
    ancestry; category matches or is NULL).
@@ -156,7 +163,69 @@ The single evaluator both gates call.
 4. Return the outcome **plus every rule that fired and why**, so a decision explains itself.
 
 `decide_action_execution` calls it with the employee as actor. `decide_human_task` calls it
-with the person. Same function, same measures, same answer.
+with the person. Same function, same measures, same answer — **about risk**. Whether that
+person is entitled to sign at all remains `has_approval_authority`'s answer, and the two
+are composed, not merged.
+
+---
+
+### 3.5 THE POLARITY PROBLEM, and why §6 was wrong
+
+**Added 2026-08-18. This section corrects the spec against the decision it was meant to
+implement.**
+
+The final review of step 1 found that a straight cutover of `decide_human_task` onto
+`evaluate_authority` would **flip deny to allow** for the 18 workspaces that have declared
+authority. Verified at source in `has_approval_authority` (mig 593):
+
+```sql
+if coalesce(v_best.n, 0) = 0 then
+  return jsonb_build_object('allowed', false,
+    'reason', 'you hold no approval authority for … in this workspace');
+```
+
+| | `has_approval_authority` | `evaluate_authority` |
+|---|---|---|
+| Model | **GRANT** | **RESTRICTION** |
+| No rows declared at all | allow (permissive default) | allow (permissive default) |
+| Rows declared, actor matches **none** | **DENY** | **ALLOW** |
+| Combination | most permissive matching grant wins | strictest matching rule wins |
+
+The middle row is the flip. And it cannot be papered over inside the new schema: a
+restriction model can only ever *escalate*, so "everyone is denied unless permitted"
+requires an `allow` outcome plus an exemption mechanism — and an exemption is precisely
+what **strictest-wins forbids** (decision 4). Adding one would reintroduce the shape that
+produced docs/54 item 18/9, where a narrow rule silently cancelled a broad one.
+
+**The root cause is this document, not the code.** Decision 1 chose the option described
+as *"Keeps the two models separate but makes each far more expressive."* §3.4 then wrote
+"the single evaluator both gates call", and §6 translated the 151 `approval_authority`
+rows away. That over-reach is what created the polarity collision. Corrected here.
+
+### 3.6 TWO QUESTIONS, BOTH REQUIRED
+
+They are not two implementations of one question. They are two different questions, and a
+decision needs both answered:
+
+- **Entitlement — "may you sign this at all?"** A property of a *person*. Deny-by-default
+  once a workspace has declared anything, because the absence of a grant is meaningful:
+  it means nobody gave you that authority. `has_approval_authority`, **unchanged**.
+- **Risk — "does this particular action need more scrutiny?"** A property of an *action*.
+  Escalate-only, because the absence of a restriction is also meaningful: it means nobody
+  said this was dangerous. `evaluate_authority`, new.
+
+`decide_human_task` must satisfy BOTH: entitled **and** not escalated. Composition, not
+replacement.
+
+⚠ **The outcome vocabulary means different things per actor kind, and step 2 must handle
+it rather than discover it.** For a digital employee, `require_human` means "escalate to a
+person". For a human who is already approving, `require_human` is **already satisfied** —
+the meaningful outcomes on that path are `deny` (refuse) and `require_second_approver`
+(record the first approval, keep the task pending, exactly as `decide_human_task` already
+does today).
+
+This is also the answer to "is this two paths, one counted?" — no. Two paths answering two
+different questions, both consulted, neither authoritative over the other's question.
 
 ### 3.5 The rollout property
 
@@ -217,26 +286,39 @@ suggestions.
 
 ---
 
-## 6. Migration of existing rows
+## 6. Migration of existing rows — NOTHING IS TRANSLATED
 
-Nothing is rebuilt; rows are translated.
+**Rewritten 2026-08-18. The original table here translated `approval_authority` into
+`authority_rules`; that was the polarity error §3.5 describes.**
 
-| Today | Becomes |
+| Today | What happens to it |
 |---|---|
-| `approval_authority.max_amount_cents` (115 rows) | actor = role/user/org-unit, dim `amount_cents`, outcome `require_human` |
-| `.second_approver_above_cents` | second rule, outcome `require_second_approver` |
-| `de_autonomy.max_amount_cents` | same shape, actor = `de` |
-| `guardrail_rules.require_approval_over_cents` | same shape, actor = `all` |
-| spend caps (`spend_cap_daily_cents`, `spend_cap_monthly_cents`) | **stay as they are.** They own a working ledger. They become `rate` rules later, deliberately, not as part of this cutover. |
+| `approval_authority` (151 rows, 115 with limits) | **STAYS. Not translated, not deprecated.** It is the entitlement model, and its deny-by-default is the behaviour 18 workspaces already rely on. `has_approval_authority` is not modified by this programme at all. |
+| `de_autonomy.max_amount_cents` | **STAYS** for now. `resolve_de_autonomy_chain` is the employee's entitlement equivalent, and the same argument applies. |
+| `guardrail_rules.require_approval_over_cents` | **STAYS.** It already escalates and already works. |
+| spend caps (`spend_cap_daily_cents`, `spend_cap_monthly_cents`) | **STAY.** They own a working ledger; they become `rate` rules only if that ledger is ever replaced, which is not this programme. |
+
+`authority_rules` is therefore **additive**: it carries the dimensions nothing can express
+today — blast radius, reversibility, confidence, rate — and nothing else. Its table starts
+empty and stays empty until a workspace writes a rule.
+
+The consequence for verification is a good one: **there is no differential to run**,
+because nothing is being replaced. §7's "differential before removal" is replaced by
+"prove the new check composes without changing any existing answer" — a strictly easier
+and more honest thing to demonstrate.
 
 ---
 
 ## 7. Verification
 
-- **Differential before removal.** For every one of the 151 authority rows and 25 autonomy
-  rows, old decision == new decision on the same inputs — **with the comparison count and
-  the count of non-trivial evaluations reported**, because zero differences from zero
-  comparisons looks identical to a clean result.
+- **Composition, not differential** *(rewritten 2026-08-18 — see §6)*. Nothing is being
+  replaced, so there is no old-vs-new decision to diff. Prove instead that adding the risk
+  check changes **no existing answer**: for every one of the 151 `approval_authority` rows,
+  `has_approval_authority` returns exactly what it returns today, and the composed result
+  differs from it only where an `authority_rules` row actually fired — **with the count of
+  rows compared AND the count that fired both reported**, because zero differences from
+  zero comparisons looks identical to a clean result. With `authority_rules` empty, the
+  composed answer must be byte-identical to today's on all 151.
 - **Inversion per dimension.** Each of the five demonstrated allowing *and* blocking.
 - **Fail-closed proof.** A rule needing a measure the path does not emit returns
   `require_human`, reason `unmeasured`.
@@ -253,10 +335,15 @@ Multi-session. Each step lands and is verified before the next begins.
 
 1. **The evaluator and `authority_rules`, inert.** Nothing calls it. Fully tested in
    isolation, including fail-closed and strictest-wins.
-2. **Cut over `decide_human_task`.** Translate the 151 `approval_authority` rows, prove the
-   differential, delete the old reader in the same migration.
-3. **Cut over `decide_action_execution`.** Same pattern for `de_autonomy` and the
-   `require_approval_over_cents` guardrail.
+2. **COMPOSE into `decide_human_task`** *(rewritten 2026-08-18 — was "cut over")*. Add the
+   risk check ALONGSIDE the existing entitlement check; delete nothing. Both must pass.
+   With `authority_rules` empty this is provably a no-op, which is the whole point — it
+   ships dark and only starts mattering when a workspace writes a rule. On this path
+   `require_human` is already satisfied (a human is approving); the outcomes that bite are
+   `deny` and `require_second_approver`.
+3. **COMPOSE into `decide_action_execution`.** Same shape: the risk check runs after the
+   existing autonomy resolution, not instead of it. `resolve_de_autonomy_chain` and the
+   `require_approval_over_cents` guardrail stay exactly as they are.
 4. **Dimensions, one at a time.** For each: the reader first, then the registry entry, then
    the paths that emit it, then the rule type becomes declarable. `subject_count` first —
    it is the one that prevents an incident rather than a mistake.
@@ -272,8 +359,11 @@ probe then failed to catch.
 
 ## 9. Out of scope
 
-- **Unifying storage.** Humans and employees keep their own tables; only *judgement* is
-  shared. Unified storage was considered and deliberately not chosen.
+- **Unifying the two models.** *Rewritten 2026-08-18.* Humans and employees keep their own
+  tables AND their own entitlement functions. What is shared is one **risk** evaluator, so
+  a new dimension lands on both paths at once. Entitlement judgement is deliberately NOT
+  shared — the two models have opposite polarity (§3.5) and merging them would flip deny to
+  allow for 18 workspaces.
 - **Delegation, expiry, out-of-office.** Real gaps — a queue stalls on one person's absence
   — but a separate design.
 - **Escalation direction (docs/54 item 17).** This design is its prerequisite: "escalate
