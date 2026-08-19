@@ -92,7 +92,7 @@
     },
     {
       "id": "A-5",
-      "what": "3 profiles carry tenant_id NULL, one of them a tenant_owner. ON DELETE SET NULL means every workspace deletion manufactures another. The cheapest mitigation was named at the time — deactivate that profile — and never done.",
+      "what": "One profile carries tenant_id NULL with a tenant_owner role (Bashir Khan). ON DELETE SET NULL means every workspace deletion manufactures another. ⚠ The originally recommended remedy — deactivate the profile — is WRONG: profiles_user_id_key makes it that user’s ONLY profile, so deactivating locks a real person out of the product entirely. It is also not a privilege risk (see A-10: the role gate is safe precisely because one user holds at most one profile). The real fix is upstream — stop workspace deletion stranding owners — and the person should be re-invited or the row removed with their knowledge, not silently disabled.",
       "where": "public.profiles",
       "severity": "security",
       "why_skipped": "walked-past",
@@ -103,11 +103,12 @@
       "state": "open",
       "verification": {
         "kind": "sql",
-        "sql": "select count(*)::int as n from public.profiles where tenant_id is null",
+        "sql": "select count(*)::int as n from public.profiles where tenant_id is null and role not like 'platform%'",
         "open_if": {
           "op": ">=",
           "n": 1
-        }
+        },
+        "note": "Repointed 2026-08-20. The original pin counted ALL tenant_id IS NULL profiles, but platform_super_admin carries NULL by design — 2 of the 3 it counted were correct rows, so the item could not be closed without deleting legitimate data. Now counts only non-platform roles."
       }
     },
     {
@@ -350,7 +351,7 @@
     },
     {
       "id": "B-10",
-      "what": "Two migrations are in the production ledger with no source on main — 715_the_definition_says_which_engine_owns_it.sql and 717_four_roles_get_a_procedure_and_intake.sql exist only on the unmerged branch claude/goofy-swanson-5d16ef. main holds DIFFERENT files at both numbers, so two new duplicate numbers were created. Live consequence: main's execute-perimeter is red on playbook_definitions_set_kind().",
+      "what": "Production applied migrations whose source was not on main. The register named 715 and 717 on branch goofy-swanson; by 2026-08-20 the real set was 16 files, 756-789, on origin/claude/docs54-stage-c, and it had been growing (7, then 12, then 16) as parallel sessions applied from worktrees without merging.",
       "where": "public.schema_migrations / certify migration-ledger",
       "severity": "correctness",
       "why_skipped": "walked-past",
@@ -358,16 +359,37 @@
         "date": "2026-08-12",
         "source": "certify migration-ledger (ORPHANED ×2)"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
-        "kind": "sql",
-        "sql": "select count(*)::int as n from public.schema_migrations where filename in ('715_the_definition_says_which_engine_owns_it.sql','717_four_roles_get_a_procedure_and_intake.sql')",
+        "kind": "grep",
+        "paths": [
+          "supabase/migrations/756_one_action_arm_written_once.sql",
+          "supabase/migrations/757_both_callers_ask_the_one_arm.sql",
+          "supabase/migrations/758_a_metric_this_workspace_defines_can_be_computed.sql",
+          "supabase/migrations/764_the_review_reads_the_same_kpi_values_the_panel_shows.sql",
+          "supabase/migrations/765_a_review_judges_the_goals_you_set_over_the_window_it_names.sql",
+          "supabase/migrations/766_a_goal_belongs_to_one_employee_in_one_workspace.sql",
+          "supabase/migrations/767_a_narrative_that_can_never_become_the_verdict.sql",
+          "supabase/migrations/768_a_registry_of_things_authority_can_measure.sql",
+          "supabase/migrations/770_a_rule_that_cannot_name_an_unreadable_measure.sql",
+          "supabase/migrations/772_one_evaluator_strictest_wins_absence_escalates.sql",
+          "supabase/migrations/783_a_workspace_can_write_an_authority_rule.sql",
+          "supabase/migrations/784_a_second_question_before_a_signature.sql",
+          "supabase/migrations/785_a_second_question_before_an_employee_acts.sql",
+          "supabase/migrations/786_a_deny_that_could_not_be_checked_is_not_an_approval.sql",
+          "supabase/migrations/788_a_window_the_metrics_actually_honour.sql",
+          "supabase/migrations/789_one_improvement_policy_two_readers.sql"
+        ],
+        "pattern": ".",
+        "count": "files",
         "open_if": {
-          "op": ">=",
-          "n": 1
+          "op": "<",
+          "n": 16
         },
-        "note": "Closes when the branch is merged (the files arrive on main) or the ledger rows are reconciled. NOT this session's to fix — it belongs to whoever owns that branch. Recorded here so it stops being a red nobody owns."
-      }
+        "note": "Pinned on the EXISTENCE of the 16 recovered files, not on their content. The first attempt matched a filename header comment and found only 11 of 16 — five of these migrations open with a rule line or a WHY: instead, so that pattern measured house style rather than the defect. A dot matches any non-empty file, so this counts exactly what the finding was about: does main still carry a source for every migration production has applied."
+      },
+      "closed_by": "Recovered from origin/claude/docs54-stage-c on 2026-08-20 (commit df84e4d4) — migration files only, not that branch’s other in-flight work. Verified with the ledger’s own migrationChecksum(): all 16 hash to exactly what production recorded at apply time, 0 of 811 ledger rows remain orphaned, 0 checksum mismatches. main can rebuild production again.",
+      "closed_on": "2026-08-20"
     },
     {
       "id": "C-1",
@@ -379,16 +401,22 @@
         "date": "2026-08-12",
         "source": "docs/51-measurement-organs-audit.md (ranked 6th, never scheduled)"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
-        "kind": "sql",
-        "sql": "select count(*)::int as n from public.ops_alerts where resolved_at is null",
+        "kind": "grep",
+        "paths": [
+          "src/components/OpsAlertsBanner.tsx"
+        ],
+        "pattern": "rank\\(a\\.kind\\) - rank\\(b\\.kind\\)",
+        "count": "matches",
         "open_if": {
-          "op": ">=",
-          "n": 7
+          "op": "<",
+          "n": 1
         },
-        "note": "The threshold is the banner's own capacity, not a round number: it renders 6 rows, so while more than 6 are open some are structurally invisible. A nonzero count is normal operation and must not read as a defect."
-      }
+        "note": "Repointed 2026-08-20. The original pin opened whenever more than 6 alerts were unresolved — but a nonzero backlog is normal operation, so it measured busyness rather than the defect. The defect was that the banner sliced the FIRST six without ranking, so 52 wake-spin rows buried the weekly value digest. Pinned on the sort existing, which is the thing that was wrong."
+      },
+      "closed_by": "Banner now ranks by kind before slicing (commit b5b1a761): service-affecting first, then value_digest, then the rest newest-first. ops_alerts has no severity column, so the rank derives from kind — the same classification CRITICAL_KINDS already used for colour.",
+      "closed_on": "2026-08-20"
     },
     {
       "id": "C-2",
