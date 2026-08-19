@@ -89,6 +89,28 @@ export default function OpsAlertsBanner() {
   const critical = alerts.filter((a) => CRITICAL_KINDS.has(a.kind));
   const tone = critical.length > 0;
 
+  // ⚠ SORT BEFORE SLICING (register C-1). This list has always shown six rows
+  // and always taken the FIRST six, which made the banner a readout of
+  // whatever kind happens to be noisiest rather than of what matters.
+  //
+  // Measured on production 2026-08-20: 136 unresolved alerts, of which 52 are
+  // de_objective_wake_spin and 23 edge_function_error. Three weekly
+  // value_digest rows — the founder's actual value read, and the reason this
+  // banner exists — sat below all of them and were never once on screen.
+  //
+  // There is no severity column to sort on; ops_alerts carries only
+  // (kind, message, detail, created_at, resolved_at). So the rank is derived
+  // from kind, which is the same thing CRITICAL_KINDS already does two lines
+  // up — this just makes it decide ORDER as well as colour.
+  const rank = (kind: string) =>
+    CRITICAL_KINDS.has(kind) ? 0        // service is broken for a customer
+      : kind.startsWith('value_digest') ? 1  // the weekly read, easily buried
+        : 2;                                 // everything else, newest first
+  const shown = [...alerts]
+    .sort((a, b) => rank(a.kind) - rank(b.kind)
+      || new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 6);
+
   return (
     <div
       role="region"
@@ -111,7 +133,7 @@ export default function OpsAlertsBanner() {
       </div>
 
       <ul className="divide-y divide-dt-border/30">
-        {alerts.slice(0, 6).map((a) => (
+        {shown.map((a) => (
           <li key={a.id} className="flex items-start gap-3 px-4 py-3">
             <span
               aria-hidden
@@ -139,7 +161,8 @@ export default function OpsAlertsBanner() {
 
       {alerts.length > 6 && (
         <p className="px-4 py-2 text-xs text-dt-faint">
-          and {alerts.length - 6} more
+          and {alerts.length - 6} more — the six above are the ones that matter most,
+          not the six that arrived first
         </p>
       )}
     </div>

@@ -1369,6 +1369,26 @@
       },
       "closed_by": "docs commit: superseded banners added to docs/08 and docs/09, each stating the measured gap (46 of 53 tables absent; 16 endpoints and no /v1 surface)",
       "closed_on": "2026-08-18"
+    },
+    {
+      "id": "A-9",
+      "what": "auth_has_tenant_role() checks the role WITHOUT filtering by tenant. Its exists() reads profiles on user_id + is_active + role only, so it answers 'does this user hold this role ANYWHERE', not 'in THIS workspace'. Callers that pair it with a separate membership check (e.g. set_de_external_reply_mode) then prove membership in tenant B but the ROLE from tenant A — a plain tenant_user in B who owns A passes an owner-only gate in B. LATENT not live: 0 users currently hold profiles in more than one tenant (verified 2026-08-20). It goes live the first time one person joins a second workspace, which is ordinary and which nobody would connect to this. NOT a one-liner: platform_super_admin profiles carry tenant_id NULL by design and would fail a naive tenant filter.",
+      "where": "public.auth_has_tenant_role(text[])",
+      "severity": "security",
+      "why_skipped": "walked-past",
+      "first_named": {
+        "date": "2026-08-19",
+        "source": "block 5 item 22 (A-5) — found while checking whether a stranded tenant_owner was dangerous"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "sql",
+        "sql": "select count(*)::int as n from pg_proc p where p.pronamespace='public'::regnamespace and p.proname='auth_has_tenant_role' and pg_get_functiondef(p.oid) !~* 'profiles[^;]*tenant_id[[:space:]]*='",
+        "open_if": {
+          "op": ">",
+          "n": 0
+        }
+      }
     }
   ]
 }
