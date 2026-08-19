@@ -1376,7 +1376,7 @@
         "date": "2026-08-19",
         "source": "whole-branch review of migs 768-785, 2026-08-19"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "sql",
         "sql": "select coalesce((select regexp_replace(prosrc,'--[^\\n]*','','g') ~ '91 days' from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='de_kpi_action_value'),false)::int as n",
@@ -1384,7 +1384,9 @@
           "op": "==",
           "n": 1
         }
-      }
+      },
+      "closed_by": "mig 788_a_window_the_metrics_actually_honour.sql applied to production 2026-08-20. Verified live: de_kpi_action_value has exactly 1 overload and no '91 days' literal; de_kpi_status_internal windows the CSAT read. The window bites — same employee returns n=53 at 52 weeks, n=53 at the default 13 weeks (so no current number moved), n=0 at 1 week. Proven able to fail: with the multiplier sabotaged the migration refuses with 'the window is not biting'",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "B-15",
