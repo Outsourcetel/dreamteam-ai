@@ -67,6 +67,10 @@ export function makeCallModelText(
     system: string,
     input: string | MessageLike[],
     maxTokens: number = defaultMaxTokens,
+    // ⚠ WHOSE KEY PAYS. Omit it and llmMessages resolves the PLATFORM chain —
+    // which is silently wrong for any caller that gated on a tenant having its
+    // own provider. Optional so existing callers keep their current behaviour.
+    tenantId?: string | null,
   ): Promise<ModelTextResult> {
     const messages = typeof input === 'string' ? [{ role: 'user', content: input }] : input;
     const body: Record<string, unknown> = {
@@ -77,7 +81,7 @@ export function makeCallModelText(
     };
     if (opts.temperature !== undefined) body.temperature = opts.temperature;
 
-    const res = await llmMessages(admin, body, label);
+    const res = await llmMessages(admin, body, label, tenantId);
     if (!res.ok) return { error: await describeFailure(res) };
     const d = await res.json();
     return { text: joinText(d), ...usageOf(d) };
