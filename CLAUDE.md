@@ -80,6 +80,38 @@ state available: the effect is permanent, the source is one `rm` from gone, and
 a rebuilt environment differs silently. If you genuinely mean to, say so out
 loud with `--allow-uncommitted`.
 
+**3. Assert the absence of a violation, never the presence of an example.**
+
+A migration's assertions must be about what the database now **is**, not about
+what production happens to **contain**.
+
+```sql
+✗  if not exists (select 1 from t where <the good thing>) then raise ...
+✓  if exists     (select 1 from t where <the bad thing>)  then raise ...
+```
+
+The second is vacuously true on empty data and still catches every real
+violation. The first demands production's rows in order to pass, which encodes
+"I am only ever run once, against one database" — the single thing a migration
+must not assume. Assertions about **schema** — `pg_proc`, `pg_indexes`,
+`information_schema`, a constraint definition — are always fine, because they
+describe what the migration itself installed and are true wherever it runs.
+
+This is not style. Three migrations already break it — 778 ("found no tenant
+with two distinctly named non-assistant employees"), 789 ("no goal-having
+employee without an open plan") and 790 ("no row carries
+`disposition=cancelled`") — and the cost is that **dev cannot be brought level
+by replay, a restored backup cannot be verified by replay, and a new
+environment cannot be built from the migration history at all.**
+
+They also cannot be repaired. The ledger keys on filename **and checksum**, so
+editing an applied migration breaks `certify`. Before it lands is the only
+moment this is fixable, which is why CI runs it on every new migration:
+
+```bash
+npm run audit:replayable
+```
+
 **Why the format cannot change.** The obvious fix is timestamps. It does not
 work here: migrations replay in filename order and `20260810…` sorts *before*
 `666…`, so every new migration would land in the middle of history. Renumbering

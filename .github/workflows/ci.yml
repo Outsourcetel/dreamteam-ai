@@ -159,4 +159,19 @@ jobs:
       # it means main can no longer rebuild production.
       - name: Sync dev to production (best effort)
         run: node scripts/sync-dev-migrations.mjs --apply --best-effort
+      # ── A new migration must be able to run somewhere that is not production ─
+      # Runs AFTER the sync so the dry run happens against a current dev — a
+      # migration can also fail there for the boring reason that dev is missing
+      # something it depends on, and that would be a false accusation.
+      #
+      # HARD FAIL, unlike the sync above. The three existing unreplayable
+      # migrations cannot be repaired — the ledger keys on filename and
+      # checksum, so editing an applied file breaks certify — which makes the
+      # moment before merge the only moment this is fixable. A warning here
+      # would be a warning about the one thing that is still cheap to fix.
+      #
+      # Only migrations this branch ADDS are checked, so the known three do not
+      # fail every run and train everyone to ignore the job.
+      - name: New migrations must be replayable
+        run: npm run audit:replayable
       - run: node scripts/golden-path.mjs
