@@ -1,35 +1,35 @@
 {
-  "at": "2026-08-18T10:12:44.389Z",
+  "at": "2026-08-19T16:40:46.051Z",
   "mode": "full",
   "failed": 4,
   "results": [
     {
       "section": "typecheck",
       "ok": true,
-      "seconds": 15.3
+      "seconds": 19.1
     },
     {
       "section": "ring0-probes",
       "ok": false,
-      "seconds": 80.2,
+      "seconds": 74.8,
       "detail": "execute-perimeter: NEW/CHANGED grant not in allowlist: platform_capability_demand()|anon=false|authed=true\nexecute-perimeter: NEW/CHANGED grant not in allowlist: set_review_narrative_settings(p_enabled boolean, p_instructions text, p_de_id uuid)|anon=false|authed=true\nexecute-perimeter: NEW/CHANGED grant not in allowlist: upsert_kpi_metric(p_metric_key text, p_label text, p_direction text, p_unit text, p_description text, p_source text, p_source_config jsonb)|anon=false|authed=true\nexecute-perimeter: allowlisted grant VANISHED (revoked or fn dropped): upsert_kpi_metric(p_metric_key text, p_label text, p_direction text, p_unit text, p_description text)|anon=false|authed=true\nlanded-reads-use-the-shared-predicate: de_kpi_action_value(p_tenant_id uuid, p_de_id uuid, p_source text, p_source_config jsonb) names a terminal-successful decision literal but never calls public.action_execution_landed(). If it READS whether an action landed, call the shared predicate (mig 679). If it is a writer, a counter or a lock, pin it in scripts/landed-predicate.mjs with the reason.\nlanded-reads-use-the-shared-predicate: get_de_kpi_status is PINNED in scripts/landed-predicate.mjs but no longer names either decision literal (or no longer exists). Delete the pin.\nlanded-reads-use-the-shared-predicate: snapshot_de_kpi_readings is PINNED in scripts/landed-predicate.mjs but no longer names either decision literal (or no longer exists). Delete the pin.\nexam-evidence-stays-out-of-production-metrics: verify_decide_discovery_proposal() counts de_conversations without the exam axis. Add channel IS DISTINCT FROM 'exam' (mig 671 split the corpus on channel), or pin it in scripts/production-evidence.mjs COUNT_READ_PINS with its reason.\nexam-evidence-stays-out-of-production-metrics: de_kpi_status_internal(p_tenant_id uuid, p_de_id uuid, p_window_weeks integer) counts de_conversations without the exam axis. Add channel IS DISTINCT FROM 'exam' (mig 671 split the corpus on channel), or pin it in scripts/production-evidence.mjs COUNT_READ_PINS with its reason.\nexam-evidence-stays-out-of-production-metrics: get_de_kpi_status is PINNED in COUNT_READ_PINS but no longer aggregates evidence_run_decisions or de_conversations (or no longer exists). Delete the pin.\nno-pending-approval-the-platform-cannot-carry-out: mismatched-pair — kinetic / Approve action — Create a specialist desk (DreamTeam AI (self)) [execution bfb462a0-1e22-48cf-a3a0-fa60edd666f4]: the row names definition 18a92cdd-ba11-4c11-8bcc-96a3b8e120b4 (create_specialist), but its status is \"disabled\" and the resolver only ever sees active definitions. connector-hub answers action_definition_not_found and nothing is sent.\nno-pending-approval-the-platform-cannot-carry-out: no-executor — outsourcetel-hq / Send a $15,600 invoice to Meridian Group — test ping [task 03aaa6dd-379b-438a-aadd-d9b8e262638b, raised 2026-08-10]: no action_executions row references this task by EITHER linkage column (task_id, resolves_task_id). There is no executor behind the approval at all: deciding it flips the task to \"approved\", hands connector-hub nothing, and sends nothing — while the queue empties and the screen reads as done. A human must withdraw or re-raise it; this probe reports, it never decides.\nrls-on-every-public-table: migration_number_claims\nonboarding-bindings-are-runnable: outsourcetel-hq / SaaS onboarding — starter / locations_configured → propose_connector — needs the \"workforce_assistant\" role, which the employee(s) this workspace gives onboarding work to (Onni) do not have"
     },
     {
       "section": "deferred-register",
       "ok": false,
-      "seconds": 9.7,
-      "detail": "F1 REGISTER SAYS OPEN, REALITY SAYS CLOSED — B-7 \"F-8 — golden-path's drift footer prints the production figures as a string LITERAL. Production is never queri…\". Its grep verification returned n=0, and the item is open only when n >= 1. This is docs/45's 28-fail-open-guards shape: a real finding that got fixed and went on being carried as live backlog. FIX: set \"state\":\"closed\" on B-7 and record closed_by (the commit or migration that did it) — the evidence is this line.\nF1 REGISTER SAYS OPEN, REALITY SAYS CLOSED — D-7 \"Debt #35 — zero component tests over roughly 73,790 lines of UI. Twenty test files, none renders a component.\". Its grep verification returned n=1, and the item is open only when n == 0. This is docs/45's 28-fail-open-guards shape: a real finding that got fixed and went on being carried as live backlog. FIX: set \"state\":\"closed\" on D-7 and record closed_by (the commit or migration that did it) — the evidence is this line.\nF1 REGISTER SAYS OPEN, REALITY SAYS CLOSED — C-11 \"get_de_performance_summary reports responses_this_month=0 for the only employee that has any traffic. Technic…\". Its sql verification returned n=0, and the item is open only when n >= 1. This is docs/45's 28-fail-open-guards shape: a real finding that got fixed and went on being carried as live backlog. FIX: set \"state\":\"closed\" on C-11 and record closed_by (the commit or migration that did it) — the evidence is this line.\nF1 REGISTER SAYS OPEN, REALITY SAYS CLOSED — D-13 \"The app is dark-themed (ground rgb(12,17,35)) but declares color-scheme nowhere, so the computed value stays …\". Its grep verification returned n=2, and the item is open only when n == 0. This is docs/45's 28-fail-open-guards shape: a real finding that got fixed and went on being carried as live backlog. FIX: set \"state\":\"closed\" on D-13 and record closed_by (the commit or migration that did it) — the evidence is this line."
+      "seconds": 19.9,
+      "detail": "F1 REGISTER SAYS OPEN, REALITY SAYS CLOSED — B-5 \"F-5 — widget-ask's no-docs branch sends a canned \"check back soon\" with escalated:false, no human task and no…\". Its grep verification returned n=0, and the item is open only when n >= 1. This is docs/45's 28-fail-open-guards shape: a real finding that got fixed and went on being carried as live backlog. FIX: set \"state\":\"closed\" on B-5 and record closed_by (the commit or migration that did it) — the evidence is this line."
     },
     {
       "section": "migration-ledger",
       "ok": false,
-      "seconds": 5.7,
+      "seconds": 5.9,
       "detail": "ORPHANED:\n  756_one_action_arm_written_once.sql\n  757_both_callers_ask_the_one_arm.sql\n  758_a_metric_this_workspace_defines_can_be_computed.sql\n  764_the_review_reads_the_same_kpi_values_the_panel_shows.sql\n  765_a_review_judges_the_goals_you_set_over_the_window_it_names.sql\n  766_a_goal_belongs_to_one_employee_in_one_workspace.sql\n  767_a_narrative_that_can_never_become_the_verdict.sql"
     },
     {
       "section": "migration-files-match-ledger-checksums",
       "ok": true,
-      "seconds": 3.8
+      "seconds": 3.7
     },
     {
       "section": "migration-numbering",
@@ -39,22 +39,22 @@
     {
       "section": "provider-catalog",
       "ok": true,
-      "seconds": 8.9
+      "seconds": 9.2
     },
     {
       "section": "discovery-spine",
       "ok": true,
-      "seconds": 6.9
+      "seconds": 8
     },
     {
       "section": "discovery-proposal-decisions",
       "ok": true,
-      "seconds": 15
+      "seconds": 16
     },
     {
       "section": "decide-discovery-proposal-behaviour",
       "ok": true,
-      "seconds": 7.3
+      "seconds": 8.8
     },
     {
       "section": "guardrail-pattern-differential",
@@ -64,47 +64,47 @@
     {
       "section": "edge-typecheck",
       "ok": true,
-      "seconds": 1.9
+      "seconds": 6.2
     },
     {
       "section": "golden-path",
       "ok": true,
-      "seconds": 42.3
+      "seconds": 40.4
     },
     {
       "section": "role-gates",
       "ok": true,
-      "seconds": 7.9
+      "seconds": 7.7
     },
     {
       "section": "silent-refusals",
       "ok": true,
-      "seconds": 2.5
+      "seconds": 3.4
     },
     {
       "section": "gate-parity",
       "ok": true,
-      "seconds": 10.2
+      "seconds": 12.2
     },
     {
       "section": "branch-parity",
       "ok": true,
-      "seconds": 21.6
+      "seconds": 25.8
     },
     {
       "section": "design-drift",
       "ok": true,
-      "seconds": 0.8
+      "seconds": 1.2
     },
     {
       "section": "migration-append",
       "ok": true,
-      "seconds": 0.7
+      "seconds": 1
     },
     {
       "section": "suite",
       "ok": false,
-      "seconds": 46.9,
+      "seconds": 49.8,
       "detail": " ❯ tests/tenant-isolation.test.ts:71:13\n     69|     ).filter((f): f is string => f !== null);\n     70|     if (failures.length > 0) {\n     71|       throw new Error(`teardown failed after 3 attempts each:\\n${failu…\n       |             ^\n     72|     }\n     73|   }, 60000);\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯"
     }
   ]
