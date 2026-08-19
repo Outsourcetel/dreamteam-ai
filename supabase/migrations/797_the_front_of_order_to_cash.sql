@@ -21,6 +21,15 @@
 
 begin;
 
+-- The requires_role CHECK is a closed list by design (an unrecognised
+-- requirement DENIES in de_may_use_action). Admitting a new role means
+-- widening BOTH ends in the same migration — the constraint here, the arm
+-- below — or the seed rows bounce off the check, as the first apply proved.
+alter table action_definitions drop constraint action_definitions_requires_role_check;
+alter table action_definitions add constraint action_definitions_requires_role_check
+  check (requires_role is null or requires_role = any (array['workforce_assistant'::text, 'finance'::text, 'sales_desk'::text]));
+
+
 CREATE OR REPLACE FUNCTION public.de_may_use_action(p_tenant_id uuid, p_de_id uuid, p_action_definition_id uuid)
  RETURNS boolean
  LANGUAGE sql
