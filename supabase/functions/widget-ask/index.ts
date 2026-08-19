@@ -710,9 +710,41 @@ serve(async (req) => {
       p_tenant_id: tenantId, p_subject_kind: subjectDeId ? 'de' : null, p_subject_id: subjectDeId,
     });
     if (!docs || docs.length === 0) {
+      // ⚠ THIS BRANCH USED TO END THE STORY (register B-5 / F-5). It answered
+      // the customer honestly — "still setting up my knowledge base" — and then
+      // told NOBODY: escalated:false, no human task, no event, conversation left
+      // 'ai_handling' so no inbox surfaced it. A workspace that had not finished
+      // loading its knowledge lost every question asked of it, silently, and the
+      // customer was the only party who knew they had asked.
+      //
+      // The holding reply stays: it is true, and saying nothing is worse. What
+      // changes is that the workspace now hears about it, through the same
+      // escalation path a low-confidence answer or a guardrail block uses.
       const answer = "I don't have anything to answer from yet — the team is still setting up my knowledge base. Please check back soon.";
-      if (convId) await admin.from('de_messages').insert({ tenant_id: tenantId, conversation_id: convId, role: 'assistant', content: answer, confidence: 0, escalated: false, delivery: 'sent' });
-      return json({ conversation_id: convId, answer, confidence: 0, sources: [], needs_escalation: false, no_docs: true, status: 'ai_handling' });
+      if (convId) {
+        await admin.from('de_messages').insert({ tenant_id: tenantId, conversation_id: convId, role: 'assistant', content: answer, confidence: 0, escalated: true, delivery: 'sent' });
+        await admin.from('de_conversations').update({
+          status: 'needs_human',
+          handoff_summary: `Asked before this workspace had any knowledge to answer from: ${truncatedQ}`,
+          last_message_at: nowIso(),
+        }).eq('id', convId);
+      }
+      await admin.from('human_tasks').insert({
+        tenant_id: tenantId, de_id: subjectDeId, type: 'escalation', source: 'de',
+        title: `No knowledge to answer from (${channel} · ${who}) — ${truncatedQ}`,
+        detail: `A customer asked before this workspace had any knowledge loaded, so ${persona.name} could not answer. `
+          + `They were told the knowledge base is still being set up. Load a document that covers this and reply, `
+          + `or answer them directly from here.`,
+        related_table: convId ? 'de_conversations' : null, related_id: convId,
+      });
+      await admin.from('activity_events').insert({
+        tenant_id: tenantId, actor: persona.name, actor_type: 'de', event_type: 'escalated',
+        text: `${channel} question from ${who} → escalated (no knowledge loaded yet) — "${truncatedQ}"`, confidence: 0,
+      });
+      await auditEvent(admin, tenantId, persona.name, 'de',
+        `${channel} question could not be answered — this workspace has no knowledge documents visible to this employee; escalated`,
+        'escalated', { conversation_id: convId, channel, question: truncatedQ, reason: 'no_knowledge_documents' });
+      return json({ conversation_id: convId, answer, confidence: 0, sources: [], needs_escalation: true, no_docs: true, status: 'needs_human' });
     }
 
     let used = 0;
