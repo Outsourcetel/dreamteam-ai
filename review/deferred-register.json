@@ -671,7 +671,7 @@
         "date": "2026-08-06",
         "source": "commit d01f952a"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
@@ -686,7 +686,9 @@
           "n": 1
         },
         "note": "⚠ CORRECTED WHILE SEEDING. docs/53 D-6 reported 'callModel has 7 non-shared definitions'. Re-read 2026-08-12: all seven are `const callModel = makeCallModelText(...)` — BINDINGS to the shared factory in supabase/functions/_shared/modelCall.ts, i.e. the consolidated shape, not drift. A grep for the identifier counted them as duplicates. The callModel half of this item was already closed; the renderTemplate and stripHtml halves stand and are what this verification counts."
-      }
+      },
+      "closed_by": "resolved by naming, not merging: the three locals are NOT copies of the shared helpers — the shared PLACEHOLDER_RE is single-brace {key} and cannot match {{account.name}}, playbook-execute's takes a RunContext, and the local stripHtml does content-root extraction (nav/cookie/semantic-root) the shared one does not. Renamed to renderAccountTemplate, renderRunTemplate and extractPageText so the names stop implying duplication",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "D-7",

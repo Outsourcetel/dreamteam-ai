@@ -104,7 +104,7 @@ function tagsToText(s: string): string {
  * failure this whole feature exists to fix. So if stripping leaves too little,
  * we keep the full text and accept the noise.
  */
-function stripHtml(raw: string): string {
+function extractPageText(raw: string): string {
   const base = raw
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
@@ -174,7 +174,7 @@ async function resolveContent(item: Item): Promise<{ title: string; content: str
       throw new ItemError(`that PDF could not be read (${String(e).slice(0, 120)})`, 'terminal');
     }
   } else if (ctype.includes('html') || ctype.includes('xml') || ctype.includes('text') || ctype === '') {
-    text = stripHtml(await out.response.text());
+    text = extractPageText(await out.response.text());
   } else {
     throw new ItemError(`unsupported content type "${ctype}" — only web pages and PDFs can be imported`, 'terminal');
   }

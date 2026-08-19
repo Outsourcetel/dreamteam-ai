@@ -27,7 +27,7 @@ import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { embedText } from '../_shared/knowledgeEmbed.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { recordSpan } from '../_shared/otel.ts';
-import { evaluateEscalation, loadEscalationRuleset, type EscRuleset } from '../_shared/escalation.ts';
+import { escalationHeadline, evaluateEscalation, loadEscalationRuleset, type EscRuleset } from '../_shared/escalation.ts';
 import { defOfDoneGate, assessAndLog } from '../_shared/defOfDone.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { budgetBlocked } from '../_shared/rpcSafety.ts';
@@ -1298,7 +1298,21 @@ async function dispatchTool(
       const { data: esc, error: escErr } = await admin.rpc('open_de_escalation', {
         p_tenant_id: tenantId, p_de_id: deId,
         p_work_item_id: workItemId ?? null, p_objective_id: objectiveId ?? null,
-        p_title: entityName ? `Needs a decision — ${entityName}` : null,
+        // ⚠ 778: THIS TERNARY WROTE 42 IDENTICAL HEADLINES. When entityName was
+        // absent it passed null, null reached open_de_escalation's fallback,
+        // and that fallback was "<employee name> needs a decision" — the same
+        // sentence on every row, so the founder had to open eighteen cards to
+        // find out what eighteen different decisions were about. Measured
+        // 2026-08-19: all 42 generic rows in the queue came through here.
+        //
+        // `input.reason` is the employee's own account of why it stopped and
+        // is present on every call at this site, so the title now comes from
+        // it. escalationHeadline returns null ONLY for an empty reason — and
+        // in that one case null is deliberately still passed, because SQL's
+        // de_escalation_title can then name the work item this stopped on,
+        // which nothing here can see. It can no longer produce the old
+        // sentence either way.
+        p_title: entityName ? `Needs a decision — ${entityName}` : escalationHeadline(String(input.reason ?? '')),
         p_reason: String(input.reason ?? ''),
         p_proposed_action: typeof input.proposed_action === 'string' ? input.proposed_action : null,
         p_justification: typeof input.justification === 'string' ? input.justification : null,
