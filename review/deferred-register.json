@@ -1050,7 +1050,7 @@
         "date": "2026-08-12",
         "source": "docs/50-review-scorecard.md C"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "none",
         "why_unverifiable": "this is owed WORK (run an anon-role attack probe, walk a checklist), not a state of the system. Nothing in the database or the repo changes when it is done except the artefact it produces, and pinning it to that artefact's existence would let an empty file close it.",
@@ -1058,7 +1058,9 @@
           "file": "docs/50-review-scorecard.md",
           "anchor": "anon-role probe (not"
         }
-      }
+      },
+      "closed_by": "scripts/anon-probe.mjs (npm run audit:anon) — 37 checks against production holding only the publishable key: 20 table reads, 6 writes, 9 SECDEF RPCs and the storage schema, all refused. Found and closed the latent grant it existed to find: mig 787 revoked anon+authenticated from six credential-bearing tables that were safe only by RLS default-deny",
+      "closed_on": "2026-08-19"
     },
     {
       "id": "G-7",

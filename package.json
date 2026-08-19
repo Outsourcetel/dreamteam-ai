@@ -39,7 +39,8 @@
     "benchmark:history": "node scripts/benchmark.mjs --history",
     "certify:offline": "node scripts/certify.mjs --offline",
     "audit:toolchain": "npm audit --audit-level=high",
-    "migrate:next": "node scripts/migration-next.mjs"
+    "migrate:next": "node scripts/migration-next.mjs",
+    "audit:anon": "node scripts/anon-probe.mjs"
   },
   "dependencies": {
     "@sentry/react": "^10.64.0",
