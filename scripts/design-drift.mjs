@@ -78,7 +78,23 @@ const BASELINE = {
 const NOW = {
   'bg-slate variants': uniq('bg-slate-[0-9/]*'),
   'border-slate variants': uniq('border-slate-[0-9/]*'),
-  'radius variants': uniq('rounded-[a-z0-9]*'),
+  // ⚠ WAS `rounded-[a-z0-9]*`, which was wrong in three directions at once and
+  // still reported a confident 13.
+  //   · BLIND to arbitrary values. `[a-z0-9]` is a character class, so against
+  //     `rounded-[2rem]` it matched `rounded-` and stopped. Every arbitrary
+  //     radius in the estate collapsed into ONE token — the exact syntax most
+  //     likely to be a one-off someone should have used a scale step for.
+  //   · TRUNCATED directional variants: `rounded-tr-sm` counted as `rounded-tr`,
+  //     so adding `rounded-tr-lg` beside it would have moved nothing.
+  //   · MATCHED INSIDE WORDS. Four of the thirteen were the tail of the prose
+  //     word "Grounded-only" on a governance page. A metric counting English
+  //     as CSS is not measuring the estate.
+  // Net effect on the number: minus one false positive, plus one from splitting
+  // the collapsed arbitrary values — still 13, now thirteen things that exist.
+  // The baseline is unchanged BECAUSE the true count is unchanged; if a fix
+  // like this ever does move it, the honest move is to re-pin and say the
+  // MEASUREMENT changed, not the estate.
+  'radius variants': uniq('\\brounded-(\\[[^]]*\\]|[a-z0-9-]*)'),
   'card padding variants': uniq('p-[0-9]'),
   // Name-based, and defensible here: locally DEFINING a StatCard is itself the
   // duplication. Unlike a dialog, the component does not keep its name after
