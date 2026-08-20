@@ -37,6 +37,12 @@ const SKIP_VECTORS = args.includes('--skip-vectors');
 // why that default is the way round it is.
 const WITH_HASHES = args.includes('--include-password-hashes');
 const outIdx = args.indexOf('--out');
+// --resume <dir>: continue a crashed export in place. Tables recorded in the
+// dir's _progress.json are skipped; the table that was mid-flight when the
+// crash happened is NOT in the file, so it re-exports from scratch. Exists
+// because this API is shared by several concurrent sessions and a sustained
+// 429 five minutes from the end used to cost the whole run (2026-08-20).
+const resumeIdx = args.indexOf('--resume');
 const PROJECT_REF = 'rfsvmhcqeiyrxivbmpel';
 const ENDPOINT = `https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query`;
 const PAGE = 500;
@@ -73,7 +79,16 @@ async function q(sql) {
       continue;
     }
     if (!res.ok) {
-      if ((res.status === 429 || res.status >= 500) && attempt < 5) {
+      // 429s here are per-minute throttling SHARED with other live sessions
+      // (proven 2026-08-20: five exponential retries totalling 31s all landed
+      // inside the same window and the run died anyway). So a 429 waits on
+      // the throttler's own timescale — up to 8 tries, ~45-75s apart with
+      // jitter to de-synchronise from whoever else is hammering the API.
+      if (res.status === 429 && attempt < 8) {
+        await new Promise((r) => setTimeout(r, 45_000 + Math.random() * 30_000));
+        continue;
+      }
+      if (res.status >= 500 && attempt < 5) {
         await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
         continue;
       }
@@ -86,8 +101,20 @@ async function q(sql) {
 // The run is stamped by the caller's clock, which is fine — this is a local
 // artifact, not something another machine has to agree with.
 const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-const OUT = outIdx !== -1 ? args[outIdx + 1] : join('backups', stamp);
+const OUT = resumeIdx !== -1 ? args[resumeIdx + 1]
+  : outIdx !== -1 ? args[outIdx + 1] : join('backups', stamp);
 mkdirSync(OUT, { recursive: true });
+
+const PROGRESS = join(OUT, '_progress.json');
+const doneTables = new Set(
+  resumeIdx !== -1
+    ? (() => { try { return JSON.parse(readFileSync(PROGRESS, 'utf8')); } catch { return []; } })()
+    : []);
+if (doneTables.size) console.log(`Resuming ${OUT} — ${doneTables.size} table(s) already exported\n`);
+const markDone = (tbl) => {
+  doneTables.add(tbl);
+  writeFileSync(PROGRESS, JSON.stringify([...doneTables]));
+};
 
 const tables = await q(`
   select c.relname as tbl,
@@ -103,10 +130,19 @@ const manifest = [];
 let grandTotal = 0;
 
 for (const { tbl, vector_cols } of tables) {
+  const file = join(OUT, `${tbl}.jsonl`);
+  if (doneTables.has(tbl)) {
+    // Completed by the run being resumed. Its manifest entry is rebuilt from
+    // the file on disk — a resumed manifest missing half the tables would be
+    // a backup that quietly claims less than it holds.
+    const prior = readFileSync(file, 'utf8').split('\n').filter(Boolean).length;
+    grandTotal += prior;
+    manifest.push({ table: tbl, rows: prior, vectors_omitted: SKIP_VECTORS && vector_cols > 0 });
+    continue;
+  }
   // Ordering by ctid gives a stable, index-free full scan on any table, without
   // assuming a primary key exists or is sortable.
   let offset = 0, rows = 0;
-  const file = join(OUT, `${tbl}.jsonl`);
   writeFileSync(file, '');
 
   const cols = SKIP_VECTORS && vector_cols > 0
@@ -149,6 +185,7 @@ for (const { tbl, vector_cols } of tables) {
 
   grandTotal += rows;
   manifest.push({ table: tbl, rows, vectors_omitted: SKIP_VECTORS && vector_cols > 0 });
+  markDone(tbl);
   if (rows) console.log(`  ${tbl.padEnd(44)} ${String(rows).padStart(7)} rows`);
 }
 
