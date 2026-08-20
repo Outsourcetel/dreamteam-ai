@@ -181,6 +181,64 @@ const query = readSql(process.argv.slice(2));
         }
       }
     }
+
+    // ── THE FOURTH STATE: committed, but not where production can find it ───
+    //
+    // Everything above asks "is this committed?" and answers it against HEAD.
+    // In a git worktree HEAD is that session's OWN BRANCH, so a migration
+    // committed to claude/whatever passes every check above, applies to
+    // production, and never reaches main. The repository still cannot rebuild
+    // production — the guard just stopped noticing.
+    //
+    // That is not hypothetical and it is not rare. Eighteen migrations were
+    // recovered on 2026-08-20 alone: sixteen from claude/docs54-stage-c, 795
+    // from claude/decision-cockpit, 800 from an uncommitted worktree. Every one
+    // had satisfied the checks above at the moment it was applied.
+    //
+    // Production is ONE shared database and main is the ONE shared source of
+    // truth for it. "Committed somewhere" is not the invariant; "reachable from
+    // origin/main" is, and only origin/main can answer it.
+    if (repoPath) {
+      const ALLOW_UNMERGED = process.argv.includes('--allow-unmerged');
+      // Best effort: a stale origin/main would refuse a migration that IS on
+      // main, which is the annoying-but-safe direction. Network failures are
+      // tolerated for that reason — but the ANSWER still comes from the ref.
+      git(['fetch', '--quiet', 'origin', 'main'], { timeout: 20000 });
+
+      const onMain = git(['cat-file', 'blob', `origin/main:${repoPath}`]);
+      const working = migrationChecksum(readFileSync(f, 'utf8'));
+      const mainSum = onMain.status === 0 ? migrationChecksum(onMain.stdout) : null;
+
+      if (mainSum !== working) {
+        const why = mainSum === null
+          ? `${repoPath} is not on origin/main at all.`
+          : `${repoPath} on origin/main is DIFFERENT from the file being applied.`;
+        if (ALLOW_UNMERGED) {
+          console.error('');
+          console.error('⚠  --allow-unmerged: APPLYING SCHEMA main CANNOT REBUILD  ⚠');
+          console.error(`   ${why}`);
+          console.error('   Production will hold this migration and main will not. Merge and push');
+          console.error('   the moment this returns — until you do, this is an orphan.');
+          console.error('');
+        } else {
+          console.error(`REFUSED: ${why}`);
+          console.error('  It may be committed on your branch — that is not the same thing. Production is');
+          console.error('  one shared database and main is the one source of truth for it, so a migration');
+          console.error('  applied from an unmerged branch is an orphan the moment it lands: production');
+          console.error('  carries schema that main cannot reproduce.');
+          console.error('');
+          console.error('  This is how 18 migrations became orphans on 2026-08-20 — every one of them');
+          console.error('  passed the "is it committed?" check above, on its own branch.');
+          console.error('');
+          console.error('  Push and merge to main first, then apply:');
+          console.error(`      git push origin HEAD  &&  <merge to main>  &&  git fetch origin main`);
+          console.error('');
+          console.error('  Or, if you really mean production to hold schema main cannot rebuild:');
+          console.error(`      node scripts/db-query.mjs ${f} --allow-unmerged`);
+          process.exit(1);
+        }
+      }
+    }
   }
 }
 

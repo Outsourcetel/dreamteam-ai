@@ -74,11 +74,25 @@ file lands on disk immediately, it is a claim the other agent can see.
 
 Run it with no slug to look without claiming.
 
-**2. Commit the migration before applying it.** `db-query.mjs` now refuses an
+**2. Commit the migration before applying it — and get it onto `main`.** `db-query.mjs` now refuses an
 untracked migration file. An applied-but-uncommitted migration is the worst
 state available: the effect is permanent, the source is one `rm` from gone, and
 a rebuilt environment differs silently. If you genuinely mean to, say so out
 loud with `--allow-uncommitted`.
+
+**Committed on your branch is not committed.** The check above answers "is this
+at HEAD?", and in a git worktree HEAD is *your* branch — so a migration
+committed to `claude/whatever` passed every guard, applied to production, and
+never reached `main`. **Eighteen migrations were recovered that way on
+2026-08-20**: sixteen from `claude/docs54-stage-c`, 795 from
+`claude/decision-cockpit`, 800 from an uncommitted worktree. Each one had
+satisfied the guard at the moment it ran.
+
+Production is **one** shared database and `main` is the **one** source of truth
+for it, so `db-query.mjs` now also requires the file to be byte-identical on
+`origin/main` before it will apply. Push and merge first. The hatch, if you
+truly mean production to hold schema `main` cannot rebuild, is
+`--allow-unmerged`.
 
 **3. Assert the absence of a violation, never the presence of an example.**
 
