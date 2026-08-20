@@ -1,6 +1,6 @@
 {
   "pinned_at": "2026-08-18T02:07:01.955Z",
-  "note": "The EXECUTE surface for anon/authenticated. certify fails on ANY diff. Re-pin only after a DELIBERATE perimeter change. ⚠ mig 722 removed 48 trigger-returning functions from this surface by REVOKE, and those entries were pruned BY HAND: scripts/certify.mjs --pin-allowlist was deliberately NOT used, because it rewrites from LIVE STATE and would bless any unrelated breach that landed in the same window — the near miss recorded in certify.mjs own header. Trigger functions are additionally held by the NON-PINNABLE probe trigger-functions-hold-no-ambient-execute, so re-pinning cannot put one back on this surface unnoticed. ⚠ 2026-08-16: --pin-allowlist WAS used, once, to add decide_discovery_proposal (migration 741, authenticated only, service_role deliberately excluded because auth.uid() is null under it and two writers then SKIP their authority check rather than fail it). It was made safe the only way it can be: the resulting diff was inspected and contained EXACTLY that one routine and nothing else. If you reach for this command again, diff it before you commit it — that inspection is the whole safeguard, and this note is here because the run that added it also erased this warning and had to restore it. ⚠ 2026-08-18: --pin-allowlist WAS used again, for migration 758 (upsert_kpi_metric gains p_source/p_source_config; the OLD 5-arg signature is dropped, so this is a signature REPLACEMENT, not a new grant). And it erased this note for the second time — the warning is now demonstrably load-bearing. The run also swept in platform_capability_demand() from migration 750, an unrelated session’s routine; that entry was REMOVED by hand so this pin contains exactly the one deliberate change. platform_capability_demand() therefore remains UNPINNED and certify stays red on it until whoever owns mig 750 decides it is intended. ⚠ 2026-08-18 (b): set_review_narrative_settings added BY HAND for migration 767 — --pin-allowlist was deliberately NOT used this time, because the run earlier the same day erased this note and swept in an unrelated routine. One entry, typed deliberately, diffable. The other two routines 767 creates (set_review_narrative, resolve_review_narrative_settings) are service_role only and correctly absent from this surface. ⚠ 2026-08-18 (c): set_authority_rule added BY HAND for migration 783 — the deliberate write path to authority_rules, which ships with no write policy on purpose. --pin-allowlist was again NOT used: a live check at the time showed THREE unpinned routines, and only one was mine. The other two — platform_capability_demand() (migration 750) and forget_end_user(uuid,text,text) — belong to other sessions and are left UNPINNED for their owners to bless or revoke. Re-pinning from live state would have swept both in silently, which is exactly what this note has twice recorded happening.",
+  "note": "The EXECUTE surface for anon/authenticated. certify fails on ANY diff. Re-pin only after a DELIBERATE perimeter change. ⚠ mig 722 removed 48 trigger-returning functions from this surface by REVOKE, and those entries were pruned BY HAND: scripts/certify.mjs --pin-allowlist was deliberately NOT used, because it rewrites from LIVE STATE and would bless any unrelated breach that landed in the same window — the near miss recorded in certify.mjs own header. Trigger functions are additionally held by the NON-PINNABLE probe trigger-functions-hold-no-ambient-execute, so re-pinning cannot put one back on this surface unnoticed. ⚠ 2026-08-16: --pin-allowlist WAS used, once, to add decide_discovery_proposal (migration 741, authenticated only, service_role deliberately excluded because auth.uid() is null under it and two writers then SKIP their authority check rather than fail it). It was made safe the only way it can be: the resulting diff was inspected and contained EXACTLY that one routine and nothing else. If you reach for this command again, diff it before you commit it — that inspection is the whole safeguard, and this note is here because the run that added it also erased this warning and had to restore it. ⚠ 2026-08-18: --pin-allowlist WAS used again, for migration 758 (upsert_kpi_metric gains p_source/p_source_config; the OLD 5-arg signature is dropped, so this is a signature REPLACEMENT, not a new grant). And it erased this note for the second time — the warning is now demonstrably load-bearing. The run also swept in platform_capability_demand() from migration 750, an unrelated session’s routine; that entry was REMOVED by hand so this pin contains exactly the one deliberate change. platform_capability_demand() therefore remains UNPINNED and certify stays red on it until whoever owns mig 750 decides it is intended. ⚠ 2026-08-18 (b): set_review_narrative_settings added BY HAND for migration 767 — --pin-allowlist was deliberately NOT used this time, because the run earlier the same day erased this note and swept in an unrelated routine. One entry, typed deliberately, diffable. The other two routines 767 creates (set_review_narrative, resolve_review_narrative_settings) are service_role only and correctly absent from this surface. ⚠ 2026-08-18 (c): set_authority_rule added BY HAND for migration 783 — the deliberate write path to authority_rules, which ships with no write policy on purpose. --pin-allowlist was again NOT used: a live check at the time showed THREE unpinned routines, and only one was mine. The other two — platform_capability_demand() (migration 750) and forget_end_user(uuid,text,text) — belong to other sessions and are left UNPINNED for their owners to bless or revoke. Re-pinning from live state would have swept both in silently, which is exactly what this note has twice recorded happening. ⚠ 2026-08-20: the FOUR client-callable routines of migration 817 (starter_onboarding_template_name, starter_onboarding_template_status, upgrade_starter_onboarding_template, acknowledge_starter_template_baseline) added BY HAND. --pin-allowlist was again deliberately NOT used: a live check at the time showed FOURTEEN unpinned routines and only these four were mine — the other ten (de_kpi_action_value, decide_human_tasks, decision_unblock_impact, forget_end_user, list_decision_groups, list_trust_readiness, platform_capability_demand, preview_decide_human_tasks, withdraw_human_task, withdraw_human_tasks) belong to other sessions and are left UNPINNED for their owners to bless or revoke. Re-pinning from live state would have swept all ten in silently, which is the third time this note would have recorded that happening. 817’s other two routines (starter_template_verdict, starter_template_state_internal) are service_role only and correctly absent from this surface — the latter takes a tenant id, and putting it on the authenticated surface would be the migs 662-664 confused-deputy shape.",
   "routines": [
     {
       "sig": "_assert_caller_tenant(p_tenant_id uuid)",
@@ -19,6 +19,11 @@
     },
     {
       "sig": "acknowledge_de_performance_review(p_review_id uuid)",
+      "anon": false,
+      "authed": true
+    },
+    {
+      "sig": "acknowledge_starter_template_baseline(p_note text)",
       "anon": false,
       "authed": true
     },
@@ -2483,6 +2488,16 @@
       "authed": true
     },
     {
+      "sig": "starter_onboarding_template_name()",
+      "anon": false,
+      "authed": true
+    },
+    {
+      "sig": "starter_onboarding_template_status()",
+      "anon": false,
+      "authed": true
+    },
+    {
       "sig": "submit_evidence_feedback(p_evidence_run_id uuid, p_verdict text, p_notes text)",
       "anon": false,
       "authed": true
@@ -2614,6 +2629,11 @@
     },
     {
       "sig": "update_tenant_general_settings(p_tenant_id uuid, p_name text, p_industry text, p_accent_color text, p_vocabulary jsonb)",
+      "anon": false,
+      "authed": true
+    },
+    {
+      "sig": "upgrade_starter_onboarding_template(p_preserve_edits boolean)",
       "anon": false,
       "authed": true
     },
