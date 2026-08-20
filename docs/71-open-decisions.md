@@ -27,12 +27,32 @@ entirely a decision backlog, not a build backlog.**
 
 These change what gets built. I have a recommendation on each but no authority to pick.
 
-**1. A price, and billing switched on.** `tenant_billing_config` holds zero rows.
-Nothing can charge anyone, so no revenue path has ever been exercised end to end.
-*Decision:* a number and a unit (per employee / per resolved conversation / flat), or
-an explicit "pilots are free until N customers".
-*My recommendation:* per-employee-per-month, because that is what the product actually
-meters and what the customer already thinks they are buying.
+**1. Pricing — DECIDED 2026-08-20: pilots are free until 100 customers, then converted.**
+`tenant_billing_config` holds zero rows, and for a free pilot that is the correct
+state rather than a gap: the table is a per-tenant PRICE SHEET (`cost_per_de`,
+`cost_per_1k_responses`, per-feature costs, billing day, payment method). There is
+no "plan" or "free" flag — free means no row, and converting means inserting one.
+
+**Conversion is safe because metering does not wait for billing.** Checked before
+recording the decision, since this is the thing that usually breaks free-now-paid-later:
+
+| | |
+|---|---|
+| `de_token_usage` | **2,637 rows across 16 tenants** |
+| `tenant_billing_config` | **0 rows** |
+
+Usage is already being recorded for every tenant with no billing configured at all,
+so a converted pilot arrives with its history intact — what it consumed, and what it
+would have owed. Nothing about being free now forecloses charging later.
+
+⚠ **What is still missing is the counter.** Nothing anywhere counts pilots against
+the 100, so "until 100" is an intention rather than a threshold — the sort of number
+that is discovered at 140. Today: **16 tenants**. Making it real needs one of:
+
+- a certify check that goes red past 100 active tenants with no billing config, or
+- an ops alert raised at, say, 80, so the decision arrives before the deadline does.
+
+Neither is built. Until one is, treat 100 as a note rather than a control.
 
 **2. Open the trust ladder — DECIDED 2026-08-20: outbound replies, no money.**
 Reading the machinery to execute this found that "supervised" is **three separate
