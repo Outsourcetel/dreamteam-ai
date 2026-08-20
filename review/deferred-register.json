@@ -1483,6 +1483,26 @@
       },
       "closed_by": "mig 793 applied to production 2026-08-20. NOT a fix — a correction: the escalation was never reachable. profiles_user_id_key is UNIQUE on user_id ALONE (a constraint, 12 dependent FKs), so one user holds at most one profile and the role held 'anywhere' cannot differ from the role held 'here'. auth_tenant_id()'s unordered limit 1 is therefore deterministic, not arbitrary. Verified live: 24 profiles, 0 users with more than one in any state, 0 platform admins also in a tenant, 40 of 40 RLS policies carrying their own tenant predicate. 793 records the dependency on both objects and asserts the index shape, so a future widening fails loudly instead of silently unscoping 89 callers.",
       "closed_on": "2026-08-19"
+    },
+    {
+      "id": "A-11",
+      "what": "Two ACTIVE platform-scope destructive ERPNext actions declare their money param as 'amount', not 'amount_cents': payment_entry_for_invoice ('Book a payment against an invoice') and create_journal_entry ('Post a journal entry'), both created 00:20 by mig 802. connector-hub reads the amount out of a param named EXACTLY amount_cents and passes it as p_amount_cents, so these two reach decide_action_execution with p_amount_cents = NULL — which silently switches OFF the approval threshold, the spend caps and the trust ceiling for those actions alone, in every tenant. NOT a mechanical rename: 802 documents the param as 'Partial amount' with no unit, and ERPNext works in currency units while the gate expects cents, so renaming without converting would make the gate read dollars as cents and under-count by 100x — a quieter bypass than the one it fixes. Needs the author of 802 to decide the unit and convert at the boundary. Mitigating today: the ERPNext connector has been dead since 2026-08-11 (http_402, 8000+ consecutive failures) and no trust policy is above level 0.",
+      "where": "public.action_definitions: payment_entry_for_invoice, create_journal_entry; supabase/migrations/802_an_action_that_lands_in_the_ledger.sql",
+      "severity": "security",
+      "why_skipped": "walked-past",
+      "first_named": {
+        "date": "2026-08-20",
+        "source": "certify suite failure, tests/action-gate.test.ts:439, found re-running certify 2026-08-20"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "sql",
+        "sql": "select count(*)::int as n from action_definitions ad, jsonb_array_elements(ad.param_schema) p where jsonb_typeof(ad.param_schema)='array' and p->>'name' ~* '(^|_)(amount|amounts|cents|price|prices|total|totals|money|charge|fee|cost)($|_)' and p->>'name' <> 'amount_cents' and p->>'name' <> 'default_price_list'",
+        "open_if": {
+          "op": ">",
+          "n": 0
+        }
+      }
     }
   ]
 }
