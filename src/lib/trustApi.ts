@@ -301,6 +301,34 @@ export async function listTrustPolicies(): Promise<TrustPolicy[]> {
   return listTenantRows<TrustPolicy>('trust_policies', 'action_category', true, 'listTrustPolicies');
 }
 
+export type TrustReadinessRow = {
+  policy_id: string;
+  de_id: string;
+  de_name: string;
+  category: string;
+  current_level: number;
+  max_level: number;
+  eligible: boolean;
+  unmet_count: number;
+  unmet: { key: string; detail: string; actual: string; required: string }[];
+  /** Stuck behind the human queue specifically — the difference between
+   *  "needs more time" and "needs YOU". */
+  waiting_on_decisions: boolean;
+  pending_decisions: number;
+};
+
+/** How far every employee is from earning more autonomy (mig 804).
+ *
+ *  ⚠ NOT a second opinion about eligibility. The RPC calls the same
+ *  trust_evidence_for() that request_trust_promotion gates on, so this board
+ *  and that gate cannot disagree — which matters, because a board that says
+ *  "ready" over a gate that refuses is worse than no board. */
+export async function listTrustReadiness(): Promise<TrustReadinessRow[]> {
+  const { data, error } = await supabase.rpc('list_trust_readiness');
+  if (error) raise('listTrustReadiness', error);
+  return (data ?? []) as TrustReadinessRow[];
+}
+
 /** Seed default policies for the caller's tenant (idempotent; the
  *  demo tenant is refused server-side — demo mode untouched). */
 export async function seedTrustPolicies(): Promise<TrustPolicy[]> {
