@@ -54526,6 +54526,12 @@ CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON publi
 DROP TRIGGER IF EXISTS workspaces_updated_at ON public.workspaces;
 CREATE TRIGGER workspaces_updated_at BEFORE UPDATE ON public.workspaces FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
+-- ── Custom roles the policies below bind to ─────────────────────────────────
+DO $role$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'approval_brief_writer') THEN CREATE ROLE approval_brief_writer NOLOGIN; END IF; END $role$;
+GRANT approval_brief_writer TO postgres;
+DO $role$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'trust_pattern_proposer') THEN CREATE ROLE trust_pattern_proposer NOLOGIN; END IF; END $role$;
+GRANT trust_pattern_proposer TO postgres;
+
 -- ── Row Level Security ──────────────────────────────────────────────────────
 -- On a multi-tenant database RLS is not hardening applied later: a table
 -- restored without it is a cross-tenant data leak on the first query.

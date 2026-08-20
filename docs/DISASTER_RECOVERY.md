@@ -219,10 +219,17 @@ Three defects found, all invisible by reading the files, all fixed the same day:
    object-count check said anything. Payloads now travel docker cp → psql -f,
    and a zero-table apply fails loudly.
 
+4. **Four policies restored into thin air.** Policies bound to CUSTOM roles
+   (`trust_pattern_proposer`, `approval_brief_writer`) errored on any
+   environment lacking the roles — the dev drill never noticed because dev's
+   migrations had created them. The dump now emits every non-builtin role a
+   policy references, idempotently, with memberships, before the policies.
+
 First-ever DATA restore proof, same day: **108,109 rows · 214/214 tables match
 the manifest · 604/604 foreign keys orphan-swept clean · 24 auth users linked,
 0 orphaned profiles · `get_de_worklists` answered from restored rows with
-production's live numbers.** Exporter hardened en route: adaptive page halving
+production's live numbers — and after fix 4, the apply runs with ZERO error
+lines and 404/404 policies.** Exporter hardened en route: adaptive page halving
 (the API truncates oversized bodies MID-JSON with HTTP 200), 429 backoff on
 the throttler's timescale, and `--resume` so a crash never re-pays finished
 tables.

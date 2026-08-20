@@ -398,6 +398,32 @@ for (const t of ordered) {
 }
 o.push('');
 
+// A policy that says TO trust_pattern_proposer restores as an ERROR on any
+// environment that lacks the role — proven in the container drill 2026-08-20,
+// where four policies were silently lost (the dev drill never noticed because
+// dev's migrations had already created the roles). Emit every non-builtin
+// role a policy references, idempotently, with its memberships. polroles={0}
+// ("all roles") unnests to oid 0 and matches nothing here, by design.
+const customRoles = await q(`
+  select r.rolname,
+         coalesce((select string_agg(distinct m.rolname, ',')
+                     from pg_auth_members am
+                     join pg_roles m on m.oid = am.member
+                    where am.roleid = r.oid), '') as members
+    from pg_roles r
+   where r.oid in (select distinct unnest(polroles) from pg_policy)
+     and r.rolname not in ('postgres', 'anon', 'authenticated', 'service_role', 'authenticator', 'dashboard_user')
+     and r.rolname not like 'pg\\_%' and r.rolname not like 'supabase\\_%'
+   order by r.rolname`);
+if (customRoles.length) {
+  o.push(`-- ── Custom roles the policies below bind to ─────────────────────────────────`);
+  for (const cr of customRoles) {
+    o.push(`DO $role$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${cr.rolname}') THEN CREATE ROLE ${cr.rolname} NOLOGIN; END IF; END $role$;`);
+    for (const mem of cr.members.split(',').filter(Boolean)) o.push(`GRANT ${cr.rolname} TO ${mem};`);
+  }
+  o.push('');
+}
+
 o.push(`-- ── Row Level Security ──────────────────────────────────────────────────────`);
 o.push(`-- On a multi-tenant database RLS is not hardening applied later: a table`);
 o.push(`-- restored without it is a cross-tenant data leak on the first query.`);
