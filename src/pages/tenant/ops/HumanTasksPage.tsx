@@ -6,8 +6,9 @@ import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { loadChatEscalations, setChatEscalationStatus, chatEscalationAge } from '../../../lib/chatEscalations';
 import type { GatedExecutionPreview } from '../../../lib/connectorApi';
-import { listHumanTasks, decideHumanTask, withdrawHumanTask, withdrawHumanTasks, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, getImprovementProposal, getImprovementReviewSignals, DECISION_REASON_CODES, getBlockedWorkForTask, rerouteEscalation, retryAnswerableBlockers, getPendingConversationDraft } from '../../../lib/customerApi';
+import { listHumanTasks, decideHumanTask, withdrawHumanTask, withdrawHumanTasks, previewDecideHumanTasks, decideHumanTasks, listDecisionGroups, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, getImprovementProposal, getImprovementReviewSignals, DECISION_REASON_CODES, getBlockedWorkForTask, rerouteEscalation, retryAnswerableBlockers, getPendingConversationDraft } from '../../../lib/customerApi';
 import type { BlockedWork, PendingConversationDraft } from '../../../lib/customerApi';
+import type { DecisionPreview, DecisionGroup } from '../../../lib/customerApi';
 import type { DecisionCapture, DecisionReasonCode } from '../../../lib/customerApi';
 import type { DBHumanTask, StalenessEscalation } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
@@ -313,6 +314,21 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   // snapshot rather than what is on screen.
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [withdrawing, setWithdrawing] = useState(false);
+  // Batch decide (mig 795). The preview is held separately from the commit
+  // on purpose: seeing what will refuse BEFORE approving 45 things is the
+  // whole point, and a single button that previews-then-commits would take
+  // that choice away.
+  const [batchPreview, setBatchPreview] = useState<DecisionPreview | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [batchDeciding, setBatchDeciding] = useState(false);
+  // What is stranded behind the queue (mig 800). Loaded once alongside the
+  // tasks: it answers 'which of these 413 restarts an employee', which the
+  // task rows themselves cannot say.
+  const [groups, setGroups] = useState<DecisionGroup[]>([]);
+  // A preview describes ONE selection. Change the selection and it is stale,
+  // so it goes — showing '23 will go through' next to a different 23 would be
+  // worse than showing nothing.
+  useEffect(() => { setBatchPreview(null); }, [picked]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [deciding, setDeciding] = useState(false);
   const [gatedExec, setGatedExec] = useState<GatedExecutionPreview | null>(null);
@@ -375,6 +391,10 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
       // applied migration 042 yet (or any transient error) should still
       // show the task list, just without the stalled badges.
       try { setStaleness(await listOpenStalenessEscalations()); } catch { /* noop */ }
+      // Best-effort for the same reason: the queue is fully usable without the
+      // impact strip, and a workspace that has not applied mig 800 should not
+      // lose its task list over a missing RPC.
+      try { setGroups(await listDecisionGroups()); } catch { /* the queue works without it */ }
       // Advisory overlay. The server recomputes every brief on this call, so
       // what renders is current — a failure just means no advice today.
       try { setBriefs(await listApprovalBriefs()); } catch { /* the queue works without briefs */ }
@@ -584,6 +604,47 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   // one runs a dozen side-effect hooks because approving owes something, and
   // a withdrawal owes nothing. Reusing it would make "remove this from my
   // list" the most side-effecting button on the page.
+  // ── Batch decide (mig 795) ───────────────────────────────────────────────
+  // Two steps, deliberately. The preview runs the REAL decision per task and
+  // rolls it back, so what it reports is what the rules actually say — not a
+  // second opinion about them that could drift.
+  const doPreview = async (ids: string[]) => {
+    if (ids.length === 0 || previewing) return;
+    setPreviewing(true);
+    setBatchPreview(null);
+    try {
+      setBatchPreview(await previewDecideHumanTasks(ids, 'approved'));
+    } catch (e) {
+      setOutcome({ text: e instanceof Error ? e.message : 'Could not preview.', ok: false });
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  const doBatchApprove = async (ids: string[]) => {
+    if (ids.length === 0 || batchDeciding) return;
+    setBatchDeciding(true);
+    try {
+      // ⚠ EVERY selected id is sent, including the ones the preview said would
+      // refuse. The preview describes the state of play a moment ago; the RPC
+      // re-runs every guard now. Filtering to the "safe" subset here would be
+      // building on a snapshot and would quietly hide a task that has since
+      // become approvable.
+      const r = await decideHumanTasks(ids, 'approved', null, 'Approved in a batch from the queue');
+      setPicked(new Set());
+      setBatchPreview(null);
+      if (ids.includes(selectedId ?? '')) setSelectedId(null);
+      setOutcome(r.failed.length
+        ? { text: `Approved ${r.decided}. ${r.failed.length} refused — ${r.failed[0].error}`, ok: false }
+        : { text: `Approved ${r.decided} ${r.decided === 1 ? 'task' : 'tasks'}.`, ok: true });
+      await refresh();
+    } catch (e) {
+      setOutcome({ text: e instanceof Error ? e.message : 'Could not approve.', ok: false });
+    } finally {
+      setBatchDeciding(false);
+    }
+  };
+
   const doWithdraw = async (ids: string[]) => {
     if (ids.length === 0 || withdrawing) return;
     setWithdrawing(true);
@@ -848,6 +909,42 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
               complaint — so the control is built for many, not for one.
               ⚠ It withdraws, it does not delete: the row survives, marked
               cancelled, and never counts toward the approval rate. */}
+          {/* ── What is stranded behind this queue (mig 800) ─────────────────
+              An employee with nothing claimable looks idle. It usually is not:
+              claim_de_work_items will not touch a step until its predecessor
+              is done, so ONE unanswered question freezes the whole chain
+              behind it. This says which decisions restart an employee, and
+              how many steps each one releases — counted through the chain,
+              not just the next step. */}
+          {groups.some(g => g.strands > 0) && (
+            <div className="mb-3 rounded-xl border border-dt-border bg-dt-card p-4">
+              <div className="text-dt-body font-medium mb-2">
+                {groups.reduce((n, g) => n + Number(g.strands || 0), 0)} steps of work are waiting on{' '}
+                {groups.reduce((n, g) => n + Number(g.gates_work || 0), 0)} of these decisions
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {groups.filter(g => g.strands > 0).slice(0, 6).map(g => (
+                  <button
+                    key={`${g.task_type}-${g.de_id ?? 'none'}`}
+                    onClick={() => { setPicked(new Set(g.task_ids)); setBatchPreview(null); }}
+                    className="text-left rounded-xl border border-dt-border px-3 py-2 hover:border-dt-accent"
+                  >
+                    <div className="text-dt-body">{g.de_name ?? 'Unassigned'}</div>
+                    <div className="text-dt-faint">
+                      {g.pending} {g.task_type.replace(/_/g, ' ')}
+                      {g.oldest_days > 0 && ` · oldest ${g.oldest_days}d`}
+                    </div>
+                    <div className="text-dt-support">frees {g.strands} steps</div>
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-dt-faint">
+                Selecting one picks its decisions below, so you can check and approve them together.
+                Groups that free nothing are not shown here — they are still in the list.
+              </p>
+            </div>
+          )}
+
           {visible.some(t => t.status === 'pending') && (
             <div className="flex items-center gap-3 mb-3 flex-wrap text-xs">
               <button
@@ -864,6 +961,18 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
               {picked.size > 0 && (
                 <>
                   <span className="text-dt-faint">{picked.size} selected</span>
+                  {/* Preview first. Approving 45 things without being told which
+                      two will refuse is the behaviour this replaces. */}
+                  {!batchPreview && (
+                    <Button
+                      kind="secondary"
+                      size="sm"
+                      disabled={previewing}
+                      onClick={() => void doPreview([...picked])}
+                    >
+                      {previewing ? 'Checking…' : `Check what approving ${picked.size} would do`}
+                    </Button>
+                  )}
                   <Button
                     kind="secondary"
                     size="sm"
@@ -874,6 +983,49 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                   </Button>
                   <span className="text-dt-faint">Removes them without approving or sending anything.</span>
                 </>
+              )}
+              {picked.size > 0 && batchPreview && (
+                <div className="w-full mt-2 rounded-xl border border-dt-border bg-dt-card p-4">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="text-dt-body font-medium">
+                      {batchPreview.would_succeed} will go through
+                      {batchPreview.would_refuse > 0 && `, ${batchPreview.would_refuse} will refuse`}.
+                    </span>
+                    <Button
+                      kind="primary"
+                      size="sm"
+                      disabled={batchDeciding || batchPreview.would_succeed === 0}
+                      onClick={() => void doBatchApprove([...picked])}
+                    >
+                      {batchDeciding ? 'Approving…' : `Approve ${picked.size}`}
+                    </Button>
+                    <button
+                      onClick={() => setBatchPreview(null)}
+                      className="text-dt-support hover:text-dt-body underline"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  {batchPreview.would_refuse > 0 && (
+                    <ul className="mt-2 space-y-1">
+                      {batchPreview.refusals.slice(0, 5).map(r => (
+                        <li key={r.id} className="text-dt-faint">
+                          <span className="text-dt-support">{r.title}</span> — {r.why}
+                        </li>
+                      ))}
+                      {batchPreview.refusals.length > 5 && (
+                        <li className="text-dt-faint">
+                          …and {batchPreview.refusals.length - 5} more.
+                        </li>
+                      )}
+                    </ul>
+                  )}
+                  <p className="mt-2 text-dt-faint">
+                    This is the real decision run against each task and rolled back, not a guess.
+                    All {picked.size} are still sent when you approve — the checks run again, so
+                    anything that changed in the meantime is caught rather than assumed.
+                  </p>
+                </div>
               )}
             </div>
           )}
