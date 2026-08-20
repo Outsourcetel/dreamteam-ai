@@ -24,6 +24,8 @@ import { countDeOutputs } from '../../lib/deWorkbenchApi';
 import { listDigitalEmployees, createDigitalEmployee } from '../../lib/digitalEmployeesApi';
 import type { DigitalEmployee } from '../../lib/digitalEmployeesApi';
 import { listDeHealth, DE_HEALTH_LABELS } from '../../lib/deHealthApi';
+import { listTrustReadiness } from '../../lib/trustApi';
+import type { TrustReadinessRow } from '../../lib/trustApi';
 import type { DEHealth } from '../../lib/deHealthApi';
 import { listAuditEvents } from '../../lib/guardrailApi';
 import type { AuditEvent } from '../../lib/guardrailApi';
@@ -461,6 +463,75 @@ function TeamsPanel() {
   );
 }
 
+// ── How far the workforce is from earning more (mig 804) ──────────────────
+// Every trust policy in production sits at level 0 and always has. Not
+// because the ladder is broken — every piece of it works — but because 86 of
+// 90 policies need 3-5 DECIDED human reviews in the last 30 days and have
+// zero, since the reviews they raised are sitting undecided in the queue.
+//
+// The evidence was always computable; it was just computed one policy at a
+// time inside one employee's file, so nothing ever said "your workforce is
+// two decisions from its first promotion".
+function TrustReadinessPanel() {
+  const [rows, setRows] = useState<TrustReadinessRow[] | null>(null);
+  useEffect(() => {
+    // Best-effort: the roster is fully usable without this panel, and a
+    // workspace that has not applied mig 804 should lose the panel, not the
+    // page.
+    void listTrustReadiness().then(setRows).catch(() => setRows([]));
+  }, []);
+
+  if (rows === null || rows.length === 0) return null;
+
+  const ready = rows.filter(r => r.eligible);
+  const onYou = rows.filter(r => !r.eligible && r.waiting_on_decisions);
+  const nearest = rows.filter(r => !r.eligible).slice(0, 5);
+
+  return (
+    <PanelCard title="Earning more autonomy" className="mt-6">
+      <div className="px-5 pb-5 pt-2 space-y-3">
+        <p className="text-sm text-dt-body">
+          {ready.length > 0
+            ? `${ready.length} of ${rows.length} can be promoted now.`
+            : `None of ${rows.length} can be promoted yet.`}
+          {onYou.length > 0 && (
+            <> {onYou.length} {onYou.length === 1 ? 'is' : 'are'} waiting on decisions you haven’t made —
+            an employee needs a handful of <em>decided</em> reviews before it can earn more, and an
+            undecided one counts for nothing.</>
+          )}
+        </p>
+
+        <ul className="space-y-2">
+          {nearest.map(r => (
+            <li key={r.policy_id} className="rounded-xl border border-dt-border bg-dt-page p-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm text-dt-title">{r.de_name}</span>
+                <span className="text-xs text-dt-muted">{r.category}</span>
+                <span className="text-xs text-dt-muted">level {r.current_level} of {r.max_level}</span>
+                {r.waiting_on_decisions && r.pending_decisions > 0 && (
+                  <span className="text-xs text-dt-support">
+                    {r.pending_decisions} undecided {r.pending_decisions === 1 ? 'review' : 'reviews'} in the queue
+                  </span>
+                )}
+              </div>
+              {/* The distance, not just the verdict. "Not ready" without a
+                  reason is what this panel replaces. */}
+              <ul className="mt-1 space-y-0.5">
+                {r.unmet.slice(0, 3).map(u => (
+                  <li key={u.key} className="text-xs text-dt-muted">{u.detail}</li>
+                ))}
+                {r.unmet.length > 3 && (
+                  <li className="text-xs text-dt-muted">…and {r.unmet.length - 3} more.</li>
+                )}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </PanelCard>
+  );
+}
+
 export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => void }) {
   const openFile = useOpenEmployeeFile(setPage);
   const { liveTenantName } = useAuth();
@@ -478,6 +549,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
           exists. */}
       <div className="max-w-dt-content">
         <RosterPanel onSelect={de => openFile(de.id)} setPage={setPage} />
+        <TrustReadinessPanel />
         <TeamsPanel />
       </div>
     </div>
