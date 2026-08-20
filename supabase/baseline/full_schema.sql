@@ -57267,6 +57267,3 @@ GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.workspaces TO authen
 GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.workspaces TO service_role;
 
 NOTIFY pgrst, 'reload schema';
-306 tables · 1 sequences · 7 views · 867 functions · 296 triggers · 404 policies
-404 functions emitted with an explicit REVOKE (closed perimeter preserved)
-841 role grants emitted across tables, views and sequences (OPEN perimeter preserved — register A-12)
