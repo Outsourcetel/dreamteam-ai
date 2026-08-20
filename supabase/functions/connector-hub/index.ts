@@ -234,6 +234,28 @@ const ERPNEXT_INVOICE_FIELDS =
 const erpnext = {
   auth: (c: Ctx) => `token ${c.secret.api_key ?? ''}:${c.secret.api_secret ?? ''}`,
   hdrs(c: Ctx) { return { Authorization: this.auth(c), Accept: 'application/json' }; },
+  /** Cents in, ERPNext currency units out. ONE definition, used by every money
+   *  action here, because two copies of a x100 conversion is how one of them
+   *  ends up off by a hundred.
+   *
+   *  Why the param is cents at all: the money gate reads a registry param named
+   *  EXACTLY `amount_cents` and passes it as p_amount_cents. A param under any
+   *  other name reaches decide_action_execution as NULL, which switches off the
+   *  approval threshold, the spend caps and the trust ceiling for that action —
+   *  silently. That was register A-11, closed by mig 805 together with this.
+   *
+   *  Why INTEGER cents: a fractional value here means somebody passed dollars.
+   *  Rejecting it is the whole point — accepting 1500.00 as cents would book
+   *  fifteen dollars, and accepting it as dollars would let a payment a hundred
+   *  times over the threshold through a gate that looked armed. */
+  unitsFromCents(raw: unknown): { units: number | null; error?: string } {
+    if (raw == null || String(raw).trim() === '') return { units: null };
+    const cents = Number(raw);
+    if (!Number.isFinite(cents)) return { units: null, error: 'amount_cents must be a number of CENTS (150000 = 1,500.00).' };
+    if (!Number.isInteger(cents)) return { units: null, error: `amount_cents must be a whole number of CENTS — got ${cents}. A fractional value means currency units were passed by mistake; 1,500.00 is 150000.` };
+    if (cents <= 0) return { units: null, error: 'amount_cents must be positive.' };
+    return { units: cents / 100 };
+  },
   invoiceItem(c: Ctx, d: Record<string, unknown>): HubItem {
     const cust = String(d.customer_name ?? d.customer ?? '');
     const outstanding = d.outstanding_amount ?? d.grand_total ?? '';
@@ -3754,8 +3776,8 @@ const erpnextActions: Record<string, NativeAction> = {
   erpnext_payment_entry_for_invoice: {
     render(c, p) {
       if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (the Sales Invoice number) is required.' };
-      const amt = p.amount != null && String(p.amount).trim() !== '' ? Number(p.amount) : null;
-      if (amt != null && (!Number.isFinite(amt) || amt <= 0)) return { ok: false, error: 'bad_param', detail: 'amount, when given, must be a positive number (omit it to book the full outstanding).' };
+      const amt = erpnext.unitsFromCents(p.amount_cents);
+      if (amt.error) return { ok: false, error: 'bad_param', detail: amt.error };
       return { ok: true, method: 'POST', url: c.baseUrl + '/api/resource/Payment%20Entry', body: {} };
     },
     async run(c, p) {
@@ -3771,7 +3793,14 @@ const erpnextActions: Record<string, NativeAction> = {
       if (!build.ok) return { ok: false, status: build.status, error: build.error, raw: build.body };
       const doc = (build.body as { message?: Record<string, unknown> } | null)?.message;
       if (!doc) return { ok: false, error: 'build_failed', detail: 'ERPNext returned no mapped Payment Entry for ' + ref + '.' };
-      const amt = p.amount != null && String(p.amount).trim() !== '' ? Number(p.amount) : null;
+      // ⚠ CENTS IN, CURRENCY UNITS OUT. The param is amount_cents so the money
+      // gate can read it (mig 805 / register A-11 — it reads a param named
+      // EXACTLY that and nothing else). ERPNext's paid_amount, received_amount
+      // and allocated_amount are all CURRENCY UNITS, so the divide is not
+      // cosmetic: sending cents here would book 100x the intended payment.
+      const conv = erpnext.unitsFromCents(p.amount_cents);
+      if (conv.error) return { ok: false, error: 'bad_param', detail: conv.error };
+      const amt = conv.units;
       if (amt != null) {
         doc.paid_amount = amt; doc.received_amount = amt;
         const refs = (doc.references as Array<Record<string, unknown>> | undefined) ?? [];
@@ -3799,8 +3828,14 @@ const erpnextActions: Record<string, NativeAction> = {
   erpnext_create_journal_entry: {
     render(c, p) {
       if (!p.debit_account?.trim() || !p.credit_account?.trim()) return { ok: false, error: 'param_required', detail: 'debit_account and credit_account are required.' };
-      const amt = Number(p.amount);
-      if (!Number.isFinite(amt) || amt <= 0) return { ok: false, error: 'bad_param', detail: 'amount must be a positive number.' };
+      // Same conversion as the payment entry above, and for the same reason:
+      // debit_in_account_currency / credit_in_account_currency are CURRENCY
+      // UNITS. Required here, so a missing value is an error rather than a
+      // "book the full outstanding" default.
+      const conv = erpnext.unitsFromCents(p.amount_cents);
+      if (conv.error) return { ok: false, error: 'bad_param', detail: conv.error };
+      if (conv.units == null) return { ok: false, error: 'param_required', detail: 'amount_cents is required — a journal entry with no amount books nothing.' };
+      const amt = conv.units;
       if (!p.remark?.trim()) return { ok: false, error: 'param_required', detail: 'remark (why this entry exists) is required — a journal line with no story is unauditable.' };
       return {
         ok: true, method: 'POST', url: c.baseUrl + '/api/resource/Journal%20Entry',
@@ -3827,7 +3862,10 @@ const erpnextActions: Record<string, NativeAction> = {
       if (!submitted.ok) return { ok: false, status: submitted.status, error: submitted.error, raw: submitted.body,
         detail: 'Journal Entry ' + name + ' was created as a DRAFT but failed to submit — it books nothing until submitted in ERPNext.' };
       return { ok: true, status: submitted.status, raw: submitted.body,
-        receipt: 'Posted journal entry ' + name + ': DR ' + p.debit_account + ' / CR ' + p.credit_account + ' — ' + p.amount + '. ' + p.remark.trim() + ' SUBMITTED — this is in the ledger.' };
+        // The receipt states what was BOOKED, so it must show currency units —
+        // the same number ERPNext holds. Printing the raw cents here would have
+        // every receipt read 100x the entry it describes.
+        receipt: 'Posted journal entry ' + name + ': DR ' + p.debit_account + ' / CR ' + p.credit_account + ' — ' + (erpnext.unitsFromCents(p.amount_cents).units ?? '?') + '. ' + p.remark.trim() + ' SUBMITTED — this is in the ledger.' };
     },
   },
   // ── M3: PAYING a supplier — the first verb that moves OUR money OUT. ────
