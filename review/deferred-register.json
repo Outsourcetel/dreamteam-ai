@@ -254,7 +254,7 @@
         "date": "2026-08-09",
         "source": "commit 10bbc641; measured docs/50 D"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "sql-lag",
         "production_sql": "select count(*)::int as n from public.schema_migrations",
@@ -264,7 +264,9 @@
           "n": 1
         },
         "note": "Unchanged pin, but note its known weakness: it compares ledger COUNTS, and two ledgers can hold the same number of DIFFERENT rows — dev carrying one production never had while missing one it does — which would read level while dev was wrong. scripts/sync-dev-migrations.mjs compares the SETS and reports dev-only rows separately; this pin is the cheap approximation certify runs. ── 2026-08-20: two mechanisms now exist. ci.yml runs scripts/sync-dev-migrations.mjs --apply --best-effort before golden-path (incremental, gets most of the way, cannot close the gap because of the data-asserting migrations), and .github/workflows/dev-rebuild.yml rebuilds dev nightly from a freshly regenerated baseline (a schema dump replays no assertions, so it is the only route to true parity). This item stays OPEN until a nightly has actually run and the two ledgers are level — the machinery existing is not the same as the gap being closed."
-      }
+      },
+      "closed_by": "dev rebuilt from the grant-emitting baseline 2026-08-20 (commits 5b40df26 + 0bd70fe7). Ledger level at 826/826, and the census matches production on every object class — 306 tables, 7 views, 981 functions, 296 triggers, 404 policies, 3532 columns — AND on grants, which is what A-12 fixed and what the old rebuild silently dropped. Two mechanisms now hold it there: sync-dev-migrations --best-effort before golden-path on every push, and the nightly dev-rebuild workflow. The sql-lag pin reopens this automatically the moment dev falls behind again, which is the right behaviour rather than a promise.",
+      "closed_on": "2026-08-20"
     },
     {
       "id": "B-7",
