@@ -167,3 +167,49 @@ call, because other sessions may hold fixtures there.
 
 Until one of those happens, the CI job added in D-3 is real but is proving an old loop — worth
 knowing before anyone reads a green tick as coverage of today's product.
+
+---
+
+## 9. E CLOSE-OUT — 2026-08-20
+
+**Section 2 risks, re-measured:** local data export FRESH (today: 108,109 rows,
+214 tables, manifest + resumable exporter) · schema baseline FRESH (regenerated
+today; four restore-breaking defects found by drilling and fixed — see
+DISASTER_RECOVERY.md §2026-08-20) · **a restore HAS now been performed, twice**:
+schema drill 7/7 exact on dev, data drill green in a throwaway container
+(604/604 FKs orphan-swept, auth linked, functions answering). PITR remains OFF
+(founder purchase).
+
+**B-11 CLOSED.** The constraint crash was fixed ~08-18 (reconcile_blocked_goals
+rewritten, cron green since). What the fix left behind: 45 goals on
+outsourcetel-hq still flagged wake_spin, 81 open alerts, 35 raised in 48h. A
+census proved every one was the SAME shape — all 48 waiting_human steps had an
+OPEN pending ask, every queued step chained behind one via depends_on. Mig 526
+wrote the law ("asked-and-waiting: reported, never alarmed"); the wake-spin
+flagger predated it. **Mig 820** taught it the law (flag only when the machine
+owes motion or a human is waited on with NO ask) and healed all 45. **Mig 821**
+fixed the resolver arm that could never retire an alert whose goal had been
+DELETED (37 immortal ghosts since July). After both: **0 flags, 0 open
+wake-spin alerts.** The alarm still fires for real defects — proven by an
+always-aborting probe (unasked wait → flagged=1 → rollback, zero residue).
+Two probes before that were repelled by human_tasks' own guards (no delete,
+no direct status write on a pending task) — the governance layer held against
+its own operator, which is a finding worth keeping.
+
+**C-8 CLOSED (by a parallel session), made livable today.** push-send carries an
+alert branch and trigger ops_alerts_push_ping wires every raise to the pocket —
+which means the wake-spin noise was reaching the founder's PHONE until this
+morning, not just a banner. 820 is what makes the wiring survivable.
+
+**Alert channel census after close-out:** 57 open, none wake-spin: 30
+value_digest_* delivery rows (another workstream's mechanism — untouched on
+purpose, the 527 rule), 23 edge_function_error from the 08-04/05 burst (stopped
+since; stale, candidates for that workstream's own aging rule), 2
+dormancy_writer_unguarded, 1 stale ai_budget_approaching (07-29), 1 transient
+dispatch_failure today (reembed-drain, one 401 of 84 dispatches; self-retires).
+
+**Verdict, revised: the system no longer fails quietly on the paths measured
+here.** Failures reach the pocket (C-8), hollow alarms are outlawed at the
+writer (820), ghosts cannot survive (821), and the recovery artifacts are
+proven restorable end-to-end. Still open, founder-side: PITR and the managed
+restore rehearsal.
