@@ -74,6 +74,13 @@ export const GRANDFATHERED = Object.freeze({
   '076_onboarding_connector_verification.sql': 4,
   '674_a_checklist_item_that_can_act.sql': 4,
   '681_a_verb_this_workspace_cannot_run.sql': 4,
+  // Same shape, and the reason this check earned its place. 806 defined
+  // account_review_draft with these three bare appends and the branches DID
+  // fire: every call threw 22P02 in production until migration 808 redefined
+  // the function with array_append. So unlike the four above, this one was not
+  // "safe because nothing was wrong" — it was broken, and the check found it.
+  // The file stays as it is because it records what ran.
+  '806_reviews_that_recur_and_never_pile_up.sql': 3,
   // Verification blocks only. Applied, and their error paths are broken — the
   // check runs, but if it FINDS something it raises 22P02 instead of saying
   // what. They passed because nothing was wrong, which is not the same as

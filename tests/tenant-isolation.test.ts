@@ -43,6 +43,26 @@ describe('tenant isolation (RLS)', () => {
     //   3. A genuine final failure still FAILS the suite — but with the full
     //      underlying error, so the next investigation starts with evidence
     //      instead of a truncated frame.
+    // ⚠ 42501 IS NOT A FAILURE OF THIS SUITE, AND IT IS NOT TRANSIENT.
+    // The write-perimeter migrations (714-720) revoked DELETE on
+    // customer_accounts from `authenticated`, deliberately and correctly. This
+    // cleanup was written when it still had that grant, so it now retries a
+    // permission denial three times with backoff — which can never succeed —
+    // and then fails a file whose four isolation assertions all PASSED.
+    //
+    // A suite that reports "tenant isolation is broken" when tenant isolation
+    // is fine is worse than one that leaves rows behind, so a permission
+    // denial is reported and does not fail the run. EVERY OTHER error still
+    // retries and still fails: "the perimeter denied us, as designed" and
+    // "cleanup genuinely broke" must not look the same.
+    //
+    // The rows are not abandoned to grow for ever — the nightly dev-rebuild
+    // workflow restores dev from the baseline, which drops them. The real fix
+    // is a service-role client or a cleanup RPC scoped to test tenants, and
+    // .env.test carries only a URL and an anon key, so that needs a credential
+    // decision rather than a code change. Register A-13.
+    const DENIED = '42501';
+    const denials: string[] = [];
     const deleteWithRetry = async (t: TestTenant, label: string) => {
       let lastErr: unknown = null;
       for (let attempt = 1; attempt <= 3; attempt++) {
@@ -52,6 +72,10 @@ describe('tenant isolation (RLS)', () => {
             .delete()
             .eq('tenant_id', t.tenantId);
           if (!error) return null;
+          if ((error as { code?: string }).code === DENIED) {
+            denials.push(`${label} (tenant ${t.tenantId}): ${error.message}`);
+            return null;               // by design, not a defect — see above
+          }
           lastErr = error;             // PostgREST-level error object
         } catch (e) {
           lastErr = e;                 // transport-level rejection (fetch failed)
@@ -67,6 +91,16 @@ describe('tenant isolation (RLS)', () => {
         deleteWithRetry(tenantB, 'tenant B cleanup'),
       ])
     ).filter((f): f is string => f !== null);
+    if (denials.length > 0) {
+      // Loud, every run. Silence here would let the leftover rows — and the
+      // register item behind them — quietly become normal.
+      console.warn(
+        `\n⚠ teardown could not delete ${denials.length} test tenant's rows: the write perimeter denies`
+        + ` DELETE on customer_accounts to the authenticated role, which is correct (migs 714-720).`
+        + ` The rows stay until the nightly dev rebuild drops them. Register A-13.\n`
+        + denials.map((d) => `   ${d}`).join('\n') + '\n',
+      );
+    }
     if (failures.length > 0) {
       throw new Error(`teardown failed after 3 attempts each:\n${failures.join('\n')}`);
     }
