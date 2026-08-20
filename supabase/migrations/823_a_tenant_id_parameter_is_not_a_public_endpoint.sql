@@ -136,13 +136,38 @@ begin
   end if;
 end $$;
 
--- ── 4. THE SIBLINGS, asserted rather than assumed. ────────────────────────
+-- ── 4. THE SIBLINGS — the ABSENCE of a violation, and nothing more. ───────
 -- The two SQL callers are SECURITY DEFINER owned by postgres, so a nested
--- call to the leaf runs as postgres and never consults the caller's grants.
--- That is WHY step 1 is safe, so it is checked here instead of being taken on
--- trust — and it is checked as the absence of a violation, in both
--- directions: they must not be on the public perimeter either, and they must
--- still be reachable by the service path that drives them.
+-- call to the leaf runs as the DEFINER and never consults the caller's
+-- grants. That is WHY step 1 cannot break them.
+--
+-- ⚠ THE FIRST DRAFT OF THIS BLOCK ALSO ASSERTED THAT THEY STILL *HELD*
+-- service_role EXECUTE and were still SECURITY DEFINER, and
+-- `npm run audit:replayable` correctly refused it:
+--
+--   823: public.de_kpi_status_internal(uuid, uuid, integer) lost service_role
+--        EXECUTE — the KPI snapshot path is broken
+--
+-- Those are assertions about the PRESENCE OF AN EXAMPLE — grants installed by
+-- migrations 756/757, not by this one — so they demand a particular
+-- environment's state in order to pass, which is the single thing a migration
+-- must not assume (CLAUDE.md rule 3, and the reason 778/789/790 are
+-- permanently unreplayable). What survives below is violation-shaped and
+-- therefore vacuously true on an empty environment while still catching every
+-- real breach: these two take a caller-supplied tenant id, so if either is
+-- EVER on the anon/authenticated perimeter that is the same defect one level
+-- up.
+--
+-- The BOTH-HALVES proof lives where it belongs instead: step 3c asserts the
+-- service path keeps EXECUTE on the function this migration actually revoked
+-- (the only place over-revocation could happen), and both callers were DRIVEN
+-- control-vs-treatment inside one aborting transaction before this was
+-- applied — de_kpi_status_internal returning
+-- `actions_completed=13 n13 | auto_execution_rate=0.0 n13` and
+-- snapshot_de_kpi_readings writing those same two readings, identically with
+-- and without the revoke. The snapshot was forced past its dedup first,
+-- because "0 rows written" before and after would have looked the same
+-- whether the leaf still worked or was dead.
 do $$
 declare
   r record;
@@ -154,19 +179,12 @@ begin
     ) as v(sig)
   loop
     -- Skip a signature this database does not have rather than demanding
-    -- production's shape: a migration must not assume which environment it is
-    -- replaying into.
+    -- production's shape.
     continue when to_regprocedure(r.sig) is null;
 
-    if not (select prosecdef from pg_proc where oid = to_regprocedure(r.sig)::oid) then
-      raise exception '823: % is no longer SECURITY DEFINER — the nested call would run as the CALLER, and the revoke above would break it', r.sig;
-    end if;
     if has_function_privilege('anon', to_regprocedure(r.sig)::oid, 'EXECUTE')
        or has_function_privilege('authenticated', to_regprocedure(r.sig)::oid, 'EXECUTE') then
       raise exception '823: % is reachable by anon/authenticated — it takes a caller-supplied tenant id and must not be', r.sig;
-    end if;
-    if not has_function_privilege('service_role', to_regprocedure(r.sig)::oid, 'EXECUTE') then
-      raise exception '823: % lost service_role EXECUTE — the KPI snapshot path is broken', r.sig;
     end if;
   end loop;
 end $$;
