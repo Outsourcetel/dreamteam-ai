@@ -493,6 +493,33 @@ const erpnext = {
     return { ok: true, items };
   },
 
+  // ── Payables (M3): the OTHER half of the money chain. Same shape as the
+  // receivables sync — submitted Purchase Invoices, ERPNext's own arithmetic
+  // for what is still owed — because AR and AP diverging in shape is how one
+  // of them stops being read.
+  async syncPayables(c: Ctx): Promise<{ ok: boolean; error?: string; records?: Array<Record<string, unknown>> }> {
+    const qs = new URLSearchParams({
+      fields: '["name","supplier","supplier_name","grand_total","outstanding_amount","due_date","status","currency"]',
+      filters: JSON.stringify([['docstatus', '=', 1]]),
+      order_by: 'due_date asc',
+      limit_page_length: '100',
+    });
+    const r = await httpJson(c.baseUrl + '/api/resource/Purchase%20Invoice?' + qs, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const rows = (r.body as { data?: Array<Record<string, unknown>> })?.data ?? [];
+    return { ok: true, records: rows.map((d) => ({
+      supplier_external_ref: String(d.supplier ?? d.supplier_name ?? ''),
+      supplier_name: String(d.supplier_name ?? d.supplier ?? ''),
+      invoice_external_ref: String(d.name ?? ''),
+      amount_cents: Math.round(Number(d.grand_total ?? 0) * 100),
+      outstanding_cents: d.outstanding_amount === undefined || d.outstanding_amount === null
+        ? null : Math.round(Number(d.outstanding_amount) * 100),
+      due_date: d.due_date ? String(d.due_date) : null,
+      status: String(d.status ?? ''),
+      currency: String(d.currency ?? ''),
+    })).filter((x) => x.invoice_external_ref && x.supplier_external_ref) };
+  },
+
   async syncTickets(c: Ctx): Promise<{ ok: boolean; error?: string; records?: Array<Record<string, unknown>> }> {
     const qs = new URLSearchParams({
       fields: '["name","subject","description","status","priority","customer","raised_by"]',
@@ -3801,6 +3828,47 @@ const erpnextActions: Record<string, NativeAction> = {
         detail: 'Journal Entry ' + name + ' was created as a DRAFT but failed to submit — it books nothing until submitted in ERPNext.' };
       return { ok: true, status: submitted.status, raw: submitted.body,
         receipt: 'Posted journal entry ' + name + ': DR ' + p.debit_account + ' / CR ' + p.credit_account + ' — ' + p.amount + '. ' + p.remark.trim() + ' SUBMITTED — this is in the ledger.' };
+    },
+  },
+  // ── M3: PAYING a supplier — the first verb that moves OUR money OUT. ────
+  // amount_cents is the registry's money convention (the approval-threshold /
+  // spend-cap / trust-ceiling gates read exactly that name), REQUIRED — an
+  // outbound payment with an unreadable amount must fail closed, never book
+  // an unbounded value. Destructive, finance-gated, SUBMITS (the human said
+  // yes at our gate; a draft books nothing).
+  erpnext_pay_purchase_invoice: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (the Purchase Invoice number) is required.' };
+      const cents = Number(p.amount_cents);
+      if (!Number.isFinite(cents) || cents <= 0 || Math.floor(cents) !== cents) return { ok: false, error: 'bad_param', detail: 'amount_cents must be a positive whole number of cents.' };
+      return { ok: true, method: 'POST', url: c.baseUrl + '/api/resource/Payment%20Entry', body: {} };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const ref = p.external_ref.trim();
+      const build = await httpJson(
+        c.baseUrl + '/api/method/erpnext.accounts.doctype.payment_entry.payment_entry.get_payment_entry?dt=Purchase%20Invoice&dn=' + encodeURIComponent(ref),
+        { headers: erpnext.hdrs(c) });
+      if (!build.ok) return { ok: false, status: build.status, error: build.error, raw: build.body };
+      const doc = (build.body as { message?: Record<string, unknown> } | null)?.message;
+      if (!doc) return { ok: false, error: 'build_failed', detail: 'ERPNext returned no mapped Payment Entry for ' + ref + '.' };
+      const units = Number(p.amount_cents) / 100;
+      doc.paid_amount = units; doc.received_amount = units;
+      const refs = (doc.references as Array<Record<string, unknown>> | undefined) ?? [];
+      if (refs.length === 1) refs[0].allocated_amount = units;
+      else if (refs.length > 1) return { ok: false, error: 'ambiguous_allocation', detail: 'The mapped entry allocates across ' + refs.length + ' documents — pay them individually.' };
+      const created = await httpJson(c.baseUrl + '/api/resource/Payment%20Entry', {
+        method: 'POST', headers: { Authorization: erpnext.auth(c), 'Content-Type': 'application/json' }, body: JSON.stringify(doc) });
+      if (!created.ok) return { ok: false, status: created.status, error: created.error, raw: created.body };
+      const name = (created.body as { data?: { name?: string } } | null)?.data?.name;
+      if (!name) return { ok: false, error: 'no_name', detail: 'ERPNext created the entry but returned no document name.' };
+      const submitted = await httpJson(c.baseUrl + '/api/resource/Payment%20Entry/' + encodeURIComponent(name), {
+        method: 'PUT', headers: { Authorization: erpnext.auth(c), 'Content-Type': 'application/json' }, body: JSON.stringify({ docstatus: 1 }) });
+      if (!submitted.ok) return { ok: false, status: submitted.status, error: submitted.error, raw: submitted.body,
+        detail: 'Payment Entry ' + name + ' was created as a DRAFT but failed to submit — no money moved in the books.' };
+      return { ok: true, status: submitted.status, raw: submitted.body,
+        receipt: 'PAID supplier invoice ' + ref + ' — ' + units + ' booked out via ' + name + ' in ERPNext, SUBMITTED.' };
     },
   },
   erpnext_create_quotation: {
@@ -7147,19 +7215,47 @@ serve(async (req) => {
             : { fetched: (payRes.items ?? []).length, ...((recon ?? {}) as Record<string, unknown>) };
         }
       }
+      // ── Payables leg (M3): rides the same sync as the invoice book and the
+      // payment evidence — the money chain is ONE pipe or it lies.
+      let payables: Record<string, unknown> | undefined;
+      if (typeof (adapter as { syncPayables?: unknown }).syncPayables === 'function') {
+        const apRes = await (adapter as unknown as { syncPayables: (c: typeof ctx) => Promise<{ ok: boolean; error?: string; records?: Array<Record<string, unknown>> }> }).syncPayables(ctx);
+        if (!apRes.ok) {
+          payables = { ok: false, error: apRes.error ?? 'payables_sync_failed' };
+        } else {
+          let apUpserted = 0; const apErrors: string[] = [];
+          for (const rec of apRes.records ?? []) {
+            const { error: apErr } = await admin.rpc('upsert_external_ap_record', {
+              p_tenant_id: tenantId, p_provider: connector.provider,
+              p_supplier_external_ref: rec.supplier_external_ref ?? null,
+              p_supplier_name: rec.supplier_name ?? null,
+              p_invoice_external_ref: rec.invoice_external_ref ?? null,
+              p_amount_cents: rec.amount_cents ?? 0,
+              p_outstanding_cents: rec.outstanding_cents ?? null,
+              p_due_date: rec.due_date ?? null,
+              p_status: rec.status ?? '',
+              p_currency: rec.currency ?? null,
+            });
+            if (apErr) apErrors.push(String(rec.invoice_external_ref) + ': ' + apErr.message);
+            else apUpserted += 1;
+          }
+          payables = { fetched: (apRes.records ?? []).length, upserted: apUpserted, errors: apErrors.slice(0, 5) };
+        }
+      }
       const ms = Date.now() - started;
       const health = await recordHealth(errors.length === 0, errors[0] ?? null);
       await admin.from('connectors').update({ last_sync_at: new Date().toISOString() }).eq('id', connectorId);
       await audit('connector_sync',
         `Financial sync from ${connector.provider} — ${upserted}/${records.length} invoice(s) upserted into the AR tables in ${ms}ms${errors.length ? `, ${errors.length} error(s)` : ''}`,
-        { hub_action: 'sync_financials', fetched: records.length, upserted, errors: errors.slice(0, 5), latency_ms: ms, health, ...(payments ? { payments } : {}) });
+        { hub_action: 'sync_financials', fetched: records.length, upserted, errors: errors.slice(0, 5), latency_ms: ms, health, ...(payments ? { payments } : {}), ...(payables ? { payables } : {}) });
       // "contacts" says WHY a chase would fall back to an internal note, so a
       // blank email column is never left ambiguous between "no data" and "no
       // permission" — one is the customer's record to fix, the other is an API
       // scope to grant, and the visible symptom of both is identical.
       return json({ ok: errors.length === 0, fetched: records.length, upserted, errors: errors.slice(0, 5), latency_ms: ms, health,
         ...(sr.contacts ? { contacts: sr.contacts } : {}),
-        ...(payments ? { payments } : {}) });
+        ...(payments ? { payments } : {}),
+        ...(payables ? { payables } : {}) });
     }
 
     // ════════ reconcile_financials — DRIFT SENTINEL (B3) ════════
