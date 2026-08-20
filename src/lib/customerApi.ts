@@ -1203,6 +1203,12 @@ export type DecisionGroup = {
   oldest_days: number;
   overdue: number;
   unpriced: number;
+  /** How many of these decisions gate a work chain at all (mig 800). */
+  gates_work: number;
+  /** How many work steps they release between them, TRANSITIVELY — chains here
+   *  reach depth 7, and claim_de_work_items will not touch a successor until
+   *  its predecessor is done. This is why an employee looks idle. */
+  strands: number;
   sample_title: string | null;
   task_ids: string[];
 };

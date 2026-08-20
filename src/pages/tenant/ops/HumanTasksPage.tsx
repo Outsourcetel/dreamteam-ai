@@ -6,9 +6,9 @@ import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
 import { loadChatEscalations, setChatEscalationStatus, chatEscalationAge } from '../../../lib/chatEscalations';
 import type { GatedExecutionPreview } from '../../../lib/connectorApi';
-import { listHumanTasks, decideHumanTask, withdrawHumanTask, withdrawHumanTasks, previewDecideHumanTasks, decideHumanTasks, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, getImprovementProposal, getImprovementReviewSignals, DECISION_REASON_CODES, getBlockedWorkForTask, rerouteEscalation, retryAnswerableBlockers, getPendingConversationDraft } from '../../../lib/customerApi';
+import { listHumanTasks, decideHumanTask, withdrawHumanTask, withdrawHumanTasks, previewDecideHumanTasks, decideHumanTasks, listDecisionGroups, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, getImprovementProposal, getImprovementReviewSignals, DECISION_REASON_CODES, getBlockedWorkForTask, rerouteEscalation, retryAnswerableBlockers, getPendingConversationDraft } from '../../../lib/customerApi';
 import type { BlockedWork, PendingConversationDraft } from '../../../lib/customerApi';
-import type { DecisionPreview } from '../../../lib/customerApi';
+import type { DecisionPreview, DecisionGroup } from '../../../lib/customerApi';
 import type { DecisionCapture, DecisionReasonCode } from '../../../lib/customerApi';
 import type { DBHumanTask, StalenessEscalation } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
@@ -321,6 +321,10 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const [batchPreview, setBatchPreview] = useState<DecisionPreview | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [batchDeciding, setBatchDeciding] = useState(false);
+  // What is stranded behind the queue (mig 800). Loaded once alongside the
+  // tasks: it answers 'which of these 413 restarts an employee', which the
+  // task rows themselves cannot say.
+  const [groups, setGroups] = useState<DecisionGroup[]>([]);
   // A preview describes ONE selection. Change the selection and it is stale,
   // so it goes — showing '23 will go through' next to a different 23 would be
   // worse than showing nothing.
@@ -387,6 +391,10 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
       // applied migration 042 yet (or any transient error) should still
       // show the task list, just without the stalled badges.
       try { setStaleness(await listOpenStalenessEscalations()); } catch { /* noop */ }
+      // Best-effort for the same reason: the queue is fully usable without the
+      // impact strip, and a workspace that has not applied mig 800 should not
+      // lose its task list over a missing RPC.
+      try { setGroups(await listDecisionGroups()); } catch { /* the queue works without it */ }
       // Advisory overlay. The server recomputes every brief on this call, so
       // what renders is current — a failure just means no advice today.
       try { setBriefs(await listApprovalBriefs()); } catch { /* the queue works without briefs */ }
@@ -901,6 +909,42 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
               complaint — so the control is built for many, not for one.
               ⚠ It withdraws, it does not delete: the row survives, marked
               cancelled, and never counts toward the approval rate. */}
+          {/* ── What is stranded behind this queue (mig 800) ─────────────────
+              An employee with nothing claimable looks idle. It usually is not:
+              claim_de_work_items will not touch a step until its predecessor
+              is done, so ONE unanswered question freezes the whole chain
+              behind it. This says which decisions restart an employee, and
+              how many steps each one releases — counted through the chain,
+              not just the next step. */}
+          {groups.some(g => g.strands > 0) && (
+            <div className="mb-3 rounded-dt border border-dt-line bg-dt-surface p-3">
+              <div className="text-dt-body font-medium mb-2">
+                {groups.reduce((n, g) => n + Number(g.strands || 0), 0)} steps of work are waiting on{' '}
+                {groups.reduce((n, g) => n + Number(g.gates_work || 0), 0)} of these decisions
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {groups.filter(g => g.strands > 0).slice(0, 6).map(g => (
+                  <button
+                    key={`${g.task_type}-${g.de_id ?? 'none'}`}
+                    onClick={() => { setPicked(new Set(g.task_ids)); setBatchPreview(null); }}
+                    className="text-left rounded-dt border border-dt-line px-3 py-2 hover:border-dt-support"
+                  >
+                    <div className="text-dt-body">{g.de_name ?? 'Unassigned'}</div>
+                    <div className="text-dt-faint">
+                      {g.pending} {g.task_type.replace(/_/g, ' ')}
+                      {g.oldest_days > 0 && ` · oldest ${g.oldest_days}d`}
+                    </div>
+                    <div className="text-dt-support">frees {g.strands} steps</div>
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-dt-faint">
+                Selecting one picks its decisions below, so you can check and approve them together.
+                Groups that free nothing are not shown here — they are still in the list.
+              </p>
+            </div>
+          )}
+
           {visible.some(t => t.status === 'pending') && (
             <div className="flex items-center gap-3 mb-3 flex-wrap text-xs">
               <button
