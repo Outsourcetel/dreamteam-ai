@@ -27,17 +27,26 @@ export type TenantPage =
   | 'entity_customer_success'   // Customer Success
   | 'entity_customer_renewal'   // Renewal & Expansion
   | 'entity_commercial_continuity' // Commercial Continuity (renewals, reorders, warranties, vendor)
-  // Vendor/Partner entity
-  | 'entity_vendor'
-  | 'entity_vendor_sourcing'
-  | 'entity_vendor_contracts'
-  | 'entity_vendor_management'
-  // Workforce entity
-  | 'entity_workforce'
-  | 'entity_workforce_talent'
-  | 'entity_workforce_onboarding'
-  | 'entity_workforce_development'
-  | 'entity_workforce_payroll'
+  // ⚠ CLOSED 2026-08-20 — the nine Vendor/Partner and Workforce-entity keys
+  // were REMOVED FROM THIS UNION, not merely denied. They were descoped by the
+  // founder on 2026-07-09 ("Vendor Management and Workforce/HR both stay
+  // design-preview demos, not real backends"), but stayed routed, stayed
+  // mapped to a URL, and stayed ALL_TENANT in navAccess — so /vendor,
+  // /workforce-entity and their seven sub-paths rendered fabricated TCP/PWC
+  // demo data to anyone who typed the address. The Sidebar had hidden the nav
+  // entries since Wave 3; hiding a link is not closing a route.
+  //
+  // Removing the keys from the union IS the enforcement, and it is why this
+  // note sits in a type file: PAGE_TO_URL is Record<Page, string> and
+  // PAGE_ACCESS is Partial<Record<Page, UserRole[]>>, so re-adding a URL or a
+  // tier for any of the nine is now a COMPILE ERROR in two other files rather
+  // than a one-line policy edit nobody reviews. Deleted with them:
+  // src/pages/tenant/entity/VendorPages.tsx and WorkforcePages.tsx (both
+  // recoverable at a5f03af6), their App.tsx routes, their Sidebar block and
+  // their DEChatDock branches. Pinned by tests/closed-pages.test.ts.
+  //
+  // ⚠ workforce_chat is NOT part of this and stays open by decision — the
+  // founder named the vendor and workforce-ENTITY pages only.
 
   // ── Outcomes (what the company achieves) ─────────
   | 'outcomes'                  // Wave 3: THE single real reporting surface (live tenants)

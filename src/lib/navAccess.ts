@@ -103,18 +103,36 @@ const PAGE_ACCESS: Partial<Record<Page, UserRole[]>> = {
   entity_customer_renewal: ALL_TENANT,
   entity_commercial_continuity: ALL_TENANT,
 
-  // ── Vendors (descoped for live tenants, routes kept for deep links) ───────
-  entity_vendor: ALL_TENANT,
-  entity_vendor_sourcing: ALL_TENANT,
-  entity_vendor_contracts: ALL_TENANT,
-  entity_vendor_management: ALL_TENANT,
-
-  // ── Our People — payroll is extrapolated to MANAGE (human pay data) ───────
-  entity_workforce: ALL_TENANT,
-  entity_workforce_talent: ALL_TENANT,
-  entity_workforce_onboarding: ALL_TENANT,
-  entity_workforce_development: ALL_TENANT,
-  entity_workforce_payroll: MANAGE,
+  // ── VENDORS AND OUR PEOPLE — CLOSED 2026-08-20, NOT DENIED ────────────────
+  //
+  // Nine keys used to sit here: entity_vendor{,_sourcing,_contracts,
+  // _management} and entity_workforce{,_talent,_onboarding,_development,
+  // _payroll}. Eight were ALL_TENANT — read_only included — and the ninth,
+  // entity_workforce_payroll, was MANAGE. All nine were reachable by typing
+  // the URL, because the Sidebar hides NAV ENTRIES and the router does not ask
+  // it anything; the only gate on a deep link is canAccessPage, and canAccessPage
+  // said yes.
+  //
+  // The comment they replaced said "routes kept for deep links", which is
+  // exactly the state that was wrong: the pages were descoped by the founder on
+  // 2026-07-09 (commit a5f03af6 — "Vendor Management and Workforce/HR both stay
+  // design-preview demos, not real backends"), and behind the gate sat 949
+  // lines of fabricated TCP/PWC vendor contracts, headcount and payroll runs.
+  //
+  // ⚠ WHY THE LINES ARE DELETED RATHER THAN SET TO `[]`. Read canAccessPage
+  // below in order. `if (!allowed) return false` fires FIRST, before the
+  // platform-operator bypass, so an ABSENT key denies everyone — dt_super_admin
+  // included. `[]` does not: it means "platform operators only" and returns TRUE
+  // for every DT role. The brief was "NO for every role", and only absence says
+  // that. (This is the same asymmetry discovery_proposals hit from the other
+  // side — see its note below, where absence locked out the people who needed
+  // the page.)
+  //
+  // The keys are also gone from the `Page` union and from PAGE_TO_URL, so this
+  // is not a policy that can be edited back in one line: `entity_vendor` is no
+  // longer a valid key of Partial<Record<Page, UserRole[]>>. Pinned by
+  // tests/closed-pages.test.ts, which asserts NO across every role in UserRole
+  // and carries a live-page control so a broken import cannot pass it green.
 
   // ── Outcomes — money and risk extrapolated to MANAGE ──────────────────────
   outcomes: ALL_TENANT,

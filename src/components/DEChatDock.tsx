@@ -41,7 +41,11 @@ export function deForPage(page: Page, companyId: CompanyId): DockDE {
   const roster = DES[companyId];
   if (companyId === 'tcp') {
     const [alex, casey, riley] = roster;
-    if (page.startsWith('entity_workforce') || page === 'workforce_des') return riley;
+    // ⚠ `page.startsWith('entity_workforce')` also stood here. The nine
+    // entity_workforce_* / entity_vendor_* pages were closed 2026-08-20 and are
+    // no longer `Page` values, so that arm could only ever have matched a string
+    // that no longer exists — see src/types/index.ts.
+    if (page === 'workforce_des') return riley;
     if (
       page === 'entity_customer_renewal' || page === 'entity_customer_sales' ||
       page === 'entity_customer_bd' || page === 'outcome_revenue' ||
@@ -54,11 +58,12 @@ export function deForPage(page: Page, companyId: CompanyId): DockDE {
   return morgan;
 }
 
-// No DE owns Vendors & Partners yet (either company) — the default DE fronts
-// the chat there, but the panel flags the area as unowned.
-export function isUnownedArea(page: Page): boolean {
-  return page.startsWith('entity_vendor');
-}
+// ⚠ `isUnownedArea(page)` stood here and answered exactly one question — "is
+// this one of the four entity_vendor_* pages?" — so the dock could offer to
+// hire a Vendor DE. Those pages were closed 2026-08-20 (src/types/index.ts) and
+// with them the only input that could return true, which would have left a
+// predicate that cannot fire and a banner that cannot render. Both are gone
+// rather than left as furniture.
 
 // ── Messages & persistence ────────────────────────────────────────
 
@@ -232,7 +237,6 @@ export default function DEChatDock() {
 
   const [liveDe, setLiveDe] = useState<DockDE>(GENERIC_LIVE_DE);
   const de = isLive ? liveDe : deForPage(currentPage, activeCompanyId);
-  const unowned = !isLive && isUnownedArea(currentPage);
   const conversationIdRef = useRef<string | null>(null);
 
   // Resolve the real answering DE's identity up front (same "tenant's
@@ -556,21 +560,9 @@ export default function DEChatDock() {
           ) : (
           <>
 
-          {/* Unowned-area banner */}
-          {unowned && (
-            <div className="px-4 py-2.5 bg-amber-500/10 border-b border-amber-500/20 flex-shrink-0">
-              <p className="text-[11px] text-amber-300 leading-snug">
-                No DE owns Vendors &amp; Partners yet — {de.name} can answer generally or escalate to a human.
-                Hiring a Vendor DE would automate this area.{' '}
-                <button
-                  onClick={() => handleSetPage('workforce_des')}
-                  className="text-amber-200 underline underline-offset-2 hover:text-white transition-colors"
-                >
-                  Explore →
-                </button>
-              </p>
-            </div>
-          )}
+          {/* ⚠ The "No DE owns Vendors & Partners yet" banner rendered here,
+              gated on isUnownedArea(currentPage). It went with the vendor
+              pages on 2026-08-20 — see the note above deForPage. */}
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3">

@@ -174,35 +174,14 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
       groups: [
         { id: 'connectors', label: 'Connected systems', icon: '⟷', page: 'systems_connectors' },
         { id: 'mcp', label: 'MCP servers', icon: '🔗', page: 'systems_mcp' },
-        // Wave 3: Vendors & Our People are fully NotYetAvailable-gated for
-        // live tenants (descoped 2026-07-09) — hiding dead nav sections
-        // from live workspaces instead of advertising empty pages. The
-        // routes stay valid for deep links; demo keeps the full tree.
-        ...(isLiveMode ? [] : [
-          {
-            id: 'vendor',
-            label: 'Vendors & Partners',
-            icon: '◈',
-            page: 'entity_vendor' as Page,
-            children: [
-              { id: 'entity_vendor_sourcing' as Page, label: 'Sourcing' },
-              { id: 'entity_vendor_contracts' as Page, label: 'Contracts' },
-              { id: 'entity_vendor_management' as Page, label: 'Relationship Mgmt' },
-            ],
-          },
-          {
-            id: 'workforce_entity',
-            label: 'Our People',
-            icon: '◉',
-            page: 'entity_workforce' as Page,
-            children: [
-              { id: 'entity_workforce_talent' as Page, label: 'Talent Acquisition' },
-              { id: 'entity_workforce_onboarding' as Page, label: 'Onboarding' },
-              { id: 'entity_workforce_development' as Page, label: 'Performance & Dev' },
-              { id: 'entity_workforce_payroll' as Page, label: 'Payroll & Benefits' },
-            ],
-          },
-        ]),
+        // ⚠ The Vendors & Partners and Our People nav trees stood here behind
+        // `isLiveMode ? [] : [...]`. buildNav's only call site passes
+        // isLiveMode = true (see below), so that branch has rendered NOTHING
+        // since Wave 3 — and the reason it was left in place, "the routes stay
+        // valid for deep links", was the defect: hiding a link never closed
+        // /vendor or /workforce-entity, because the router asks canAccessPage,
+        // not the Sidebar. Both the nine routes and this dead block are gone as
+        // of 2026-08-20; see src/types/index.ts.
       ],
     },
     {

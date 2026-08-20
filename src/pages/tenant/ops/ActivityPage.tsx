@@ -10,7 +10,8 @@ import type { CompanyId } from '../../../data/companies';
 // this fabricated seed timeline (fake names, fake dollar figures)
 // unconditionally, presented as their own operational history. Fixed
 // the same way every other page in this codebase already handles
-// this (VendorPages.tsx/WorkforcePages.tsx's NotYetAvailable pattern)
+// this (the NotYetAvailable pattern from the since-deleted
+// VendorPages.tsx / WorkforcePages.tsx — see them at a5f03af6)
 // — except real per-DE activity genuinely exists (ops_de_activity /
 // DEActivityPage.tsx, wired to real evidence_runs data), so this
 // points there instead of a generic "not built" message.

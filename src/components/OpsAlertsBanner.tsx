@@ -43,6 +43,23 @@ const CRITICAL_KINDS = new Set([
   'edge_function_error',
 ]);
 
+// ⚠ A PREFIX, NOT A NAME, and the difference is the whole point.
+//
+// Migration 818 raises one alert PER BROKEN JOB — `cron_job_broken:<jobname>`
+// — because raise_ops_alert dedupes on kind, so a single shared kind would have
+// named the first broken job and gone silent about every other one. That makes
+// the kind unlistable in a Set.
+//
+// It has to be CRITICAL for the same reason 818 exists. This banner shows six
+// rows, sorted, and on 2026-08-20 production carried 136 unresolved alerts of
+// which 23 were edge_function_error — all of them rank 0. A cron-health alert
+// at rank 2 would have sorted below every one of them and never appeared, which
+// is precisely the "built a smoke detector and wired it to nothing" shape this
+// file was written to end. A governance driver dead for five days IS the
+// product having stopped working.
+const isCritical = (kind: string) =>
+  CRITICAL_KINDS.has(kind) || kind.startsWith('cron_job_broken:');
+
 const age = (iso: string) => {
   const h = Math.floor((Date.now() - new Date(iso).getTime()) / 3_600_000);
   if (h < 1) return 'just now';
@@ -86,7 +103,7 @@ export default function OpsAlertsBanner() {
 
   if (alerts.length === 0) return null;
 
-  const critical = alerts.filter((a) => CRITICAL_KINDS.has(a.kind));
+  const critical = alerts.filter((a) => isCritical(a.kind));
   const tone = critical.length > 0;
 
   // ⚠ SORT BEFORE SLICING (register C-1). This list has always shown six rows
@@ -103,7 +120,7 @@ export default function OpsAlertsBanner() {
   // from kind, which is the same thing CRITICAL_KINDS already does two lines
   // up — this just makes it decide ORDER as well as colour.
   const rank = (kind: string) =>
-    CRITICAL_KINDS.has(kind) ? 0        // service is broken for a customer
+    isCritical(kind) ? 0                 // service is broken for a customer
       : kind.startsWith('value_digest') ? 1  // the weekly read, easily buried
         : 2;                                 // everything else, newest first
   const shown = [...alerts]
@@ -138,7 +155,7 @@ export default function OpsAlertsBanner() {
             <span
               aria-hidden
               className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-                CRITICAL_KINDS.has(a.kind) ? 'bg-dt-danger' : 'bg-dt-warn'
+                isCritical(a.kind) ? 'bg-dt-danger' : 'bg-dt-warn'
               }`}
             />
             <div className="min-w-0 flex-1">

@@ -1,34 +1,34 @@
 {
-  "at": "2026-08-19T22:56:34.160Z",
-  "mode": "full",
-  "failed": 4,
+  "at": "2026-08-20T14:45:30.396Z",
+  "mode": "fast",
+  "failed": 2,
   "results": [
     {
       "section": "typecheck",
       "ok": true,
-      "seconds": 30
+      "seconds": 48.9
     },
     {
       "section": "ring0-probes",
       "ok": false,
-      "seconds": 85.2,
-      "detail": "execute-perimeter: NEW/CHANGED grant not in allowlist: de_kpi_action_value(p_tenant_id uuid, p_de_id uuid, p_source text, p_source_config jsonb, p_window_weeks integer)|anon=true|authed=true\nexecute-perimeter: NEW/CHANGED grant not in allowlist: forget_end_user(p_tenant_id uuid, p_end_user_ref text, p_reason text)|anon=false|authed=true\nexecute-perimeter: NEW/CHANGED grant not in allowlist: platform_capability_demand()|anon=false|authed=true\nexecute-perimeter: NEW/CHANGED grant not in allowlist: withdraw_human_task(p_task_id uuid, p_note text)|anon=false|authed=true\nexecute-perimeter: NEW/CHANGED grant not in allowlist: withdraw_human_tasks(p_task_ids uuid[], p_note text)|anon=false|authed=true\nexam-evidence-stays-out-of-production-metrics: verify_decide_discovery_proposal() counts de_conversations without the exam axis. Add channel IS DISTINCT FROM 'exam' (mig 671 split the corpus on channel), or pin it in scripts/production-evidence.mjs COUNT_READ_PINS with its reason.\nexam-evidence-stays-out-of-production-metrics: forget_end_user(p_tenant_id uuid, p_end_user_ref text, p_reason text) counts de_conversations without the exam axis. Add channel IS DISTINCT FROM 'exam' (mig 671 split the corpus on channel), or pin it in scripts/production-evidence.mjs COUNT_READ_PINS with its reason.\nno-pending-approval-the-platform-cannot-carry-out: mismatched-pair — kinetic / Approve action — Create a specialist desk (DreamTeam AI (self)) [execution bfb462a0-1e22-48cf-a3a0-fa60edd666f4]: the row names definition 18a92cdd-ba11-4c11-8bcc-96a3b8e120b4 (create_specialist), but its status is \"disabled\" and the resolver only ever sees active definitions. connector-hub answers action_definition_not_found and nothing is sent.\nno-pending-approval-the-platform-cannot-carry-out: no-executor — outsourcetel-hq / Send a $15,600 invoice to Meridian Group — test ping [task 03aaa6dd-379b-438a-aadd-d9b8e262638b, raised 2026-08-10]: no action_executions row references this task by EITHER linkage column (task_id, resolves_task_id). There is no executor behind the approval at all: deciding it flips the task to \"approved\", hands connector-hub nothing, and sends nothing — while the queue empties and the screen reads as done. A human must withdraw or re-raise it; this probe reports, it never decides.\nrls-on-every-public-table: migration_number_claims\nonboarding-bindings-are-runnable: outsourcetel-hq / SaaS onboarding — starter / locations_configured → propose_connector — needs the \"workforce_assistant\" role, which the employee(s) this workspace gives onboarding work to (Onni) do not have\nsecdef-caller-tenant-ratchet: de_kpi_action_value(p_tenant_id uuid, p_de_id uuid, p_source text, p_source_config jsonb, p_window_weeks integer)\nsecdef-caller-tenant-ratchet: withdraw_human_task(p_task_id uuid, p_note text)\nsecdef-caller-tenant-ratchet: withdraw_human_tasks(p_task_ids uuid[], p_note text)"
+      "seconds": 83.7,
+      "detail": "execute-perimeter: NEW/CHANGED grant not in allowlist: decide_human_tasks(p_task_ids uuid[], p_decision text, p_reason_code text, p_note text)|anon=false|authed=true\nexecute-perimeter: NEW/CHANGED grant not in allowlist: decision_unblock_impact(p_task_ids uuid[])|anon=false|authed=true\nexecute-perimeter: NEW/CHANGED grant not in allowlist: forget_end_user(p_tenant_id uuid, p_end_user_ref text, p_reason text)|anon=false|authed=true\nexecute-perimeter: NEW/CHANGED grant not in allowlist: list_decision_groups()|anon=false|authed=true\nexecute-perimeter: NEW/CHANGED grant not in allowlist: list_trust_readiness()|anon=false|authed=true\nexecute-perimeter: NEW/CHANGED grant not in allowlist: platform_capability_demand()|anon=false|authed=true\nexecute-perimeter: NEW/CHANGED grant not in allowlist: preview_decide_human_tasks(p_task_ids uuid[], p_decision text, p_reason_code text)|anon=false|authed=true\nexecute-perimeter: NEW/CHANGED grant not in allowlist: withdraw_human_task(p_task_id uuid, p_note text)|anon=false|authed=true\nexecute-perimeter: NEW/CHANGED grant not in allowlist: withdraw_human_tasks(p_task_ids uuid[], p_note text)|anon=false|authed=true\nexam-evidence-stays-out-of-production-metrics: verify_decide_discovery_proposal() counts de_conversations without the exam axis. Add channel IS DISTINCT FROM 'exam' (mig 671 split the corpus on channel), or pin it in scripts/production-evidence.mjs COUNT_READ_PINS with its reason.\nexam-evidence-stays-out-of-production-metrics: forget_end_user(p_tenant_id uuid, p_end_user_ref text, p_reason text) counts de_conversations without the exam axis. Add channel IS DISTINCT FROM 'exam' (mig 671 split the corpus on channel), or pin it in scripts/production-evidence.mjs COUNT_READ_PINS with its reason.\nno-pending-approval-the-platform-cannot-carry-out: mismatched-pair — kinetic / Approve action — Create a specialist desk (DreamTeam AI (self)) [execution bfb462a0-1e22-48cf-a3a0-fa60edd666f4]: the row names definition 18a92cdd-ba11-4c11-8bcc-96a3b8e120b4 (create_specialist), but its status is \"disabled\" and the resolver only ever sees active definitions. connector-hub answers action_definition_not_found and nothing is sent.\nno-pending-approval-the-platform-cannot-carry-out: no-executor — outsourcetel-hq / Send a $15,600 invoice to Meridian Group — test ping [task 03aaa6dd-379b-438a-aadd-d9b8e262638b, raised 2026-08-10]: no action_executions row references this task by EITHER linkage column (task_id, resolves_task_id). There is no executor behind the approval at all: deciding it flips the task to \"approved\", hands connector-hub nothing, and sends nothing — while the queue empties and the screen reads as done. A human must withdraw or re-raise it; this probe reports, it never decides.\nstarter-onboarding-template-is-current-or-decided: behind-unacknowledged: workspace \"kinetic\" runs a starter onboarding list 6 item(s) short of the canonical 16 and no decision is on record. Missing: account_owner_assigned, discovery_requirements, onboarding_plan_agreed, post_golive_checkin, sales_handover, support_handoff. Either upgrade_starter_onboarding_template() or acknowledge_starter_template_baseline() — both are a person deciding, which is the point.\nstarter-onboarding-template-is-current-or-decided: behind-unacknowledged: workspace \"acme-telecom\" runs a starter onboarding list 6 item(s) short of the canonical 16 and no decision is on record. Missing: account_owner_assigned, discovery_requirements, onboarding_plan_agreed, post_golive_checkin, sales_handover, support_handoff. Either upgrade_starter_onboarding_template() or acknowledge_starter_template_baseline() — both are a person deciding, which is the point.\nstarter-onboarding-template-is-current-or-decided: behind-unacknowledged: workspace \"gusto\" runs a starter onboarding list 6 item(s) short of the canonical 16 and no decision is on record. Missing: account_owner_assigned, discovery_requirements, onboarding_plan_agreed, post_golive_checkin, sales_handover, support_handoff. Either upgrade_starter_onboarding_template() or acknowledge_starter_template_baseline() — both are a person deciding, which is the point.\nstarter-onboarding-template-is-current-or-decided: behind-unacknowledged: workspace \"first-community-cu\" runs a starter onboarding list 6 item(s) short of the canonical 16 and no decision is on record. Missing: account_owner_assigned, discovery_requirements, onboarding_plan_agreed, post_golive_checkin, sales_handover, support_handoff. Either upgrade_starter_onboarding_template() or acknowledge_starter_template_baseline() — both are a person deciding, which is the point.\nrls-on-every-public-table: migration_number_claims\nonboarding-bindings-are-runnable: outsourcetel-hq / SaaS onboarding — starter / locations_configured → propose_connector — needs the \"workforce_assistant\" role, which the employee(s) this workspace gives onboarding work to (Onni) do not have\nguard-bypass-setters-pinned: delete_tenant\nsecdef-caller-tenant-ratchet: decide_human_tasks(p_task_ids uuid[], p_decision text, p_reason_code text, p_note text)\nsecdef-caller-tenant-ratchet: preview_decide_human_tasks(p_task_ids uuid[], p_decision text, p_reason_code text)\nsecdef-caller-tenant-ratchet: withdraw_human_tasks(p_task_ids uuid[], p_note text)"
     },
     {
       "section": "deferred-register",
       "ok": false,
-      "seconds": 12.2,
-      "detail": "F2 REGISTER SAYS CLOSED, REALITY SAYS OPEN — B-6 \"F-4 — dev is far behind production's migration ledger, so golden-path (certify's only write-path proof) runs …\". Its sql-lag verification returned n=8, which satisfies open_if >= 1. Something recorded as fixed is answering back. Either the fix regressed or it was never there; the register credits dev rebuilt from supabase/baseline/full_schema.sql + reference catalog seeded: 304/7/965/295/402/3505 all match production, ledger 804/804 level, golden-path 10/10 against it. This is the worse direction: a defect marked done in the one artefact people trust. FIX IT or re-open B-6."
+      "seconds": 46.4,
+      "detail": "F2 REGISTER SAYS CLOSED, REALITY SAYS OPEN — B-6 \"F-4 — dev lags production, so golden-path (certify’s only end-to-end write-path proof, and a CI job on every …\". Its sql-lag verification returned n=11, which satisfies open_if >= 1. Something recorded as fixed is answering back. Either the fix regressed or it was never there; the register credits dev rebuilt from the grant-emitting baseline 2026-08-20 (commits 5b40df26 + 0bd70fe7). Ledger level at 826/826, and the census matches production on every object class — 306 tables, 7 views, 981 functions, 296 triggers, 404 policies, 3532 columns — AND on grants, which is what A-12 fixed and what the old rebuild silently dropped. Two mechanisms now hold it there: sync-dev-migrations --best-effort before golden-path on every push, and the nightly dev-rebuild workflow. The sql-lag pin reopens this automatically the moment dev falls behind again, which is the right behaviour rather than a promise.. This is the worse direction: a defect marked done in the one artefact people trust. FIX IT or re-open B-6.\nF2 REGISTER SAYS CLOSED, REALITY SAYS OPEN — A-13 \"tests/tenant-isolation.test.ts passes all 4 assertions and then FAILS in teardown: 'permission denied for tab…\". Its grep verification returned n=0, which satisfies open_if < 1. Something recorded as fixed is answering back. Either the fix regressed or it was never there; the register credits Solved on origin/main by a parallel session, better than the approach I had staged. Teardown no longer deletes at all; the refusal is asserted as a TEST instead — 'refuses a tenant owner DELETE on customer_accounts — the write perimeter holds', expecting 42501. That turns the obstacle into the property the file exists to prove, and their note gives the reason I had not articulated for rejecting the service-role route: a service-role bypass inside an RLS test can hide the very failure it is looking for. I discarded my own version in the merge and took theirs. Verified: tenant-isolation now 5 passed, file passes.. This is the worse direction: a defect marked done in the one artefact people trust. FIX IT or re-open A-13."
     },
     {
       "section": "migration-ledger",
       "ok": true,
-      "seconds": 6
+      "seconds": 5.1
     },
     {
       "section": "migration-files-match-ledger-checksums",
       "ok": true,
-      "seconds": 3.6
+      "seconds": 3.2
     },
     {
       "section": "migration-numbering",
@@ -38,74 +38,32 @@
     {
       "section": "provider-catalog",
       "ok": true,
-      "seconds": 8.4
+      "seconds": 9.5
     },
     {
       "section": "discovery-spine",
       "ok": true,
-      "seconds": 7.5
+      "seconds": 7.1
     },
     {
       "section": "discovery-proposal-decisions",
       "ok": true,
-      "seconds": 14
+      "seconds": 15
     },
     {
       "section": "decide-discovery-proposal-behaviour",
       "ok": true,
-      "seconds": 11.1
+      "seconds": 8.4
     },
     {
       "section": "guardrail-pattern-differential",
       "ok": true,
-      "seconds": 3.2
+      "seconds": 1.7
     },
     {
       "section": "edge-typecheck",
       "ok": true,
-      "seconds": 7.1
-    },
-    {
-      "section": "golden-path",
-      "ok": true,
-      "seconds": 47.7
-    },
-    {
-      "section": "role-gates",
-      "ok": false,
-      "seconds": 9.8,
-      "detail": "  of those, controls that OPEN a page: 28\nUI call sites offering a gated action with no role check: 2\n  set_review_narrative_settings  ←  src/pages/tenant/EmployeeFileSections.tsx:637\n      needs tenant_owner/tenant_admin   ·   refuses tenant_manager, knowledge_manager, approver, tenant_user, read_only\n  set_review_narrative_settings  ←  src/pages/tenant/EmployeeFileSections.tsx:651\n      needs tenant_owner/tenant_admin   ·   refuses tenant_manager, knowledge_manager, approver, tenant_user, read_only\nself-test ok — 157 gated functions, self-branch detection live\npolicy reader ok — 91 role-gated table writes, open and self-policy tables correctly excluded"
-    },
-    {
-      "section": "silent-refusals",
-      "ok": true,
-      "seconds": 3.1
-    },
-    {
-      "section": "gate-parity",
-      "ok": true,
-      "seconds": 15.1
-    },
-    {
-      "section": "branch-parity",
-      "ok": true,
-      "seconds": 24.3
-    },
-    {
-      "section": "design-drift",
-      "ok": true,
-      "seconds": 3
-    },
-    {
-      "section": "migration-append",
-      "ok": true,
-      "seconds": 1.4
-    },
-    {
-      "section": "suite",
-      "ok": false,
-      "seconds": 79.5,
-      "detail": " ❯ tests/knowledge-acl-invariants.test.ts:312:7\n    310|       rows.map(r => r.proname),\n    311|       'a new SECURITY DEFINER function writes without checking the cal…\n    312|     ).toEqual([]);\n       |       ^\n    313|   });\n    314|\n⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯"
+      "seconds": 6.3
     }
   ]
 }

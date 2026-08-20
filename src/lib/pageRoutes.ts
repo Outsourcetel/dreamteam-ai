@@ -36,15 +36,17 @@ export const PAGE_TO_URL: Record<Page, string> = {
   entity_customer_success:    '/customer/success',
   entity_customer_renewal:    '/customer/renewal',
   entity_commercial_continuity: '/customer/continuity',
-  entity_vendor:              '/vendor',
-  entity_vendor_sourcing:     '/vendor/sourcing',
-  entity_vendor_contracts:    '/vendor/contracts',
-  entity_vendor_management:   '/vendor/management',
-  entity_workforce:           '/workforce-entity',
-  entity_workforce_talent:    '/workforce-entity/talent',
-  entity_workforce_onboarding:'/workforce-entity/onboarding',
-  entity_workforce_development:'/workforce-entity/development',
-  entity_workforce_payroll:   '/workforce-entity/payroll',
+  // ⚠ CLOSED 2026-08-20 — /vendor, /vendor/sourcing, /vendor/contracts,
+  // /vendor/management, /workforce-entity and its four sub-paths are GONE from
+  // this map, so URL_TO_PAGE (the exact reverse, built below) no longer knows
+  // those nine addresses at all. A bookmarked /vendor therefore never becomes a
+  // pending deep link in URLSync: the effect is one replace-navigation to
+  // /dashboard, which is what the person already had open. No blank screen, no
+  // crash, no "page not found" for a page that was never theirs to lose.
+  //
+  // Deleting the URL was not enough on its own and is not the only guard — the
+  // nine keys are out of the `Page` union too, which is what makes re-adding a
+  // line here a compile error rather than a decision. See src/types/index.ts.
   // Outcomes
   outcomes:           '/outcomes',
   outcome_revenue:    '/outcomes/revenue',

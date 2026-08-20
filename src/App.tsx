@@ -54,8 +54,9 @@ import CustomerRenewalPage from './pages/tenant/entity/CustomerRenewalPage';
 import CommercialContinuityPage from './pages/tenant/entity/CommercialContinuityPage';
 import CustomerOnboardingLive from './pages/tenant/entity/CustomerOnboardingLive';
 import { CustomerBDPage, CustomerSalesPage, CustomerSuccessPage } from './pages/tenant/entity/CustomerJourneyStubs';
-import { VendorOverviewPage, VendorSourcingPage, VendorContractsPage, VendorManagementPage } from './pages/tenant/entity/VendorPages';
-import { WorkforceOverviewPage, WorkforceTalentPage, WorkforceOnboardingPage, WorkforceDevelopmentPage, WorkforcePayrollPage } from './pages/tenant/entity/WorkforcePages';
+// ⚠ VendorPages and WorkforcePages were DELETED 2026-08-20 (recoverable at
+// a5f03af6). Nine descoped pages that a typed URL still rendered — see the
+// note in src/types/index.ts. Nothing imports them; nothing routes them.
 import OutcomesPage from './pages/tenant/outcome/LiveOutcomesPage';
 import type { Page, PlatformPage } from './types';
 import { PAGE_TO_URL, URL_TO_PAGE } from './lib/pageRoutes';
@@ -375,24 +376,9 @@ function AppShell() {
       case 'entity_customer_renewal':
       case 'entity_commercial_continuity':
         return <CustomersHubPage tab={currentPage} setPage={handleSetPage} />;
-      case 'entity_vendor':
-        return <VendorOverviewPage setPage={handleSetPage} />;
-      case 'entity_vendor_sourcing':
-        return <VendorSourcingPage setPage={handleSetPage} />;
-      case 'entity_vendor_contracts':
-        return <VendorContractsPage setPage={handleSetPage} />;
-      case 'entity_vendor_management':
-        return <VendorManagementPage setPage={handleSetPage} />;
-      case 'entity_workforce':
-        return <WorkforceOverviewPage setPage={handleSetPage} />;
-      case 'entity_workforce_talent':
-        return <WorkforceTalentPage setPage={handleSetPage} />;
-      case 'entity_workforce_onboarding':
-        return <WorkforceOnboardingPage setPage={handleSetPage} />;
-      case 'entity_workforce_development':
-        return <WorkforceDevelopmentPage setPage={handleSetPage} />;
-      case 'entity_workforce_payroll':
-        return <WorkforcePayrollPage setPage={handleSetPage} />;
+      // ⚠ The nine Vendor / Our-People cases were REMOVED 2026-08-20. They are
+      // not `default:`-able keys any more — they are not `Page` values at all,
+      // so a case for one of them would not compile. See src/types/index.ts.
       // ── Outcome pages ─────────────────────────────────────────
       // Wave 3: live tenants get the single consolidated Outcomes page;
       // the 4 legacy keys keep working (deep links) — in live mode they
