@@ -139,23 +139,13 @@ export function EntityRow({ avatar, title, titleExtra, chips, meta, actions, onO
   );
 }
 
-/* ── QueueCard — an item awaiting a human decision ──────────────────────── */
-export function QueueCard({ tone = 'warn', title, detail, chips, actions }:
-  { tone?: Tone; title: React.ReactNode; detail?: React.ReactNode; chips?: React.ReactNode; actions?: React.ReactNode }) {
-  const edge = { ok: 'border-l-dt-ok', warn: 'border-l-dt-warn', danger: 'border-l-dt-danger', info: 'border-l-dt-info', neutral: 'border-l-dt-neutral', accent: 'border-l-dt-accent' }[tone];
-  return (
-    <div className={`rounded-xl border border-dt-border border-l-2 ${edge} bg-dt-card px-4 py-3`}>
-      <div className="text-sm font-medium text-dt-title">{title}</div>
-      {detail && <div className="text-xs text-dt-support mt-1">{detail}</div>}
-      {(chips || actions) && (
-        <div className="flex items-center justify-between gap-3 mt-2.5">
-          <div className="flex items-center gap-1.5 flex-wrap">{chips}</div>
-          <div className="flex items-center gap-2 shrink-0">{actions}</div>
-        </div>
-      )}
-    </div>
-  );
-}
+/* ── QueueCard — DELETED 2026-08-21 ──────────────────────────────────────────
+   Superseded by DecisionCard below, which its own header has said replaces it
+   ("Replaces QueueCard, which nothing imports") since DecisionCard landed. The
+   kit shipped both for months and the app imported neither — QueueCard had
+   zero import sites and zero render sites anywhere in src/. A primitive that
+   documents its own replacement and is rendered by nobody is not a choice a
+   screen author should still be offered. Recoverable at fe6081a6. */
 
 /* ── TimelineStep — audit replays, case steps ───────────────────────────── */
 export function TimelineStep({ n, action, detail, at }:

@@ -50,10 +50,14 @@ import DiscoveryInterviewPage from './pages/tenant/DiscoveryInterviewPage';
 import DiscoveryProposalsPage from './pages/tenant/DiscoveryProposalsPage';
 import { WorkforceChatHubPage } from './pages/tenant/WorkforceChatHubPage';
 import CustomersHubPage from './pages/tenant/entity/CustomersHubPage';
-import CustomerRenewalPage from './pages/tenant/entity/CustomerRenewalPage';
-import CommercialContinuityPage from './pages/tenant/entity/CommercialContinuityPage';
-import CustomerOnboardingLive from './pages/tenant/entity/CustomerOnboardingLive';
-import { CustomerBDPage, CustomerSalesPage, CustomerSuccessPage } from './pages/tenant/entity/CustomerJourneyStubs';
+// ⚠ CustomerRenewalPage, CommercialContinuityPage, CustomerOnboardingLive and
+// the three CustomerJourneyStubs exports were imported HERE and rendered
+// NOWHERE — App.tsx stopped rendering them at the 2026-07-22 hub restructure,
+// when every `entity_customer*` case became one `<CustomersHubPage tab=…>`.
+// CustomersHubPage imports and renders all of them itself. The import lines
+// outlived the render sites and kept five modules in the bundle for nothing:
+// the same "imported ≠ rendered" shape that kept CustomerOnboardingPage's
+// 1,225 lines alive through a single unused import in CustomersHubPage.
 // ⚠ VendorPages and WorkforcePages were DELETED 2026-08-20 (recoverable at
 // a5f03af6). Nine descoped pages that a typed URL still rendered — see the
 // note in src/types/index.ts. Nothing imports them; nothing routes them.
@@ -61,9 +65,11 @@ import OutcomesPage from './pages/tenant/outcome/LiveOutcomesPage';
 import type { Page, PlatformPage } from './types';
 import { PAGE_TO_URL, URL_TO_PAGE } from './lib/pageRoutes';
 
-// Live tenants get the real onboarding workspace (migration 022);
-// demo companies keep the co-pilot design preview.
-const CustomerOnboardingRoute = ({ setPage }: { setPage?: (p: Page) => void }) => <CustomerOnboardingLive setPage={setPage} />;
+// ⚠ CustomerOnboardingRoute was DELETED 2026-08-21 with the imports above. It
+// was a one-line wrapper around CustomerOnboardingLive that nothing rendered:
+// `case 'entity_customer_onboarding'` returns <CustomersHubPage>, and that hub
+// renders <CustomerOnboardingLive> directly for the tab. Recoverable at
+// fe6081a6 if the onboarding route is ever given a page of its own again.
 
 // Syncs the auth-context page state with the browser URL bidirectionally.
 // This lets every existing component keep calling setPage('entity_customer_support')

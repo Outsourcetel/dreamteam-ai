@@ -1669,6 +1669,284 @@
       },
       "closed_by": "checker-accuracy fix in scripts/edge-deployed-parity.mjs (normalizeModule): all 27 DRIFTED verdicts of 2026-08-20 were FALSE POSITIVES, not drift. The eszip stores deno's EMIT and the repo stores SOURCE; the normalizer did not canonicalise three purely syntactic differences — single arrow parameter ((o)=> vs o=>), braces around a single-statement body (24 pairs, 23 of them _shared/serviceCaller.ts), and a right-nested ??/||/&& chain (playbook-draft/index.ts:459). Character-level evidence: tool-learn/index.ts differed at 3 chars of 5758, _shared/contentHash.ts at 1 of 427, de-simulate/index.ts at 1 of 8885. All 34 differing (slug,file) pairs were enumerated and every one reduced to those three forms; none was a real change. Canonicalisation is AST-level (arrows re-synthesized to bare; bodies always braced; ||/&&/?? linearised left-nested — those three operators only, since -, + and * are not associative). RE-MEASURED LIVE 2026-08-21: 64 deployed, 63 compared, 63 IN SYNC over 384 module pairs, 0 DRIFTED, 0 UNVERIFIABLE, 1 excluded (de-answer, unmerged in a parallel session), 1 in repo never deployed (mcp-demo-server). LIVENESS PROVEN, same machinery and only the tree changed: the same 63 bundles vs the pre-fix tree a54d5b54^ report 62/63 DRIFTED over 360 pairs, so the probe still sees real staleness. Self-test: node scripts/edge-deployed-parity.mjs --self-test (27/27, offline) plus 8 mutation cases in both directions, all caught and named. Nothing was deployed to reach this number.",
       "closed_on": "2026-08-20"
+    },
+    {
+      "id": "B-17",
+      "what": "WorkforceChatHubPage declares selectedDEId but nothing in src/ ever calls setSelectedDEId, so both panels gated on it — PerformanceDashboard and DETrainingPanel — render nothing on every load for every user. Wiring bug, not a descope: the fix is a DE picker that calls the setter, and deleting the panels would delete a performance view nobody decided to drop.",
+      "where": "src/pages/tenant/WorkforceChatHubPage.tsx:34 (gates at :303 and :308)",
+      "severity": "correctness",
+      "why_skipped": "founder-decision",
+      "first_named": {
+        "date": "2026-08-20",
+        "source": "unreachable-UI sweep 2026-08-21; named in an earlier agent report and never registered"
+      },
+      "subject": "repo-source",
+      "state": "open",
+      "verification": {
+        "kind": "grep",
+        "paths": [
+          "src/pages/tenant/WorkforceChatHubPage.tsx"
+        ],
+        "pattern": "\\bsetSelectedDEId\\b",
+        "count": "matches",
+        "open_if": {
+          "op": "==",
+          "n": 1
+        }
+      }
+    },
+    {
+      "id": "B-18",
+      "what": "The page holding those panels is itself unlinked: 'workforce_chat' (/workforce/chat) appears in NO component and NO page outside App.tsx's own case branch — no Sidebar entry, no hub tab, no button. It is reachable only by typing the URL, and workforce_conversations/workforce_actions both hold 0 rows in production. Decide: give it a nav entry, or close the route the way the nine descoped pages were closed.",
+      "where": "src/types/index.ts (workforce_chat) vs src/components/Sidebar.tsx — 0 nav entries",
+      "severity": "correctness",
+      "why_skipped": "founder-decision",
+      "first_named": {
+        "date": "2026-08-20",
+        "source": "unreachable-UI sweep 2026-08-21"
+      },
+      "subject": "repo-source",
+      "state": "open",
+      "verification": {
+        "kind": "grep",
+        "paths": [
+          "src/components",
+          "src/pages"
+        ],
+        "pattern": "'workforce_chat'",
+        "count": "matches",
+        "open_if": {
+          "op": "==",
+          "n": 0
+        }
+      }
+    },
+    {
+      "id": "B-19",
+      "what": "Nothing in the app can create an opportunity. CustomersHubPage NORMALIZEs entity_customer_bd to entity_customer_sales, so CustomerBDPage never renders — and CustomerBDLive behind it is the ONLY surface carrying '+ Add prospect', '+ Import CSV' and ImportOpportunitiesModal. createOpportunity() and ImportOpportunitiesModal each have exactly one call site and it is inside that dark component. Dead by accident with a real product consequence; NOT a deletion candidate.",
+      "where": "src/pages/tenant/entity/CustomersHubPage.tsx:20-23 (NORMALIZE) vs src/pages/tenant/entity/PipelineLive.tsx:416 CustomerBDLive",
+      "severity": "correctness",
+      "why_skipped": "founder-decision",
+      "first_named": {
+        "date": "2026-08-20",
+        "source": "unreachable-UI sweep 2026-08-21"
+      },
+      "subject": "repo-source",
+      "state": "open",
+      "verification": {
+        "kind": "grep",
+        "paths": [
+          "src"
+        ],
+        "pattern": "<CustomerBDPage\\b",
+        "count": "matches",
+        "open_if": {
+          "op": "==",
+          "n": 0
+        }
+      }
+    },
+    {
+      "id": "B-20",
+      "what": "RemoteAccessWriteAuditPanel is a complete 150-line governance panel — every write a platform operator made inside a tenant during Remote Access, filterable by tenant — and it is declared and never rendered. It is the ONLY reader of remote_access_write_log in the whole repo, and that table holds 194 real rows. The audit trail is being written and can be read by no human in the product.",
+      "where": "src/pages/platform/PlatformConsolePage.tsx:1093 — 0 render sites",
+      "severity": "correctness",
+      "why_skipped": "founder-decision",
+      "first_named": {
+        "date": "2026-08-20",
+        "source": "unreachable-UI sweep 2026-08-21"
+      },
+      "subject": "repo-source",
+      "state": "open",
+      "verification": {
+        "kind": "grep",
+        "paths": [
+          "src"
+        ],
+        "pattern": "<RemoteAccessWriteAuditPanel\\b",
+        "count": "matches",
+        "open_if": {
+          "op": "==",
+          "n": 0
+        }
+      }
+    },
+    {
+      "id": "D-16",
+      "what": "remoteAccessSearch and remoteAccessLimit are declared in PlatformConsolePage and never read and never set — a search box and a row limit for the Remote Access tenant list that were never wired to a control. Same page, same feature area as B-20; likely the same unfinished pass. Closes either by wiring them or by deleting the two lines.",
+      "where": "src/pages/platform/PlatformConsolePage.tsx:82-83",
+      "severity": "hygiene",
+      "why_skipped": "walked-past",
+      "first_named": {
+        "date": "2026-08-20",
+        "source": "unreachable-UI sweep 2026-08-21"
+      },
+      "subject": "repo-source",
+      "state": "open",
+      "verification": {
+        "kind": "grep",
+        "paths": [
+          "src/pages/platform/PlatformConsolePage.tsx"
+        ],
+        "pattern": "\\b(remoteAccessSearch|remoteAccessLimit)\\b",
+        "count": "matches",
+        "open_if": {
+          "op": "==",
+          "n": 2
+        }
+      }
+    },
+    {
+      "id": "D-17",
+      "what": "ReadOnlyNote is exported with a doc comment that says 'Rendered by a panel when the viewer may look but not change' — and no panel renders it. The affordance that tells a non-admin why a control is disabled never appears anywhere, which is the failure its own comment exists to prevent. Dead by accident; the fix is to render it, not to remove it.",
+      "where": "src/pages/tenant/LiveWorkforceDEs.tsx:57 — 0 render sites",
+      "severity": "hygiene",
+      "why_skipped": "walked-past",
+      "first_named": {
+        "date": "2026-08-20",
+        "source": "unreachable-UI sweep 2026-08-21"
+      },
+      "subject": "repo-source",
+      "state": "open",
+      "verification": {
+        "kind": "grep",
+        "paths": [
+          "src"
+        ],
+        "pattern": "<ReadOnlyNote\\b",
+        "count": "matches",
+        "open_if": {
+          "op": "==",
+          "n": 0
+        }
+      }
+    },
+    {
+      "id": "D-18",
+      "what": "PlaybookDocumentView renders a whole playbook as a read-through document (its DocStepRow child is used by nothing else). Declared, never rendered. Whether the builder is meant to offer a document view is a product question with no named replacement in the file, so this is registered rather than deleted.",
+      "where": "src/pages/tenant/systems/LivePlaybookBuilder.tsx:774 — 0 render sites",
+      "severity": "hygiene",
+      "why_skipped": "founder-decision",
+      "first_named": {
+        "date": "2026-08-20",
+        "source": "unreachable-UI sweep 2026-08-21"
+      },
+      "subject": "repo-source",
+      "state": "open",
+      "verification": {
+        "kind": "grep",
+        "paths": [
+          "src"
+        ],
+        "pattern": "<PlaybookDocumentView\\b",
+        "count": "matches",
+        "open_if": {
+          "op": "==",
+          "n": 0
+        }
+      }
+    },
+    {
+      "id": "D-19",
+      "what": "DEAvatars (exported) renders the stack of digital-employee initials against a knowledge article and has 0 render sites. KnowledgeLibraryPage is now a five-line wrapper around LiveKnowledgeLibrary, and that page shows no DE avatars at all — so unlike FilterSelect (deleted in the same sweep, replacement nameable) this one has NO replacement to point at. Registered, not deleted: 'who uses this article' may be a view the founder wants back.",
+      "where": "src/pages/tenant/knowledge/KnowledgeLibraryPage.tsx:68 — 0 render sites",
+      "severity": "hygiene",
+      "why_skipped": "founder-decision",
+      "first_named": {
+        "date": "2026-08-20",
+        "source": "unreachable-UI sweep 2026-08-21"
+      },
+      "subject": "repo-source",
+      "state": "open",
+      "verification": {
+        "kind": "grep",
+        "paths": [
+          "src"
+        ],
+        "pattern": "<DEAvatars\\b",
+        "count": "matches",
+        "open_if": {
+          "op": "==",
+          "n": 0
+        }
+      }
+    },
+    {
+      "id": "D-20",
+      "what": "CategoryBadge sits at the bottom of CompliancePage with 0 render sites, inside a ~130-line block of retired preview data (INDUSTRY_TEMPLATES, TEMPLATE_RULES, SEED_OVERRIDES, VERSION_HISTORY, CALENDAR, ACTIVE_TEMPLATE) that LiveCompliancePage replaced. Its two neighbours SeverityBadge and Toggle ARE live, so this is a careful excision rather than a block delete — left for a session that owns the file.",
+      "where": "src/pages/tenant/governance/CompliancePage.tsx:1072 (dead block from :945)",
+      "severity": "hygiene",
+      "why_skipped": "out-of-scope",
+      "first_named": {
+        "date": "2026-08-20",
+        "source": "unreachable-UI sweep 2026-08-21"
+      },
+      "subject": "repo-source",
+      "state": "open",
+      "verification": {
+        "kind": "grep",
+        "paths": [
+          "src"
+        ],
+        "pattern": "<CategoryBadge\\b",
+        "count": "matches",
+        "open_if": {
+          "op": "==",
+          "n": 0
+        }
+      }
+    },
+    {
+      "id": "D-21",
+      "what": "Three modules nothing in the repo imports: src/components/workforce/index.ts (a barrel whose five exports are all imported by direct path instead), src/data/people.ts (a Person interface with no consumer) and src/lib/amendmentMetricsApi.ts (134 lines whose only UI, AmendmentMetricsPanel, was already recorded orphaned). A file nobody imports is the next sweep's finding, so this is recorded rather than left silent. ⚠ This verification counts IMPORTERS, so deleting the files leaves it at 0 — close it by hand when they go.",
+      "where": "src/components/workforce/index.ts, src/data/people.ts, src/lib/amendmentMetricsApi.ts",
+      "severity": "hygiene",
+      "why_skipped": "walked-past",
+      "first_named": {
+        "date": "2026-08-20",
+        "source": "unreachable-UI sweep 2026-08-21"
+      },
+      "subject": "repo-source",
+      "state": "open",
+      "verification": {
+        "kind": "grep",
+        "paths": [
+          "src"
+        ],
+        "pattern": "from '[^']*(components/workforce'|data/people'|lib/amendmentMetricsApi')",
+        "count": "matches",
+        "open_if": {
+          "op": "==",
+          "n": 0
+        }
+      }
+    },
+    {
+      "id": "D-22",
+      "what": "Three design-system components are imported and never rendered in the importing file — Modal in HireEmployeeWizard, Field in MissionPanel, EntityRow in LiveWorkforceDEs. Harmless on their own, but this is the exact shape that kept CustomerOnboardingPage's 1,225 lines in the bundle through one unused import line, so it is recorded rather than assumed benign. tsc --noUnusedLocals already names all three (TS6133).",
+      "where": "src/components/HireEmployeeWizard.tsx:11, src/components/MissionPanel.tsx:10, src/pages/tenant/LiveWorkforceDEs.tsx:18",
+      "severity": "hygiene",
+      "why_skipped": "walked-past",
+      "first_named": {
+        "date": "2026-08-20",
+        "source": "unreachable-UI sweep 2026-08-21"
+      },
+      "subject": "repo-source",
+      "state": "open",
+      "verification": {
+        "kind": "grep",
+        "paths": [
+          "src/components/HireEmployeeWizard.tsx",
+          "src/components/MissionPanel.tsx",
+          "src/pages/tenant/LiveWorkforceDEs.tsx"
+        ],
+        "pattern": "<(Modal|Field|EntityRow)\\b",
+        "count": "matches",
+        "open_if": {
+          "op": "==",
+          "n": 0
+        }
+      }
     }
   ]
 }

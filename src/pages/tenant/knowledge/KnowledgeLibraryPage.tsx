@@ -76,15 +76,17 @@ export function DEAvatars({ names }: { names: string[] }) {
   );
 }
 
-const FilterSelect = ({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[] }) => (
-  <label className="flex items-center gap-2">
-    <span className="text-[11px] uppercase tracking-wide text-dt-muted">{label}</span>
-    <select value={value} onChange={e => onChange(e.target.value)}
-      className="bg-dt-card border border-dt-border rounded-lg px-2.5 py-1.5 text-xs text-dt-body focus:outline-none focus:border-dt-border-strong">
-      {options.map(o => <option key={o} value={o}>{o}</option>)}
-    </select>
-  </label>
-);
+// ⚠ FilterSelect was DELETED 2026-08-21. This file is a five-line wrapper —
+// everything it renders is <LiveKnowledgeLibrary/> — and that page has carried
+// its own facet dropdowns (`<select className={SELECT_CLS}>`, plus the
+// FilterBar primitive) since it replaced the preview browser. FilterSelect was
+// the preview's bespoke recipe: zero render sites, and the design system names
+// SELECT_CLS-inside-FilterBar as what a facet dropdown must be instead.
+// Recoverable at fe6081a6.
+//
+// ⚠ The rest of this file is NOT dead and must not be swept with it:
+// KEntity/KAudience/KType/K_TYPES are imported by KnowledgeGapsPage and
+// ConfidenceBar by KnowledgeQualityPage.
 
 const KnowledgeLibraryPage = ({ setPage }: { setPage?: (p: import('../../../types').Page) => void }) => {
   return <LiveKnowledgeLibrary setPage={setPage} />;

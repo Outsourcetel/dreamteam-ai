@@ -131,7 +131,6 @@ lists the words that stay in code and never reach a screen.
 | `StatTile` | number at a glance | local StatCard clones (8 existed) |
 | `DetailTile` | labeled fact (Employee File strip) | |
 | `EntityRow` | roster/tasks/conversations rows | bespoke row layouts |
-| `QueueCard` | anything awaiting a human decision | |
 | `TimelineStep` | audit replays, case steps | |
 | `EmptyState` | EVERY empty list — headline + why + next action | blank boxes, bare "No data" |
 | `Banner` | notices | ad-hoc colored divs |
@@ -148,7 +147,7 @@ lists the words that stay in code and never reach a screen.
 | Schema | Use it for | Never |
 |---|---|---|
 | `EmployeeCard` | one digital employee, **reporting work** — state, three stats, last action *or* why it stopped | a card that lists its configuration |
-| `DecisionCard` | one thing waiting on a human: what, who prepared it, why it stopped, how long, 2–3 real choices | `QueueCard` (superseded; nothing imported it) |
+| `DecisionCard` | one thing waiting on a human: what, who prepared it, why it stopped, how long, 2–3 real choices | `QueueCard` — superseded, and DELETED from the kit 2026-08-21 after a reachability sweep found zero import sites and zero render sites |
 | `FilterBar` | every list and report — presets, facets, search, saved views | a bespoke filter row per page |
 | `SetupChecklist` | "hired but unfinished" — what's missing, why, one button, an honest estimate | `EmptyState` (a half-built thing is not an empty one) |
 
