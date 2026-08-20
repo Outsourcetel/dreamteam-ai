@@ -1,5 +1,12 @@
 # Activate the DE brain (5-minute runbook)
 
+> **⚠ SUPERSEDED 2026-08-20 (Workstream S).** The premise below — "dormant
+> until the Anthropic API key is set" — stopped being true months ago: the
+> DE brain runs live behind the 4-provider LLM failover spine, and model/key
+> management moved to the AI-engine commercial controls (migs 632/633).
+> Setting a raw ANTHROPIC_API_KEY as described here is no longer the
+> activation path and may not be consulted at all. Kept for history.
+
 The `de-answer` edge function is deployed but dormant until the Anthropic API key is set.
 
 1. **Get a key:** https://console.anthropic.com → API Keys → Create Key (starts `sk-ant-`).

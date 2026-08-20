@@ -192,3 +192,62 @@ Re-verified two of this document's findings against live production; both agree 
 executor) as still-standing. It was already fixed — register **B-9 closed**. I carried those
 r5 items forward from docs/47 without re-measuring them, which is the precise failure docs/53
 names. The register exists because of it; open state belongs there.
+
+---
+
+## Workstream P — connector reality (2026-08-20)
+
+**The gap, measured:** the code claims **75 provider adapters** (connector-hub
+registry) and **26 providers carry platform action definitions**; production
+holds **15 connector rows**, of which 6 are the internal dreamteam
+self-connector, 4 are demo fakes on non-operational acme-telecom (status
+'connected', no secrets), 2 are disconnected, and 2 are real:
+
+| Real connector | State today |
+|---|---|
+| erpnext (outsourcetel-hq) | secret ✓ · **8,950 consecutive failures** (402-suspended since ~08-12, polled every 10 min) · last_ok 2026-08-11 · status still says 'connected' |
+| mcp / Stripe (outsourcetel-hq) | secret ✓ · idle — last_ok 2026-08-05, health is call-driven so 15 days of silence means UNUSED, not healthy |
+
+**Working external integrations today: 0.** That is the honest number behind
+any GTM claim until the founder renews the ERP.
+
+**The lying marker is defused everywhere it matters (verified live today):**
+'status="connected"' is not written on failure, so it reads healthy over
+8,950 failures — but the 810 dispatch invariant AND all five eligibility
+readers 810 named (compute_de_lifecycle_readiness via mig 814,
+dunning_connector_for, de_trust_surface_candidates, get_agentic_tools_for_de,
+onboarding_verb_verdict) now consult connector_circuit_open. Checked each by
+reading the live definition, not the migration files — a stale file cost one
+burned migration number (822) before this lesson was re-learned.
+
+**P-1 resolved:** the zendesk edge fn + 4 active defs with no connector row is
+claimed-but-never-used code, not a defect — no tenant has ever connected
+zendesk. **Correctly dormant:** google_ads / meta / google_search_console defs
+exist with active=0, awaiting D-chain OAuth. **Cosmetic:** acme's demo
+connectors claim 'connected' with no secrets — for the demo-decommission
+thread, not this one.
+
+---
+
+## Workstream S — docs accuracy (2026-08-20, sampled not exhaustive)
+
+26 caps-named legacy docs swept at the headline-claim level:
+
+- **Already fenced (good):** the five go-live docs carry SUPERSEDED 2026-08-06
+  banners from an earlier pass; HIPAA-SECURITY-POLICY and
+  INCIDENT-RESPONSE-RUNBOOK open with "STARTER TEMPLATE, not legal advice" —
+  the doc-49 liability concern is fenced by the disclaimer. **Founder line
+  still owed:** keep the HIPAA template (fenced) or delete it; the residual
+  risk is a sales conversation citing "we have a HIPAA policy".
+- **Bannered today:** ACTIVATE-DE.md claimed the DE brain is "dormant until
+  the Anthropic API key is set" — false since the 4-provider failover spine;
+  superseded banner added.
+- **Verified true:** DEMO-WALKTHROUGH points at dreamteam-ai-five.vercel.app,
+  which IS ours (the imposter is dreamteam-ai.vercel.app, no -five);
+  DISASTER_RECOVERY and DEPLOYMENT carry current-dated corrections.
+- **Unreviewed, low-harm:** the strategy-era docs (ROADMAP, SCALABILITY_GAPS,
+  SPECIALIZATION_STRATEGY_10_ROLE, WEEK1_DELIVERABLES_AUDIT, MARKET_RESEARCH,
+  PHASE1_EXECUTION_ROADMAP) predate the roadmap of record (docs/24) and the
+  10-role re-rank (docs/41); internal-only, superseded by named successors,
+  not individually bannered — S records the blanket rule here instead: where
+  a doc conflicts with docs/24 or docs/41, the numbered doc wins.
