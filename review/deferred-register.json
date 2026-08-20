@@ -1544,7 +1544,7 @@
         "date": "2026-08-20",
         "source": "certify 2026-08-20, surfaced once A-12 let the isolation tests run again"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
@@ -1556,7 +1556,9 @@
           "op": "<",
           "n": 1
         }
-      }
+      },
+      "closed_by": "Solved on origin/main by a parallel session, better than the approach I had staged. Teardown no longer deletes at all; the refusal is asserted as a TEST instead — 'refuses a tenant owner DELETE on customer_accounts — the write perimeter holds', expecting 42501. That turns the obstacle into the property the file exists to prove, and their note gives the reason I had not articulated for rejecting the service-role route: a service-role bypass inside an RLS test can hide the very failure it is looking for. I discarded my own version in the merge and took theirs. Verified: tenant-isolation now 5 passed, file passes.",
+      "closed_on": "2026-08-20"
     }
   ]
 }
