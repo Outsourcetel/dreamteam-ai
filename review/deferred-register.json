@@ -1494,7 +1494,7 @@
         "date": "2026-08-20",
         "source": "certify suite failure, tests/action-gate.test.ts:439, found re-running certify 2026-08-20"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from action_definitions ad, jsonb_array_elements(ad.param_schema) p where jsonb_typeof(ad.param_schema)='array' and p->>'name' ~* '(^|_)(amount|amounts|cents|price|prices|total|totals|money|charge|fee|cost)($|_)' and p->>'name' <> 'amount_cents' and p->>'name' <> 'default_price_list'",
@@ -1502,7 +1502,9 @@
           "op": ">",
           "n": 0
         }
-      }
+      },
+      "closed_by": "mig 805 applied to production 2026-08-20 with the connector-hub half in the same commit. payment_entry_for_invoice and create_journal_entry now declare amount_cents (integer), and erpnext.unitsFromCents() divides by 100 at the ERPNext boundary — the rename alone would have made the gate read dollars as cents, a 100x under-count on a destructive action. Verified: tests/action-gate.test.ts 18/18, the migration assertion inverted (fixing one action leaves it firing on the other), 0 executions and 0 stored params affected.",
+      "closed_on": "2026-08-20"
     }
   ]
 }
