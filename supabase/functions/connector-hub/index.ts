@@ -493,6 +493,33 @@ const erpnext = {
     return { ok: true, items };
   },
 
+  // ── Payables (M3): the OTHER half of the money chain. Same shape as the
+  // receivables sync — submitted Purchase Invoices, ERPNext's own arithmetic
+  // for what is still owed — because AR and AP diverging in shape is how one
+  // of them stops being read.
+  async syncPayables(c: Ctx): Promise<{ ok: boolean; error?: string; records?: Array<Record<string, unknown>> }> {
+    const qs = new URLSearchParams({
+      fields: '["name","supplier","supplier_name","grand_total","outstanding_amount","due_date","status","currency"]',
+      filters: JSON.stringify([['docstatus', '=', 1]]),
+      order_by: 'due_date asc',
+      limit_page_length: '100',
+    });
+    const r = await httpJson(c.baseUrl + '/api/resource/Purchase%20Invoice?' + qs, { headers: this.hdrs(c) });
+    if (!r.ok) return { ok: false, error: r.error };
+    const rows = (r.body as { data?: Array<Record<string, unknown>> })?.data ?? [];
+    return { ok: true, records: rows.map((d) => ({
+      supplier_external_ref: String(d.supplier ?? d.supplier_name ?? ''),
+      supplier_name: String(d.supplier_name ?? d.supplier ?? ''),
+      invoice_external_ref: String(d.name ?? ''),
+      amount_cents: Math.round(Number(d.grand_total ?? 0) * 100),
+      outstanding_cents: d.outstanding_amount === undefined || d.outstanding_amount === null
+        ? null : Math.round(Number(d.outstanding_amount) * 100),
+      due_date: d.due_date ? String(d.due_date) : null,
+      status: String(d.status ?? ''),
+      currency: String(d.currency ?? ''),
+    })).filter((x) => x.invoice_external_ref && x.supplier_external_ref) };
+  },
+
   async syncTickets(c: Ctx): Promise<{ ok: boolean; error?: string; records?: Array<Record<string, unknown>> }> {
     const qs = new URLSearchParams({
       fields: '["name","subject","description","status","priority","customer","raised_by"]',
@@ -783,6 +810,129 @@ async function zohoToken(c: Ctx): Promise<{ ok: boolean; token?: string; error?:
   s.access_token = tok.access_token; s.expires_at = next.expires_at;
   return { ok: true, token: tok.access_token };
 }
+
+// ── Google Calendar (C2, practical-work program 2026-08-11) ────────────────
+// Same self-refreshing shape as zohoToken above: the per-tenant connector
+// secret carries {client_id, client_secret, refresh_token, access_token,
+// expires_at}; a refreshed token is written back so a long-lived connector
+// keeps working. D1's shared OAuth framework will POPULATE these fields; the
+// adapter does not care who put them there — which is exactly why C2 can ship
+// before the founder's Google app exists.
+async function googleToken(c: Ctx): Promise<{ ok: boolean; token?: string; error?: string }> {
+  const s = c.secret as Record<string, unknown>;
+  const access = String(s.access_token ?? '');
+  const expiresAt = Number(s.expires_at ?? 0);
+  if (access && Date.now() < expiresAt) return { ok: true, token: access };
+  const refresh = String(s.refresh_token ?? '');
+  const clientId = String(s.client_id ?? '');
+  const clientSecret = String(s.client_secret ?? '');
+  if (!refresh || !clientId || !clientSecret) {
+    return access ? { ok: true, token: access } : { ok: false, error: 'google_oauth_incomplete' };
+  }
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refresh, client_id: clientId, client_secret: clientSecret }).toString(),
+  }).catch(() => null);
+  const tok = res ? await res.json().catch(() => null) as { access_token?: string; expires_in?: number } | null : null;
+  if (!res || !res.ok || !tok?.access_token) return { ok: false, error: 'google_refresh_failed' };
+  const next = { ...s, access_token: tok.access_token, expires_at: Date.now() + (Number(tok.expires_in ?? 3600) - 60) * 1000 };
+  if (c.admin && c.connectorId) {
+    await c.admin.rpc('set_connector_secret_sysadmin', { p_connector_id: c.connectorId, p_secret: JSON.stringify(next) });
+  }
+  s.access_token = tok.access_token; s.expires_at = next.expires_at;
+  return { ok: true, token: tok.access_token };
+}
+
+const googlecalendar = {
+  async hdrs(c: Ctx): Promise<Record<string, string> | null> {
+    const t = await googleToken(c);
+    if (!t.ok) return null;
+    return { Authorization: 'Bearer ' + t.token, Accept: 'application/json' };
+  },
+  async testConnection(c: Ctx): Promise<AdapterResult> {
+    const h = await this.hdrs(c);
+    if (!h) return { ok: false, error: 'google_oauth_incomplete' };
+    const r = await httpJson('https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=1', { headers: h });
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, items: [] };
+  },
+  // "Recent" for a diary = what is coming, not what has been: the next
+  // upcoming events, so a front-desk employee can answer "when are we free".
+  async listRecent(c: Ctx): Promise<AdapterResult> {
+    const h = await this.hdrs(c);
+    if (!h) return { ok: false, error: 'google_oauth_incomplete' };
+    const cal = String((c.config as Record<string, unknown> | null)?.calendar_id ?? 'primary');
+    const qs = new URLSearchParams({ maxResults: '10', singleEvents: 'true', orderBy: 'startTime', timeMin: new Date().toISOString() });
+    const r = await httpJson('https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(cal) + '/events?' + qs, { headers: h });
+    if (!r.ok) return { ok: false, error: r.error };
+    const rows = (r.body as { items?: Array<Record<string, unknown>> })?.items ?? [];
+    return { ok: true, items: rows.map((e) => ({
+      type: 'event', external_ref: String(e.id ?? ''),
+      title: String(e.summary ?? '(no title)'),
+      snippet: String(((e.start as Record<string, unknown>)?.dateTime ?? (e.start as Record<string, unknown>)?.date) ?? ''),
+      url: String(e.htmlLink ?? ''),
+    })) };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const h = await this.hdrs(c);
+    if (!h) return { ok: false, error: 'google_oauth_incomplete' };
+    const cal = String((c.config as Record<string, unknown> | null)?.calendar_id ?? 'primary');
+    const qs = new URLSearchParams({ q: String(query ?? '').slice(0, 80), maxResults: '10', singleEvents: 'true', timeMin: new Date().toISOString() });
+    const r = await httpJson('https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(cal) + '/events?' + qs, { headers: h });
+    if (!r.ok) return { ok: false, error: r.error };
+    const rows = (r.body as { items?: Array<Record<string, unknown>> })?.items ?? [];
+    return { ok: true, items: rows.map((e) => ({ type: 'event', external_ref: String(e.id ?? ''), title: String(e.summary ?? ''), snippet: '', url: String(e.htmlLink ?? '') })) };
+  },
+  async fetchRecord(c: Ctx, _t: string, ref: string): Promise<AdapterResult> {
+    const h = await this.hdrs(c);
+    if (!h) return { ok: false, error: 'google_oauth_incomplete' };
+    const cal = String((c.config as Record<string, unknown> | null)?.calendar_id ?? 'primary');
+    const r = await httpJson('https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(cal) + '/events/' + encodeURIComponent(ref), { headers: h });
+    if (!r.ok) return { ok: false, error: r.error };
+    const e = (r.body ?? {}) as Record<string, unknown>;
+    return { ok: true, items: [{ type: 'event', external_ref: String(e.id ?? ref), title: String(e.summary ?? ''), snippet: '', url: String(e.htmlLink ?? '') }] };
+  },
+};
+
+const googleCalendarActions: Record<string, NativeAction> = {
+  // Booking an appointment is a promise to a CUSTOMER made in their inbox
+  // (sendUpdates emails every attendee), so it is destructive and always
+  // human-gated — the same law as the dunning emails.
+  google_calendar_create_event: {
+    render(c, p) {
+      if (!p.title?.trim()) return { ok: false, error: 'param_required', detail: 'title is required.' };
+      if (!p.start_iso?.trim() || !p.end_iso?.trim()) return { ok: false, error: 'param_required', detail: 'start_iso and end_iso (RFC3339, e.g. 2026-08-20T15:00:00+05:00) are required.' };
+      if (Number.isNaN(Date.parse(p.start_iso)) || Number.isNaN(Date.parse(p.end_iso))) return { ok: false, error: 'bad_param', detail: 'start_iso/end_iso must be valid RFC3339 timestamps.' };
+      if (Date.parse(p.end_iso) <= Date.parse(p.start_iso)) return { ok: false, error: 'bad_param', detail: 'end_iso must be after start_iso.' };
+      const cal = String((c.config as Record<string, unknown> | null)?.calendar_id ?? 'primary');
+      return {
+        ok: true, method: 'POST',
+        url: 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(cal) + '/events?sendUpdates=all',
+        body: {
+          summary: p.title.trim(),
+          start: { dateTime: p.start_iso.trim() },
+          end: { dateTime: p.end_iso.trim() },
+          ...(p.description?.trim() ? { description: p.description.trim() } : {}),
+          ...(p.attendee_email?.trim() ? { attendees: [{ email: p.attendee_email.trim() }] } : {}),
+        },
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const h = await googlecalendar.hdrs(c);
+      if (!h) return { ok: false, error: 'google_oauth_incomplete', detail: 'This calendar connector has no working Google credentials yet.' };
+      const res = await httpJson(r.url!, { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      const e = (res.body ?? {}) as { id?: string; htmlLink?: string };
+      return { ok: true, status: res.status, raw: res.body,
+        receipt: 'Booked "' + p.title + '" from ' + p.start_iso + ' to ' + p.end_iso
+          + (p.attendee_email ? ' with ' + p.attendee_email + ' (they were sent the invitation)' : '')
+          + (e.id ? ' — event ' + e.id : '') + '.' };
+    },
+  },
+};
 
 const zohocrm = {
   api: (c: Ctx) => String(c.secret.api_domain ?? 'https://www.zohoapis.com').replace(/\/+$/, ''),
@@ -3595,6 +3745,132 @@ const erpnextActions: Record<string, NativeAction> = {
   // v1 is single-line-item BY DESIGN: the tool-offer machinery renders flat
   // scalar params only, and an honest one-line quote beats a stringly-typed
   // items blob the approver cannot read.
+  // ── M2 (practical-work program): the LEDGER-LANDING verbs. ──────────────
+  // Approval happens in OUR gate (execute_action → human task → approve on
+  // the phone); the human has already said yes by the time run() fires, so
+  // these SUBMIT (docstatus 1) — a draft Payment Entry books nothing, and a
+  // gate that ends in a draft would be the report-writer problem wearing a
+  // receipt. Rollback = cancel the submitted document (ERPNext's own undo).
+  erpnext_payment_entry_for_invoice: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (the Sales Invoice number) is required.' };
+      const amt = p.amount != null && String(p.amount).trim() !== '' ? Number(p.amount) : null;
+      if (amt != null && (!Number.isFinite(amt) || amt <= 0)) return { ok: false, error: 'bad_param', detail: 'amount, when given, must be a positive number (omit it to book the full outstanding).' };
+      return { ok: true, method: 'POST', url: c.baseUrl + '/api/resource/Payment%20Entry', body: {} };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      // Build the entry ERPNext's own way: get_payment_entry maps the invoice
+      // to a Payment Entry with the right accounts, party and allocation —
+      // hand-assembling those fields is how a wrong ledger looks right.
+      const ref = p.external_ref.trim();
+      const build = await httpJson(
+        c.baseUrl + '/api/method/erpnext.accounts.doctype.payment_entry.payment_entry.get_payment_entry?dt=Sales%20Invoice&dn=' + encodeURIComponent(ref),
+        { headers: erpnext.hdrs(c) });
+      if (!build.ok) return { ok: false, status: build.status, error: build.error, raw: build.body };
+      const doc = (build.body as { message?: Record<string, unknown> } | null)?.message;
+      if (!doc) return { ok: false, error: 'build_failed', detail: 'ERPNext returned no mapped Payment Entry for ' + ref + '.' };
+      const amt = p.amount != null && String(p.amount).trim() !== '' ? Number(p.amount) : null;
+      if (amt != null) {
+        doc.paid_amount = amt; doc.received_amount = amt;
+        const refs = (doc.references as Array<Record<string, unknown>> | undefined) ?? [];
+        if (refs.length === 1) refs[0].allocated_amount = amt;
+        else if (refs.length > 1) return { ok: false, error: 'ambiguous_allocation', detail: 'The mapped entry allocates across ' + refs.length + ' documents — a partial amount cannot be applied unambiguously. Omit amount to book the mapped allocation.' };
+      }
+      const created = await httpJson(c.baseUrl + '/api/resource/Payment%20Entry', {
+        method: 'POST', headers: { Authorization: erpnext.auth(c), 'Content-Type': 'application/json' }, body: JSON.stringify(doc) });
+      if (!created.ok) return { ok: false, status: created.status, error: created.error, raw: created.body };
+      const name = (created.body as { data?: { name?: string } } | null)?.data?.name;
+      if (!name) return { ok: false, error: 'no_name', detail: 'ERPNext created the entry but returned no document name.' };
+      const submitted = await httpJson(c.baseUrl + '/api/resource/Payment%20Entry/' + encodeURIComponent(name), {
+        method: 'PUT', headers: { Authorization: erpnext.auth(c), 'Content-Type': 'application/json' }, body: JSON.stringify({ docstatus: 1 }) });
+      if (!submitted.ok) {
+        // The draft exists but did not book — say EXACTLY that; a receipt
+        // claiming a booking that is still a draft is the $431k shape again.
+        return { ok: false, status: submitted.status, error: submitted.error, raw: submitted.body,
+          detail: 'Payment Entry ' + name + ' was created as a DRAFT but failed to submit — it books nothing until submitted in ERPNext.' };
+      }
+      const booked = (doc.paid_amount ?? '?') + ' ' + (doc.paid_to_account_currency ?? doc.party_account_currency ?? '');
+      return { ok: true, status: submitted.status, raw: submitted.body,
+        receipt: 'Booked payment ' + name + ' of ' + booked + ' against ' + ref + ' in ERPNext — SUBMITTED, this is in the ledger.' };
+    },
+  },
+  erpnext_create_journal_entry: {
+    render(c, p) {
+      if (!p.debit_account?.trim() || !p.credit_account?.trim()) return { ok: false, error: 'param_required', detail: 'debit_account and credit_account are required.' };
+      const amt = Number(p.amount);
+      if (!Number.isFinite(amt) || amt <= 0) return { ok: false, error: 'bad_param', detail: 'amount must be a positive number.' };
+      if (!p.remark?.trim()) return { ok: false, error: 'param_required', detail: 'remark (why this entry exists) is required — a journal line with no story is unauditable.' };
+      return {
+        ok: true, method: 'POST', url: c.baseUrl + '/api/resource/Journal%20Entry',
+        body: {
+          voucher_type: 'Journal Entry',
+          ...(p.posting_date?.trim() ? { posting_date: p.posting_date.trim() } : {}),
+          user_remark: p.remark.trim(),
+          accounts: [
+            { account: p.debit_account.trim(), debit_in_account_currency: amt },
+            { account: p.credit_account.trim(), credit_in_account_currency: amt },
+          ],
+        },
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const created = await httpJson(r.url!, { method: 'POST', headers: { Authorization: erpnext.auth(c), 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!created.ok) return { ok: false, status: created.status, error: created.error, raw: created.body };
+      const name = (created.body as { data?: { name?: string } } | null)?.data?.name;
+      if (!name) return { ok: false, error: 'no_name', detail: 'ERPNext created the entry but returned no document name.' };
+      const submitted = await httpJson(c.baseUrl + '/api/resource/Journal%20Entry/' + encodeURIComponent(name), {
+        method: 'PUT', headers: { Authorization: erpnext.auth(c), 'Content-Type': 'application/json' }, body: JSON.stringify({ docstatus: 1 }) });
+      if (!submitted.ok) return { ok: false, status: submitted.status, error: submitted.error, raw: submitted.body,
+        detail: 'Journal Entry ' + name + ' was created as a DRAFT but failed to submit — it books nothing until submitted in ERPNext.' };
+      return { ok: true, status: submitted.status, raw: submitted.body,
+        receipt: 'Posted journal entry ' + name + ': DR ' + p.debit_account + ' / CR ' + p.credit_account + ' — ' + p.amount + '. ' + p.remark.trim() + ' SUBMITTED — this is in the ledger.' };
+    },
+  },
+  // ── M3: PAYING a supplier — the first verb that moves OUR money OUT. ────
+  // amount_cents is the registry's money convention (the approval-threshold /
+  // spend-cap / trust-ceiling gates read exactly that name), REQUIRED — an
+  // outbound payment with an unreadable amount must fail closed, never book
+  // an unbounded value. Destructive, finance-gated, SUBMITS (the human said
+  // yes at our gate; a draft books nothing).
+  erpnext_pay_purchase_invoice: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (the Purchase Invoice number) is required.' };
+      const cents = Number(p.amount_cents);
+      if (!Number.isFinite(cents) || cents <= 0 || Math.floor(cents) !== cents) return { ok: false, error: 'bad_param', detail: 'amount_cents must be a positive whole number of cents.' };
+      return { ok: true, method: 'POST', url: c.baseUrl + '/api/resource/Payment%20Entry', body: {} };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const ref = p.external_ref.trim();
+      const build = await httpJson(
+        c.baseUrl + '/api/method/erpnext.accounts.doctype.payment_entry.payment_entry.get_payment_entry?dt=Purchase%20Invoice&dn=' + encodeURIComponent(ref),
+        { headers: erpnext.hdrs(c) });
+      if (!build.ok) return { ok: false, status: build.status, error: build.error, raw: build.body };
+      const doc = (build.body as { message?: Record<string, unknown> } | null)?.message;
+      if (!doc) return { ok: false, error: 'build_failed', detail: 'ERPNext returned no mapped Payment Entry for ' + ref + '.' };
+      const units = Number(p.amount_cents) / 100;
+      doc.paid_amount = units; doc.received_amount = units;
+      const refs = (doc.references as Array<Record<string, unknown>> | undefined) ?? [];
+      if (refs.length === 1) refs[0].allocated_amount = units;
+      else if (refs.length > 1) return { ok: false, error: 'ambiguous_allocation', detail: 'The mapped entry allocates across ' + refs.length + ' documents — pay them individually.' };
+      const created = await httpJson(c.baseUrl + '/api/resource/Payment%20Entry', {
+        method: 'POST', headers: { Authorization: erpnext.auth(c), 'Content-Type': 'application/json' }, body: JSON.stringify(doc) });
+      if (!created.ok) return { ok: false, status: created.status, error: created.error, raw: created.body };
+      const name = (created.body as { data?: { name?: string } } | null)?.data?.name;
+      if (!name) return { ok: false, error: 'no_name', detail: 'ERPNext created the entry but returned no document name.' };
+      const submitted = await httpJson(c.baseUrl + '/api/resource/Payment%20Entry/' + encodeURIComponent(name), {
+        method: 'PUT', headers: { Authorization: erpnext.auth(c), 'Content-Type': 'application/json' }, body: JSON.stringify({ docstatus: 1 }) });
+      if (!submitted.ok) return { ok: false, status: submitted.status, error: submitted.error, raw: submitted.body,
+        detail: 'Payment Entry ' + name + ' was created as a DRAFT but failed to submit — no money moved in the books.' };
+      return { ok: true, status: submitted.status, raw: submitted.body,
+        receipt: 'PAID supplier invoice ' + ref + ' — ' + units + ' booked out via ' + name + ' in ERPNext, SUBMITTED.' };
+    },
+  },
   erpnext_create_quotation: {
     render(c, p) {
       if (!p.customer?.trim()) return { ok: false, error: 'param_required', detail: 'customer (the ERPNext Customer name) is required.' };
@@ -4277,7 +4553,7 @@ const mcpActions: Record<string, NativeAction> = {
   },
 };
 
-const NATIVE_ACTIONS: Record<string, NativeAction> = { ...zendeskActions, ...freshdeskActions, ...slackActions, ...servicenowActions, ...githubActions, ...gitlabActions, ...asanaActions, ...dreamteamActions, ...erpnextActions, ...hubspotActions, ...salesforceActions, ...quickbooksActions, ...xeroActions, ...stripeActions, ...mcpActions, ...intercomActions, ...gorgiasActions, ...bamboohrActions, ...squareActions, ...shopifyActions };
+const NATIVE_ACTIONS: Record<string, NativeAction> = { ...zendeskActions, ...freshdeskActions, ...slackActions, ...servicenowActions, ...githubActions, ...gitlabActions, ...asanaActions, ...dreamteamActions, ...erpnextActions, ...hubspotActions, ...salesforceActions, ...quickbooksActions, ...xeroActions, ...stripeActions, ...mcpActions, ...intercomActions, ...gorgiasActions, ...bamboohrActions, ...squareActions, ...shopifyActions, ...googleCalendarActions };
 
 // ── clickup ── secret: { token } (personal token, raw — not Bearer) · fixed
 // base. product_system (tasks).
@@ -6475,7 +6751,7 @@ serve(async (req) => {
       close, kustomer, mailchimp, gitbook,
       netsuite, powerschool, ellucian, toast, athenahealth, epic, cerner,
       dropbox, twilio, typeform, calendly, okta, contentful,
-      erpnext, mcp, chargebee, clover, zohocrm, zohodesk,
+      erpnext, mcp, chargebee, clover, zohocrm, zohodesk, googlecalendar,
     };
     // deno-lint-ignore no-explicit-any
     const adapter: any = templateExec ? templateAdapter(templateExec) : adapters[connector.provider];
@@ -6939,19 +7215,47 @@ serve(async (req) => {
             : { fetched: (payRes.items ?? []).length, ...((recon ?? {}) as Record<string, unknown>) };
         }
       }
+      // ── Payables leg (M3): rides the same sync as the invoice book and the
+      // payment evidence — the money chain is ONE pipe or it lies.
+      let payables: Record<string, unknown> | undefined;
+      if (typeof (adapter as { syncPayables?: unknown }).syncPayables === 'function') {
+        const apRes = await (adapter as unknown as { syncPayables: (c: typeof ctx) => Promise<{ ok: boolean; error?: string; records?: Array<Record<string, unknown>> }> }).syncPayables(ctx);
+        if (!apRes.ok) {
+          payables = { ok: false, error: apRes.error ?? 'payables_sync_failed' };
+        } else {
+          let apUpserted = 0; const apErrors: string[] = [];
+          for (const rec of apRes.records ?? []) {
+            const { error: apErr } = await admin.rpc('upsert_external_ap_record', {
+              p_tenant_id: tenantId, p_provider: connector.provider,
+              p_supplier_external_ref: rec.supplier_external_ref ?? null,
+              p_supplier_name: rec.supplier_name ?? null,
+              p_invoice_external_ref: rec.invoice_external_ref ?? null,
+              p_amount_cents: rec.amount_cents ?? 0,
+              p_outstanding_cents: rec.outstanding_cents ?? null,
+              p_due_date: rec.due_date ?? null,
+              p_status: rec.status ?? '',
+              p_currency: rec.currency ?? null,
+            });
+            if (apErr) apErrors.push(String(rec.invoice_external_ref) + ': ' + apErr.message);
+            else apUpserted += 1;
+          }
+          payables = { fetched: (apRes.records ?? []).length, upserted: apUpserted, errors: apErrors.slice(0, 5) };
+        }
+      }
       const ms = Date.now() - started;
       const health = await recordHealth(errors.length === 0, errors[0] ?? null);
       await admin.from('connectors').update({ last_sync_at: new Date().toISOString() }).eq('id', connectorId);
       await audit('connector_sync',
         `Financial sync from ${connector.provider} — ${upserted}/${records.length} invoice(s) upserted into the AR tables in ${ms}ms${errors.length ? `, ${errors.length} error(s)` : ''}`,
-        { hub_action: 'sync_financials', fetched: records.length, upserted, errors: errors.slice(0, 5), latency_ms: ms, health, ...(payments ? { payments } : {}) });
+        { hub_action: 'sync_financials', fetched: records.length, upserted, errors: errors.slice(0, 5), latency_ms: ms, health, ...(payments ? { payments } : {}), ...(payables ? { payables } : {}) });
       // "contacts" says WHY a chase would fall back to an internal note, so a
       // blank email column is never left ambiguous between "no data" and "no
       // permission" — one is the customer's record to fix, the other is an API
       // scope to grant, and the visible symptom of both is identical.
       return json({ ok: errors.length === 0, fetched: records.length, upserted, errors: errors.slice(0, 5), latency_ms: ms, health,
         ...(sr.contacts ? { contacts: sr.contacts } : {}),
-        ...(payments ? { payments } : {}) });
+        ...(payments ? { payments } : {}),
+        ...(payables ? { payables } : {}) });
     }
 
     // ════════ reconcile_financials — DRIFT SENTINEL (B3) ════════
