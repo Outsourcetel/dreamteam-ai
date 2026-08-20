@@ -1558,9 +1558,16 @@ const CASES = [
       'F6. Re-anchors an unverifiable item to a sentence that appears in no document. CAUGHT — "F6 UNSUPPORTED CLAIM — A-6 is carried on docs/53-deferred-work-census.md, but the anchor text … is no longer in that file". This is what keeps "unverifiable" from degrading into "unfalsifiable".'],
     ['unverifiable-over-ceiling',
       'F7. Converts one checkable item into a claim-carried one without raising the ceiling. CAUGHT — "F7 UNVERIFIABLE CEILING EXCEEDED — 10 item(s) carry no mechanical verification, ceiling is 9". The ratchet is what stops the register quietly reverting to prose one item at a time.'],
+    // ── F8, added 2026-08-20 after the D-12 false closure ──────────────────
+    ['subject-method-mismatch',
+      'F8, the POSITIVE direction — D-12 reconstructed. Takes a repo-source item checked by grep (B-7) and re-declares its subject as "deployed-edge", leaving the working-tree grep in place. CAUGHT — "F8 METHOD CANNOT ANSWER SUBJECT — B-7 … declares subject \\"deployed-edge\\" … but is verified by kind \\"grep\\", which interrogates something else". This is the defect itself: on 2026-08-18 D-12 was recorded CLOSED off a grep that was perfectly correct about the repo while 60 of 64 DEPLOYED bundles still ran the unpinned build. Before this arm the schema recorded only the METHOD, so nothing could compare it against the claim.'],
+    ['subject-method-rematched-stays-silent',
+      '⚠ F8, the NEGATIVE direction, and the arm that makes the positive one mean anything. Moves an open production-db/sql item (A-1) to a DIFFERENT subject AND its matching method at the same time — subject "repo-source" with a real grep. The pair stays coherent, so F8 must say NOTHING about A-1. SILENT (correct) — 0 lines containing both "F8" and "A-1"; the run\'s other failures are the two standing reds and are not about A-1. Without this control, an F8 that fired on ANY edit to a subject field would score identically to one that fires on a genuine mismatch, and the register would be back to a check that cannot tell the defect from an ordinary diff.'],
+    ['deployed-probe-blind-to-subject',
+      'A probe that cannot SEE its subject must ERROR, never return a confident zero. Points B-5\'s deployed-content check at slug "no-such-function-at-all". CAUGHT — "F3 VERIFICATION ERROR — B-5 … is not among the 64 deployed function(s) … a content question about a function that is not running cannot be answered, and must not be answered as zero". "Pattern absent" and "I never looked" both come back as 0 from a naive implementation, and 0 is what CLOSED looks like.'],
   ].map(([mut, evidence]) => ({
     name: `deferred-register --mutate=${mut} (MANUAL, a JS evaluation over a JSON register: a SELECT cannot fake it)`,
-    manual: `${evidence} Verified 2026-08-12 against the live register (47 items, 38 verified); exit 0 = caught and named.`,
+    manual: `${evidence} Re-run 2026-08-20 against the live register (68 items, 59 verified, 9 carried on claim); all 11 cases exit 0. ⚠ Scoring is strict in BOTH directions: a "caught" case needs ONE failure line carrying every expected substring, and a "silent" case fails if ANY line carries every forbidden one. An errored or no-op run is INCONCLUSIVE and is fixed and re-run, never counted.`,
   })),
   // ── provider-catalog ─────────────────────────────────────────────────────
   // The section's three newest assertions — the connectors_provider_check edge

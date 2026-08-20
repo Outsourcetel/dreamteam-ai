@@ -44,8 +44,12 @@
 // ============================================================================
 import { readFileSync, writeFileSync } from 'node:fs';
 import {
-  REGISTER_FILE, SEVERITIES, WHY_SKIPPED, loadRegister, validateRegister, runGrep,
+  REGISTER_FILE, SEVERITIES, WHY_SKIPPED, SUBJECTS, SUBJECT_METHODS, SUBJECT_WHY,
+  DEPLOYED_PROBES, loadRegister, validateRegister, subjectMethodFailures, runGrep,
 } from './deferred-register.mjs';
+import {
+  readToken as edgeToken, countDriftedFromMain, countFloatingDeployedImports, countInDeployedBundle,
+} from './edge-deployed-parity.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (name, fallback = null) => {
@@ -78,13 +82,26 @@ const USAGE = `
   npm run defer -- --close <id> --by "<commit or migration that closed it>"
   npm run defer -- --what "<one sentence>" --where "<file:line or db object>" \\
                    --sev <${SEVERITIES.join('|')}> --why <${WHY_SKIPPED.join('|')}> \\
+                   --subject <${SUBJECTS.join('|')}> \\
                    [--id <ID>] [--source "<where it was first named>"] \\
                    ( --sql "<select …::int as n>" --open-if "<op><number>"
-                   | --grep "<regex>" --paths "<a,b>" --open-if "<op><number>"
+                   | --grep "<regex>" --paths "<a,b>" [--tree origin/main] --open-if "<op><number>"
+                   | --deployed-edge <${DEPLOYED_PROBES.join('|')}> [--slug <fn> --grep "<regex>"] --open-if "<op><number>"
                    | --unverifiable "<why no check is possible>" --claim "<file>#<anchor text>" )
 
   --open-if takes >=1, >0, ==0, <=3 … "open when n <op> value". Inverted polarity
   (open while a count is ZERO) is normal and supported: ==0.
+
+  ⚠ --subject is what the item is a CLAIM ABOUT; the verification flag is HOW it
+  is checked. They are different things and this tool will not let you pair them
+  wrongly (F8). The pairs that can answer each other:
+${SUBJECTS.map((s) => `      ${s.padEnd(14)} → ${SUBJECT_METHODS[s].join(', ').padEnd(15)} (${SUBJECT_WHY[s]})`).join('\n')}
+
+  This exists because D-12 — "the edge functions carry unpinned remote imports" —
+  was recorded CLOSED off a grep of the working tree while 60 of 64 DEPLOYED
+  bundles still ran the unpinned build. The grep was right; it was right about
+  the wrong subject. Deploying is a MANUAL step, so "repo-source" is never the
+  subject of a claim about a running edge function.
 `;
 
 function parseOpenIf(s) {
@@ -136,9 +153,19 @@ if (has('close')) {
 
 // ── add ───────────────────────────────────────────────────────────────────
 const what = flag('what'), where = flag('where'), sev = flag('sev'), why = flag('why');
+const subject = flag('subject');
 if (!what || !where || !sev || !why) { console.log(USAGE); process.exit(1); }
 if (!SEVERITIES.includes(sev)) { console.error(`--sev must be one of ${SEVERITIES.join(', ')}`); process.exit(1); }
 if (!WHY_SKIPPED.includes(why)) { console.error(`--why must be one of ${WHY_SKIPPED.join(', ')}`); process.exit(1); }
+// ⚠ NOT DEFAULTED FROM THE METHOD, deliberately. Deriving the subject from the
+// kind would rubber-stamp whatever check the author happened to reach for,
+// which is precisely how D-12 came to be a production claim answered by a repo
+// grep. The person has to say what the claim is about.
+if (!SUBJECTS.includes(subject)) {
+  console.error(`--subject must be one of ${SUBJECTS.join(', ')} — it says what the item is a CLAIM ABOUT, which is not the same as how you check it.`);
+  console.error(SUBJECTS.map((s) => `    ${s.padEnd(14)} ${SUBJECT_WHY[s]}`).join('\n'));
+  process.exit(1);
+}
 
 let verification;
 if (has('unverifiable')) {
@@ -158,8 +185,19 @@ if (has('unverifiable')) {
     pattern: flag('grep'), count: flag('count', 'matches'), open_if: parseOpenIf(flag('open-if')),
   };
   if (!verification.paths.length) { console.error('--grep needs --paths "src,supabase/functions"'); process.exit(1); }
+  if (has('tree')) verification.tree = flag('tree');
+} else if (has('deployed-edge')) {
+  const probe = flag('deployed-edge');
+  if (!DEPLOYED_PROBES.includes(probe)) { console.error(`--deployed-edge must be one of ${DEPLOYED_PROBES.join(', ')}`); process.exit(1); }
+  verification = { kind: 'deployed-edge', probe, tree: flag('tree', 'origin/main'), open_if: parseOpenIf(flag('open-if')) };
+  if (probe === 'content') {
+    verification.slug = flag('slug');
+    verification.pattern = flag('grep');
+    if (flag('files')) verification.files = String(flag('files')).split(',').map((s) => s.trim()).filter(Boolean);
+    if (!verification.slug || !verification.pattern) { console.error('--deployed-edge content needs --slug <function> and --grep "<regex>"'); process.exit(1); }
+  }
 } else {
-  console.error('An item needs a way to check it: --sql, --grep, or an explicit --unverifiable with a --claim.\n'
+  console.error('An item needs a way to check it: --sql, --grep, --deployed-edge, or an explicit --unverifiable with a --claim.\n'
     + 'That is the whole point of the register — an item nobody can check is the shape docs/53 found 18 of, and it costs the register\'s unverifiable ceiling.');
   process.exit(1);
 }
@@ -171,10 +209,23 @@ const item = {
     date: new Date().toISOString().slice(0, 10),
     source: flag('source') ?? 'recorded by npm run defer',
   },
+  subject,
   state: flag('state', 'open'),
   verification,
 };
 if (reg.items.some((i) => i.id === item.id)) { console.error(`id ${item.id} is taken`); process.exit(1); }
+
+// ── F8 at WRITE time, before a single query runs ──────────────────────────
+// The same matrix certify enforces on every run. Checked here first because a
+// mismatched pair's number is not evidence either way, and dry-running it would
+// print a confident n= that means nothing.
+{
+  const bad = subjectMethodFailures({ items: [item] });
+  if (bad.length) {
+    console.error(`REFUSED — ${bad.join('\n')}`);
+    process.exit(1);
+  }
+}
 
 // ── The dry run. This is the part a hand-edit cannot do. ──────────────────
 if (verification.kind !== 'none') {
@@ -186,6 +237,12 @@ if (verification.kind !== 'none') {
         throw new Error(`the query must return exactly one row with one column (alias it \`n\`); it returned ${JSON.stringify(rows).slice(0, 160)}`);
       }
       n = Number(Object.values(rows[0])[0]);
+    } else if (verification.kind === 'deployed-edge') {
+      const tok = edgeToken();
+      const tree = verification.tree ?? 'origin/main';
+      if (verification.probe === 'drift-from-main') n = (await countDriftedFromMain({ token: tok, tree })).n;
+      else if (verification.probe === 'unpinned-imports') n = (await countFloatingDeployedImports({ token: tok, tree })).n;
+      else n = await countInDeployedBundle({ token: tok, slug: verification.slug, pattern: verification.pattern, files: verification.files ?? null, tree });
     } else {
       n = runGrep(verification);
     }

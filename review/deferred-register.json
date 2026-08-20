@@ -23,7 +23,8 @@
           "n": 1
         },
         "note": "Asks the catalogue the sharpest single question the finding contains. RLS does not apply to TRUNCATE, so either grant is one statement away from destroying every tenant's stored objects."
-      }
+      },
+      "subject": "production-db"
     },
     {
       "id": "A-2",
@@ -44,7 +45,8 @@
           "n": 1
         },
         "note": "postgres is not a superuser and not a member of supabase_admin, so this cannot be revoked from here. Compensating control: certify's authenticated-write-perimeter arm reads live grants."
-      }
+      },
+      "subject": "production-db"
     },
     {
       "id": "A-3",
@@ -65,7 +67,8 @@
           "n": 1
         },
         "note": "docs/53 carried this on the naming document (⏸). Re-probed 2026-08-12: proacl is NULL on all 12 net routines, i.e. the Postgres default of EXECUTE to PUBLIC, so anon holds it on all three. The only thing between that grant and a live SSRF primitive is that `net` is not in PostgREST's exposed-schema list — certify's net-not-exposed arm is the standing check on that half."
-      }
+      },
+      "subject": "production-db"
     },
     {
       "id": "A-4",
@@ -88,7 +91,8 @@
         "note": "Narrowing changes what people see, so it is a product call, not a bug fix. Pinned on the responsibility predicate (can_access_de) because that is what narrowing it would have to use. Residual: if the function is dropped entirely this reads CLOSED, which is the correct verdict for the exposure but not for the feature."
       },
       "closed_by": "mig 775: get_de_cost_metrics now ANDs can_access_de(u.de_id); verified with a real authenticated JWT that a tenant owner still sees their own workforce (1 row)",
-      "closed_on": "2026-08-18"
+      "closed_on": "2026-08-18",
+      "subject": "production-db"
     },
     {
       "id": "A-5",
@@ -111,7 +115,8 @@
         "note": "Repointed 2026-08-20 to measure the real generator. Counts only ABANDONED signups — non-platform profiles with no tenant whose auth user is older than 30 days — so a signup genuinely in progress does not read as a defect, and platform_super_admin (tenant_id NULL by design, 2 rows) is excluded. The previous pin counted every NULL tenant_id, which included those two correct rows and could not be closed without deleting legitimate data."
       },
       "closed_by": "The one abandoned-signup profile (spjamesvelez+1@gmail.com, a +1 alias of the founder's own account, signed up 2026-07-09, complete_signup never run) deleted on the founder's instruction 2026-08-20. Checked all 13 FKs into profiles first — no referencing rows — and the auth.users account survives, so only the orphaned profile row went. Abandoned signups now 0. The FK stays ON DELETE SET NULL deliberately: delete_tenant already removes member profiles at step 6b, and switching to CASCADE would move that to cascade time where 10 NO ACTION FKs would block every future tenant deletion.",
-      "closed_on": "2026-08-20"
+      "closed_on": "2026-08-20",
+      "subject": "production-db"
     },
     {
       "id": "A-6",
@@ -131,7 +136,8 @@
           "file": "docs/53-deferred-work-census.md",
           "anchor": "Resend API key rotation"
         }
-      }
+      },
+      "subject": "unreachable"
     },
     {
       "id": "B-1",
@@ -154,7 +160,8 @@
           "n": 1
         },
         "note": "docs/53 recorded this OPEN. Re-verified 2026-08-12: mig 721 landed and moved the consequence onto the row as an AFTER UPDATE OF status trigger. Open again the moment the trigger is dropped or disabled — a disabled trigger is indistinguishable from a deleted one at runtime. certify's stranded-draft probe holds the richer arms (allow-list, approvals-only, data)."
-      }
+      },
+      "subject": "production-db"
     },
     {
       "id": "B-2",
@@ -175,7 +182,8 @@
           "n": 1
         },
         "note": "Closes when a human withdraws or re-raises the task. This register REPORTS; it never decides. Deliberately not keyed to that one task id — an exemption keyed to the single row a check finds is how a gate becomes theatre."
-      }
+      },
+      "subject": "production-db"
     },
     {
       "id": "B-3",
@@ -196,7 +204,8 @@
           "n": 1
         },
         "note": "It is a decision about another workspace's pending work, which is why nobody here may clear it."
-      }
+      },
+      "subject": "production-db"
     },
     {
       "id": "B-4",
@@ -217,7 +226,8 @@
           "n": 1
         },
         "note": "Asks onboarding_verb_verdict — the ONE place this predicate is written (mig 693) — rather than re-inlining it. A probe whose rule disagrees with the runtime's manufactures findings and misses real ones in the same pass."
-      }
+      },
+      "subject": "production-db"
     },
     {
       "id": "B-5",
@@ -231,20 +241,22 @@
       },
       "state": "closed",
       "verification": {
-        "kind": "grep",
-        "paths": [
-          "supabase/functions/widget-ask/index.ts"
+        "kind": "deployed-edge",
+        "probe": "content",
+        "slug": "widget-ask",
+        "files": [
+          "functions/widget-ask/index.ts"
         ],
-        "pattern": "needs_escalation: false, no_docs: true",
-        "count": "matches",
+        "pattern": "needs_escalation:\\s*false,\\s*no_docs:\\s*true",
         "open_if": {
           "op": ">=",
           "n": 1
         },
-        "note": "Pinned on the return shape of the branch. Residual, stated rather than hidden: a fix that raises a human task but leaves this return untouched would not close the item mechanically — the item is pinned on the shape, and closing it should mean changing that shape."
+        "note": "REPOINTED 2026-08-20 from a local-tree grep. The claim is about what a customer with no knowledge documents actually gets back, which is the DEPLOYED widget-ask, not the file. Pin inverted to prove it can fire: the pre-fix revision (3bc9a9ee~1) matches 1, main matches 0, and the deployed bundle matches 0 — it carries needs_escalation:true. Whitespace is \\s* because the deployed source is deno's emit, not the .ts."
       },
       "closed_by": "widget-ask no-docs branch now escalates: message escalated:true, human task, activity + audit event, conversation needs_human. Proven on a fresh tenant with zero knowledge docs — needs_escalation=true, task raised, 1 escalated event",
-      "closed_on": "2026-08-19"
+      "closed_on": "2026-08-19",
+      "subject": "deployed-edge"
     },
     {
       "id": "B-6",
@@ -268,7 +280,8 @@
         "note": "Unchanged pin, but note its known weakness: it compares ledger COUNTS, and two ledgers can hold the same number of DIFFERENT rows — dev carrying one production never had while missing one it does — which would read level while dev was wrong. scripts/sync-dev-migrations.mjs compares the SETS and reports dev-only rows separately; this pin is the cheap approximation certify runs. ── 2026-08-20: two mechanisms now exist. ci.yml runs scripts/sync-dev-migrations.mjs --apply --best-effort before golden-path (incremental, gets most of the way, cannot close the gap because of the data-asserting migrations), and .github/workflows/dev-rebuild.yml rebuilds dev nightly from a freshly regenerated baseline (a schema dump replays no assertions, so it is the only route to true parity). This item stays OPEN until a nightly has actually run and the two ledgers are level — the machinery existing is not the same as the gap being closed."
       },
       "closed_by": "dev rebuilt from the grant-emitting baseline 2026-08-20 (commits 5b40df26 + 0bd70fe7). Ledger level at 826/826, and the census matches production on every object class — 306 tables, 7 views, 981 functions, 296 triggers, 404 policies, 3532 columns — AND on grants, which is what A-12 fixed and what the old rebuild silently dropped. Two mechanisms now hold it there: sync-dev-migrations --best-effort before golden-path on every push, and the nightly dev-rebuild workflow. The sql-lag pin reopens this automatically the moment dev falls behind again, which is the right behaviour rather than a promise.",
-      "closed_on": "2026-08-20"
+      "closed_on": "2026-08-20",
+      "subject": "production-db"
     },
     {
       "id": "B-7",
@@ -295,7 +308,8 @@
         "note": "Matches the literal digits, not the word 'production'. A real query would interpolate, so the digits disappearing IS the fix."
       },
       "closed_by": "commit d7451747 — golden-path's footer now queries production and prints NOT MEASURED when unreachable",
-      "closed_on": "2026-08-19"
+      "closed_on": "2026-08-19",
+      "subject": "repo-source"
     },
     {
       "id": "B-8",
@@ -322,7 +336,8 @@
           "n": 0
         },
         "note": "docs/53 recorded this OPEN (⏸, 'follows from B-1'). Re-verified 2026-08-12: the sibling probe exists and is wired. Open again if the wiring is removed. This checks that the class HAS a standing probe; the probe's own arms (mechanism present/enabled/attached, allow-list, approvals-only) are certify's job, not re-derived here."
-      }
+      },
+      "subject": "repo-source"
     },
     {
       "id": "B-9",
@@ -349,7 +364,8 @@
           "n": 0
         },
         "note": "docs/53 recorded this OPEN and ranked it 3rd to fix. Re-verified 2026-08-12: the ratchet exists and runs in full certify. The arms-vs-keys set comparison is branch-parity's own work — this item verifies that the comparison is WIRED, because the class regressing silently is what happened before and an unwired checker is how it stayed silent for months."
-      }
+      },
+      "subject": "repo-source"
     },
     {
       "id": "B-10",
@@ -388,10 +404,12 @@
           "op": "<",
           "n": 16
         },
-        "note": "Pinned on the EXISTENCE of the 16 recovered files, not on their content. The first attempt matched a filename header comment and found only 11 of 16 — five of these migrations open with a rule line or a WHY: instead, so that pattern measured house style rather than the defect. A dot matches any non-empty file, so this counts exactly what the finding was about: does main still carry a source for every migration production has applied."
+        "note": "Pinned on the EXISTENCE of the 16 recovered files, not on their content. The first attempt matched a filename header comment and found only 11 of 16 — five of these migrations open with a rule line or a WHY: instead, so that pattern measured house style rather than the defect. A dot matches any non-empty file, so this counts exactly what the finding was about: does main still carry a source for every migration production has applied. ⚠ REPOINTED 2026-08-20 to read from origin/main rather than the working copy. The item's claim is \"main can rebuild production\"; a working-tree grep answers yes for a file that exists locally and has never been pushed — which is the exact state CLAUDE.md records eighteen migrations reaching production in.",
+        "tree": "origin/main"
       },
       "closed_by": "Recovered from origin/claude/docs54-stage-c on 2026-08-20 (commit df84e4d4) — migration files only, not that branch’s other in-flight work. Verified with the ledger’s own migrationChecksum(): all 16 hash to exactly what production recorded at apply time, 0 of 811 ledger rows remain orphaned, 0 checksum mismatches. main can rebuild production again.",
-      "closed_on": "2026-08-20"
+      "closed_on": "2026-08-20",
+      "subject": "repo-source"
     },
     {
       "id": "C-1",
@@ -418,7 +436,8 @@
         "note": "Repointed 2026-08-20. The original pin opened whenever more than 6 alerts were unresolved — but a nonzero backlog is normal operation, so it measured busyness rather than the defect. The defect was that the banner sliced the FIRST six without ranking, so 52 wake-spin rows buried the weekly value digest. Pinned on the sort existing, which is the thing that was wrong."
       },
       "closed_by": "Banner now ranks by kind before slicing (commit b5b1a761): service-affecting first, then value_digest, then the rest newest-first. ops_alerts has no severity column, so the rank derives from kind — the same classification CRITICAL_KINDS already used for colour.",
-      "closed_on": "2026-08-20"
+      "closed_on": "2026-08-20",
+      "subject": "repo-source"
     },
     {
       "id": "C-2",
@@ -446,7 +465,8 @@
         "note": "INVERTED POLARITY, deliberately: this item is open while the count is ZERO. Closing it means either wiring a reader or dropping the function — either way the grep changes. A register that could only express 'open when nonzero' would have to carry this one on a claim."
       },
       "closed_by": "src/lib/api.ts fetchDispatchHealth + PlatformConsolePage System Health panel — the function now has a reader on the platform-admin page whose subtitle previously admitted connector health was the only signal tracked",
-      "closed_on": "2026-08-18"
+      "closed_on": "2026-08-18",
+      "subject": "repo-source"
     },
     {
       "id": "C-3",
@@ -469,7 +489,8 @@
         "note": "The origin column has existed since mig 682; this body does not use it. Both conjuncts matter — reading evidence_runs is what makes the missing predicate a defect."
       },
       "closed_by": "mig 777 — de_records_gate branch (d) now ANDs evidence_is_production(er.origin); 75 non-production runs no longer count toward the rate that flips external_reply_mode",
-      "closed_on": "2026-08-19"
+      "closed_on": "2026-08-19",
+      "subject": "production-db"
     },
     {
       "id": "C-4",
@@ -491,7 +512,8 @@
         }
       },
       "closed_by": "mig 777 — get_workforce_trust_metrics' human_tasks read now ANDs evidence_is_production(origin)",
-      "closed_on": "2026-08-19"
+      "closed_on": "2026-08-19",
+      "subject": "production-db"
     },
     {
       "id": "C-5",
@@ -512,7 +534,8 @@
           "n": 0
         },
         "note": "INVERTED POLARITY: open while ZERO non-support certifications exist. docs/53 carried this on the naming document (⏸); re-verified 2026-08-12 at 29/29 support_agent. The first non-support certification is the mechanical event that closes it."
-      }
+      },
+      "subject": "production-db"
     },
     {
       "id": "C-6",
@@ -526,18 +549,20 @@
       },
       "state": "open",
       "verification": {
-        "kind": "grep",
-        "paths": [
-          "supabase/functions/de-work/index.ts"
+        "kind": "deployed-edge",
+        "probe": "content",
+        "slug": "de-work",
+        "files": [
+          "functions/de-work/index.ts"
         ],
         "pattern": "evidence_runs",
-        "count": "matches",
         "open_if": {
           "op": "==",
           "n": 0
         },
-        "note": "INVERTED POLARITY. docs/53 carried this on the naming document (⏸). Pinned on the work engine specifically, because 'only the answer paths write it' is not decidable from a whole-tree grep, whereas 'de-work does not write it' is, and de-work is what Move 1 is about."
-      }
+        "note": "INVERTED POLARITY: open while the RUNNING work engine never writes the spine. REPOINTED 2026-08-20 from a local-tree grep — which would have flipped this to closed the moment someone merged the writer, whether or not de-work was ever redeployed. Measured at repoint: 0 in the deployed bundle and 0 on main, so the verdict is unchanged and the trap is gone."
+      },
+      "subject": "deployed-edge"
     },
     {
       "id": "C-7",
@@ -564,7 +589,8 @@
         "note": "Reads the pin file, which is what 'not re-pinned' means. Residual, stated: this does not re-run deno check, so it verifies the ceiling is still slack — not that the four functions are still at 0. certify's edge-typecheck section is what measures that, every run, and prints the ratchet offer."
       },
       "closed_by": "re-pinned via certify --pin-edge: ceiling dropped from 45 total type errors to 0, so every edge function is now pinned at zero",
-      "closed_on": "2026-08-18"
+      "closed_on": "2026-08-18",
+      "subject": "repo-source"
     },
     {
       "id": "D-1",
@@ -589,7 +615,8 @@
           "n": 1
         },
         "note": "Pinned on the major version rather than on `npm audit`, because the item's own stated content is 'the fix is a v7 major'. Confirmed against npm audit 2026-08-12: 3 moderate, 1 high across esbuild/react-router/react-router-dom/vite."
-      }
+      },
+      "subject": "repo-source"
     },
     {
       "id": "D-2",
@@ -613,7 +640,8 @@
           "op": ">=",
           "n": 1
         }
-      }
+      },
+      "subject": "repo-source"
     },
     {
       "id": "D-3",
@@ -640,7 +668,8 @@
         "note": "INVERTED POLARITY: open while CI names golden-path nowhere. CI today runs certify:offline, which says in its own banner that it is a subset."
       },
       "closed_by": ".github/workflows/ci.yml — golden-path job added, reusing the same three secrets the isolation and invariants jobs already hold; fails loudly if any is missing rather than skipping",
-      "closed_on": "2026-08-19"
+      "closed_on": "2026-08-19",
+      "subject": "repo-source"
     },
     {
       "id": "D-4",
@@ -666,7 +695,8 @@
         }
       },
       "closed_by": "all 25 text-[9px] uses across 12 files raised to text-[10px], the micro-label size docs/design-system.md defines as the floor; typecheck clean, no design-drift regressions",
-      "closed_on": "2026-08-18"
+      "closed_on": "2026-08-18",
+      "subject": "repo-source"
     },
     {
       "id": "D-5",
@@ -691,7 +721,8 @@
           "n": 1
         },
         "note": "Reads the drift baselines, because the item is that these two have not MOVED. design-drift.mjs only ever ratchets down, so the day either number falls someone must edit these literals — and that edit is what closes this."
-      }
+      },
+      "subject": "repo-source"
     },
     {
       "id": "D-6",
@@ -720,7 +751,8 @@
         "note": "⚠ CORRECTED WHILE SEEDING. docs/53 D-6 reported 'callModel has 7 non-shared definitions'. Re-read 2026-08-12: all seven are `const callModel = makeCallModelText(...)` — BINDINGS to the shared factory in supabase/functions/_shared/modelCall.ts, i.e. the consolidated shape, not drift. A grep for the identifier counted them as duplicates. The callModel half of this item was already closed; the renderTemplate and stripHtml halves stand and are what this verification counts."
       },
       "closed_by": "resolved by naming, not merging: the three locals are NOT copies of the shared helpers — the shared PLACEHOLDER_RE is single-brace {key} and cannot match {{account.name}}, playbook-execute's takes a RunContext, and the local stripHtml does content-root extraction (nav/cookie/semantic-root) the shared one does not. Renamed to renderAccountTemplate, renderRunTemplate and extractPageText so the names stop implying duplication",
-      "closed_on": "2026-08-19"
+      "closed_on": "2026-08-19",
+      "subject": "repo-source"
     },
     {
       "id": "D-7",
@@ -747,7 +779,8 @@
         "note": "INVERTED POLARITY: open while no test file imports a rendering library. The first component test that exists closes it, which is the right bar — 'some' is the whole distance from zero here."
       },
       "closed_by": "tests/platform-demand-empty-state.test.ts (parallel session, 3 days ago) renders a component with @testing-library — the first component test, so 'zero component tests' is no longer true",
-      "closed_on": "2026-08-19"
+      "closed_on": "2026-08-19",
+      "subject": "repo-source"
     },
     {
       "id": "D-8",
@@ -773,7 +806,8 @@
           "n": 0
         },
         "note": "INVERTED POLARITY. docs/53 carried this unverified (⏸). Re-verified 2026-08-12: supabase/config.toml does not exist and no .toml under supabase/ mentions verify_jwt, across 64 function directories. Recording the gate in config.toml is what closes it."
-      }
+      },
+      "subject": "repo-source"
     },
     {
       "id": "D-9",
@@ -794,7 +828,8 @@
           "n": 0
         },
         "note": "INVERTED POLARITY: open while zero email conversations exist. The first one closes it, and that is exactly the wiring decision (keys plus a receiving domain) the item is waiting on."
-      }
+      },
+      "subject": "production-db"
     },
     {
       "id": "D-10",
@@ -815,7 +850,8 @@
           "n": 1
         },
         "note": "⚠ THIS ITEM MUST NOT BE CLOSED BY ANY AGENT. Enabling the driver is the founder's decision and is a standing prohibition in every session brief. The verification exists so that the driver being switched on is VISIBLE here, not so that anyone switches it on."
-      }
+      },
+      "subject": "production-db"
     },
     {
       "id": "D-11",
@@ -836,7 +872,8 @@
           "n": 0
         },
         "note": "INVERTED POLARITY: open while the path has never produced an execution."
-      }
+      },
+      "subject": "production-db"
     },
     {
       "id": "D-12",
@@ -850,21 +887,18 @@
       },
       "state": "closed",
       "verification": {
-        "kind": "grep",
-        "paths": [
-          "supabase/functions"
-        ],
-        "include": "\\.ts$",
-        "pattern": "from ['\"]https://(?![^'\"]*@\\d+\\.\\d+\\.\\d+)[^'\"]+['\"]",
-        "count": "matches",
+        "kind": "deployed-edge",
+        "probe": "unpinned-imports",
+        "tree": "origin/main",
         "open_if": {
           "op": ">=",
           "n": 1
         },
-        "note": "docs/53 carried the count unverified (⏸) at 68. Re-counted 2026-08-12: 71 of 133 remote imports carry no @x.y.z pin. The count moved; the class did not."
+        "note": "REPOINTED 2026-08-20. Was a grep of the local working tree, which is how this item came to be recorded CLOSED on 2026-08-18 while 60 of the 64 DEPLOYED bundles were still the unpinned build. The repo was never the subject: an import specifier only matters at the version the deploy resolved. This now reads the import statements inside the deployed module sources, pulled from the eszip the edge runtime executes. Re-measured at repoint: 0 unpinned of 126 remote imports across 384 deployed modules in 63 bundles."
       },
-      "closed_by": "all 70 floating supabase-js@2 imports pinned to @2.112.3 — the exact version esm.sh resolves @2 to today, so the pin is behaviour-neutral; zero floating remote imports remain and edge-typecheck passes",
-      "closed_on": "2026-08-18"
+      "closed_by": "all 70 floating supabase-js@2 imports pinned to @2.112.3 — the exact version esm.sh resolves @2 to today, so the pin is behaviour-neutral; zero floating remote imports remain and edge-typecheck passes — ⚠ THAT CLOSURE WAS UNSOUND WHEN RECORDED: it rested on a grep of the working tree while production still ran the unpinned bundles. Re-verified 2026-08-20 against DEPLOYED content (0 unpinned of 126 remote imports across 384 modules, 63 bundles); the claim is true today because the functions were redeployed after the closure was written, not because the check was right.",
+      "closed_on": "2026-08-18",
+      "subject": "deployed-edge"
     },
     {
       "id": "E-1",
@@ -884,7 +918,8 @@
           "file": "docs/53-deferred-work-census.md",
           "anchor": "cannot be activated"
         }
-      }
+      },
+      "subject": "unreachable"
     },
     {
       "id": "E-2",
@@ -904,7 +939,8 @@
           "file": "docs/53-deferred-work-census.md",
           "anchor": "intake is wired but unobserved"
         }
-      }
+      },
+      "subject": "unreachable"
     },
     {
       "id": "E-3",
@@ -924,7 +960,8 @@
           "file": "docs/53-deferred-work-census.md",
           "anchor": "never exercised end to end"
         }
-      }
+      },
+      "subject": "unreachable"
     },
     {
       "id": "F-a",
@@ -945,7 +982,8 @@
           "n": 0
         },
         "note": "INVERTED POLARITY: open while the table is empty. The first contact row closes it."
-      }
+      },
+      "subject": "production-db"
     },
     {
       "id": "F-b",
@@ -965,7 +1003,8 @@
           "file": "docs/53-deferred-work-census.md",
           "anchor": "The $85,000 commercial decision"
         }
-      }
+      },
+      "subject": "unreachable"
     },
     {
       "id": "G-1",
@@ -985,7 +1024,8 @@
           "file": "review/debt-map-findings.json",
           "anchor": "\"dim\""
         }
-      }
+      },
+      "subject": "unreachable"
     },
     {
       "id": "G-2",
@@ -1006,7 +1046,8 @@
           "n": 0
         },
         "note": "INVERTED POLARITY: open while no template item anywhere uses one of the new step types. Pinned on the vocabulary rather than on storage object counts, because an avatar upload would move the object count and say nothing about this feature."
-      }
+      },
+      "subject": "production-db"
     },
     {
       "id": "G-3",
@@ -1027,7 +1068,8 @@
           "n": 1
         },
         "note": "Scoped to the CURRENT published version of each template, because a superseded 10-item version mints nothing. That scoping is what makes the number 14 and not 15."
-      }
+      },
+      "subject": "production-db"
     },
     {
       "id": "G-4",
@@ -1048,7 +1090,8 @@
           "n": 0
         },
         "note": "INVERTED POLARITY: open while the channel has never carried anything. Note that formally PARKING the channel would not close this verification — parking is a decision, and a decision leaves no row here. If the founder parks it, close the item by hand with the decision as closed_by."
-      }
+      },
+      "subject": "production-db"
     },
     {
       "id": "G-5",
@@ -1068,7 +1111,8 @@
           "file": "docs/53-deferred-work-census.md",
           "anchor": "Support auto-close deliberately unbuilt"
         }
-      }
+      },
+      "subject": "unreachable"
     },
     {
       "id": "G-6",
@@ -1090,7 +1134,8 @@
         }
       },
       "closed_by": "scripts/anon-probe.mjs (npm run audit:anon) — 37 checks against production holding only the publishable key: 20 table reads, 6 writes, 9 SECDEF RPCs and the storage schema, all refused. Found and closed the latent grant it existed to find: mig 787 revoked anon+authenticated from six credential-bearing tables that were safe only by RLS default-deny",
-      "closed_on": "2026-08-19"
+      "closed_on": "2026-08-19",
+      "subject": "unreachable"
     },
     {
       "id": "G-7",
@@ -1110,7 +1155,8 @@
           "file": "docs/53-deferred-work-census.md",
           "anchor": "lock-screen last hop"
         }
-      }
+      },
+      "subject": "unreachable"
     },
     {
       "id": "B-11",
@@ -1132,7 +1178,8 @@
         }
       },
       "closed_by": "mig 769 — reconcile_blocked_goals writes waiting_too_long; cron failures in the last 24h are now zero",
-      "closed_on": "2026-08-19"
+      "closed_on": "2026-08-19",
+      "subject": "production-db"
     },
     {
       "id": "C-8",
@@ -1144,15 +1191,24 @@
         "date": "2026-08-18",
         "source": "docs/50 Workstream E, 2026-08-17"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
-        "kind": "sql",
-        "sql": "select count(*)::int as n from ops_alerts where resolved_at is null and created_at < now() - interval '7 days'",
+        "kind": "deployed-edge",
+        "probe": "content",
+        "slug": "push-send",
+        "files": [
+          "functions/push-send/index.ts"
+        ],
+        "pattern": "ops_alerts",
         "open_if": {
-          "op": ">=",
-          "n": 1
-        }
-      }
+          "op": "==",
+          "n": 0
+        },
+        "note": "REPOINTED 2026-08-20. The old verification counted ops_alerts unresolved for over 7 days — which is backlog, not the defect. It could go CLOSED the day somebody cleared the queue by hand with nothing wired, and it stayed OPEN after the channel was actually built. INVERTED POLARITY: open while the deployed push-send does not read ops_alerts. Pin inverted: 496623b4~1 matches 0, main matches 2, deployed matches 2."
+      },
+      "subject": "deployed-edge",
+      "closed_by": "commit 496623b4 \"feat(alerts): a system that breaks can reach the same phone a decision does\" — push-send now has an alert branch that reads ops_alerts and routes on the tenant carried in the alert detail. VERIFIED IN THE DEPLOYED BUNDLE (2 matches), not just on main. ⚠ Recorded open until 2026-08-20 only because its verification counted unresolved alerts instead of looking at the notification path the item is about.",
+      "closed_on": "2026-08-20"
     },
     {
       "id": "B-12",
@@ -1172,7 +1228,8 @@
           "op": ">",
           "n": 0
         }
-      }
+      },
+      "subject": "production-db"
     },
     {
       "id": "C-9",
@@ -1192,7 +1249,8 @@
           "op": ">=",
           "n": 5
         }
-      }
+      },
+      "subject": "production-db"
     },
     {
       "id": "C-10",
@@ -1214,7 +1272,8 @@
         }
       },
       "closed_by": "The premise was false: the guardrail layer HAD blocked, 10 times, and nothing counted it. widget-ask marked the notice delivery='blocked'; de-answer inserted the identical notice omitting delivery, so it defaulted to 'sent' — and every count of delivery='blocked' measured the widget alone, which has carried 1 message against the dock's 157 and exams' 282. Fixed forward in de-answer (sets delivery='blocked' explicitly) and backfilled by mig 813 on an exact-content predicate. Verified live after apply. Note recorded in the commit: the row count moved from 13 to 10 mid-analysis with no erasure, deletion or migration to explain it; not registered as a finding because the earlier premise is no longer re-verifiable.",
-      "closed_on": "2026-08-20"
+      "closed_on": "2026-08-20",
+      "subject": "production-db"
     },
     {
       "id": "A-7",
@@ -1236,7 +1295,8 @@
         }
       },
       "closed_by": "migs 779-782: forget_end_user(tenant, end_user_ref, reason) — owner/admin or platform gated, pseudonymises the subject's conversations and erases every message body in them, deletes sessions and contact rows, returns a receipt counted before the writes and audits it. Proven with realistic PII: card digits and phone number both absent afterwards from user AND assistant turns; conversation row survives; guards refuse a blank ref and a foreign tenant",
-      "closed_on": "2026-08-19"
+      "closed_on": "2026-08-19",
+      "subject": "production-db"
     },
     {
       "id": "B-13",
@@ -1256,7 +1316,8 @@
           "op": ">=",
           "n": 3
         }
-      }
+      },
+      "subject": "production-db"
     },
     {
       "id": "A-8",
@@ -1280,7 +1341,8 @@
           "op": ">=",
           "n": 1
         }
-      }
+      },
+      "subject": "repo-source"
     },
     {
       "id": "C-11",
@@ -1302,7 +1364,8 @@
         }
       },
       "closed_by": "mig 773 — responses_this_month counts assistant replies; Technical Support now reports 161, idle employees still 0",
-      "closed_on": "2026-08-19"
+      "closed_on": "2026-08-19",
+      "subject": "production-db"
     },
     {
       "id": "B-14",
@@ -1314,15 +1377,23 @@
         "date": "2026-08-18",
         "source": "docs/64 Workstream J, 2026-08-18"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
-        "kind": "sql",
-        "sql": "select count(*)::int as n from (select tenant_id from knowledge_doc_chunks group by tenant_id having count(*) > 1000) x",
+        "kind": "grep",
+        "paths": [
+          "src/lib/knowledgeApi.ts"
+        ],
+        "pattern": "CHUNK_STATUS_PAGE",
+        "count": "matches",
         "open_if": {
-          "op": ">=",
-          "n": 1
-        }
-      }
+          "op": "==",
+          "n": 0
+        },
+        "note": "REPOINTED 2026-08-20. The old verification counted tenants holding more than 1000 chunks — the CONDITION that makes the bug bite, not the bug. It would have read OPEN forever after the code was fixed, and CLOSED if a large tenant were deleted. INVERTED POLARITY: open while listChunkStatus has no bounded paging loop. Pin inverted: 16ddc7d2~1 matches 0, main matches 4."
+      },
+      "subject": "repo-source",
+      "closed_by": "commit 16ddc7d2 \"fix(knowledge): the chunk badge stops being silently wrong above 1000 rows (B-14)\" — listChunkStatus now pages knowledge_docs in bounded 1000-row ranges and stops on a short page. ⚠ The commit names B-14 in its subject and the register still said OPEN four days later, because the verification was pointed at production rows instead of the source file the item is a claim about.",
+      "closed_on": "2026-08-20"
     },
     {
       "id": "D-13",
@@ -1349,7 +1420,8 @@
         }
       },
       "closed_by": "commit d7451747 — color-scheme: dark on :root and light on :root.light in src/design/tokens.css",
-      "closed_on": "2026-08-19"
+      "closed_on": "2026-08-19",
+      "subject": "repo-source"
     },
     {
       "id": "D-14",
@@ -1373,7 +1445,8 @@
           "op": ">=",
           "n": 1
         }
-      }
+      },
+      "subject": "repo-source"
     },
     {
       "id": "D-15",
@@ -1400,7 +1473,8 @@
         }
       },
       "closed_by": "docs commit: superseded banners added to docs/08 and docs/09, each stating the measured gap (46 of 53 tables absent; 16 endpoints and no /v1 surface)",
-      "closed_on": "2026-08-18"
+      "closed_on": "2026-08-18",
+      "subject": "repo-source"
     },
     {
       "id": "A-9",
@@ -1422,7 +1496,8 @@
         }
       },
       "closed_by": "mig 786_a_deny_that_could_not_be_checked_is_not_an_approval.sql applied to production 2026-08-20; verified live by supabase/tests/authority/compose-decide-human-task-endtoend.sql, whose e2 went from 'APPROVED — the workspace's deny rule enforced nothing' to 'raised: not_authorised_to_approve: unmeasured: this action did not report amount_cents, and a rule depends on it', with e1 and e3 still green",
-      "closed_on": "2026-08-19"
+      "closed_on": "2026-08-19",
+      "subject": "production-db"
     },
     {
       "id": "C-12",
@@ -1444,7 +1519,8 @@
         }
       },
       "closed_by": "mig 788_a_window_the_metrics_actually_honour.sql applied to production 2026-08-20. Verified live: de_kpi_action_value has exactly 1 overload and no '91 days' literal; de_kpi_status_internal windows the CSAT read. The window bites — same employee returns n=53 at 52 weeks, n=53 at the default 13 weeks (so no current number moved), n=0 at 1 week. Proven able to fail: with the multiplier sabotaged the migration refuses with 'the window is not biting'",
-      "closed_on": "2026-08-19"
+      "closed_on": "2026-08-19",
+      "subject": "production-db"
     },
     {
       "id": "B-15",
@@ -1466,7 +1542,8 @@
         }
       },
       "closed_by": "mig 789_one_improvement_policy_two_readers.sql applied to production 2026-08-20. Verified live: the sweep no longer carries the constants mig 765 removed (escalation_rate <= 50 gone), it now reads de_kpi_status_internal like the review does, and v_passing is gone so absence of evidence can no longer read as failure. The review can withdraw a plan it cannot judge. The two stranded plans are dismissed: unjudgeable open plans went 2 -> 0, plans on goal-having employees untouched at 0, and 0 probe rows leaked",
-      "closed_on": "2026-08-19"
+      "closed_on": "2026-08-19",
+      "subject": "production-db"
     },
     {
       "id": "A-10",
@@ -1488,7 +1565,8 @@
         }
       },
       "closed_by": "mig 793 applied to production 2026-08-20. NOT a fix — a correction: the escalation was never reachable. profiles_user_id_key is UNIQUE on user_id ALONE (a constraint, 12 dependent FKs), so one user holds at most one profile and the role held 'anywhere' cannot differ from the role held 'here'. auth_tenant_id()'s unordered limit 1 is therefore deterministic, not arbitrary. Verified live: 24 profiles, 0 users with more than one in any state, 0 platform admins also in a tenant, 40 of 40 RLS policies carrying their own tenant predicate. 793 records the dependency on both objects and asserts the index shape, so a future widening fails loudly instead of silently unscoping 89 callers.",
-      "closed_on": "2026-08-19"
+      "closed_on": "2026-08-19",
+      "subject": "production-db"
     },
     {
       "id": "A-11",
@@ -1510,7 +1588,8 @@
         }
       },
       "closed_by": "mig 805 applied to production 2026-08-20 with the connector-hub half in the same commit. payment_entry_for_invoice and create_journal_entry now declare amount_cents (integer), and erpnext.unitsFromCents() divides by 100 at the ERPNext boundary — the rename alone would have made the gate read dollars as cents, a 100x under-count on a destructive action. Verified: tests/action-gate.test.ts 18/18, the migration assertion inverted (fixing one action leaves it firing on the other), 0 executions and 0 stored params affected.",
-      "closed_on": "2026-08-20"
+      "closed_on": "2026-08-20",
+      "subject": "production-db"
     },
     {
       "id": "A-12",
@@ -1536,7 +1615,8 @@
         }
       },
       "closed_by": "scripts/backup-schema.mjs now emits 841 GRANT statements (aclexplode over pg_class: tables, views, matviews AND sequences), baseline regenerated, dev rebuilt from it. VERIFIED end to end: dev grants now match production exactly — anon 712/239, authenticated 872/280, service_role 2185/313, all previously ZERO — and tests/tenant-isolation.test.ts went from 4 SKIPPED to 4 PASSED. Emitted AFTER the revokes so a table holding only UPDATE is re-granted rather than left revoked.",
-      "closed_on": "2026-08-20"
+      "closed_on": "2026-08-20",
+      "subject": "repo-source"
     },
     {
       "id": "A-13",
@@ -1562,7 +1642,31 @@
         }
       },
       "closed_by": "Solved on origin/main by a parallel session, better than the approach I had staged. Teardown no longer deletes at all; the refusal is asserted as a TEST instead — 'refuses a tenant owner DELETE on customer_accounts — the write perimeter holds', expecting 42501. That turns the obstacle into the property the file exists to prove, and their note gives the reason I had not articulated for rejecting the service-role route: a service-role bypass inside an RLS test can hide the very failure it is looking for. I discarded my own version in the merge and took theirs. Verified: tenant-isolation now 5 passed, file passes.",
-      "closed_on": "2026-08-20"
+      "closed_on": "2026-08-20",
+      "subject": "repo-source"
+    },
+    {
+      "id": "B-16",
+      "what": "Deployed edge functions drift from `main` and nothing detects it. Deploying is a MANUAL step, so a merged fix is not a live fix: on 2026-08-18 production ran 60 of 64 stale bundles for two days, and five deploy runs in that window printed \"Deployed Functions.\" while changing nothing. Measured 2026-08-20 by content: 27 of 63 comparable functions differ from origin/main, most of them on _shared/serviceCaller.ts.",
+      "where": "Supabase edge functions (64 deployed) vs origin/main; scripts/edge-deployed-parity.mjs",
+      "severity": "correctness",
+      "why_skipped": "blocked",
+      "first_named": {
+        "date": "2026-08-20",
+        "source": "the D-12 false-closure audit (this session)"
+      },
+      "subject": "deployed-edge",
+      "state": "open",
+      "verification": {
+        "kind": "deployed-edge",
+        "probe": "drift-from-main",
+        "tree": "origin/main",
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        },
+        "note": "⚠ CONTENT, NEVER TIMESTAMPS. The obvious check compares deployed updated_at against file mtime; it was tried during the audit that found D-12 and flagged 61 of 65 functions, nearly all byte-identical to main — a ~94% false-positive rate is noise that trains people to ignore the section. This downloads each deployed ESZIP bundle, reads the module sources the runtime actually executes, and compares them to `git show origin/main:` through one normalizer (tsc transpile, comments dropped, redundant parens unwrapped at the AST level, whitespace and trailing commas normalized) because the bundle stores deno's EMIT, not the .ts. A bundle that will not parse is UNVERIFIABLE and throws, so it lands as F3 rather than as in-sync. EXCLUSIONS, each a hole that has to justify itself: de-answer (unmerged fix in flight in a parallel session — remove the exclusion when that branch lands) and mcp-demo-server (in the repo, never deployed; absent from the deployed list entirely). Denominators at first measurement: 64 deployed, 63 compared, 36 in sync, 27 drifted, 0 unverifiable, 1 in repo never deployed."
+      }
     }
   ]
 }

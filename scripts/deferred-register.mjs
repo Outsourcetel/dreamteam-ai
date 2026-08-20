@@ -105,13 +105,87 @@
 // ============================================================================
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, sep } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { readToken, measureParity, countDriftedFromMain, countFloatingDeployedImports, countInDeployedBundle } from './edge-deployed-parity.mjs';
+
+export const DEPLOYED_PROBES = ['drift-from-main', 'unpinned-imports', 'content'];
 
 export const REGISTER_FILE = 'review/deferred-register.json';
 
 export const SEVERITIES = ['security', 'correctness', 'measurement', 'hygiene'];
 export const WHY_SKIPPED = ['walked-past', 'founder-decision', 'out-of-scope', 'blocked', 'deliberate'];
 export const STATES = ['open', 'closed'];
-export const KINDS = ['sql', 'sql-lag', 'grep', 'none'];
+export const KINDS = ['sql', 'sql-lag', 'grep', 'deployed-edge', 'none'];
+
+// ── ⚠⚠ F8: SUBJECT IS NOT METHOD ───────────────────────────────────────────
+//
+// On 2026-08-18 item D-12 — "the edge functions import remote modules at
+// unpinned versions" — was recorded CLOSED because a grep of the local working
+// tree found zero unpinned imports. The grep was right about the repo. The
+// claim was about the code RUNNING IN PRODUCTION, and 60 of the 64 deployed
+// bundles were still the unpinned build. The register reported closed, and it
+// was not.
+//
+// Nothing in the schema could have caught that, because the schema only ever
+// recorded the METHOD (`verification.kind`). What an item is a claim ABOUT was
+// carried nowhere — it lived in the prose of `what`, where no check can read
+// it. So the two are now separate fields in separate places:
+//
+//     item.subject             ← what must be true out in the world
+//     item.verification.kind   ← what this probe actually interrogates
+//
+// and F8 fails when the second cannot answer the first. The matrix is
+// deliberately narrow: a subject gets exactly the method that can see it.
+//
+// ⚠ THERE IS NO ESCAPE HATCH, ON PURPOSE. An earlier draft of this let an item
+// declare a "residual" explaining why a not-quite-matching method was good
+// enough. D-12 would have carried such a residual happily and stayed wrong for
+// two more days. If a method cannot reach a subject there are exactly two
+// honest moves: change the method, or change the subject to `unreachable` —
+// which costs the unverifiable ceiling (F7) and gets the item PRINTED BY NAME
+// on every run. Both are visible in a diff; a residual note is not.
+export const SUBJECTS = ['repo-source', 'production-db', 'deployed-edge', 'unreachable'];
+
+export const SUBJECT_METHODS = {
+  // A fact about files in this repository. `grep` reads them. (With
+  // `verification.tree` set, it reads them from a git tree instead of the
+  // working copy — for claims whose subject is specifically what `main` holds.)
+  'repo-source': ['grep'],
+  // A fact about the production database: catalogue, schema, or rows.
+  'production-db': ['sql', 'sql-lag'],
+  // A fact about the code actually running in the deployed edge functions.
+  // ONLY the deployed-edge probe can see this. Deploying is a manual step, so
+  // the repo is not evidence: a merged fix is not a live fix.
+  'deployed-edge': ['deployed-edge'],
+  // No probe can see it. Costs the F7 ceiling and is named on every run.
+  'unreachable': ['none'],
+};
+
+export const SUBJECT_WHY = {
+  'repo-source': 'the claim is about what this repository contains',
+  'production-db': 'the claim is about the production database',
+  'deployed-edge': 'the claim is about the code running in the deployed edge functions — deploying is a MANUAL step, so the repo cannot answer it',
+  'unreachable': 'no probe can see this claim',
+};
+
+// Exported so `npm run defer` refuses a mismatched pair at WRITE time, with the
+// same matrix certify enforces at read time. One definition, two callers.
+export function subjectMethodFailures(reg) {
+  const out = [];
+  for (const it of reg?.items ?? []) {
+    const subject = it?.subject;
+    const kind = it?.verification?.kind;
+    if (!subject || !SUBJECTS.includes(subject) || !kind) continue;   // F4 reports those
+    const allowed = SUBJECT_METHODS[subject];
+    if (allowed.includes(kind)) continue;
+    out.push(
+      `F8 METHOD CANNOT ANSWER SUBJECT — ${it.id} "${short(it.what)}" declares subject "${subject}" (${SUBJECT_WHY[subject]}) `
+      + `but is verified by kind "${kind}", which interrogates something else. `
+      + `This is D-12's defect exactly: a grep of the working tree reported an item CLOSED while production ran the unfixed code for two days. `
+      + `FIX: verify it with one of [${allowed.join(', ')}], or — if nothing can reach it — set subject "unreachable" with kind "none", which costs the unverifiable ceiling and prints ${it.id} by name on every run.`);
+  }
+  return out;
+}
 const OPS = {
   '>=': (a, b) => a >= b, '>': (a, b) => a > b, '==': (a, b) => a === b,
   '<=': (a, b) => a <= b, '<': (a, b) => a < b,
@@ -134,9 +208,10 @@ export function validateRegister(reg) {
     if (!it.id) out.push('schema — an item has no `id`');
     else if (seen.has(it.id)) out.push(`schema — duplicate id ${it.id}: two items sharing an id means one of them can never be addressed, closed or cited`);
     else seen.add(it.id);
-    for (const f of ['what', 'where', 'severity', 'why_skipped', 'state', 'first_named', 'verification']) {
-      if (it[f] === undefined) out.push(`schema — ${id} is missing required field \`${f}\``);
+    for (const f of ['what', 'where', 'severity', 'why_skipped', 'state', 'first_named', 'subject', 'verification']) {
+      if (it[f] === undefined) out.push(`schema — ${id} is missing required field \`${f}\`${f === 'subject' ? ' — an item must say what its claim is ABOUT before anything can judge whether its verification can see it (F8)' : ''}`);
     }
+    if (it.subject && !SUBJECTS.includes(it.subject)) out.push(`schema — ${id} has subject "${it.subject}", not one of ${SUBJECTS.join('/')}`);
     if (it.severity && !SEVERITIES.includes(it.severity)) out.push(`schema — ${id} has severity "${it.severity}", not one of ${SEVERITIES.join('/')}`);
     if (it.why_skipped && !WHY_SKIPPED.includes(it.why_skipped)) out.push(`schema — ${id} has why_skipped "${it.why_skipped}", not one of ${WHY_SKIPPED.join('/')}`);
     if (it.state && !STATES.includes(it.state)) out.push(`schema — ${id} has state "${it.state}", not one of ${STATES.join('/')}`);
@@ -156,6 +231,10 @@ export function validateRegister(reg) {
       if (v.kind === 'sql' && !v.sql) out.push(`schema — ${id}.verification.kind=sql with no \`sql\``);
       if (v.kind === 'sql-lag' && (!v.production_sql || !v.dev_sql)) out.push(`schema — ${id}.verification.kind=sql-lag needs both production_sql and dev_sql`);
       if (v.kind === 'grep' && (!Array.isArray(v.paths) || !v.pattern)) out.push(`schema — ${id}.verification.kind=grep needs \`paths\` and \`pattern\``);
+      if (v.kind === 'deployed-edge') {
+        if (!DEPLOYED_PROBES.includes(v.probe)) out.push(`schema — ${id}.verification.kind=deployed-edge needs \`probe\` in ${DEPLOYED_PROBES.join('/')}`);
+        if (v.probe === 'content' && (!v.slug || !v.pattern)) out.push(`schema — ${id}.verification.probe=content needs \`slug\` (which deployed function) and \`pattern\``);
+      }
     }
   }
   return out;
@@ -179,7 +258,23 @@ function walk(p, acc) {
   return acc;
 }
 
+// ── Reading from a git tree instead of the working copy ────────────────────
+// Some repo-source claims are specifically about what `origin/main` holds, not
+// about what happens to be checked out. B-10 is the live example: "production
+// applied migrations whose source was not on main" is only answered by asking
+// main. A working-tree grep says yes for a file that exists locally and has
+// never been pushed — which is the state CLAUDE.md records eighteen migrations
+// reaching production in. `verification.tree` moves the read to git.
+function gitFiles(tree, path) {
+  const out = execFileSync('git', ['ls-tree', '-r', '--name-only', tree, '--', path], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  return out.split(/\r?\n/).filter(Boolean);
+}
+function gitRead(tree, path) {
+  return execFileSync('git', ['show', `${tree}:${path}`], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] });
+}
+
 export function runGrep(v, root = '.') {
+  if (v.tree) return runGrepTree(v);
   const files = [];
   for (const p of v.paths) walk(join(root, p), files);
   const inc = v.include ? new RegExp(v.include) : null;
@@ -195,6 +290,41 @@ export function runGrep(v, root = '.') {
     re.lastIndex = 0;
     const n = (text.match(re) ?? []).length;
     if (n > 0) { matches += n; hitFiles++; }
+  }
+  return v.count === 'files' ? hitFiles : matches;
+}
+
+// Same semantics as runGrep, reading from `v.tree` rather than disk. A path
+// that resolves to nothing in that tree THROWS, exactly as a missing path on
+// disk does: "the file is not on main" and "I looked in the wrong place" must
+// not both come back as zero.
+function runGrepTree(v) {
+  const inc = v.include ? new RegExp(v.include) : null;
+  const exc = v.exclude ? new RegExp(v.exclude) : null;
+  const re = new RegExp(v.pattern, v.flags ?? 'g');
+  let matches = 0, hitFiles = 0, looked = 0;
+  for (const p of v.paths) {
+    let files;
+    try { files = gitFiles(v.tree, p); }
+    catch (e) { throw new Error(`cannot read ${p} from git tree ${v.tree}: ${String(e.message ?? e).slice(0, 160)}`); }
+    if (!files.length) continue;   // absent from the tree is a real answer: zero
+    for (const f of files) {
+      if (inc && !inc.test(f)) continue;
+      if (exc && exc.test(f)) continue;
+      looked++;
+      let text;
+      try { text = gitRead(v.tree, f); } catch { continue; }
+      re.lastIndex = 0;
+      const n = (text.match(re) ?? []).length;
+      if (n > 0) { matches += n; hitFiles++; }
+    }
+  }
+  if (looked === 0 && v.paths.length) {
+    // Every path resolved to nothing. For a count=='files' item pinned on
+    // EXISTENCE (B-10) that is the finding, and it is returned as 0 — but for
+    // any other shape it means the paths are wrong, and a zero from zero
+    // comparisons must not read as clean.
+    if (v.count !== 'files') throw new Error(`none of ${JSON.stringify(v.paths)} resolved to a file in ${v.tree} — zero matches over zero files is not a clean result`);
   }
   return v.count === 'files' ? hitFiles : matches;
 }
@@ -241,6 +371,33 @@ async function measureAll(items, { runSql, runSqlDev, root, measured }) {
     catch (e) { measured.set(it.id, { err: e }); }
   }
 
+  // ── The deployed-edge verifications ──────────────────────────────────────
+  // ⚠ ONE download pass serves all of them (edge-deployed-parity memoizes it),
+  // for the same reason the SQL verifications go over as one batch: the first
+  // shape fired three full passes over 63 bundles and the Management API
+  // answered 429, which lands here as F3 — a red caused by throttling, which is
+  // the noise that teaches people to re-run a gate until it goes green.
+  const edgeItems = items.filter((i) => i.verification?.kind === 'deployed-edge');
+  if (edgeItems.length) {
+    let token = null, tokenErr = null;
+    try { token = readToken(); } catch (e) { tokenErr = e; }
+    for (const it of edgeItems) {
+      if (tokenErr) { measured.set(it.id, { err: new Error(`no Supabase access token, so the DEPLOYED code could not be read: ${tokenErr.message}`) }); continue; }
+      const v = it.verification;
+      try {
+        if (v.probe === 'drift-from-main') {
+          measured.set(it.id, { n: (await countDriftedFromMain({ token, tree: v.tree ?? 'origin/main' })).n });
+        } else if (v.probe === 'unpinned-imports') {
+          measured.set(it.id, { n: (await countFloatingDeployedImports({ token, tree: v.tree ?? 'origin/main' })).n });
+        } else if (v.probe === 'content') {
+          measured.set(it.id, { n: await countInDeployedBundle({ token, slug: v.slug, pattern: v.pattern, flags: v.flags ?? 'g', files: v.files ?? null }) });
+        } else {
+          throw new Error(`unknown deployed-edge probe ${JSON.stringify(v.probe)}`);
+        }
+      } catch (e) { measured.set(it.id, { err: e }); }
+    }
+  }
+
   if (sqlItems.length) {
     const batch = sqlItems
       .map((it) => `select ${JSON.stringify(it.id).replace(/"/g, "'")}::text as id, (select * from (${it.verification.sql}) x)::numeric as n`)
@@ -281,6 +438,10 @@ export async function evaluateRegister({ reg, runSql, runSqlDev, root = '.' }) {
   const failures = [];
   const notes = [];
   for (const v of validateRegister(reg)) failures.push(`F4 ${v}`);
+  // F8 — the method must be able to see the subject. Evaluated BEFORE anything
+  // is measured, because a mismatched pair's number is not evidence either way:
+  // D-12's grep returned a perfectly correct 0 about the wrong thing.
+  for (const v of subjectMethodFailures(reg)) failures.push(v);
 
   const items = Array.isArray(reg?.items) ? reg.items : [];
   let verified = 0, verifiedOpen = 0, verifiedClosed = 0, unverifiable = 0, errored = 0;
@@ -376,6 +537,19 @@ export async function evaluateRegister({ reg, runSql, runSqlDev, root = '.' }) {
     + `${unverifiable} carried on claim (ceiling ${ceiling}), ${errored} errored.`);
   notes.push(`  open by severity: ${Object.entries(bySev).map(([k, n]) => `${k}=${n}`).join(' · ') || 'none'}`);
   notes.push(`  open by why-skipped: ${Object.entries(byWhy).map(([k, n]) => `${k}=${n}`).join(' · ') || 'none'}`);
+  // ── The subject-vs-method census, printed every run ─────────────────────
+  // ⚠ The denominator that would have caught D-12. Before this line existed the
+  // only thing on show was the METHOD mix ("24 grep, 33 sql"), which says
+  // nothing about whether those greps were being asked repo questions. Every
+  // item now declares what it is a claim ABOUT, and the two are shown together
+  // so a grep sitting under a production subject is visible at a glance rather
+  // than only when F8 fires.
+  const bySubject = {};
+  for (const it of items) {
+    const k = `${it.subject ?? 'MISSING'}←${it.verification?.kind ?? 'MISSING'}`;
+    bySubject[k] = (bySubject[k] ?? 0) + 1;
+  }
+  notes.push(`  subject ← method (all ${items.length}): ${Object.entries(bySubject).sort().map(([k, n]) => `${k}=${n}`).join(' · ')}`);
   // ⚠ Named individually, never aggregated away. An item nobody can check is a
   // WEAKER position than an item checked and found open; the two must not look
   // alike, which is the whole reason docs/53 marked its 18 with ⏸.
@@ -461,7 +635,10 @@ const MUTATIONS = {
   },
   'no-comparisons': {
     apply: (reg) => {
-      for (const it of reg.items) it.verification = { kind: 'none', why_unverifiable: 'mutation', claim: { file: REGISTER_FILE, anchor: '"items"' } };
+      for (const it of reg.items) {
+        it.subject = 'unreachable';
+        it.verification = { kind: 'none', why_unverifiable: 'mutation', claim: { file: REGISTER_FILE, anchor: '"items"' } };
+      }
       reg.unverifiable_ceiling = reg.items.length;
       return { expect: 'F5 NO-COMPARISONS' };
     },
@@ -476,8 +653,49 @@ const MUTATIONS = {
   'unverifiable-over-ceiling': {
     apply: (reg) => {
       const t = reg.items.find((x) => x.verification.kind !== 'none');
+      t.subject = 'unreachable';
       t.verification = { kind: 'none', why_unverifiable: 'mutation', claim: { file: REGISTER_FILE, anchor: '"items"' } };
       return { expect: 'F7 UNVERIFIABLE CEILING EXCEEDED' };
+    },
+  },
+
+  // ── F8, BOTH DIRECTIONS ───────────────────────────────────────────────────
+  // The positive case is D-12 reconstructed: a claim about deployed code left
+  // pointing at a grep of the repo. The negative case is the one that makes the
+  // positive mean anything — without it, an F8 that fired on ANY edit to a
+  // subject would score identically, and the register would be back to a check
+  // that cannot distinguish the defect from a diff.
+  'subject-method-mismatch': {
+    apply: (reg) => {
+      const t = reg.items.find((x) => x.subject === 'repo-source' && x.verification.kind === 'grep');
+      if (!t) throw new Error('no repo-source/grep item to mis-declare — cannot inject F8');
+      t.subject = 'deployed-edge';
+      return { expect: [`F8 METHOD CANNOT ANSWER SUBJECT — ${t.id}`, 'declares subject "deployed-edge"', 'verified by kind "grep"'] };
+    },
+  },
+  'subject-method-rematched-stays-silent': {
+    silent: true,
+    apply: (reg) => {
+      // Move an item to a DIFFERENT subject and its matching method at the same
+      // time. The pair stays coherent, so F8 must say nothing about it. If this
+      // goes red, F8 is firing on change rather than on mismatch.
+      const t = reg.items.find((x) => x.subject === 'production-db' && x.verification.kind === 'sql' && x.state === 'open');
+      if (!t) throw new Error('no open production-db/sql item to re-point — cannot run the F8 negative control');
+      t.subject = 'repo-source';
+      t.verification = { kind: 'grep', paths: ['package.json'], pattern: '"name"', open_if: { op: '>=', n: 1 } };
+      return { forbid: ['F8', t.id], id: t.id };
+    },
+  },
+  // ⚠ Rule 3 made executable: a probe that cannot SEE its subject must error,
+  // never quietly return a number. Point a deployed-content check at a function
+  // that is not deployed; "pattern absent" and "I never looked" must not both
+  // come back as zero.
+  'deployed-probe-blind-to-subject': {
+    apply: (reg) => {
+      const t = reg.items.find((x) => x.verification.kind === 'deployed-edge' && x.verification.probe === 'content');
+      if (!t) throw new Error('no deployed-edge content item — cannot inject the blind-probe case');
+      t.verification.slug = 'no-such-function-at-all';
+      return { expect: [`F3 VERIFICATION ERROR — ${t.id}`, 'no-such-function-at-all'] };
     },
   },
 };
@@ -534,9 +752,25 @@ if (import.meta.url === `file://${process.argv[1].split(sep).join('/')}` || proc
   const m = MUTATIONS[MUTATE];
   if (!m) { console.error(`unknown mutation "${MUTATE}". Known: ${Object.keys(MUTATIONS).join(', ')}`); process.exit(1); }
   const mutated = JSON.parse(JSON.stringify(base));
-  const { expect } = m.apply(mutated, live);
-  const want = Array.isArray(expect) ? expect : [expect];
+  const applied = m.apply(mutated, live);
   const r = await evaluateRegister({ reg: mutated, runSql, runSqlDev });
+
+  // ── The SILENT direction ────────────────────────────────────────────────
+  // A negative control is scored as strictly as a positive one: the run passes
+  // only if NO failure line carries every forbidden substring. Without this,
+  // "F8 fires" and "F8 fires on everything" look the same, and a check that
+  // cannot tell the defect from an ordinary edit is the theatre this repo keeps
+  // paying for.
+  if (m.silent) {
+    const forbid = applied.forbid;
+    const offending = r.failures.filter((f) => forbid.every((w) => f.includes(w)));
+    for (const f of offending) console.log(`  ${f}`);
+    const quiet = offending.length === 0;
+    console.log(`\n--mutate=${MUTATE}: ${quiet ? 'SILENT (correct)' : 'FIRED WHEN IT SHOULD NOT HAVE'} — a coherent subject/method pair must draw no ${JSON.stringify(forbid)} line; ${offending.length} did. Run total: ${r.failures.length} failure(s), none of them about ${applied.id}.`);
+    process.exit(quiet ? 0 : 1);
+  }
+
+  const want = Array.isArray(applied.expect) ? applied.expect : [applied.expect];
   // CAUGHT means ONE failure line carries every expected substring. Not "some
   // failure fired" — a probe that goes red for an unrelated reason has not
   // caught anything, and counting it would be the padded number this file's
