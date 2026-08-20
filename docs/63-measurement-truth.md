@@ -109,3 +109,19 @@ fiction.
 **One live defect worth fixing this week** (C-11 — the employee summary reads zero for the only
 employee working), one stale row (A-5), and six known liars already tracked. Nothing here changes
 the go/no-go; it changes which dashboard numbers you may quote to a customer.
+
+---
+
+## 7. Close-out verification — 2026-08-20
+
+- **C-11 FIXED and TRUE:** get_de_performance_summary was repaired to count the
+  path traffic actually takes (de_messages joined through de_conversations; its
+  own comment records the old read named a column that never existed). Verified
+  by the truth pair, not the code: summary says **161**, the raw count says
+  **161**, exact agreement on the one employee capable of testing it.
+- Red-column deltas since 2026-08-18: **F-8 fixed** (golden-path footer now
+  measures production live — verified in doc 50); **connectors.status defused
+  everywhere it is read** (810 invariant + all five eligibility readers consult
+  the breaker — Workstream P close-out, live-verified). The six docs/51 organs
+  and C-9/C-10 remain tracked by the self-re-deriving register, which is the
+  enforcement mechanism, not this document.
