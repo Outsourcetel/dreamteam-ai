@@ -92,8 +92,8 @@
     },
     {
       "id": "A-5",
-      "what": "One profile carries tenant_id NULL with a tenant_owner role (Bashir Khan). ON DELETE SET NULL means every workspace deletion manufactures another. ⚠ The originally recommended remedy — deactivate the profile — is WRONG: profiles_user_id_key makes it that user’s ONLY profile, so deactivating locks a real person out of the product entirely. It is also not a privilege risk (see A-10: the role gate is safe precisely because one user holds at most one profile). The real fix is upstream — stop workspace deletion stranding owners — and the person should be re-invited or the row removed with their knowledge, not silently disabled.",
-      "where": "public.profiles",
+      "what": "ONE profile carries tenant_id NULL with a non-platform role. ⚠⚠ THE ORIGINAL DIAGNOSIS WAS WRONG IN BOTH HALVES, and acting on it would have broken a working path. It said \"ON DELETE SET NULL means every workspace deletion manufactures another\" and recommended deactivating the profile. Measured 2026-08-20: (1) tenant_deletion_receipts holds ZERO rows — delete_tenant has NEVER been run, so no deletion has ever stranded anything; (2) delete_tenant already handles this anyway — it captures members BEFORE the cascade, deletes their profiles at step 6b, verifies none remain and reports profiles_removed, and its own comment records that an earlier version got that ordering wrong. THE REAL GENERATOR IS AN ABANDONED SIGNUP: the on_auth_user_created trigger runs handle_new_user(), which creates the profiles row with tenant_id NULL, and complete_signup assigns the tenant only later. Abandon between the two and the row persists. The live row is exactly that — spjamesvelez+1@gmail.com, a +1 alias of the founder’s own account, signed up 2026-07-09, last seen 2026-07-16, complete_signup never ran. ⚠ DO NOT \"FIX\" THE FOREIGN KEY. Switching profiles.tenant_id to ON DELETE CASCADE would move profile deletion to cascade time, where TEN of the thirteen FKs into profiles are NO ACTION and would block it — turning every future tenant deletion into an FK violation. The FK is a correct fallback, not the defect. A CHECK requiring a tenant for non-platform roles is equally wrong: handle_new_user creates the row before any tenant exists, so it would break signup itself. What is actually left is an accumulation risk, not a live one: a stranded row grants nothing (auth_tenant_id() returns NULL, so every membership check refuses), and closing this means either sweeping abandoned signups on a schedule or accepting them.",
+      "where": "public.handle_new_user(); public.complete_signup(); public.profiles (tenant_id NULL, non-platform role)",
       "severity": "security",
       "why_skipped": "walked-past",
       "first_named": {
@@ -103,12 +103,12 @@
       "state": "open",
       "verification": {
         "kind": "sql",
-        "sql": "select count(*)::int as n from public.profiles where tenant_id is null and role not like 'platform%'",
+        "sql": "select count(*)::int as n from public.profiles p join auth.users u on u.id = p.user_id where p.tenant_id is null and p.role not like 'platform%' and u.created_at < now() - interval '30 days'",
         "open_if": {
           "op": ">=",
           "n": 1
         },
-        "note": "Repointed 2026-08-20. The original pin counted ALL tenant_id IS NULL profiles, but platform_super_admin carries NULL by design — 2 of the 3 it counted were correct rows, so the item could not be closed without deleting legitimate data. Now counts only non-platform roles."
+        "note": "Repointed 2026-08-20 to measure the real generator. Counts only ABANDONED signups — non-platform profiles with no tenant whose auth user is older than 30 days — so a signup genuinely in progress does not read as a defect, and platform_super_admin (tenant_id NULL by design, 2 rows) is excluded. The previous pin counted every NULL tenant_id, which included those two correct rows and could not be closed without deleting legitimate data."
       }
     },
     {
