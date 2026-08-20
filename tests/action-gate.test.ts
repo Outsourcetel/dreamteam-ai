@@ -186,7 +186,7 @@ describe('the action gate — decide_action_execution', () => {
        where n.nspname = 'public' and p.proname = 'decide_action_execution'`));
     // Every caller invokes this through PostgREST with NAMED arguments. A
     // second overload makes that resolution ambiguous, and the dev project has
-    // carried a stale one (see scripts/dev-sync.mjs) that lacks p_content —
+    // carried a stale one (dev-sync.mjs, removed 2026-08-20 — superseded by rebuild-dev-from-baseline.mjs) that lacks p_content —
     // the parameter the guardrail scan reads. Two overloads means the gate you
     // tested and the gate that ran can be different functions.
     expect(rows.length, 'more than one overload — named-argument dispatch is ambiguous').toBe(1);
