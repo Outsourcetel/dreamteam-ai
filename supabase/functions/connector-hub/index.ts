@@ -3718,6 +3718,91 @@ const erpnextActions: Record<string, NativeAction> = {
   // v1 is single-line-item BY DESIGN: the tool-offer machinery renders flat
   // scalar params only, and an honest one-line quote beats a stringly-typed
   // items blob the approver cannot read.
+  // ── M2 (practical-work program): the LEDGER-LANDING verbs. ──────────────
+  // Approval happens in OUR gate (execute_action → human task → approve on
+  // the phone); the human has already said yes by the time run() fires, so
+  // these SUBMIT (docstatus 1) — a draft Payment Entry books nothing, and a
+  // gate that ends in a draft would be the report-writer problem wearing a
+  // receipt. Rollback = cancel the submitted document (ERPNext's own undo).
+  erpnext_payment_entry_for_invoice: {
+    render(c, p) {
+      if (!p.external_ref?.trim()) return { ok: false, error: 'param_required', detail: 'external_ref (the Sales Invoice number) is required.' };
+      const amt = p.amount != null && String(p.amount).trim() !== '' ? Number(p.amount) : null;
+      if (amt != null && (!Number.isFinite(amt) || amt <= 0)) return { ok: false, error: 'bad_param', detail: 'amount, when given, must be a positive number (omit it to book the full outstanding).' };
+      return { ok: true, method: 'POST', url: c.baseUrl + '/api/resource/Payment%20Entry', body: {} };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      // Build the entry ERPNext's own way: get_payment_entry maps the invoice
+      // to a Payment Entry with the right accounts, party and allocation —
+      // hand-assembling those fields is how a wrong ledger looks right.
+      const ref = p.external_ref.trim();
+      const build = await httpJson(
+        c.baseUrl + '/api/method/erpnext.accounts.doctype.payment_entry.payment_entry.get_payment_entry?dt=Sales%20Invoice&dn=' + encodeURIComponent(ref),
+        { headers: erpnext.hdrs(c) });
+      if (!build.ok) return { ok: false, status: build.status, error: build.error, raw: build.body };
+      const doc = (build.body as { message?: Record<string, unknown> } | null)?.message;
+      if (!doc) return { ok: false, error: 'build_failed', detail: 'ERPNext returned no mapped Payment Entry for ' + ref + '.' };
+      const amt = p.amount != null && String(p.amount).trim() !== '' ? Number(p.amount) : null;
+      if (amt != null) {
+        doc.paid_amount = amt; doc.received_amount = amt;
+        const refs = (doc.references as Array<Record<string, unknown>> | undefined) ?? [];
+        if (refs.length === 1) refs[0].allocated_amount = amt;
+        else if (refs.length > 1) return { ok: false, error: 'ambiguous_allocation', detail: 'The mapped entry allocates across ' + refs.length + ' documents — a partial amount cannot be applied unambiguously. Omit amount to book the mapped allocation.' };
+      }
+      const created = await httpJson(c.baseUrl + '/api/resource/Payment%20Entry', {
+        method: 'POST', headers: { Authorization: erpnext.auth(c), 'Content-Type': 'application/json' }, body: JSON.stringify(doc) });
+      if (!created.ok) return { ok: false, status: created.status, error: created.error, raw: created.body };
+      const name = (created.body as { data?: { name?: string } } | null)?.data?.name;
+      if (!name) return { ok: false, error: 'no_name', detail: 'ERPNext created the entry but returned no document name.' };
+      const submitted = await httpJson(c.baseUrl + '/api/resource/Payment%20Entry/' + encodeURIComponent(name), {
+        method: 'PUT', headers: { Authorization: erpnext.auth(c), 'Content-Type': 'application/json' }, body: JSON.stringify({ docstatus: 1 }) });
+      if (!submitted.ok) {
+        // The draft exists but did not book — say EXACTLY that; a receipt
+        // claiming a booking that is still a draft is the $431k shape again.
+        return { ok: false, status: submitted.status, error: submitted.error, raw: submitted.body,
+          detail: 'Payment Entry ' + name + ' was created as a DRAFT but failed to submit — it books nothing until submitted in ERPNext.' };
+      }
+      const booked = (doc.paid_amount ?? '?') + ' ' + (doc.paid_to_account_currency ?? doc.party_account_currency ?? '');
+      return { ok: true, status: submitted.status, raw: submitted.body,
+        receipt: 'Booked payment ' + name + ' of ' + booked + ' against ' + ref + ' in ERPNext — SUBMITTED, this is in the ledger.' };
+    },
+  },
+  erpnext_create_journal_entry: {
+    render(c, p) {
+      if (!p.debit_account?.trim() || !p.credit_account?.trim()) return { ok: false, error: 'param_required', detail: 'debit_account and credit_account are required.' };
+      const amt = Number(p.amount);
+      if (!Number.isFinite(amt) || amt <= 0) return { ok: false, error: 'bad_param', detail: 'amount must be a positive number.' };
+      if (!p.remark?.trim()) return { ok: false, error: 'param_required', detail: 'remark (why this entry exists) is required — a journal line with no story is unauditable.' };
+      return {
+        ok: true, method: 'POST', url: c.baseUrl + '/api/resource/Journal%20Entry',
+        body: {
+          voucher_type: 'Journal Entry',
+          ...(p.posting_date?.trim() ? { posting_date: p.posting_date.trim() } : {}),
+          user_remark: p.remark.trim(),
+          accounts: [
+            { account: p.debit_account.trim(), debit_in_account_currency: amt },
+            { account: p.credit_account.trim(), credit_in_account_currency: amt },
+          ],
+        },
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const created = await httpJson(r.url!, { method: 'POST', headers: { Authorization: erpnext.auth(c), 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!created.ok) return { ok: false, status: created.status, error: created.error, raw: created.body };
+      const name = (created.body as { data?: { name?: string } } | null)?.data?.name;
+      if (!name) return { ok: false, error: 'no_name', detail: 'ERPNext created the entry but returned no document name.' };
+      const submitted = await httpJson(c.baseUrl + '/api/resource/Journal%20Entry/' + encodeURIComponent(name), {
+        method: 'PUT', headers: { Authorization: erpnext.auth(c), 'Content-Type': 'application/json' }, body: JSON.stringify({ docstatus: 1 }) });
+      if (!submitted.ok) return { ok: false, status: submitted.status, error: submitted.error, raw: submitted.body,
+        detail: 'Journal Entry ' + name + ' was created as a DRAFT but failed to submit — it books nothing until submitted in ERPNext.' };
+      return { ok: true, status: submitted.status, raw: submitted.body,
+        receipt: 'Posted journal entry ' + name + ': DR ' + p.debit_account + ' / CR ' + p.credit_account + ' — ' + p.amount + '. ' + p.remark.trim() + ' SUBMITTED — this is in the ledger.' };
+    },
+  },
   erpnext_create_quotation: {
     render(c, p) {
       if (!p.customer?.trim()) return { ok: false, error: 'param_required', detail: 'customer (the ERPNext Customer name) is required.' };
