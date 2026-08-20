@@ -1516,13 +1516,39 @@
         "date": "2026-08-20",
         "source": "certify 2026-08-20: tenant-isolation failed 'permission denied for table profiles' once the key-probe bug stopped masking it"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
           "supabase/baseline/full_schema.sql"
         ],
         "pattern": "GRANT .* ON TABLE|grant .* on public\\.",
+        "count": "matches",
+        "open_if": {
+          "op": "<",
+          "n": 1
+        }
+      },
+      "closed_by": "scripts/backup-schema.mjs now emits 841 GRANT statements (aclexplode over pg_class: tables, views, matviews AND sequences), baseline regenerated, dev rebuilt from it. VERIFIED end to end: dev grants now match production exactly — anon 712/239, authenticated 872/280, service_role 2185/313, all previously ZERO — and tests/tenant-isolation.test.ts went from 4 SKIPPED to 4 PASSED. Emitted AFTER the revokes so a table holding only UPDATE is re-granted rather than left revoked.",
+      "closed_on": "2026-08-20"
+    },
+    {
+      "id": "A-13",
+      "what": "tests/tenant-isolation.test.ts passes all 4 assertions and then FAILS in teardown: 'permission denied for table customer_accounts ... GRANT DELETE ON public.customer_accounts TO authenticated'. The write-perimeter migrations (714-720) revoked DELETE from authenticated deliberately and correctly; the test's cleanup was written when it still had it. ⚠ The tempting fix is the wrong one — re-granting DELETE to authenticated would weaken a deliberate production perimeter to suit a test. The right fix is for teardown to use a service-role client or a SECURITY DEFINER cleanup RPC scoped to test tenants, and .env.test currently carries only URL + anon key, so that needs a credential decision. Until then the suite leaves test tenants behind on the dev project.",
+      "where": "tests/helpers/testTenant.ts teardown; public.customer_accounts DELETE grant",
+      "severity": "correctness",
+      "why_skipped": "walked-past",
+      "first_named": {
+        "date": "2026-08-20",
+        "source": "certify 2026-08-20, surfaced once A-12 let the isolation tests run again"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "grep",
+        "paths": [
+          "supabase/migrations"
+        ],
+        "pattern": "GRANT DELETE ON public.customer_accounts TO authenticated",
         "count": "matches",
         "open_if": {
           "op": "<",
