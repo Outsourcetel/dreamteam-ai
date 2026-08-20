@@ -208,11 +208,116 @@ export async function publishTemplate(id: string): Promise<PublishResult> {
   return res;
 }
 
-export async function installStarterTemplate(): Promise<{ template_id: string; already_installed: boolean }> {
+/**
+ * How this workspace's starter template compares to the canonical one (mig 817).
+ *
+ *   installed — this call created it.
+ *   current   — it is there and its items ARE the canonical list.
+ *   outdated  — it is there, provably unedited, and `behind_by` canonical items
+ *               are missing. THIS IS THE STATE THAT USED TO REPORT AS PLAIN
+ *               SUCCESS: install_starter_onboarding_template answered
+ *               `already_installed: true` and handed back the old template id,
+ *               so four workspaces sat six items behind for a month with
+ *               nothing anywhere saying so.
+ *   divergent — it is there and it carries local edits. Not a failure; somebody
+ *               made this template theirs, and the upgrade refuses to touch it.
+ *   absent    — there is no starter template here.
+ *
+ * The vocabulary is mig 712's, not a new one: `installed ≠ current` is the same
+ * distinction as that build's `answered ≠ resolved` — a state that looks
+ * finished and is not.
+ */
+export type StarterTemplateStatus =
+  | 'installed' | 'current' | 'outdated' | 'divergent' | 'absent';
+
+export interface StarterTemplateState {
+  ok: boolean;
+  status: StarterTemplateStatus;
+  template_id: string | null;
+  template_status: 'draft' | 'published' | null;
+  canon_items: number;
+  tenant_items: number;
+  /** How many canonical items this workspace does not have. */
+  behind_by: number;
+  missing_keys: string[];
+  modified_keys: string[];
+  extra_keys: string[];
+  edited: boolean;
+  edit_signals: string[];
+  upgrade_available: boolean;
+  /** install() only. */
+  already_installed?: boolean;
+  installed?: boolean;
+}
+
+export interface StarterUpgradeResult extends StarterTemplateState {
+  changed: boolean;
+  refused: boolean;
+  reason?: string;
+  message?: string;
+  errors?: string[];
+  was_status?: StarterTemplateStatus;
+  items_before?: number;
+  items_after?: number;
+  added_keys?: string[];
+  republished?: boolean;
+  description_updated?: boolean;
+}
+
+export async function installStarterTemplate(): Promise<StarterTemplateState> {
   const { data, error } = await supabase.rpc('install_starter_onboarding_template');
   if (error) raise('installStarterTemplate', error);
   notify();
-  return data as { template_id: string; already_installed: boolean };
+  return data as StarterTemplateState;
+}
+
+/** Read-only: what state is this workspace's starter template in? No writes. */
+export async function starterTemplateStatus(): Promise<StarterTemplateState> {
+  const { data, error } = await supabase.rpc('starter_onboarding_template_status');
+  if (error) raise('starterTemplateStatus', error);
+  return data as StarterTemplateState;
+}
+
+/**
+ * Add the canonical items this workspace is missing. Owner/admin only.
+ *
+ * ⛔ Refuses outright when the template carries local edits, unless
+ * `preserveEdits` is passed — and even then it is a KEY-WISE MERGE that only
+ * ADDS: an item that already exists is never rewritten. A refusal comes back as
+ * `ok: false`, and this wrapper throws on it, because a caller that ignores the
+ * result is exactly how the original defect stayed invisible.
+ */
+export async function upgradeStarterTemplate(
+  preserveEdits = false,
+): Promise<StarterUpgradeResult> {
+  const { data, error } = await supabase.rpc('upgrade_starter_onboarding_template', {
+    p_preserve_edits: preserveEdits,
+  });
+  if (error) raise('upgradeStarterTemplate', error);
+  const res = data as StarterUpgradeResult;
+  if (res?.ok === false) {
+    raise('upgradeStarterTemplate', {
+      message: res.message || res.reason?.replace(/_/g, ' ') || 'the upgrade was refused',
+    });
+  }
+  notify();
+  return res;
+}
+
+/**
+ * Record a decision to STAY on the current list. Owner/admin only. The
+ * acknowledgement stores both item hashes and lapses if either side moves, so
+ * it cannot outlive the comparison it was about.
+ */
+export async function acknowledgeStarterBaseline(note?: string): Promise<StarterTemplateState> {
+  const { data, error } = await supabase.rpc('acknowledge_starter_template_baseline', {
+    p_note: note ?? null,
+  });
+  if (error) raise('acknowledgeStarterBaseline', error);
+  const res = data as StarterTemplateState & { message?: string };
+  if (res?.ok === false) raise('acknowledgeStarterBaseline', { message: res.message || 'refused' });
+  notify();
+  return res;
 }
 
 export async function listPublishedVersions(): Promise<TemplateVersion[]> {

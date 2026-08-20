@@ -618,7 +618,20 @@ export default function CustomerOnboardingLive({ setPage }: { setPage?: (p: Page
     setBusy(true); setError(null);
     try {
       const res = await installStarterTemplate();
-      setToast(res.already_installed ? 'Starter template already installed.' : 'Starter template installed and published — create your first project.');
+      // ⚠ This used to read `already_installed ? 'Starter template already
+      // installed.' : …` — and `already_installed` is true for a workspace six
+      // items behind the canonical list exactly as it is for one that is fully
+      // current. The toast said everything was fine while nothing had happened
+      // and nothing could. mig 817 makes the RPC say which of the two it is.
+      setToast(
+        res.status === 'installed'
+          ? 'Starter template installed and published — create your first project.'
+          : res.status === 'current'
+            ? `Starter template already installed and up to date (${res.tenant_items} items).`
+            : res.status === 'outdated'
+              ? `Starter template is already installed but ${res.behind_by} item(s) behind the current ${res.canon_items}-item list: ${res.missing_keys.join(', ')}. A workspace owner can add them without changing anything you already have.`
+              : `Starter template is already installed and has been edited here (${res.tenant_items} items). It is deliberately left alone — nothing will overwrite your changes.`,
+      );
       await refresh();
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }

@@ -20,6 +20,9 @@ import { trustProposerBoundarySql } from './trust-proposer-boundary.mjs';
 import { gapGateConductSql, auditedStepsWritesSql, snapshotGateSql, gapEvidenceSql } from './playbook-gap-probes.mjs';
 import { writePerimeterSql, silentNoopWriteSql } from './write-perimeter.mjs';
 import { triggerExecutePerimeterSql, TRIGGER_FN_SOURCE } from './trigger-execute-perimeter.mjs';
+// mig 817's ratchet — the REAL probe SQL, imported so these cases exercise the
+// query certify runs rather than a paraphrase of it.
+import { starterTemplateBaselineSql } from './starter-template-baseline.mjs';
 // certify's ACTUAL provider-catalog comparison, imported rather than restated.
 // Its assertions are all silent against a clean production, so the only thing
 // that can prove they fire is running the real function over a mutated copy of
@@ -3017,6 +3020,151 @@ const CASES = [
       },
     ];
   })()),
+
+  // ══ mig 817: starter-onboarding-template-is-current-or-decided ══════════
+  // Production is RED on arm 1 today (four workspaces six items behind), so
+  // that one arm is the rare case here that is not silent against real state.
+  // Every OTHER arm is silent against a healthy catalog, which is the shape
+  // this file exists to distrust — a probe that never fires proves nothing.
+  // All cases below drive the REAL probe SQL, imported, with one input
+  // replaced; none of them writes.
+  ...(() => {
+    // The canonical list, shrunk to two items so the fixtures stay readable.
+    const CANON2 = `select '[{"key":"a","label":"A"},{"key":"b","label":"B"}]'::jsonb as items`;
+    // A population row. tenant_id is null so the drift arm (which re-reads
+    // starter_template_state_internal per tenant) correctly skips fixtures.
+    const pop = (slug, itemsJson, touched) =>
+      `select '${slug}'::text as slug, null::uuid as tenant_id, '${slug}'::text as template_id, `
+      + `'${itemsJson}'::jsonb as items, md5('${itemsJson}') as items_md5, ${touched} as touched`;
+    const ONE_ITEM = '[{"key":"a","label":"A"}]';
+    const BEHIND = pop('fx-behind', ONE_ITEM, false);
+    const BEHIND_TOUCHED = pop('fx-touched', ONE_ITEM, true);
+    const CURRENT = pop('fx-current', '[{"key":"a","label":"A"},{"key":"b","label":"B"}]', false);
+    const noAcks = `select null::uuid as tenant_id, null::text as items_md5, null::text as canon_md5 where false`;
+
+    // A healthy catalog of exactly what mig 817 installs. `null` deletes one.
+    const BODIES = {
+      starter_template_verdict: ['jsonb, jsonb, boolean', 'begin return null; end;'],
+      starter_template_state_internal: ['uuid', 'begin return null; end;'],
+      starter_onboarding_template_status: ['', 'begin return null; end;'],
+      install_starter_onboarding_template: ['', 'begin perform starter_template_state_internal(v_tenant); end;'],
+      upgrade_starter_onboarding_template: ['boolean',
+        'begin if x then return template_has_local_edits; end if; raise exception the merge would have changed or dropped an item that already existed; end;'],
+      acknowledge_starter_template_baseline: ['text', 'begin return null; end;'],
+    };
+    const catalog = (over = {}) => Object.entries({ ...BODIES, ...over })
+      .filter(([, v]) => v !== null)
+      .map(([k, v]) => `select '${k}'::text as fname, '${v[0]}'::text as fargs, $q${v[1]}$q$::text as body`)
+      .join('\n union all ');
+
+    // Symmetric privilege fixture: [args, anon, authenticated].
+    const PRIVS = {
+      starter_template_verdict: ['jsonb, jsonb, boolean', false, false],
+      starter_template_state_internal: ['uuid', false, false],
+      starter_onboarding_template_status: ['', false, true],
+      install_starter_onboarding_template: ['', false, true],
+      upgrade_starter_onboarding_template: ['boolean', false, true],
+      acknowledge_starter_template_baseline: ['text', false, true],
+    };
+    const privs = (over = {}) => Object.entries({ ...PRIVS, ...over })
+      .map(([k, v]) => `select '${k}'::text as fname, '${v[0]}'::text as fargs, ${v[1]} as anon_x, ${v[2]} as auth_x, true as svc_x`)
+      .join('\n union all ');
+
+    const clean = { templatesSql: CURRENT, canonSql: CANON2, acksSql: noAcks, catalogSql: catalog(), privSql: privs() };
+    const S = (o) => starterTemplateBaselineSql({ ...clean, ...o });
+
+    return [
+      {
+        // The defect itself, in row form.
+        name: 'starter-template-baseline (an unedited template short of canon fires; a matching one is silent)',
+        fires: S({ templatesSql: BEHIND }),
+        silent: S({}),
+      },
+      {
+        // ⚠ THE SAFETY ASYMMETRY, both halves in one case so neither can be
+        // dropped. The SAME missing item must be `outdated` on an untouched
+        // row and `divergent` (a choice, left alone) on one a person has
+        // written to. If this ever flips, a deliberately deleted item becomes
+        // something the upgrade silently puts back.
+        name: 'starter-template-baseline (an UNTOUCHED subset fires; the identical TOUCHED subset is divergent-by-choice and silent)',
+        fires: S({ templatesSql: BEHIND }),
+        silent: S({ templatesSql: BEHIND_TOUCHED }),
+      },
+      {
+        // The acknowledgement clears it — and only while it still matches.
+        name: 'starter-template-baseline (a LAPSED acknowledgement fires; a live one is silent)',
+        fires: S({
+          templatesSql: BEHIND,
+          acksSql: `select null::uuid as tenant_id, 'stale-hash'::text as items_md5, 'stale-hash'::text as canon_md5`,
+        }),
+        silent: S({
+          templatesSql: BEHIND,
+          acksSql: `select null::uuid as tenant_id, md5('${ONE_ITEM}') as items_md5, `
+            + `(select md5(items::text) from (${CANON2}) c) as canon_md5`,
+        }),
+      },
+      {
+        // ⚠⚠ THE ARM THAT STOPS THE WHOLE PROBE BEING THEATRE. With every
+        // workspace current, arm 1 is silent whether mig 817 is installed or
+        // deleted. This is the only thing that tells those two states apart.
+        name: 'starter-template-baseline (deleting the upgrade path fires mechanism-missing even with every workspace current)',
+        fires: S({ catalogSql: catalog({ upgrade_starter_onboarding_template: null }) }),
+        silent: S({}),
+      },
+      {
+        name: 'starter-template-baseline (deleting the classifier fires mechanism-missing)',
+        fires: S({ catalogSql: catalog({ starter_template_state_internal: null }) }),
+        silent: S({}),
+      },
+      {
+        // The fix, pinned. Reverting the installer to the old blind answer is
+        // invisible to every other arm here.
+        name: 'starter-template-baseline (an installer that stops consulting the classifier fires — the exact pre-817 body)',
+        fires: S({ catalogSql: catalog({ install_starter_onboarding_template: ['', 'begin return jsonb_build_object(template_id, v_tpl_id, already_installed, true); end;'] }) }),
+        silent: S({}),
+      },
+      {
+        // ⛔ The property that protects outsourcetel-hq's hand-edited draft.
+        name: 'starter-template-baseline (an upgrade that stops refusing an EDITED template fires)',
+        fires: S({ catalogSql: catalog({ upgrade_starter_onboarding_template: ['boolean', 'begin raise exception the merge would have changed or dropped an item that already existed; end;'] }) }),
+        silent: S({}),
+      },
+      {
+        name: 'starter-template-baseline (an upgrade that loses the merge guard fires)',
+        fires: S({ catalogSql: catalog({ upgrade_starter_onboarding_template: ['boolean', 'begin return template_has_local_edits; end;'] }) }),
+        silent: S({}),
+      },
+      {
+        name: 'starter-template-baseline (anon holding EXECUTE fires)',
+        fires: S({ privSql: privs({ install_starter_onboarding_template: ['', true, true] }) }),
+        silent: S({}),
+      },
+      {
+        // The OVER-revoke direction. A gate that only watches for new grants
+        // calls a broken button green.
+        name: 'starter-template-baseline (authenticated LOSING a client RPC fires too — an over-revoke is a defect)',
+        fires: S({ privSql: privs({ upgrade_starter_onboarding_template: ['boolean', false, false] }) }),
+        silent: S({}),
+      },
+      {
+        // migs 662-664: a tenant-id-taking function reachable by the browser.
+        name: 'starter-template-baseline (authenticated GAINING the tenant-id-taking classifier fires)',
+        fires: S({ privSql: privs({ starter_template_state_internal: ['uuid', false, true] }) }),
+        silent: S({}),
+      },
+      {
+        // Liveness. Zero comparisons is how this class hides.
+        name: 'starter-template-baseline (an empty population fires — 0 compared is not 0 findings)',
+        fires: S({ templatesSql: `${CURRENT} limit 0` }),
+        silent: S({}),
+      },
+      {
+        name: 'starter-template-baseline (a zero-item canonical list fires — everything would trivially be current)',
+        fires: S({ canonSql: `select '[]'::jsonb as items`, templatesSql: pop('fx-empty', '[]', false) }),
+        silent: S({}),
+      },
+    ];
+  })(),
 ];
 
 // Optional substring filter, so one probe's cases can be re-run on their own

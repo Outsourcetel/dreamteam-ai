@@ -77,6 +77,11 @@ import { writePerimeterSql, silentNoopWriteSql, WRITE_PERIMETER_SQL } from './wr
 // merely because work is outstanding — see the module header for the argument.
 import { deferredRegisterSection } from './deferred-register.mjs';
 import { triggerExecutePerimeterSql } from './trigger-execute-perimeter.mjs';
+// mig 817's ratchet. Same file-per-rule shape as the imports above: the probe
+// SQL lives in one module that BOTH this gate and certify-mutation-test.mjs
+// import, so the mutation cases exercise the real query rather than a
+// paraphrase of it.
+import { starterTemplateBaselineSql } from './starter-template-baseline.mjs';
 // The comparison itself, shared with scripts/certify-mutation-test.mjs so the
 // mutation cases exercise the REAL logic rather than a paraphrase of it. It in
 // turn imports the SAME derivation scripts/gen-provider-seed.mjs uses to write
@@ -296,6 +301,11 @@ const PROBES = [
     name: 'playbook-gaps-hold-their-evidence',
     why: 'answered ≠ resolved is the spine of the typed-gaps design: a gap resolves only on verified evidence (a resolved missing_knowledge gap must carry the doc the recompile actually retrieved), and an objection that exists only as study prose is the dead end this build replaces — so studies that raised gaps/validator errors must have gap rows behind them. Denominators printed',
     sql: gapEvidenceSql(),
+  },
+  {
+    name: 'starter-onboarding-template-is-current-or-decided',
+    why: 'install_starter_onboarding_template() answered `already_installed: true` for ANY tenant holding a row named "SaaS onboarding — starter" — i.e. every tenant that would NEED the newer list — handed back the OLD template id, and reported success. Four workspaces (acme-telecom, first-community-cu, gusto, kinetic) sat SIX items behind the canonical sixteen for over a month and no gate, screen, toast or log said a word; prior notes calling the move "a UI opt-in" were wrong, because the opt-in did not exist. Same class as the rest of Ring-0: A CALL THAT SUCCEEDS WHILE NOTHING HAPPENS. ⚠ ARM 1 IS RED ON PRODUCTION FOR THOSE FOUR TENANTS AND THAT IS CORRECT — which starter list a workspace runs is the FOUNDER\'S decision, and what this refuses to allow is the decision going unmade and unnoticed. It is clearable two ways and both are a person deciding: upgrade_starter_onboarding_template(), or acknowledge_starter_template_baseline() to stay put on the record. The acknowledgement stores the tenant\'s items md5 AND the canonical md5 and is honoured only while BOTH still match, so it lapses the moment either side moves — an acknowledgement that outlives the comparison it was about is the stored-marker trap from the debt map. ⚠⚠ THE ARM THAT STOPS THIS BEING THEATRE IS `mechanism-missing`, NOT THE DATA ARM: on a day every workspace happens to be current, arm 1 finds nothing whether mig 817 is installed or deleted, and those two states must not look alike — so the classifier, the pure verdict, the honest installer, the upgrade path and the acknowledgement must all EXIST. Two more arms pin the FIX rather than the data: the installer must still consult the classifier (without it the honest branch reverts to `already_installed: true` and every other arm still passes), and the upgrade must still refuse an EDITED template by default AND still carry the merge guard that raises if a pre-existing item would change — an upgrade path that overwrites a workspace\'s own edits is worse than the bug it was built to fix, and outsourcetel-hq\'s hand-edited 15-item draft is the live case. The perimeter arm is symmetric (anon never; authenticated MUST keep the three client RPCs; authenticated must NEVER reach starter_template_state_internal, which takes a tenant id — the migs 662-664 confused-deputy shape). A drift arm compares this probe\'s own verdict against starter_template_state_internal for every real tenant, because the probe re-derives `touched` so it can be mutation-tested on synthetic rows and a second copy of a rule rots. Denominators — templates compared, canon size and md5, the per-status split, and every non-current workspace named — print on every run',
+    sql: starterTemplateBaselineSql(),
   },
   {
     name: 'trigger-functions-hold-no-ambient-execute',
