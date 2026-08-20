@@ -1,7 +1,8 @@
 # Disaster recovery
 
-**Status as of 2026-08-05: production has daily backups, and one gap in the last
-eight days.** Verified directly against the Supabase Management API, not inferred
+**Status as of 2026-08-20: production has daily backups (7/7 COMPLETED this week,
+no gaps), PITR is still OFF, and — new since 2026-08-05 — BOTH restore drills are
+green: the schema rebuilds exactly AND the data export loads back verified.** Verified directly against the Supabase Management API, not inferred
 from the dashboard:
 
 ```
@@ -58,7 +59,8 @@ managed backup is only as good as your ability to invoke it.
 |---|---|---|---|
 | `supabase/baseline/full_schema.sql` | `npm run backup:schema` | Every table, view, sequence, function, trigger, index, RLS policy, and the closed EXECUTE grants | Any data at all |
 | `backups/<timestamp>/*.jsonl` | `npm run backup:data` | Every row of every public table, **plus `auth.users` and `auth.identities`** | Password hashes (opt-in), storage objects, vault secrets, cron schedules |
-| Restore drill | `npm run restore:drill` | Proof the schema file rebuilds production exactly | Proof the **data** restores |
+| Schema drill | `npm run restore:drill` | Proof the schema file rebuilds production exactly (throwaway schema on dev) | Proof the **data** restores |
+| Data drill | `node scripts/restore-data-drill.mjs` | Proof the JSONL export loads back: row counts vs manifest, every FK orphan-swept, auth linkage, a real function answering from restored rows — in a throwaway local supabase/postgres container | Supabase's MANAGED restore (needs a second project = founder purchase) |
 | `public.schema_migrations` | `npm run migrate:status` | Which migrations are applied, and whether a file changed after being applied | — |
 
 ### auth.users is captured — the old gap is narrower than it was
@@ -128,7 +130,7 @@ is where recoveries fail.
 | | Proven? |
 |---|---|
 | The schema file rebuilds production exactly | **Yes** — drilled, see below |
-| The data export loads back and the app works | **No** — never drilled |
+| The data export loads back and the app works | **Yes** — drilled 2026-08-20: 108,109 rows, 214/214 tables match the manifest, 604/604 FKs swept clean, 24 auth users linked (0 orphaned profiles), get_de_worklists answered with production's live numbers from restored rows |
 | Supabase's managed physical backup restores | **No** — and cannot be drilled here |
 
 **The managed restore cannot be drilled without spending money.** It restores in
@@ -143,11 +145,11 @@ snapshots exist, not that anyone has watched one come back.
 
 `npm run restore:drill` regenerates the dump, rebuilds it into a throwaway
 schema on the dev project, compares it to production object-for-object, and
-drops it. Production is read-only throughout. Current result (2026-08-05):
+drops it. Production is read-only throughout. Current result (2026-08-20):
 
 ```
-tables 284 · views 5 · functions 740 · triggers 277
-policies 375 · rls_enabled 284 · columns 3229      — all OK
+tables 306 · views 7 · functions 867 · triggers 296
+policies 404 · rls_enabled 305 · columns 3498      — all OK (7/7)
 ```
 
 The first time it ran it found **six defects that were invisible by reading the
@@ -197,6 +199,36 @@ Run the drill periodically, not once. It is the only artifact here that tells yo
 whether the backup still describes the system.
 
 ---
+
+## 2026-08-20 — the day both drills earned their keep
+
+Three defects found, all invisible by reading the files, all fixed the same day:
+
+1. **The dump had stopped being able to restore itself.** Five LANGUAGE-sql
+   functions call `evidence_is_production` (mig 682) and were emitted BEFORE
+   its definition; sql bodies validate at CREATE, so the restore died at ~4%.
+   The drill had been green on 2026-08-05 — production GREW into the defect.
+   Fix: the dump now opens with `SET check_function_bodies = off` (pg_dump's
+   own answer to exactly this).
+2. **The dump outgrew the Management API.** A-12's 841 grant lines pushed the
+   single-request restore past the body cap (HTTP 413). The drill now splits
+   into whole statements (dollar-quote-aware, byte-identical round-trip) and
+   applies 512KB chunks, re-stating session GUCs per chunk.
+3. **The data drill's own first run lied to itself** — 3MB of schema fed down
+   docker's stdin on Windows chokes silently; zero objects landed and only the
+   object-count check said anything. Payloads now travel docker cp → psql -f,
+   and a zero-table apply fails loudly.
+
+First-ever DATA restore proof, same day: **108,109 rows · 214/214 tables match
+the manifest · 604/604 foreign keys orphan-swept clean · 24 auth users linked,
+0 orphaned profiles · `get_de_worklists` answered from restored rows with
+production's live numbers.** Exporter hardened en route: adaptive page halving
+(the API truncates oversized bodies MID-JSON with HTTP 200), 429 backoff on
+the throttler's timescale, and `--resume` so a crash never re-pays finished
+tables.
+
+Still not proven, unchanged: **Supabase's managed physical restore** — needs a
+second project to restore into (founder purchase), and PITR remains OFF.
 
 ## The grants are part of the backup
 
