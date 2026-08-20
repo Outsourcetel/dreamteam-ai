@@ -106,3 +106,23 @@ in Vault.
 The one finding that deserves real attention is structural rather than urgent: **the privileged
 half of the system has the weaker supply chain.** Pinning 71 imports is a morning's work and
 closes it.
+
+---
+
+## 8. Close-out verification — 2026-08-20
+
+- **D-12 CLOSED:** commits 98e2adc0 / 9b720e1b / 9f2ec185 pinned every floating
+  edge import. Re-measured today: **140 of 140 remote imports pinned, 0
+  floating** (census script, spot-checked against raw import lines).
+- **Plaintext-credential history re-verified live:** connector_secrets has NO
+  raw secret column at all (connector_id, secret_id, timestamps only), 2 rows,
+  both Vault references; 11 Vault secrets total.
+- **NEW CHECK — the data export leaks no secrets:** backup-data.mjs dumps every
+  public table, so the backup directory was scanned: platform_config's
+  sensitive rows carry Vault references (values live in vault.secrets, which is
+  NOT in the public schema and never exported), and zero key-shaped strings
+  (anthropic/stripe/resend/private-key patterns) across all 308 table files.
+  The export holds real PII by documented design — but no credentials.
+- **Still open, founder-side:** A-6 rotate the Resend key (minutes, channel
+  dormant — cheapest before email lights up). Deferred by design: router/vite
+  upgrade with reachability analysis attached.
