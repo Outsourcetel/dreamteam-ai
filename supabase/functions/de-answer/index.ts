@@ -1145,6 +1145,19 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
           await admin.from('de_messages').insert({
             tenant_id: tenantId, conversation_id: convId, role: 'assistant',
             content: GUARDRAIL_BLOCK_MESSAGE, confidence: 0, escalated: true,
+            // ⚠ delivery='blocked' IS THE MEASUREMENT, and omitting it is why
+            // register C-10 read "the guardrail layer has never blocked a
+            // production message". It had — thirteen times — but this insert
+            // left `delivery` to its default of 'sent', while widget-ask marks
+            // the IDENTICAL notice 'blocked'. Two writers, two meanings, and
+            // every dashboard counting delivery='blocked' saw only the widget,
+            // which has carried one message in its life.
+            //
+            // The notice itself is of course sent; what 'blocked' records is
+            // that an ANSWER was withheld. That is the event worth counting,
+            // and counting it on one path only made a working safety layer
+            // look inert.
+            delivery: 'blocked',
           });
         }
         await admin.from('human_tasks').insert({
