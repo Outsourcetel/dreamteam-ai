@@ -6,16 +6,20 @@
 -- returns an EMPTY list. There are no automated backups of this database. This
 -- file is the schema half of the answer; data is NOT in here (see below).
 --
--- Contents: 9 extensions · 0 enums · 304 tables ·
--- 1404 constraints · 420 indexes · 851 functions ·
--- 295 triggers · 402 policies · explicit REVOKEs for the closed perimeter.
+-- Contents: 9 extensions · 0 enums · 306 tables ·
+-- 1413 constraints · 423 indexes · 867 functions ·
+-- 296 triggers · 404 policies · 841 role grants ·
+-- explicit REVOKEs for the closed perimeter.
 --
 -- WHAT THIS DOES NOT COVER, so nobody mistakes it for a full backup:
 --   · no table DATA — tenants, users, documents, conversations are all absent
 --   · no auth.users — accounts do not come back from this file
 --   · no storage objects, no vault secrets, no edge-function code
 --   · no pg_cron schedules
--- Restoring this yields an EMPTY, correctly-shaped, correctly-secured database.
+-- Restoring this yields an EMPTY, correctly-shaped, correctly-secured and
+-- REACHABLE database — the last of those was missing until 2026-08-20: the file
+-- carried the REVOKEs and none of the GRANTs, so a restore came back with every
+-- table present and no API role able to read one (register A-12).
 -- ============================================================================
 
 -- ── Extensions ──────────────────────────────────────────────────────────────
@@ -181,6 +185,146 @@ AS $function$
     when 'write_back' then 4
     else 0
   end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.account_review_draft(p_kind text, p_account uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_acct      customer_accounts;
+  v_h         jsonb;
+  v_measured  boolean;
+  v_score     text;
+  n_open_inv  int; v_known_out bigint; n_unverified int; n_overdue int;
+  n_tickets   int; n_escal int;
+  v_last_act  timestamptz;
+  v_case      record;
+  v_title     text;
+  v_lines     text[] := '{}';
+  v_findings  jsonb;
+  v_days_to_renewal int;
+  v_tenure_months int;
+begin
+  select * into v_acct from customer_accounts where id = p_account;
+  if not found then return jsonb_build_object('error', 'account_not_found'); end if;
+
+  v_h        := coalesce(v_acct.health_components, '{}'::jsonb);
+  v_measured := coalesce((v_h->>'measured')::boolean, false);
+  v_score    := case when v_measured then coalesce(v_acct.health_score::text, '?') || '/100'
+                     else null end;
+
+  select count(*) filter (where lower(coalesce(ri.status, '')) not in ('paid', 'void', 'cancelled')),
+         coalesce(sum(ri.outstanding_cents) filter (where ri.outstanding_cents is not null
+                    and lower(coalesce(ri.status, '')) not in ('paid', 'void', 'cancelled')), 0),
+         count(*) filter (where ri.outstanding_cents is null
+                    and lower(coalesce(ri.status, '')) not in ('paid', 'void', 'cancelled')),
+         count(*) filter (where ri.due_date is not null and ri.due_date < current_date
+                    and lower(coalesce(ri.status, '')) not in ('paid', 'void', 'cancelled'))
+    into n_open_inv, v_known_out, n_unverified, n_overdue
+    from renewal_invoices ri where ri.account_id = p_account;
+
+  select count(*) filter (where st.status in ('open', 'pending')),
+         count(*) filter (where st.status = 'escalated')
+    into n_tickets, n_escal
+    from support_tickets st where st.account_id = p_account;
+
+  select max(ae.created_at) into v_last_act from activity_events ae where ae.account_id = p_account;
+
+  select cc.stage_key, cc.risk_level, cc.next_step, cc.next_step_date
+    into v_case
+    from continuity_cases cc
+   where cc.account_id = p_account and cc.outcome is null
+   order by cc.updated_at desc limit 1;
+
+  v_days_to_renewal := case when v_acct.renewal_date is null then null
+                            else (v_acct.renewal_date - current_date) end;
+  v_tenure_months := greatest(0, (extract(year from age(now(), v_acct.created_at)) * 12
+                                  + extract(month from age(now(), v_acct.created_at)))::int);
+
+  -- ── shared facts, in the approver's language ──
+  if v_measured then
+    v_lines := v_lines || format('Health: %s (%s). Penalties — open tickets %s, escalations %s, overdue invoices %s, activity recency %s.',
+      v_score, coalesce(v_acct.status, 'active'),
+      coalesce(v_h#>>'{open_tickets,count}', '0'), coalesce(v_h#>>'{escalations,count}', '0'),
+      coalesce(v_h#>>'{overdue_invoices,count}', '0'),
+      case when v_h#>>'{activity_recency,days_since}' is null then 'no activity ever recorded'
+           else v_h#>>'{activity_recency,days_since}' || ' day(s) since last activity' end);
+  else
+    v_lines := v_lines || format('Health: NOT MEASURED — no tickets, invoices or activity are recorded for this account yet, so there is nothing to compute a score from. The score on file (%s) is whatever was entered by hand.',
+      coalesce(v_acct.health_score::text, 'none'));
+  end if;
+
+  v_lines := v_lines || format('Receivables: %s open invoice(s)%s%s.',
+    n_open_inv,
+    case when v_known_out > 0 then format(', %s confirmed outstanding', to_char(v_known_out / 100.0, 'FM999,999,990.00')) else '' end,
+    case when n_unverified > 0 then format(', %s with no reconciled balance (face value only)', n_unverified) else '' end)
+    || case when n_overdue > 0 then format(' %s of them past due.', n_overdue) else '' end;
+
+  v_lines := v_lines || case
+    when v_acct.renewal_date is null then 'Renewal: no renewal date is recorded for this account.'
+    when v_days_to_renewal < 0 then format('Renewal: %s — %s day(s) PAST.', to_char(v_acct.renewal_date, 'FMDD FMMonth YYYY'), -v_days_to_renewal)
+    else format('Renewal: %s (in %s day(s)).', to_char(v_acct.renewal_date, 'FMDD FMMonth YYYY'), v_days_to_renewal) end;
+
+  v_lines := v_lines || case
+    when v_case.stage_key is not null then format('Continuity case: open at stage %s%s%s.',
+      v_case.stage_key,
+      case when v_case.next_step is not null then ', next step: ' || v_case.next_step else ', NO NEXT STEP recorded' end,
+      case when v_case.next_step_date is not null then ' by ' || to_char(v_case.next_step_date, 'FMDD FMMonth YYYY') else '' end)
+    else 'Continuity case: none open.' end;
+
+  -- ── kind-specific framing ──
+  if p_kind = 'health_check' then
+    v_title := format('Monthly health check — %s', v_acct.name);
+    v_lines := array_prepend(format('Monthly health check for %s (%s%s).',
+      v_acct.name, coalesce(nullif(v_acct.tier, ''), 'no tier recorded'),
+      case when v_acct.arr_cents is not null then format(', ARR %s', to_char(v_acct.arr_cents / 100.0, 'FM999,999,990')) else '' end), v_lines);
+    v_lines := v_lines || 'Approve to file this review. Reject with a note if something here needs a different owner or a correction first.'::text;
+  elsif p_kind = 'lifecycle' then
+    v_title := format('Quarterly lifecycle review — %s', v_acct.name);
+    v_lines := array_prepend(format('Quarterly lifecycle review for %s. Customer for %s month(s), tier %s%s.',
+      v_acct.name, v_tenure_months, coalesce(nullif(v_acct.tier, ''), 'not recorded'),
+      case when v_acct.arr_cents is not null then format(', ARR %s', to_char(v_acct.arr_cents / 100.0, 'FM999,999,990')) else '' end), v_lines);
+    if v_days_to_renewal is not null and v_days_to_renewal between 0 and 90 and v_case.stage_key is null then
+      v_lines := v_lines || 'The renewal is inside 90 days and no continuity case is open — opening one is the concrete next step.'::text;
+    end if;
+    v_lines := v_lines || 'No score history is kept yet; this review records today''s position so next quarter has something to compare against.'::text;
+  elsif p_kind = 'churn_risk' then
+    v_title := format('Churn-risk review — %s', v_acct.name);
+    v_lines := array_prepend(format('Churn-risk review for %s — this account is marked AT RISK.', v_acct.name), v_lines);
+    v_lines := v_lines || case
+      when v_case.stage_key is null then 'A save plan needs a continuity case with a named next step and a date. There is none open — that is the gap to close first.'
+      when v_case.next_step is null then 'The open continuity case has NO NEXT STEP recorded — a save plan without a next step is a label, not a plan.'
+      else 'Keep the open case''s next step honest: if it has slipped, re-date it and say why.' end::text;
+  else
+    return jsonb_build_object('error', 'unknown_review_kind', 'kind', p_kind);
+  end if;
+
+  v_findings := jsonb_build_object(
+    'health', v_h,
+    'status', v_acct.status,
+    'arr_cents', v_acct.arr_cents,
+    'tier', v_acct.tier,
+    'renewal_date', v_acct.renewal_date,
+    'days_to_renewal', v_days_to_renewal,
+    'tenure_months', v_tenure_months,
+    'open_invoices', n_open_inv,
+    'overdue_invoices', n_overdue,
+    'known_outstanding_cents', v_known_out,
+    'unverified_balance_invoices', n_unverified,
+    'open_tickets', n_tickets,
+    'escalated_tickets', n_escal,
+    'last_activity_at', v_last_act,
+    'continuity_case', case when v_case.stage_key is null then null
+                            else jsonb_build_object('stage', v_case.stage_key, 'risk', v_case.risk_level,
+                                                    'next_step', v_case.next_step, 'next_step_date', v_case.next_step_date) end);
+
+  return jsonb_build_object('title', v_title,
+                            'detail', array_to_string(v_lines, E'\n\n'),
+                            'findings', v_findings);
+end;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.acknowledge_de_performance_review(p_review_id uuid)
@@ -350,6 +494,7 @@ begin
     when 'certified'  then (v_readiness->'criteria'->'certified'->>'golden_qa_passed')::boolean
     when 'published'  then (v_readiness->'criteria'->'published'->>'certified_by_human')::boolean
     when 'assigned'   then (v_readiness->'criteria'->'assigned'->>'has_work_channel')::boolean
+                           and coalesce((v_readiness->'criteria'->'assigned'->>'grounding_connected')::boolean, true)
     when 'active'     then (v_readiness->'criteria'->'active'->>'first_live_execution')::boolean
   end;
   if not coalesce(v_ok, false) then
@@ -2975,6 +3120,39 @@ AS $function$
       limit 1
     )
   );
+$function$;
+
+CREATE OR REPLACE FUNCTION public.authority_dimension_reader_is_real()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare v_src text;
+begin
+  if new.reader_fn is null then
+    return new;   -- no reader claimed; mig 770 already refuses rules on it
+  end if;
+
+  if to_regprocedure(new.reader_fn) is null then
+    raise exception 'reader_fn_does_not_exist: % names no function', new.reader_fn;
+  end if;
+
+  select regexp_replace(p.prosrc, '--[^' || chr(10) || ']*', '', 'g') into v_src
+    from pg_proc p where p.oid = to_regprocedure(new.reader_fn);
+
+  -- NOT a proof that the function reports the dimension -- a proof that it
+  -- could. A reader that never names the dimension anywhere in its body
+  -- certainly does not report it, and that is the case this catches.
+  -- Comments are stripped first: prose about a dimension is not a reader of
+  -- it, and this repo has had three probes pass by matching their own
+  -- comments.
+  if v_src is null or v_src !~ new.dimension then
+    raise exception 'reader_fn_never_mentions_dimension: % does not reference %, so it cannot be reporting it',
+      new.reader_fn, new.dimension;
+  end if;
+
+  return new;
+end
 $function$;
 
 CREATE OR REPLACE FUNCTION public.authority_rule_requires_a_reader()
@@ -6052,6 +6230,7 @@ declare
   v_qa_passed boolean;
   v_certified boolean;
   v_channel boolean;
+  v_grounding jsonb;
   v_executed boolean;
 begin
   select * into v_de from digital_employees where id = p_de_id;
@@ -6103,6 +6282,22 @@ begin
     or exists (select 1 from widget_keys where tenant_id = v_tenant and active);
 
   v_executed := exists (select 1 from evidence_runs where tenant_id = v_tenant and de_id = p_de_id);
+  -- Mig 796: grounding. required_connector_categories was DECORATIVE — its one
+  -- reader displayed it on the Record tab and nothing gated hiring or work, so
+  -- an SEO employee could be hired with nothing to read and would run anyway,
+  -- producing plausible generic content (measured 2026-07-28, still true
+  -- 2026-08-11). A required category counts as met only when this tenant has a
+  -- CONNECTED connector in it. No archetype, or no requirements ⇒ trivially
+  -- grounded — a bespoke employee is not penalised for having no template.
+  select coalesce(jsonb_object_agg(req.cat,
+           exists (select 1 from connectors k
+                    where k.tenant_id = v_tenant and k.category = req.cat
+                      and k.status = 'connected')), '{}'::jsonb)
+    into v_grounding
+    from (select unnest(ra.required_connector_categories) as cat
+            from digital_employees d
+            join role_archetypes ra on ra.key = d.archetype_key
+           where d.id = p_de_id) req;
 
   return jsonb_build_object(
     'stage', v_de.lifecycle_status,
@@ -6128,6 +6323,8 @@ begin
         'detail', 'A named workspace owner/admin recorded certification.'),
       'assigned', jsonb_build_object(
         'has_work_channel', v_channel,
+        'grounding_connected', (select coalesce(bool_and(v::boolean), true) from jsonb_each_text(v_grounding) as e(k, v)),
+        'grounding_by_category', v_grounding,
         'detail', 'A searchable system grant (inbox) or an active site widget key.'),
       'active', jsonb_build_object(
         'first_live_execution', v_executed,
@@ -7029,6 +7226,45 @@ BEGIN
 END;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.de_blocker_signature(p_text text)
+ RETURNS text[]
+ LANGUAGE plpgsql
+ IMMUTABLE
+ SET search_path TO 'public'
+AS $function$
+declare
+  s   text;
+  acc text[] := '{}';
+  r   record;
+begin
+  s := lower(btrim(regexp_replace(coalesce(p_text, ''), '\s+', ' ', 'g')));
+  if s = '' then
+    return '{}'::text[];
+  end if;
+
+  for r in
+    select * from (values
+      ('blocked_input',
+       '(no source( is)? connected|not connected|cannot( be)? read|can ?not be read|cannot access|inaccessible|not readable|unable to (access|read|open)|no access|access issue|permission denied|not authori[sz]ed|truncat|incomplete|partial(ly)? |cuts? off|only [0-9]+ [a-z ]{0,20}(of|entries|rows|items)|[0-9]+ of [0-9]+ (entries|rows|items)|missing|not provided|full [a-z ]{0,20}required|no data|empty)'),
+      ('inconsistent',
+       '(does not balance|do not balance|out of balance|imbalance|discrepan|mismatch|variance|shortfall|does not match|do not match|exceed debits|credits exceed|conflict|inconsisten|disagree)'),
+      ('out_of_range',
+       '(future[- ]dated|forward[- ]dated|dated in [0-9]{4}|dated [0-9]{4}|out of period|period mismatch|date anomaly|period allocation|future dates|exceeds? the [a-z ]{0,20}threshold|above the limit|over the limit|outside the)'),
+      ('overdue',
+       '(overdue|past due|days? past|aged[- ]receivable|final[- ]notice|collections referral|breached the sla|sla breach)'),
+      ('missing_owner',
+       '(no (executive )?sponsor|no day[- ]to[- ]day contact|no contact|contact[^.]{0,40}not recorded|no owner|owner is not|unassigned|nobody is)')
+    ) as t(k, re)
+  loop
+    if s ~ r.re then
+      acc := array_append(acc, r.k);
+    end if;
+  end loop;
+
+  return (select coalesce(array_agg(distinct u order by u), '{}'::text[]) from unnest(acc) as u);
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.de_certification_status(p_de_id uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -7123,6 +7359,137 @@ begin
   return new;
 end $function$;
 
+CREATE OR REPLACE FUNCTION public.de_escalation_headline(p_text text, p_limit integer DEFAULT 120)
+ RETURNS text
+ LANGUAGE plpgsql
+ IMMUTABLE
+ SET search_path TO 'public'
+AS $function$
+declare
+  s    text;
+  sent text;
+  head text;
+  cut  text;
+  lim  integer := greatest(24, least(coalesce(p_limit, 120), 300));
+begin
+  s := btrim(regexp_replace(coalesce(p_text, ''), '\s+', ' ', 'g'));
+  if s = '' then
+    return null;                    -- nothing to derive from; the caller decides
+  end if;
+
+  -- (a) a COMPLETE first sentence, if one ends inside the budget.
+  --     >= 3 alphanumerics before the terminator rejects "vs." / "e.g." / "No.";
+  --     the trailing-whitespace requirement rejects every decimal point.
+  sent := (regexp_match(s, '^(.{20,}?[[:alnum:]]{3}[])"'']?)[.!?](\s|$)'))[1];
+  if sent is not null and char_length(sent) <= lim then
+    return sent;
+  end if;
+
+  -- (b) otherwise cut on a SPACE. Never on punctuation — that is what put
+  --     "debits PKR 322k vs" and "exceed the $10,000" in front of a human.
+  if char_length(s) <= lim then
+    return s;
+  end if;
+  head := left(s, lim);
+  cut  := regexp_replace(head, '\s+\S*$', '');                 -- partial word off
+  if btrim(cut) = '' then
+    cut := head;                                               -- one word > lim
+  end if;
+  cut := regexp_replace(cut, '\s*\((\d{1,2}|[a-z])\)$', '');   -- no dangling "(2)"
+  cut := regexp_replace(cut, '[[:space:],;:./&(…–—-]+$', '');  -- no dangling joiner
+  if btrim(cut) = '' then
+    return null;
+  end if;
+  return cut || '…';
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.de_escalation_scope(p_tenant_id uuid, p_objective_id uuid)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+declare
+  v text;
+begin
+  if p_objective_id is null then
+    return null;
+  end if;
+  select nullif(btrim(lower(regexp_replace(coalesce(o.title, ''), '\s+', ' ', 'g'))), '')
+    into v
+    from de_objectives o
+   where o.id = p_objective_id
+     and (p_tenant_id is null or o.tenant_id = p_tenant_id);
+  return coalesce(left(v, 200), 'objective:' || p_objective_id::text);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.de_escalation_title(p_tenant_id uuid, p_title text, p_reason text, p_de_name text, p_work_item_id uuid DEFAULT NULL::uuid, p_objective_id uuid DEFAULT NULL::uuid, p_entity text DEFAULT NULL::text)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_title  text;
+  v_named  text;
+  v_entity text;
+begin
+  -- (1) what the caller said, if it said anything.
+  v_title := nullif(btrim(coalesce(p_title, '')), '');
+  if v_title is not null then
+    return v_title;
+  end if;
+
+  v_entity := nullif(btrim(regexp_replace(coalesce(p_entity, ''), '\s+', ' ', 'g')), '');
+
+  -- (2) what the EMPLOYEE said. This is the rung that matters: p_reason is
+  --     the employee's own account and is present on every live call. The
+  --     entity, when there is one, is kept in front of it — literally, with
+  --     no "the headline already mentions it, so drop the prefix" shortcut,
+  --     because that shortcut is how the NAME gets lost.
+  v_title := public.de_escalation_headline(p_reason, 120);
+  if v_title is not null then
+    return case when v_entity is null then v_title else v_entity || ' — ' || v_title end;
+  end if;
+
+  -- (3) no reason at all. Name the work it stopped on — the row points at it.
+  if p_work_item_id is not null then
+    select nullif(btrim(w.title), '') into v_named
+      from de_work_items w
+     where w.id = p_work_item_id
+       and (p_tenant_id is null or w.tenant_id = p_tenant_id);
+    if v_named is not null then
+      return case when v_entity is null then 'Stopped on: ' || v_named
+                  else v_entity || ' — stopped on: ' || v_named end;
+    end if;
+  end if;
+  if p_objective_id is not null then
+    select nullif(btrim(o.title), '') into v_named
+      from de_objectives o
+     where o.id = p_objective_id
+       and (p_tenant_id is null or o.tenant_id = p_tenant_id);
+    if v_named is not null then
+      return case when v_entity is null then 'Stopped on: ' || v_named
+                  else v_entity || ' — stopped on: ' || v_named end;
+    end if;
+  end if;
+
+  -- (3b) nothing to say about the problem, but we do know WHO it is about.
+  --      The name alone beats a sentence that is true of every row.
+  if v_entity is not null then
+    return v_entity;
+  end if;
+
+  -- (4) THE GENUINE LAST RESORT: it knows nothing. Say that, rather than the
+  --     old sentence, which said only that a decision was wanted — true of
+  --     every row in the queue and therefore information in none of them.
+  return coalesce(nullif(btrim(coalesce(p_de_name, '')), ''), 'An employee')
+         || ' stopped and gave no reason';
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.de_eval_quality(p_tenant_id uuid, p_de_id uuid, p_days integer DEFAULT 7)
  RETURNS jsonb
  LANGUAGE sql
@@ -7175,8 +7542,10 @@ declare
   v_pip_failed integer := 0;
   v_sla integer := 0;
   v_de_name text;
-  v_passing boolean;
   v_prop jsonb;
+  v_goals integer; v_measured integer; v_unmet integer; v_decisions bigint;
+  v_pip_dismissed integer := 0;
+  v_pip_unassessable integer := 0;
 begin
   -- (a) Expiring within 14 days → one warning audit event per cert.
   for v_cert in
@@ -7224,28 +7593,85 @@ begin
       and tenant_is_operational(i.tenant_id)
   loop
     select name into v_de_name from digital_employees where id = v_pip.de_id;
-    v_passing := false;
-    for m in select * from get_de_performance_metrics(v_pip.tenant_id, 4) where de_id = v_pip.de_id loop
-      v_passing := m.total_decisions >= 10
-        and m.escalation_rate <= 50 and m.avg_confidence >= 50 and m.error_rate <= 15;
-    end loop;
 
-    if v_passing then
+    -- ⛔ ONE POLICY, TWO READERS.
+    --
+    -- This block used to re-measure against three constants:
+    --   total_decisions >= 10 and escalation_rate <= 50
+    --   and avg_confidence >= 50 and error_rate <= 15
+    -- Mig 765 removed exactly those from the review as illegitimate -- "judging
+    -- everyone against three invented constants" -- and replaced them with the
+    -- goals the workspace actually set. They lived on HERE, so the two readers
+    -- of one policy disagreed: the review would decline to judge an employee
+    -- while this sweep failed it and raised a CRITICAL incident.
+    --
+    -- Worse, `v_passing` was initialised false and only ever set INSIDE a loop
+    -- over get_de_performance_metrics. An employee that function returned no
+    -- row for fell straight to the else branch: absence of evidence became
+    -- FAILURE, plus a critical incident. That is the same polarity error mig
+    -- 786 closed on the authority side -- "we could not tell" must never be
+    -- spelled the same way as a verdict.
+    --
+    -- Same reader as the review now: de_kpi_status_internal, over the same
+    -- fresh 4-week window this sweep has always used.
+    select count(*),
+           count(*) filter (where k.current is not null),
+           count(*) filter (where k.current is not null and coalesce(k.met, false) = false)
+      into v_goals, v_measured, v_unmet
+      from de_kpi_status_internal(v_pip.tenant_id, v_pip.de_id, 4) k;
+
+    v_decisions := 0;
+    select coalesce(mm.total_decisions, 0) into v_decisions
+      from get_de_performance_metrics(v_pip.tenant_id, 4) mm
+     where mm.de_id = v_pip.de_id;
+
+    if v_goals = 0 then
+      -- No goals means no verdict (founder decision, 2026-08-18). A plan on an
+      -- employee with nothing to be judged against can NEVER be adjudicated by
+      -- either reader, so leaving it open is not caution -- it is a permanent
+      -- open threat carrying a consequence clause that promises a critical
+      -- incident. Withdraw it, and say so. `dismissed` rather than completed
+      -- or failed: it neither passed nor failed, it was never judgeable.
+      update de_development_items set status = 'dismissed', updated_at = now()
+       where id = v_pip.id;
+      perform append_audit_event_internal(
+        v_pip.tenant_id, 'Governance sweep', 'system',
+        format('%s has no goals set, so its Performance Improvement Plan could not be judged and has been withdrawn. Set goals and a future review can open one that means something.',
+               coalesce(v_de_name, 'Employee')),
+        'config_change',
+        jsonb_build_object('kind', 'pip_dismissed', 'item_id', v_pip.id, 'de_id', v_pip.de_id,
+                           'why', 'no goals set for this employee')
+      );
+      v_pip_dismissed := v_pip_dismissed + 1;
+
+    elsif v_decisions < 10 or v_measured = 0 then
+      -- ⚠ NOT A FAILURE. Goals exist but there is not yet enough to judge them
+      -- on. The thin-evidence guard mig 765 deliberately KEPT, applied here for
+      -- the first time. The plan stays open and its deadline stays where it is;
+      -- next sweep may well have the evidence. What must not happen is a
+      -- critical incident for the crime of being unmeasured.
+      v_pip_unassessable := v_pip_unassessable + 1;
+
+    elsif v_unmet = 0 then
       update de_development_items set status = 'completed', completed_at = now(), updated_at = now() where id = v_pip.id;
       perform append_audit_event_internal(
         v_pip.tenant_id, 'Governance sweep', 'system',
         format('%s met its Performance Improvement Plan targets — PIP closed', coalesce(v_de_name, 'Employee')),
         'config_change',
-        jsonb_build_object('kind', 'pip_completed', 'item_id', v_pip.id, 'de_id', v_pip.de_id)
+        jsonb_build_object('kind', 'pip_completed', 'item_id', v_pip.id, 'de_id', v_pip.de_id,
+                           'goals_measured', v_measured)
       );
       v_pip_completed := v_pip_completed + 1;
+
     else
+      -- Measured, and missed. This is the consequence the plan itself promises.
       update de_development_items set status = 'failed', updated_at = now() where id = v_pip.id;
       insert into de_incidents (tenant_id, de_id, kind, severity, title, detail, source_table, source_id, occurred_at)
       values (v_pip.tenant_id, v_pip.de_id, 'pip_failed', 'critical',
         format('Performance Improvement Plan failed — %s', coalesce(v_de_name, 'employee')),
         jsonb_build_object('item_id', v_pip.id, 'due_date', v_pip.due_date,
           'consequence', v_pip.consequence,
+          'goals_missed', v_unmet, 'goals_measured', v_measured,
           'next_step', 'A human decides here: trust reduction, added approval gates, or pause (Pause is on the employee profile).'),
         'de_development_items', v_pip.id, now())
       on conflict (tenant_id, source_table, source_id) do nothing;
@@ -7286,7 +7712,9 @@ begin
   end;
 
   return jsonb_build_object('cert_warnings', v_warned, 'certs_expired', v_expired,
-    'pips_completed', v_pip_completed, 'pips_failed', v_pip_failed, 'sla_nudges', v_sla,
+    'pips_completed', v_pip_completed, 'pips_failed', v_pip_failed,
+    'pips_dismissed', v_pip_dismissed, 'pips_unassessable', v_pip_unassessable,
+    'sla_nudges', v_sla,
     'trust_proposals', coalesce(v_prop, '{}'::jsonb));
 end;
 $function$;
@@ -7393,7 +7821,7 @@ exception when others then
 end;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.de_kpi_action_value(p_tenant_id uuid, p_de_id uuid, p_source text, p_source_config jsonb)
+CREATE OR REPLACE FUNCTION public.de_kpi_action_value(p_tenant_id uuid, p_de_id uuid, p_source text, p_source_config jsonb, p_window_weeks integer DEFAULT 13)
  RETURNS TABLE(v numeric, n bigint)
  LANGUAGE sql
  STABLE SECURITY DEFINER
@@ -7414,7 +7842,7 @@ AS $function$
      and ae.subject_kind = 'de'
      and ae.subject_id = p_de_id
      and ae.rollback_of is null
-     and ae.created_at >= now() - interval '91 days'
+     and ae.created_at >= now() - (p_window_weeks * interval '7 days')
      and (coalesce(p_source_config->>'category', '')     = '' or ad.category = p_source_config->>'category')
      and (coalesce(p_source_config->>'action_label', '') = '' or ad.label    = p_source_config->>'action_label')
 $function$;
@@ -7447,7 +7875,19 @@ begin
   select round(100.0 * count(*) filter (where csat_score = 1) / nullif(count(*) filter (where csat_submitted_at is not null), 0), 1),
          count(*) filter (where csat_submitted_at is not null)
     into v_csat, v_csat_n
-  from de_conversations where tenant_id = p_tenant_id and de_id = p_de_id;
+  from de_conversations where tenant_id = p_tenant_id and de_id = p_de_id
+     -- ⚠ THE WINDOW THIS FUNCTION IS ASKED FOR. It had NO time filter at
+     -- all, so csat_pct was an all-time figure sitting in a payload whose
+     -- every other number honoured p_window_weeks, and a review calling
+     -- itself "13 weeks" published it as such.
+     --
+     -- Restricting here also restricts the NUMERATOR, which previously
+     -- counted csat_score = 1 rows whose csat_submitted_at was null while
+     -- the denominator did not — a ratio that could exceed 100%. Naming it
+     -- rather than leaving it: there is no way to window this read without
+     -- touching that, and leaving it while editing this very expression
+     -- would be the worse choice.
+     and csat_submitted_at >= now() - (p_window_weeks * interval '7 days');
 
   v_vals := jsonb_strip_nulls(jsonb_build_object(
     'resolution_rate',        case when coalesce(m.total_decisions, 0) >= 1 then m.resolution_rate end,
@@ -7476,7 +7916,7 @@ begin
     on c.metric_key = k.metric_key and (c.tenant_id is null or c.tenant_id = p_tenant_id)
   -- mig 757: the arm lives in ONE place now (mig 756). Same expression,
   -- proven identical over 1143 (metric x employee) pairs before the switch.
-  left join lateral public.de_kpi_action_value(p_tenant_id, p_de_id, c.source, c.source_config) act on true
+  left join lateral public.de_kpi_action_value(p_tenant_id, p_de_id, c.source, c.source_config, p_window_weeks) act on true
   -- Latest manual reading, for metrics the platform doesn't compute.
   left join lateral (
     select d.value, count(*) over () as rn from de_kpi_readings d
@@ -7506,6 +7946,11 @@ AS $function$
       -- ERP connector should be able to do.
       when ad.requires_role = 'finance'
         then coalesce(de.archetype_key, '') in ('billing_ar', 'accounting', 'fpa')
+      -- Mig 797: the sales desk. Quoting a price and taking an order are
+      -- commercial acts — the roles that face the customer commercially,
+      -- not everyone holding the ERP connector.
+      when ad.requires_role = 'sales_desk'
+        then coalesce(de.archetype_key, '') in ('bdr', 'sdr', 'front_desk', 'billing_ar')
       -- No permissive else. An unrecognised requirement DENIES.
       else false
     end, false)
@@ -7999,6 +8444,7 @@ declare
   -- in writing" was structurally incapable of firing on a write-back.
   v_text      text := lower(coalesce(p_action_label, '') || ' ' || coalesce(p_category, '') || ' ' || coalesce(p_content, ''));
   v_autonomy  record;
+  v_risk jsonb;
   v_frag      text;
   v_hit       boolean;
   v_threshold bigint;
@@ -8121,6 +8567,48 @@ begin
       'action_execute'
     ],
     p_de_id, p_category);
+  -- ── THE SECOND QUESTION (spec §3.6), on the employee path ────────────
+  -- Everything above answered "has this employee EARNED this?" — guardrails,
+  -- the destructive floor, the amount threshold, the spend caps and the
+  -- earned-trust chain. All of it is unchanged. This asks the other question:
+  -- "does this particular action need more scrutiny?"
+  --
+  -- It sits immediately before the auto_executed return because that is THE
+  -- ONLY return in this function that lets an action through without a human.
+  -- Every other path already ends at a person.
+  --
+  -- ⚠ THE MAPPING IS CONSTRAINED, NOT CHOSEN. action_executions.decision
+  -- carries a CHECK of ten values, so a new one would RAISE on insert inside
+  -- record_action_execution. deny therefore becomes 'access_denied' — in the
+  -- CHECK, semantically exact, and never once used live, so it cannot be
+  -- confused with an existing meaning. 'guardrail_blocked' was rejected: five
+  -- functions branch on it, and an authority denial is not a guardrail hit.
+  -- Callers are safe either way — eight functions gate on = 'auto_executed',
+  -- so anything else means "do not execute".
+  --
+  -- With authority_rules EMPTY this is exactly a no-op.
+  v_risk := evaluate_authority(
+    p_tenant_id,
+    case when p_de_id is null then 'all' else 'de' end,
+    p_de_id,
+    p_category,
+    case when p_amount_cents is null then '{}'::jsonb
+         else jsonb_build_object('amount_cents', p_amount_cents) end);
+
+  if v_risk->>'outcome' = 'deny' then
+    return jsonb_build_object('decision', 'access_denied',
+      'guardrail_rule_id', null, 'guardrail_rule', null, 'trust_level', null,
+      'reasoning', format('Refused: a workspace authority rule denies this. %s',
+        coalesce(v_risk->'reasons'->0->>'why', 'No reason was recorded.')));
+  end if;
+
+  if v_risk->>'outcome' in ('require_human','require_second_approver') then
+    return jsonb_build_object('decision', 'human_gated_trust',
+      'guardrail_rule_id', null, 'guardrail_rule', null, 'trust_level', null,
+      'reasoning', format('Needs approval: a workspace authority rule asks for a person here. %s',
+        coalesce(v_risk->'reasons'->0->>'why', 'No reason was recorded.')));
+  end if;
+
   if coalesce(v_autonomy.enabled, false)
      and (p_amount_cents is null
           or (v_autonomy.max_amount_cents is not null and p_amount_cents <= v_autonomy.max_amount_cents)) then
@@ -10072,6 +10560,53 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.decide_human_tasks(p_task_ids uuid[], p_decision text, p_reason_code text DEFAULT NULL::text, p_note text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  v_id     uuid;
+  v_ok     int := 0;
+  v_failed jsonb := '[]'::jsonb;
+  v_row    human_tasks;
+  v_title  text;
+begin
+  if p_task_ids is null or array_length(p_task_ids, 1) is null then
+    return jsonb_build_object('decided', 0, 'failed', v_failed);
+  end if;
+  -- Same 500 cap as withdraw_human_tasks, for the same reason: a UI bug must
+  -- not be able to clear a whole workspace's queue in one call.
+  if array_length(p_task_ids, 1) > 500 then
+    raise exception 'too_many: decide at most 500 tasks at a time (got %)', array_length(p_task_ids, 1);
+  end if;
+
+  foreach v_id in array p_task_ids loop
+    select title into v_title from human_tasks where id = v_id;
+    begin
+      v_row := public.decide_human_task(v_id, p_decision, p_reason_code, p_note);
+      -- NULL is not failure here. decide_human_task returns NULL on the
+      -- first-approver path: the approval was RECORDED and the task stays
+      -- pending until a different person signs. Reporting that as an error
+      -- would teach people to press it twice.
+      if v_row.id is null then
+        v_failed := v_failed || jsonb_build_object(
+          'id', v_id, 'title', coalesce(v_title, '(untitled)'),
+          'error', 'first_approval_recorded: a second approver is required');
+      else
+        v_ok := v_ok + 1;
+      end if;
+    exception when others then
+      v_failed := v_failed || jsonb_build_object(
+        'id', v_id, 'title', coalesce(v_title, '(untitled)'), 'error', sqlerrm);
+    end;
+  end loop;
+
+  return jsonb_build_object('decided', v_ok, 'failed', v_failed);
+end
+$function$;
+
 CREATE OR REPLACE FUNCTION public.decide_ingest_candidates(p_connector_id uuid, p_refs text[], p_decision text)
  RETURNS integer
  LANGUAGE plpgsql
@@ -10339,6 +10874,51 @@ begin
     end
   );
 end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.decision_unblock_impact(p_task_ids uuid[] DEFAULT NULL::uuid[])
+ RETURNS TABLE(task_id uuid, work_item_id uuid, direct_blocked integer, total_blocked integer, deepest_chain integer)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  with recursive roots as (
+    select t.id as task_id, t.related_id as work_item_id
+      from human_tasks t
+     where t.tenant_id = auth_tenant_id()
+       and t.status = 'pending'
+       and t.related_table = 'de_work_items'
+       and t.related_id is not null
+       and (p_task_ids is null or t.id = any(p_task_ids))
+       and (t.de_id is null or public.can_access_de(t.de_id))
+  ),
+  chain as (
+    -- depth 1: the items whose predecessor IS the stranded item
+    select r.task_id, w.id, 1 as depth
+      from roots r
+      join de_work_items w on w.depends_on = r.work_item_id
+     where w.status in ('queued', 'waiting_human')
+    union all
+    -- ...and everything behind those, transitively
+    select c.task_id, w.id, c.depth + 1
+      from chain c
+      join de_work_items w on w.depends_on = c.id
+     where w.status in ('queued', 'waiting_human')
+       -- ⚠ A CYCLE GUARD, NOT A DISPLAY LIMIT. depends_on has no constraint
+       -- preventing A->B->A, and a recursive CTE that meets one does not
+       -- return a wrong answer, it never returns. The deepest real chain
+       -- measured on this data is 7.
+       and c.depth < 50
+  )
+  select
+    r.task_id,
+    r.work_item_id,
+    coalesce(count(*) filter (where c.depth = 1), 0)::int as direct_blocked,
+    coalesce(count(c.id), 0)::int                         as total_blocked,
+    coalesce(max(c.depth), 0)::int                        as deepest_chain
+  from roots r
+  left join chain c on c.task_id = r.task_id
+  group by r.task_id, r.work_item_id;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.delete_account_contact(p_contact_id uuid)
@@ -12790,7 +13370,7 @@ begin
       v_rank := 1;
       v_reasons := v_reasons || jsonb_build_object(
         'dimension', r.dimension, 'comparator', r.comparator, 'threshold', r.threshold,
-        'outcome', 'require_human',
+        'outcome', 'require_human', 'rule_outcome', r.outcome, 'unverified', true,
         'why', format('unmeasured: this action did not report %s, and a rule depends on it', r.dimension));
     else
       -- ⛔ A MALFORMED MEASURE FAILS CLOSED, NOT RAISES. This function IS the
@@ -12813,7 +13393,7 @@ begin
         v_rank := 1;
         v_reasons := v_reasons || jsonb_build_object(
           'dimension', r.dimension, 'comparator', r.comparator, 'threshold', r.threshold,
-          'outcome', 'require_human',
+          'outcome', 'require_human', 'rule_outcome', r.outcome, 'unverified', true,
           'why', format('unreadable measure: %s could not be read as %s', r.dimension, r.value_type));
       else
         v_trips := case r.comparator
@@ -12834,7 +13414,7 @@ begin
           v_rank := 1;
           v_reasons := v_reasons || jsonb_build_object(
             'dimension', r.dimension, 'comparator', r.comparator, 'threshold', r.threshold,
-            'outcome', 'require_human',
+            'outcome', 'require_human', 'rule_outcome', r.outcome, 'unverified', true,
             'why', format('unknown comparator: %s is not understood by this evaluator', r.comparator));
         elsif not v_trips then
           continue;
@@ -15620,6 +16200,27 @@ begin
              order by c.health_score nulls last limit 25
           ) s;
 
+      when 'payable_invoices' then
+        -- Mig 803: the AP book. Same sample-of-25 semantics as the AR books,
+        -- same UNVERIFIED honesty when the source never stated a balance.
+        source_table := 'purchase_invoices';
+        select count(*), coalesce(jsonb_agg(x) filter (where x is not null), '[]'::jsonb)
+          into row_count, sample
+          from (
+            select jsonb_build_object('invoice', pi.source_external_ref, 'supplier', pi.supplier_name,
+                                      'due', pi.due_date, 'amount', (pi.amount_cents / 100.0),
+                                      'still_owed', case when pi.outstanding_cents is not null
+                                                         then (pi.outstanding_cents / 100.0)::text
+                                                         else 'UNVERIFIED - the source did not state a balance; the amount shown is the face value' end,
+                                      'status', pi.status, 'source', pi.source_provider) as x,
+                   pi.due_date as ord
+              from purchase_invoices pi
+             where pi.tenant_id = p_tenant_id
+               and coalesce(pi.outstanding_cents, pi.amount_cents) > 0
+               and lower(coalesce(pi.status, '')) not in ('paid', 'cancelled', 'return')
+             order by ord nulls last limit 25
+          ) s;
+
       when 'accounts_book' then
         source_table := 'customer_accounts';
         select count(*), coalesce(jsonb_agg(x) filter (where x is not null), '[]'::jsonb)
@@ -15669,6 +16270,7 @@ begin
         when 'journal_entries'     then  exists (select 1 from journal_entries     where tenant_id = p_tenant_id)
         when 'onboarding_projects' then  exists (select 1 from onboarding_projects where tenant_id = p_tenant_id)
         when 'customer_accounts'   then  exists (select 1 from customer_accounts   where tenant_id = p_tenant_id)
+        when 'purchase_invoices'   then  exists (select 1 from purchase_invoices   where tenant_id = p_tenant_id)
         else null
       end;
 
@@ -20829,6 +21431,41 @@ BEGIN
   RETURN v_out;
 END $function$;
 
+CREATE OR REPLACE FUNCTION public.list_decision_groups()
+ RETURNS TABLE(task_type text, de_id uuid, de_name text, pending bigint, oldest_at timestamp with time zone, oldest_days integer, overdue bigint, unpriced bigint, gates_work bigint, strands bigint, sample_title text, task_ids uuid[])
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  with impact as (select * from public.decision_unblock_impact(null))
+  select
+    t.type                                              as task_type,
+    t.de_id,
+    d.name                                              as de_name,
+    count(*)                                            as pending,
+    min(t.created_at)                                   as oldest_at,
+    extract(day from (now() - min(t.created_at)))::int  as oldest_days,
+    count(*) filter (where t.sla_due_at is not null and t.sla_due_at < now()) as overdue,
+    count(*) filter (where (select amount_cents from task_approval_facts(t.id)) is null) as unpriced,
+    -- how many of these decisions hold a work chain at all
+    count(*) filter (where i.task_id is not null)       as gates_work,
+    -- and how many steps they release between them
+    coalesce(sum(i.total_blocked), 0)                   as strands,
+    (array_agg(t.title order by t.created_at))[1]       as sample_title,
+    array_agg(t.id order by t.created_at)               as task_ids
+  from human_tasks t
+  left join digital_employees d on d.id = t.de_id
+  left join impact i on i.task_id = t.id
+  where t.tenant_id = auth_tenant_id()
+    and t.status = 'pending'
+    and (t.de_id is null or public.can_access_de(t.de_id))
+  group by t.type, t.de_id, d.name
+  -- WHAT THIS RELEASES, then how long it has waited. The old ordering was
+  -- count descending, which put the 57 that free nothing above the 3 that
+  -- restart an employee.
+  order by coalesce(sum(i.total_blocked), 0) desc, min(t.created_at);
+$function$;
+
 CREATE OR REPLACE FUNCTION public.list_group_members(p_group_id uuid)
  RETURNS TABLE(user_id uuid, full_name text, role text, added_at timestamp with time zone)
  LANGUAGE sql
@@ -21293,6 +21930,65 @@ BEGIN
      WHERE d.tenant_id = v_tenant
      ORDER BY (d.status = 'verified') DESC, d.domain;
 END $function$;
+
+CREATE OR REPLACE FUNCTION public.list_trust_readiness()
+ RETURNS TABLE(policy_id uuid, de_id uuid, de_name text, category text, current_level integer, max_level integer, eligible boolean, unmet_count integer, unmet jsonb, waiting_on_decisions boolean, pending_decisions bigint)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  with mine as (
+    select tp.*
+      from trust_policies tp
+      join digital_employees d on d.id = tp.de_id
+     where tp.tenant_id = auth_tenant_id()
+       and tp.status = 'active'
+       and d.lifecycle_status in ('assigned', 'active', 'improving')
+       -- Same second axis every other trust entry point uses: role tier is not
+       -- enough, the caller must be on this employee's reporting line.
+       and public.can_access_de(tp.de_id)
+  ),
+  ev as (
+    -- ONE call per policy. The same function request_trust_promotion gates on,
+    -- so "ready" here and "accepted" there cannot disagree.
+    select m.*, public.trust_evidence_for(m.*::trust_policies) as evidence
+      from mine m
+  )
+  select
+    e.id                                                as policy_id,
+    e.de_id,
+    d.name                                              as de_name,
+    coalesce(e.action_category, e.source_category, '(uncategorised)') as category,
+    e.current_level,
+    e.max_level,
+    coalesce((e.evidence->>'eligible')::boolean, false)  as eligible,
+    coalesce(jsonb_array_length(u.unmet), 0)             as unmet_count,
+    coalesce(u.unmet, '[]'::jsonb)                       as unmet,
+    -- Is this employee stuck behind the human queue specifically? That is the
+    -- difference between "needs more time" and "needs YOU".
+    coalesce(u.unmet @> '[{"key":"human_samples"}]'::jsonb
+          or u.unmet @> '[{"key":"human_approval_rate"}]'::jsonb, false) as waiting_on_decisions,
+    coalesce(p.n, 0)                                     as pending_decisions
+  from ev e
+  join digital_employees d on d.id = e.de_id
+  left join lateral (
+    select jsonb_agg(jsonb_build_object(
+             'key', c->>'key', 'detail', c->>'detail',
+             'actual', c->>'actual', 'required', c->>'required')
+             order by c->>'key') as unmet
+      from jsonb_array_elements(e.evidence->'criteria') c
+     where coalesce((c->>'met')::boolean, false) = false
+  ) u on true
+  left join lateral (
+    select count(*) as n from human_tasks t
+     where t.tenant_id = e.tenant_id and t.de_id = e.de_id and t.status = 'pending'
+  ) p on true
+  -- Closest to ready first. A workspace wants to know who is two decisions
+  -- away, not who is furthest from ever qualifying.
+  order by coalesce((e.evidence->>'eligible')::boolean, false) desc,
+           coalesce(jsonb_array_length(u.unmet), 0) asc,
+           d.name;
+$function$;
 
 CREATE OR REPLACE FUNCTION public.list_workspace_people()
  RETURNS TABLE(user_id uuid, full_name text, role text)
@@ -22084,6 +22780,18 @@ declare
   v_de_name text;
   v_proposal text;
   v_title text;
+  v_sig text[];
+  v_scope text;
+  v_open_id uuid;
+  v_open_title text;
+  v_open_first timestamptz;
+  v_rep integer;
+  v_distinct integer;
+  v_suffix text;
+  v_base text;
+  v_detail text;
+  v_norm text;
+  v_added boolean := false;
 begin
   if p_tenant_id is null or p_de_id is null then
     raise exception 'open_de_escalation: tenant and de are required';
@@ -22091,7 +22799,8 @@ begin
   select name into v_de_name from digital_employees where id = p_de_id;
 
   -- The sentinel is deliberate and readable on the surface: a human must be
-  -- able to decide even when the employee proposed nothing.
+  -- able to decide even when the employee proposed nothing. Computed BEFORE
+  -- the branch, because BOTH paths now write an exception row with it.
   v_proposal := nullif(btrim(coalesce(p_proposed_action, '')), '');
   if v_proposal is null then
     v_proposal := case when p_needs_input
@@ -22099,20 +22808,145 @@ begin
       else 'No proposal — the employee reported a blocker without proposing an action. Give it an instruction, or cancel the task with a reason.' end;
   end if;
 
-  v_title := nullif(btrim(coalesce(p_title, '')), '');
-  if v_title is null then
-    v_title := coalesce(v_de_name, 'An employee') || ' needs a decision';
+  -- 778: the sameness test, derived from the employee's own account, and the
+  -- separator, derived from the NAME of the work rather than from this run's
+  -- id — see de_escalation_scope for why the id could not be used.
+  v_sig   := public.de_blocker_signature(p_reason);
+  -- ⚠ THE TWO WRITERS OF blocker_scope MUST AGREE. The backfill below derives
+  -- the objective through the work item (related_id -> de_work_items ->
+  -- objective_id); this path is handed p_objective_id directly. Nothing forces
+  -- a caller to pass both, and a caller that passed only the work item would
+  -- store NULL here while the backfill stored the work's name — after which
+  -- the guard silently stops matching the very rows it just armed. Measured
+  -- 2026-08-19: 51 exceptions carry a work item, 0 of them diverge today. The
+  -- coalesce is here so that stays true when a caller changes.
+  v_scope := public.de_escalation_scope(p_tenant_id,
+               coalesce(p_objective_id,
+                        (select w.objective_id from de_work_items w
+                          where w.id = p_work_item_id and w.tenant_id = p_tenant_id)));
+
+  -- ⚠⚠ THE FAIL-OPEN GUARD, AND BOTH HALVES OF IT ARE LOAD-BEARING.
+  --   NO SEPARATOR (v_scope is null) means "I cannot tell this piece of work
+  --     from any other", and the honest answer to that is a new row. The
+  --     previous draft compared `is not distinct from`, so NULL joined NULL
+  --     and two DIFFERENT CUSTOMERS merged through this function on live
+  --     data. 140 of 189 pending escalations carry no separator, so this is
+  --     the common case, not the corner.
+  --   NO SIGNATURE (array_length(v_sig,1) is null) means the catalog
+  --     recognised nothing, and a blocker nobody can classify must never
+  --     disappear behind one somebody could.
+  -- Deleting either half must go RED: PROBE 13 pins both strings, PROBE 22
+  -- drives both, and both pins are inverted.
+  if v_scope is not null and array_length(v_sig, 1) is not null then
+    select ht.id, ht.title, ht.created_at, ht.repeat_count, ht.distinct_reports, ht.detail
+      into v_open_id, v_open_title, v_open_first, v_rep, v_distinct, v_detail
+      from human_tasks ht
+     where ht.tenant_id = p_tenant_id
+       and ht.de_id = p_de_id
+       and ht.type = 'escalation'
+       and ht.status = 'pending'
+       -- the SEPARATOR: a different piece of work is different work, even
+       -- when it stops for the same reason. Plain `=` on purpose — NULL is
+       -- excluded above and must never be re-admitted here by an operator
+       -- that treats "unknown" as "the same unknown".
+       and ht.blocker_scope = v_scope
+       -- the TEST: everything the new escalation is blocked on is already on
+       -- this task. One new KIND of blockage and containment fails, so a new
+       -- row is written rather than a new failure hidden behind an old one.
+       and ht.blocker_signature is not null
+       and ht.blocker_signature @> v_sig
+     order by ht.created_at, ht.id
+     limit 1;
   end if;
+
+  if v_open_id is not null then
+    v_rep := coalesce(v_rep, 1) + 1;
+
+    -- ⚠⚠⚠ COLLAPSE THE ROW, NEVER THE REPORT. The row is shared; the words
+    -- are not thrown away. `detail` is APPENDED TO, never overwritten, so the
+    -- first account stays exactly where the title was derived from and the
+    -- new one goes after it. Skipped only when the text is ALREADY THERE,
+    -- which is the one case where appending would add nothing.
+    v_norm := btrim(regexp_replace(coalesce(p_reason, ''), '\s+', ' ', 'g'));
+    if v_norm <> ''
+       and position(v_norm in regexp_replace(coalesce(v_detail, ''), '\s+', ' ', 'g')) = 0 then
+      v_added   := true;
+      v_distinct := coalesce(v_distinct, 1) + 1;
+      -- ⚠ IN FULL, AND WITH NO CAP. A first draft of THIS round degraded the
+      -- append to a dated pointer past 8000 characters. That was wrong twice:
+      -- it was a branch no probe exercised, and it lost words — de_exceptions
+      -- truncates `situation` at 4000 (mig 483), so a long report past the cap
+      -- would have existed in full in NEITHER place. A cap in the middle of a
+      -- rule called "never lose the report" is where the rule quietly stops
+      -- being true. The growth it was guarding against is named as a residual
+      -- below and measured: the largest pile on this database is 18 reports of
+      -- roughly 400 characters, so about 7KB on one card.
+      v_detail  := coalesce(v_detail, '')
+                || chr(10) || chr(10)
+                || '— also reported ' || to_char(now(), 'FMDD Mon') || ': '
+                || v_norm;
+    end if;
+
+    -- SHOW THE REPETITION WHERE A PERSON READS. Stripped-then-appended, so a
+    -- task refreshed fourteen times carries ONE suffix, not fourteen. The
+    -- second clause is what tells a reader the card holds more than the
+    -- headline: words nobody knows to look for are only half-reachable.
+    v_suffix := ' · asked ' || v_rep::text || '× since ' || to_char(v_open_first, 'FMDD Mon')
+             || case when coalesce(v_distinct, 1) > 1
+                     then ' · ' || coalesce(v_distinct, 1)::text || ' different reports inside'
+                     else '' end;
+    v_base   := regexp_replace(coalesce(v_open_title, ''), ' · asked [0-9]+× since .*$', '');
+    update human_tasks
+       set title            = left(v_base, greatest(1, 300 - char_length(v_suffix))) || v_suffix,
+           detail           = v_detail,
+           repeat_count     = v_rep,
+           distinct_reports = coalesce(v_distinct, 1),
+           last_raised_at   = now()
+           -- ⚠ sla_due_at is DELIBERATELY ABSENT. Re-arming it here would mean
+           -- a permanently blocked item can never expire. created_at is absent
+           -- for the same reason: it is the age, and the age is the point.
+     where id = v_open_id;
+
+    -- ⚠⚠ AND THE REPORT GETS ITS OWN LEDGER ROW, cross-linked to the task it
+    -- landed on. The first draft skipped this and called a second row "the
+    -- same pile in another table"; it is not. de_exceptions is the
+    -- employee's exception LOG — one row per thing it reported, rendered on
+    -- the DE Workbench — and suppressing it is how "SI-8891 text present in
+    -- human_tasks.detail -> 0" became true. Production writes this row on
+    -- every escalation today, so this is also the no-change path for every
+    -- reader downstream of de_exceptions.
+    insert into de_exceptions (
+      tenant_id, de_id, objective_id, work_item_id,
+      situation, proposed_action, justification, human_task_id
+    ) values (
+      p_tenant_id, p_de_id, p_objective_id, p_work_item_id,
+      left(coalesce(p_reason, ''), 4000), left(v_proposal, 4000),
+      left(coalesce(p_justification, ''), 4000), v_open_id
+    ) returning id into v_exc;
+
+    return jsonb_build_object(
+      'ok', true, 'task_id', v_open_id, 'exception_id', v_exc,
+      'deduped', true, 'repeat_count', v_rep,
+      'distinct_reports', coalesce(v_distinct, 1),
+      'report_appended', v_added, 'first_raised_at', v_open_first);
+  end if;
+
+  -- 778: the last line of defence is no longer a generic sentence. It has
+  -- p_reason and p_work_item_id in hand and now uses them.
+  v_title := public.de_escalation_title(
+    p_tenant_id, p_title, p_reason, v_de_name, p_work_item_id, p_objective_id);
 
   insert into human_tasks (
     tenant_id, de_id, type, title, detail, source, priority,
-    related_table, related_id, handoff_summary, sla_due_at
+    related_table, related_id, handoff_summary, sla_due_at,
+    blocker_signature, blocker_scope, repeat_count, distinct_reports, last_raised_at
   ) values (
     p_tenant_id, p_de_id, 'escalation', left(v_title, 300), coalesce(p_reason, ''), 'de', 'high',
     case when p_work_item_id is not null then 'de_work_items' else null end,
     p_work_item_id,
     left(v_proposal, 1000),
-    now() + make_interval(hours => greatest(1, coalesce(p_sla_hours, 24)))
+    now() + make_interval(hours => greatest(1, coalesce(p_sla_hours, 24))),
+    v_sig, v_scope, 1, 1, now()
   ) returning id into v_task;
 
   insert into de_exceptions (
@@ -22124,7 +22958,8 @@ begin
     left(coalesce(p_justification, ''), 4000), v_task
   ) returning id into v_exc;
 
-  return jsonb_build_object('ok', true, 'task_id', v_task, 'exception_id', v_exc);
+  return jsonb_build_object('ok', true, 'task_id', v_task, 'exception_id', v_exc,
+    'deduped', false, 'distinct_reports', 1, 'report_appended', true);
 end;
 $function$;
 
@@ -23098,6 +23933,49 @@ BEGIN
   NEW.updated_at := now();
   RETURN NEW;
 END $function$;
+
+CREATE OR REPLACE FUNCTION public.preview_decide_human_tasks(p_task_ids uuid[], p_decision text, p_reason_code text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  v_id      uuid;
+  v_ok      int := 0;
+  v_refuse  jsonb := '[]'::jsonb;
+  v_title   text;
+begin
+  if p_task_ids is null or array_length(p_task_ids, 1) is null then
+    return jsonb_build_object('would_succeed', 0, 'would_refuse', 0, 'refusals', v_refuse);
+  end if;
+  if array_length(p_task_ids, 1) > 500 then
+    raise exception 'too_many: preview at most 500 tasks at a time (got %)', array_length(p_task_ids, 1);
+  end if;
+
+  foreach v_id in array p_task_ids loop
+    select title into v_title from human_tasks where id = v_id;
+    begin
+      perform public.decide_human_task(v_id, p_decision, p_reason_code, '__preview__');
+      -- Reaching this line means the decision WOULD go through. Undo it: the
+      -- raise rolls this block back to where it started.
+      raise exception using errcode = 'P0001', message = '__PREVIEW_WOULD_SUCCEED__';
+    exception when others then
+      if sqlerrm = '__PREVIEW_WOULD_SUCCEED__' then
+        v_ok := v_ok + 1;
+      else
+        v_refuse := v_refuse || jsonb_build_object(
+          'id', v_id, 'title', coalesce(v_title, '(untitled)'), 'why', sqlerrm);
+      end if;
+    end;
+  end loop;
+
+  return jsonb_build_object(
+    'would_succeed', v_ok,
+    'would_refuse',  jsonb_array_length(v_refuse),
+    'refusals',      v_refuse);
+end
+$function$;
 
 CREATE OR REPLACE FUNCTION public.preview_space_access(p_space_id uuid)
  RETURNS TABLE(user_id uuid, full_name text, role text, level integer, level_name text, reason text)
@@ -28981,6 +29859,23 @@ begin
   return jsonb_build_object('ok', true, 'entity_id', v_am.entity_id, 'restored_from', 'current_config');
 end; $function$;
 
+CREATE OR REPLACE FUNCTION public.review_de_for(p_tenant_id uuid)
+ RETURNS uuid
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select de.id
+  from digital_employees de
+  where de.tenant_id = p_tenant_id
+    and de.status = 'active'
+    and de.archetype_key in ('renewal_manager', 'cs_manager')
+  -- Deterministic: the same employee every period, so the review history
+  -- reads as one desk's work rather than a rota nobody chose.
+  order by (de.archetype_key = 'renewal_manager') desc, de.created_at asc
+  limit 1;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.review_de_incident(p_incident_id uuid, p_status text, p_resolution_note text DEFAULT NULL::text)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -29332,6 +30227,117 @@ BEGIN
   ON CONFLICT (widget_key_id) DO UPDATE SET secret = EXCLUDED.secret, rotated_at = now();
   RETURN jsonb_build_object('ok', true, 'secret', v_secret, 'is_new', v_is_new);
 END $function$;
+
+CREATE OR REPLACE FUNCTION public.run_account_review_sweep(p_tenant_id uuid DEFAULT NULL::uuid, p_limit integer DEFAULT 100)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  t          record;
+  acct       record;
+  k          record;
+  v_de       uuid;
+  v_draft    jsonb;
+  v_review   uuid;
+  v_task     uuid;
+  v_raised_t int;
+  v_tenants  int := 0;
+  v_nodesk   int := 0;
+  v_seen     int := 0;
+  v_raised   int := 0;
+  v_current  int := 0;
+  v_detail   jsonb := '[]'::jsonb;
+begin
+  for t in
+    select tn.id, tn.slug from tenants tn
+    where (p_tenant_id is null or tn.id = p_tenant_id)
+      and tenant_is_operational(tn.id)
+  loop
+    v_de := review_de_for(t.id);
+    if v_de is null then
+      v_nodesk := v_nodesk + 1;
+      continue;
+    end if;
+    v_tenants := v_tenants + 1;
+    v_raised_t := 0;
+
+    for acct in
+      select ca.id, ca.name from customer_accounts ca
+      where ca.tenant_id = t.id and coalesce(ca.status, '') <> 'churned'
+      order by ca.renewal_date asc nulls last, ca.created_at asc
+    loop
+      exit when v_raised_t >= p_limit;
+      v_seen := v_seen + 1;
+
+      -- Today's evidence, not last month's: refresh before drafting. The
+      -- core function is mig-510-honest — an unmeasured account stays
+      -- unmeasured and the draft says so.
+      perform compute_account_health_core(acct.id);
+
+      for k in
+        select * from (values
+          ('health_check', to_char(current_date, 'YYYY-MM')),
+          ('lifecycle',    to_char(current_date, 'YYYY-"Q"Q')),
+          ('churn_risk',   to_char(current_date, 'YYYY-MM'))
+        ) as kinds(kind, period)
+      loop
+        exit when v_raised_t >= p_limit;
+
+        -- churn_risk is due only while the account IS at risk — evaluated
+        -- AFTER the refresh, so a flip this morning counts this morning.
+        if k.kind = 'churn_risk' and not exists (
+          select 1 from customer_accounts ca2 where ca2.id = acct.id and ca2.status = 'at_risk'
+        ) then continue; end if;
+
+        -- THE dedupe: the unique index decides, not a marker. Losing the
+        -- race or repeating the period both land here as "already current".
+        insert into account_reviews (tenant_id, account_id, review_kind, period_key, de_id)
+        values (t.id, acct.id, k.kind, k.period, v_de)
+        on conflict (tenant_id, account_id, review_kind, period_key) do nothing
+        returning id into v_review;
+
+        if v_review is null then
+          v_current := v_current + 1;
+          continue;
+        end if;
+
+        v_draft := account_review_draft(k.kind, acct.id);
+        if v_draft ? 'error' then
+          -- The review row exists but no task can carry it: say so loudly in
+          -- the return rather than leaving a silent ledger row.
+          v_detail := v_detail || jsonb_build_object('tenant', t.slug, 'account', acct.name,
+                                                     'kind', k.kind, 'error', v_draft->>'error');
+          continue;
+        end if;
+
+        insert into human_tasks (tenant_id, type, source, origin, title, detail,
+                                 related_table, related_id, de_id, account_id)
+        values (t.id, 'account_review', 'de', 'production',
+                v_draft->>'title', v_draft->>'detail',
+                'account_reviews', v_review, v_de, acct.id)
+        returning id into v_task;
+
+        update account_reviews
+           set task_id = v_task, findings = coalesce(v_draft->'findings', '{}'::jsonb)
+         where id = v_review;
+
+        v_raised := v_raised + 1;
+        v_raised_t := v_raised_t + 1;
+      end loop;
+    end loop;
+  end loop;
+
+  return jsonb_build_object(
+    'tenants_swept', v_tenants,
+    'tenants_without_a_review_desk', v_nodesk,
+    'accounts_seen', v_seen,
+    'raised', v_raised,
+    'already_current', v_current,
+    'detail', v_detail);
+end;
+$function$;
 
 CREATE OR REPLACE FUNCTION public.run_analytics_query(p_tenant_id uuid, p_key text, p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS jsonb
@@ -36201,6 +37207,47 @@ begin
   end if;
 end;
 $procedure$;
+
+CREATE OR REPLACE FUNCTION public.upsert_external_ap_record(p_tenant_id uuid, p_provider text, p_supplier_external_ref text, p_supplier_name text, p_invoice_external_ref text, p_amount_cents bigint, p_outstanding_cents bigint DEFAULT NULL::bigint, p_due_date date DEFAULT NULL::date, p_status text DEFAULT ''::text, p_currency text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_id uuid;
+begin
+  if p_tenant_id is null or coalesce(p_provider, '') = ''
+     or coalesce(p_invoice_external_ref, '') = '' or coalesce(p_supplier_external_ref, '') = '' then
+    raise exception 'tenant, provider, supplier ref and invoice ref are all required';
+  end if;
+
+  insert into purchase_invoices (tenant_id, supplier_external_ref, supplier_name,
+                                 source_provider, source_external_ref,
+                                 amount_cents, outstanding_cents, due_date, status, currency)
+  values (p_tenant_id, p_supplier_external_ref,
+          coalesce(nullif(p_supplier_name, ''), p_supplier_external_ref),
+          p_provider, p_invoice_external_ref,
+          coalesce(p_amount_cents, 0), p_outstanding_cents, p_due_date,
+          coalesce(p_status, ''), p_currency)
+  on conflict (tenant_id, source_provider, source_external_ref)
+  do update set supplier_external_ref = excluded.supplier_external_ref,
+                supplier_name = excluded.supplier_name,
+                amount_cents = excluded.amount_cents,
+                -- Same rule as the AR mirror: a sync that omits the balance
+                -- must not ERASE a balance we already knew; a sync that
+                -- states one always wins, because the ledger is the
+                -- authority on what is owed.
+                outstanding_cents = coalesce(excluded.outstanding_cents, purchase_invoices.outstanding_cents),
+                due_date = excluded.due_date,
+                status = excluded.status,
+                currency = excluded.currency,
+                updated_at = now()
+  returning id into v_id;
+
+  return jsonb_build_object('invoice_id', v_id, 'outstanding_known', p_outstanding_cents is not null);
+end;
+$function$;
 
 CREATE OR REPLACE FUNCTION public.upsert_external_ar_record(p_tenant_id uuid, p_provider text, p_customer_external_ref text, p_customer_name text, p_invoice_external_ref text, p_amount_cents bigint, p_due_date date, p_status text, p_currency text, p_outstanding_cents bigint DEFAULT NULL::bigint, p_contact_email text DEFAULT NULL::text)
  RETURNS jsonb
@@ -43795,6 +44842,45 @@ BEGIN
   RETURN jsonb_build_object('ok', true, 'configured', coalesce(v_has, false), 'rotated_at', v_rot);
 END $function$;
 
+CREATE OR REPLACE FUNCTION public.withdraw_human_tasks(p_task_ids uuid[], p_note text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_id uuid;
+  v_ok int := 0;
+  v_failed jsonb := '[]'::jsonb;
+  v_row human_tasks;
+begin
+  if p_task_ids is null or array_length(p_task_ids, 1) is null then
+    return jsonb_build_object('withdrawn', 0, 'failed', v_failed);
+  end if;
+  -- A cap, so a UI bug cannot empty a whole workspace's queue in one call.
+  -- 500 is comfortably above the largest real queue (412 today) and far below
+  -- "everything, everywhere".
+  if array_length(p_task_ids, 1) > 500 then
+    raise exception 'too_many: withdraw at most 500 tasks at a time (got %)', array_length(p_task_ids, 1);
+  end if;
+
+  foreach v_id in array p_task_ids loop
+    begin
+      v_row := public.withdraw_human_task(v_id, p_note);
+      if v_row.id is null then
+        v_failed := v_failed || jsonb_build_object('id', v_id, 'error', 'already_decided');
+      else
+        v_ok := v_ok + 1;
+      end if;
+    exception when others then
+      v_failed := v_failed || jsonb_build_object('id', v_id, 'error', sqlerrm);
+    end;
+  end loop;
+
+  return jsonb_build_object('withdrawn', v_ok, 'failed', v_failed);
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.withdraw_tenant_deletion_request()
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -44217,6 +45303,67 @@ CREATE TABLE IF NOT EXISTS public.account_activities (
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,
   CONSTRAINT account_activities_pkey PRIMARY KEY (id)
 );
+CREATE TABLE IF NOT EXISTS public.human_tasks (
+  "id" uuid DEFAULT gen_random_uuid() NOT NULL,
+  "tenant_id" uuid NOT NULL,
+  "type" text DEFAULT 'approval_gate'::text NOT NULL,
+  "title" text NOT NULL,
+  "detail" text DEFAULT ''::text NOT NULL,
+  "source" text DEFAULT 'de'::text NOT NULL,
+  "related_table" text,
+  "related_id" uuid,
+  "status" text DEFAULT 'pending'::text NOT NULL,
+  "decided_by" uuid,
+  "decided_at" timestamp with time zone,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "account_id" uuid,
+  "checklist_state" jsonb DEFAULT '[]'::jsonb NOT NULL,
+  "sla_due_at" timestamp with time zone,
+  "assigned_role" text,
+  "assigned_user_id" uuid,
+  "priority" text DEFAULT 'normal'::text NOT NULL,
+  "handoff_summary" text,
+  "de_id" uuid,
+  "decision_reason_code" text,
+  "decision_note" text,
+  "decision_edit" jsonb,
+  "disposition" text,
+  "resolved_work_item_id" uuid,
+  "assigned_at" timestamp with time zone,
+  "assigned_via" jsonb,
+  "first_approver_id" uuid,
+  "first_approved_at" timestamp with time zone,
+  "origin" text DEFAULT 'production'::text NOT NULL,
+  "blocker_signature" text[],
+  "blocker_scope" text,
+  "repeat_count" integer DEFAULT 1 NOT NULL,
+  "distinct_reports" integer DEFAULT 1 NOT NULL,
+  "last_raised_at" timestamp with time zone,
+  CONSTRAINT human_tasks_decision_edit_shape_check CHECK (((decision_edit IS NULL) OR ((decision_edit ? 'before'::text) AND (decision_edit ? 'after'::text)))),
+  CONSTRAINT human_tasks_decision_other_needs_note_check CHECK (((decision_reason_code IS DISTINCT FROM 'other'::text) OR (COALESCE(btrim(decision_note), ''::text) <> ''::text))),
+  CONSTRAINT human_tasks_decision_reason_code_check CHECK (((decision_reason_code IS NULL) OR (decision_reason_code = ANY (ARRAY['wrong_facts'::text, 'wrong_tone'::text, 'missing_context'::text, 'incomplete'::text, 'not_permitted'::text, 'customer_specific'::text, 'other'::text])))),
+  CONSTRAINT human_tasks_disposition_check CHECK (((disposition IS NULL) OR (disposition = ANY (ARRAY['answered'::text, 'cancelled'::text, 'rerouted'::text, 'retried'::text])))),
+  CONSTRAINT human_tasks_origin_check CHECK ((origin = ANY (ARRAY['production'::text, 'exercise'::text]))),
+  CONSTRAINT human_tasks_source_check CHECK ((source = ANY (ARRAY['de'::text, 'chat'::text, 'system'::text, 'human'::text]))),
+  CONSTRAINT human_tasks_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'expired'::text]))),
+  CONSTRAINT human_tasks_type_check CHECK ((type = ANY (ARRAY['approval_gate'::text, 'review_gate'::text, 'escalation'::text, 'override'::text, 'training_feedback'::text, 'trust_promotion'::text, 'trust_demotion_notice'::text, 'checklist'::text, 'knowledge_revision'::text, 'inquiry_review'::text, 'action_approval'::text, 'account_review'::text]))),
+  CONSTRAINT human_tasks_pkey PRIMARY KEY (id)
+);
+CREATE TABLE IF NOT EXISTS public.account_reviews (
+  "id" uuid DEFAULT gen_random_uuid() NOT NULL,
+  "tenant_id" uuid NOT NULL,
+  "account_id" uuid NOT NULL,
+  "review_kind" text NOT NULL,
+  "period_key" text NOT NULL,
+  "task_id" uuid,
+  "de_id" uuid,
+  "findings" jsonb DEFAULT '{}'::jsonb NOT NULL,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  CONSTRAINT account_reviews_review_kind_check CHECK ((review_kind = ANY (ARRAY['health_check'::text, 'lifecycle'::text, 'churn_risk'::text]))),
+  CONSTRAINT account_reviews_pkey PRIMARY KEY (id),
+  CONSTRAINT account_reviews_tenant_id_account_id_review_kind_period_key_key UNIQUE (tenant_id, account_id, review_kind, period_key)
+);
 CREATE TABLE IF NOT EXISTS public.account_writeback_requests (
   "id" uuid DEFAULT gen_random_uuid() NOT NULL,
   "tenant_id" uuid NOT NULL,
@@ -44303,7 +45450,7 @@ CREATE TABLE IF NOT EXISTS public.action_definitions (
   "learned_from_spec_id" uuid,
   "requires_role" text,
   CONSTRAINT action_definitions_provider_shape CHECK ((((provider = 'template'::text) AND (template_id IS NOT NULL)) OR (provider <> 'template'::text))),
-  CONSTRAINT action_definitions_requires_role_check CHECK (((requires_role IS NULL) OR (requires_role = ANY (ARRAY['workforce_assistant'::text, 'finance'::text])))),
+  CONSTRAINT action_definitions_requires_role_check CHECK (((requires_role IS NULL) OR (requires_role = ANY (ARRAY['workforce_assistant'::text, 'finance'::text, 'sales_desk'::text])))),
   CONSTRAINT action_definitions_scope_check CHECK ((scope = ANY (ARRAY['platform'::text, 'tenant'::text]))),
   CONSTRAINT action_definitions_scope_shape CHECK ((((scope = 'platform'::text) AND (tenant_id IS NULL)) OR ((scope = 'tenant'::text) AND (tenant_id IS NOT NULL)))),
   CONSTRAINT action_definitions_status_check CHECK ((status = ANY (ARRAY['active'::text, 'disabled'::text, 'draft'::text]))),
@@ -44337,48 +45484,6 @@ CREATE TABLE IF NOT EXISTS public.connectors (
   CONSTRAINT connectors_provider_check CHECK ((provider = ANY (ARRAY['generic_rest'::text, 'template'::text, 'dreamteam'::text, 'zendesk'::text, 'freshdesk'::text, 'freshservice'::text, 'intercom'::text, 'front'::text, 'gorgias'::text, 'kustomer'::text, 'servicenow'::text, 'salesforce'::text, 'hubspot'::text, 'pipedrive'::text, 'close'::text, 'dynamics'::text, 'confluence'::text, 'sharepoint'::text, 'gdrive'::text, 'notion'::text, 'box'::text, 'dropbox'::text, 'guru'::text, 'document360'::text, 'gitbook'::text, 'coda'::text, 'contentful'::text, 'jira'::text, 'github'::text, 'gitlab'::text, 'linear'::text, 'pagerduty'::text, 'datadog'::text, 'sentry'::text, 'asana'::text, 'monday'::text, 'clickup'::text, 'trello'::text, 'smartsheet'::text, 'wrike'::text, 'slack'::text, 'teams'::text, 'quickbooks'::text, 'xero'::text, 'netsuite'::text, 'stripe'::text, 'shopify'::text, 'woocommerce'::text, 'bigcommerce'::text, 'square'::text, 'gusto'::text, 'bamboohr'::text, 'greenhouse'::text, 'lever'::text, 'jobber'::text, 'procore'::text, 'clio'::text, 'canvas'::text, 'powerschool'::text, 'ellucian'::text, 'athenahealth'::text, 'epic'::text, 'cerner'::text, 'toast'::text, 'buildium'::text, 'twilio'::text, 'typeform'::text, 'calendly'::text, 'okta'::text, 'mailchimp'::text, 'erpnext'::text, 'mcp'::text, 'chargebee'::text, 'clover'::text, 'zohocrm'::text, 'zohodesk'::text]))),
   CONSTRAINT connectors_status_check CHECK ((status = ANY (ARRAY['connected'::text, 'error'::text, 'disconnected'::text, 'pending_credentials'::text]))),
   CONSTRAINT connectors_pkey PRIMARY KEY (id)
-);
-CREATE TABLE IF NOT EXISTS public.human_tasks (
-  "id" uuid DEFAULT gen_random_uuid() NOT NULL,
-  "tenant_id" uuid NOT NULL,
-  "type" text DEFAULT 'approval_gate'::text NOT NULL,
-  "title" text NOT NULL,
-  "detail" text DEFAULT ''::text NOT NULL,
-  "source" text DEFAULT 'de'::text NOT NULL,
-  "related_table" text,
-  "related_id" uuid,
-  "status" text DEFAULT 'pending'::text NOT NULL,
-  "decided_by" uuid,
-  "decided_at" timestamp with time zone,
-  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
-  "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-  "account_id" uuid,
-  "checklist_state" jsonb DEFAULT '[]'::jsonb NOT NULL,
-  "sla_due_at" timestamp with time zone,
-  "assigned_role" text,
-  "assigned_user_id" uuid,
-  "priority" text DEFAULT 'normal'::text NOT NULL,
-  "handoff_summary" text,
-  "de_id" uuid,
-  "decision_reason_code" text,
-  "decision_note" text,
-  "decision_edit" jsonb,
-  "disposition" text,
-  "resolved_work_item_id" uuid,
-  "assigned_at" timestamp with time zone,
-  "assigned_via" jsonb,
-  "first_approver_id" uuid,
-  "first_approved_at" timestamp with time zone,
-  "origin" text DEFAULT 'production'::text NOT NULL,
-  CONSTRAINT human_tasks_decision_edit_shape_check CHECK (((decision_edit IS NULL) OR ((decision_edit ? 'before'::text) AND (decision_edit ? 'after'::text)))),
-  CONSTRAINT human_tasks_decision_other_needs_note_check CHECK (((decision_reason_code IS DISTINCT FROM 'other'::text) OR (COALESCE(btrim(decision_note), ''::text) <> ''::text))),
-  CONSTRAINT human_tasks_decision_reason_code_check CHECK (((decision_reason_code IS NULL) OR (decision_reason_code = ANY (ARRAY['wrong_facts'::text, 'wrong_tone'::text, 'missing_context'::text, 'incomplete'::text, 'not_permitted'::text, 'customer_specific'::text, 'other'::text])))),
-  CONSTRAINT human_tasks_disposition_check CHECK (((disposition IS NULL) OR (disposition = ANY (ARRAY['answered'::text, 'cancelled'::text, 'rerouted'::text, 'retried'::text])))),
-  CONSTRAINT human_tasks_origin_check CHECK ((origin = ANY (ARRAY['production'::text, 'exercise'::text]))),
-  CONSTRAINT human_tasks_source_check CHECK ((source = ANY (ARRAY['de'::text, 'chat'::text, 'system'::text, 'human'::text]))),
-  CONSTRAINT human_tasks_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'expired'::text]))),
-  CONSTRAINT human_tasks_type_check CHECK ((type = ANY (ARRAY['approval_gate'::text, 'review_gate'::text, 'escalation'::text, 'override'::text, 'training_feedback'::text, 'trust_promotion'::text, 'trust_demotion_notice'::text, 'checklist'::text, 'knowledge_revision'::text, 'inquiry_review'::text, 'action_approval'::text]))),
-  CONSTRAINT human_tasks_pkey PRIMARY KEY (id)
 );
 CREATE TABLE IF NOT EXISTS public.action_executions (
   "id" uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -47975,6 +49080,23 @@ CREATE TABLE IF NOT EXISTS public.profile_private (
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
   CONSTRAINT profile_private_pkey PRIMARY KEY (user_id)
 );
+CREATE TABLE IF NOT EXISTS public.purchase_invoices (
+  "id" uuid DEFAULT gen_random_uuid() NOT NULL,
+  "tenant_id" uuid NOT NULL,
+  "supplier_external_ref" text NOT NULL,
+  "supplier_name" text NOT NULL,
+  "source_provider" text NOT NULL,
+  "source_external_ref" text NOT NULL,
+  "amount_cents" bigint DEFAULT 0 NOT NULL,
+  "outstanding_cents" bigint,
+  "due_date" date,
+  "status" text DEFAULT ''::text NOT NULL,
+  "currency" text,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+  CONSTRAINT purchase_invoices_pkey PRIMARY KEY (id),
+  CONSTRAINT purchase_invoices_tenant_id_source_provider_source_external_key UNIQUE (tenant_id, source_provider, source_external_ref)
+);
 CREATE TABLE IF NOT EXISTS public.push_subscriptions (
   "id" uuid DEFAULT gen_random_uuid() NOT NULL,
   "tenant_id" uuid NOT NULL,
@@ -48940,6 +50062,18 @@ DO $$ BEGIN ALTER TABLE public.account_activities ADD CONSTRAINT account_activit
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.account_activities ADD CONSTRAINT account_activities_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.human_tasks ADD CONSTRAINT human_tasks_account_id_fkey FOREIGN KEY (account_id) REFERENCES customer_accounts(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.human_tasks ADD CONSTRAINT human_tasks_de_id_fkey FOREIGN KEY (de_id) REFERENCES digital_employees(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.human_tasks ADD CONSTRAINT human_tasks_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.account_reviews ADD CONSTRAINT account_reviews_account_id_fkey FOREIGN KEY (account_id) REFERENCES customer_accounts(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.account_reviews ADD CONSTRAINT account_reviews_task_id_fkey FOREIGN KEY (task_id) REFERENCES human_tasks(id) ON DELETE SET NULL;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.account_reviews ADD CONSTRAINT account_reviews_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.account_writeback_requests ADD CONSTRAINT account_writeback_requests_account_id_fkey FOREIGN KEY (account_id) REFERENCES customer_accounts(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.account_writeback_requests ADD CONSTRAINT account_writeback_requests_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id);
@@ -48969,12 +50103,6 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.connectors ADD CONSTRAINT connectors_template_id_fkey FOREIGN KEY (template_id) REFERENCES adapter_templates(id) ON DELETE SET NULL;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.connectors ADD CONSTRAINT connectors_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.human_tasks ADD CONSTRAINT human_tasks_account_id_fkey FOREIGN KEY (account_id) REFERENCES customer_accounts(id) ON DELETE SET NULL;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.human_tasks ADD CONSTRAINT human_tasks_de_id_fkey FOREIGN KEY (de_id) REFERENCES digital_employees(id) ON DELETE SET NULL;
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN ALTER TABLE public.human_tasks ADD CONSTRAINT human_tasks_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.action_executions ADD CONSTRAINT action_executions_action_definition_id_fkey FOREIGN KEY (action_definition_id) REFERENCES action_definitions(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
@@ -49898,6 +51026,8 @@ DO $$ BEGIN ALTER TABLE public.profile_compensation ADD CONSTRAINT profile_compe
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.profile_private ADD CONSTRAINT profile_private_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE public.purchase_invoices ADD CONSTRAINT purchase_invoices_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.push_subscriptions ADD CONSTRAINT push_subscriptions_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN ALTER TABLE public.review_time_standards ADD CONSTRAINT review_time_standards_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE;
@@ -50131,17 +51261,19 @@ CREATE INDEX IF NOT EXISTS de_objectives_mission_idx ON public.de_objectives USI
 CREATE INDEX IF NOT EXISTS de_objectives_wake_blocked_idx ON public.de_objectives USING btree (next_wake_at) WHERE ((next_wake_at IS NOT NULL) AND (status = 'blocked'::text));
 CREATE INDEX IF NOT EXISTS de_objectives_wake_idx ON public.de_objectives USING btree (next_wake_at) WHERE ((next_wake_at IS NOT NULL) AND (status = ANY (ARRAY['open'::text, 'in_progress'::text])));
 CREATE INDEX IF NOT EXISTS idx_account_activities_acct ON public.account_activities USING btree (account_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_account_writeback_task ON public.account_writeback_requests USING btree (task_id) WHERE (task_id IS NOT NULL);
-CREATE INDEX IF NOT EXISTS adapter_templates_tenant_idx ON public.adapter_templates USING btree (tenant_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS action_definitions_category_idx ON public.action_definitions USING btree (category);
-CREATE INDEX IF NOT EXISTS action_definitions_tenant_idx ON public.action_definitions USING btree (tenant_id) WHERE (tenant_id IS NOT NULL);
-CREATE INDEX IF NOT EXISTS connectors_tenant_idx ON public.connectors USING btree (tenant_id);
 CREATE INDEX IF NOT EXISTS human_tasks_account_idx ON public.human_tasks USING btree (account_id);
+CREATE INDEX IF NOT EXISTS human_tasks_blocker_lookup_idx ON public.human_tasks USING btree (tenant_id, de_id, blocker_scope) WHERE ((type = 'escalation'::text) AND (status = 'pending'::text));
 CREATE INDEX IF NOT EXISTS human_tasks_de_idx ON public.human_tasks USING btree (tenant_id, de_id, status) WHERE (de_id IS NOT NULL);
 CREATE INDEX IF NOT EXISTS human_tasks_decision_reason_idx ON public.human_tasks USING btree (tenant_id, decision_reason_code) WHERE (decision_reason_code IS NOT NULL);
 CREATE INDEX IF NOT EXISTS human_tasks_related_idx ON public.human_tasks USING btree (related_table, related_id) WHERE (related_id IS NOT NULL);
 CREATE INDEX IF NOT EXISTS human_tasks_tenant_idx ON public.human_tasks USING btree (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_human_tasks_assignee ON public.human_tasks USING btree (tenant_id, assigned_user_id, status) WHERE (status = 'pending'::text);
+CREATE INDEX IF NOT EXISTS account_reviews_tenant_account_idx ON public.account_reviews USING btree (tenant_id, account_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_account_writeback_task ON public.account_writeback_requests USING btree (task_id) WHERE (task_id IS NOT NULL);
+CREATE INDEX IF NOT EXISTS adapter_templates_tenant_idx ON public.adapter_templates USING btree (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS action_definitions_category_idx ON public.action_definitions USING btree (category);
+CREATE INDEX IF NOT EXISTS action_definitions_tenant_idx ON public.action_definitions USING btree (tenant_id) WHERE (tenant_id IS NOT NULL);
+CREATE INDEX IF NOT EXISTS connectors_tenant_idx ON public.connectors USING btree (tenant_id);
 CREATE INDEX IF NOT EXISTS action_executions_dedupe_idx ON public.action_executions USING btree (action_definition_id, dedupe_key) WHERE (dedupe_key IS NOT NULL);
 CREATE INDEX IF NOT EXISTS action_executions_origin_idx ON public.action_executions USING btree (origin_kind, origin_id) WHERE (origin_id IS NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS action_executions_resolves_once ON public.action_executions USING btree (resolves_task_id) WHERE ((resolves_task_id IS NOT NULL) AND (decision <> 'failed'::text));
@@ -50463,6 +51595,7 @@ CREATE INDEX IF NOT EXISTS playbook_versions_def_idx ON public.playbook_versions
 CREATE INDEX IF NOT EXISTS posting_drafts_tenant_status_idx ON public.posting_drafts USING btree (tenant_id, status);
 CREATE INDEX IF NOT EXISTS posting_draft_lines_draft_idx ON public.posting_draft_lines USING btree (draft_id);
 CREATE INDEX IF NOT EXISTS idx_profile_comp_user ON public.profile_compensation USING btree (tenant_id, user_id, effective_from DESC);
+CREATE INDEX IF NOT EXISTS purchase_invoices_tenant_due_idx ON public.purchase_invoices USING btree (tenant_id, due_date);
 CREATE INDEX IF NOT EXISTS push_subscriptions_tenant_idx ON public.push_subscriptions USING btree (tenant_id);
 CREATE INDEX IF NOT EXISTS push_subscriptions_user_idx ON public.push_subscriptions USING btree (user_id);
 CREATE INDEX IF NOT EXISTS idx_rate_limit_window ON public.rate_limit_counters USING btree (window_start);
@@ -51102,9 +52235,39 @@ BEGIN
                                  case when v_amt is null then '{}'::jsonb
                                       else jsonb_build_object('amount_cents', v_amt) end);
 
+    -- A NULL RESULT IS NOT PERMISSION. `NULL = 'deny'` evaluates to NULL,
+    -- not false, so without this guard a null risk result would fall straight
+    -- through the test below into an approval. Same polarity error the rest
+    -- of this model exists to prevent.
+    IF v_risk IS NULL THEN
+      RAISE EXCEPTION 'authority_evaluator_unavailable: refusing rather than approving unchecked';
+    END IF;
+
     IF v_risk->>'outcome' = 'deny' THEN
       RAISE EXCEPTION 'not_authorised_to_approve: %',
         coalesce(v_risk->'reasons'->0->>'why', 'a workspace rule denies this');
+    END IF;
+
+    -- THE HOLE THIS MIGRATION EXISTS TO CLOSE.
+    --
+    -- evaluate_authority downgrades a rule it could not CHECK to
+    -- `require_human`, because it cannot know whether the rule would have
+    -- tripped. That is right for a require_human rule. It was catastrophic
+    -- for a `deny` rule: require_human is deliberately treated as already
+    -- satisfied here (a human IS approving), so a workspace's `deny` turned
+    -- into an approval the moment its measure went unreported. Measured when
+    -- this was found: 409 of 412 pending approvals report no amount_cents,
+    -- so the unmeasured case was the normal case, not the corner.
+    --
+    -- The evaluator now carries the DECLARED outcome as `rule_outcome`. A
+    -- deny we could not verify refuses. "We could not tell" must never be
+    -- spelled the same way as "permitted".
+    IF v_risk->'reasons' @> '[{"rule_outcome": "deny", "unverified": true}]'::jsonb THEN
+      RAISE EXCEPTION 'not_authorised_to_approve: %',
+        coalesce(
+          (select x->>'why' from jsonb_array_elements(v_risk->'reasons') x
+            where x->>'rule_outcome' = 'deny' and (x->>'unverified')::boolean limit 1),
+          'a workspace rule denies this, and the measure it depends on was not reported');
     END IF;
 
     -- ⚠ require_human is ALREADY SATISFIED on this path — a human IS
@@ -51658,6 +52821,22 @@ begin
                       updated_at     = now();
       elsif v_verdict = 'meets' then
         update de_development_items set status = 'completed', completed_at = now(), updated_at = now()
+        where tenant_id = v_t.tid and de_id = m.de_id and item_type = 'pip'
+          and source = 'detected' and status in ('proposed', 'in_progress');
+
+      elsif v_verdict = 'insufficient_data' and v_n_goals = 0 then
+        -- ⛔ THE STRANDING THIS FIXES. `insufficient_data` reached neither
+        -- branch above, so an already-open plan could never be closed by the
+        -- review again -- it just sat there, overdue, carrying a consequence
+        -- clause promising a critical incident.
+        --
+        -- ONLY the no-goals case. The other two routes to insufficient_data --
+        -- thin evidence, and goals with nothing measured yet -- are "not yet",
+        -- not "never": that employee may well be judgeable next window, and
+        -- withdrawing its plan on a quiet fortnight would be its own defect.
+        -- With no goals at all there is nothing a future window can change
+        -- until someone sets them.
+        update de_development_items set status = 'dismissed', updated_at = now()
         where tenant_id = v_t.tid and de_id = m.de_id and item_type = 'pip'
           and source = 'detected' and status in ('proposed', 'in_progress');
       end if;
@@ -52702,6 +53881,54 @@ AS $function$
    limit greatest(1, least(20, p_limit));
 $function$;
 
+CREATE OR REPLACE FUNCTION public.withdraw_human_task(p_task_id uuid, p_note text DEFAULT NULL::text)
+ RETURNS human_tasks
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_row    human_tasks;
+  -- Captured once. Never gated on an identity test: the "auth.uid() is not
+  -- null and" prefix SKIPS a check for a caller with no identity instead of
+  -- failing it. 29 of those were closed in mig 749 and
+  -- scripts/secdef-authority-prefix.mjs ratchets against a 30th.
+  v_tenant uuid := auth_tenant_id();
+  v_n      integer;
+begin
+  -- Mig 794's bar, kept.
+  if v_tenant is null then
+    raise exception 'not_authenticated';
+  end if;
+
+  -- ⚠ 'other', not 'withdrawn'. See this migration's header: 'withdrawn' is
+  -- not admitted by human_tasks_decision_reason_code_check and never was, so
+  -- every call raised 23514 from 790 until now. The withdrawal stays findable
+  -- through disposition='cancelled' plus a non-null reason code, which the
+  -- sweeps do not write.
+  v_row := public.decide_human_task(p_task_id, 'rejected', 'other', p_note);
+
+  -- NULL composite = already decided.
+  if v_row.id is null then
+    return null;
+  end if;
+
+  update human_tasks
+     set disposition = 'cancelled'
+   where id = p_task_id
+     and tenant_id = v_tenant;
+
+  -- A predicate that can miss must be able to SAY it missed (mig 798).
+  get diagnostics v_n = row_count;
+  if v_n <> 1 then
+    raise exception 'withdraw_incomplete: task % was decided but the withdrawal mark reached % row(s); refusing to report a partial write as success', p_task_id, v_n;
+  end if;
+
+  select * into v_row from human_tasks where id = p_task_id and tenant_id = v_tenant;
+  return v_row;
+end;
+$function$;
+
 
 -- ── Triggers ────────────────────────────────────────────────────────────────
 DROP TRIGGER IF EXISTS auto_provision_new_tenant_trigger ON public.tenants;
@@ -52752,26 +53979,6 @@ DROP TRIGGER IF EXISTS trg_stamp_objective_mission ON public.de_objectives;
 CREATE TRIGGER trg_stamp_objective_mission BEFORE INSERT ON public.de_objectives FOR EACH ROW EXECUTE FUNCTION stamp_objective_mission_from_watcher();
 DROP TRIGGER IF EXISTS trg_sync_de_task_from_objective ON public.de_objectives;
 CREATE TRIGGER trg_sync_de_task_from_objective AFTER UPDATE OF status ON public.de_objectives FOR EACH ROW EXECUTE FUNCTION sync_de_task_from_objective();
-DROP TRIGGER IF EXISTS adapter_templates_updated_at ON public.adapter_templates;
-CREATE TRIGGER adapter_templates_updated_at BEFORE UPDATE ON public.adapter_templates FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.adapter_templates;
-CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.adapter_templates FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
-DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.adapter_templates;
-CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON public.adapter_templates FOR EACH ROW EXECUTE FUNCTION log_tenant_activity();
-DROP TRIGGER IF EXISTS action_definitions_retirement_strands ON public.action_definitions;
-CREATE TRIGGER action_definitions_retirement_strands AFTER UPDATE ON public.action_definitions FOR EACH ROW WHEN (((old.status = 'active'::text) AND (new.status IS DISTINCT FROM 'active'::text))) EXECUTE FUNCTION alert_on_stranded_approvals();
-DROP TRIGGER IF EXISTS action_definitions_updated_at ON public.action_definitions;
-CREATE TRIGGER action_definitions_updated_at BEFORE UPDATE ON public.action_definitions FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.action_definitions;
-CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.action_definitions FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
-DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.action_definitions;
-CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON public.action_definitions FOR EACH ROW EXECUTE FUNCTION log_tenant_activity();
-DROP TRIGGER IF EXISTS connectors_updated_at ON public.connectors;
-CREATE TRIGGER connectors_updated_at BEFORE UPDATE ON public.connectors FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.connectors;
-CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.connectors FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
-DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.connectors;
-CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON public.connectors FOR EACH ROW EXECUTE FUNCTION log_tenant_activity();
 DROP TRIGGER IF EXISTS human_tasks_push_ping ON public.human_tasks;
 CREATE TRIGGER human_tasks_push_ping AFTER INSERT ON public.human_tasks FOR EACH ROW EXECUTE FUNCTION notify_pending_human_task();
 DROP TRIGGER IF EXISTS human_tasks_updated_at ON public.human_tasks;
@@ -52800,6 +54007,26 @@ DROP TRIGGER IF EXISTS trg_sync_outbound_draft ON public.human_tasks;
 CREATE TRIGGER trg_sync_outbound_draft AFTER UPDATE OF status ON public.human_tasks FOR EACH ROW EXECUTE FUNCTION sync_outbound_draft_status();
 DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.human_tasks;
 CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON public.human_tasks FOR EACH ROW EXECUTE FUNCTION log_tenant_activity();
+DROP TRIGGER IF EXISTS adapter_templates_updated_at ON public.adapter_templates;
+CREATE TRIGGER adapter_templates_updated_at BEFORE UPDATE ON public.adapter_templates FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.adapter_templates;
+CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.adapter_templates FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
+DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.adapter_templates;
+CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON public.adapter_templates FOR EACH ROW EXECUTE FUNCTION log_tenant_activity();
+DROP TRIGGER IF EXISTS action_definitions_retirement_strands ON public.action_definitions;
+CREATE TRIGGER action_definitions_retirement_strands AFTER UPDATE ON public.action_definitions FOR EACH ROW WHEN (((old.status = 'active'::text) AND (new.status IS DISTINCT FROM 'active'::text))) EXECUTE FUNCTION alert_on_stranded_approvals();
+DROP TRIGGER IF EXISTS action_definitions_updated_at ON public.action_definitions;
+CREATE TRIGGER action_definitions_updated_at BEFORE UPDATE ON public.action_definitions FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.action_definitions;
+CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.action_definitions FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
+DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.action_definitions;
+CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON public.action_definitions FOR EACH ROW EXECUTE FUNCTION log_tenant_activity();
+DROP TRIGGER IF EXISTS connectors_updated_at ON public.connectors;
+CREATE TRIGGER connectors_updated_at BEFORE UPDATE ON public.connectors FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.connectors;
+CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.connectors FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
+DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.connectors;
+CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON public.connectors FOR EACH ROW EXECUTE FUNCTION log_tenant_activity();
 DROP TRIGGER IF EXISTS trg_advance_dunning_cadence ON public.action_executions;
 CREATE TRIGGER trg_advance_dunning_cadence AFTER INSERT OR UPDATE ON public.action_executions FOR EACH ROW EXECUTE FUNCTION advance_dunning_cadence();
 DROP TRIGGER IF EXISTS trg_onboarding_item_completes ON public.action_executions;
@@ -52872,6 +54099,8 @@ DROP TRIGGER IF EXISTS trg_remote_access_audit ON public.exceptions;
 CREATE TRIGGER trg_remote_access_audit AFTER INSERT OR DELETE OR UPDATE ON public.exceptions FOR EACH ROW EXECUTE FUNCTION log_remote_access_write();
 DROP TRIGGER IF EXISTS trg_tenant_activity_log ON public.exceptions;
 CREATE TRIGGER trg_tenant_activity_log AFTER INSERT OR DELETE OR UPDATE ON public.exceptions FOR EACH ROW EXECUTE FUNCTION log_tenant_activity();
+DROP TRIGGER IF EXISTS trg_authority_dimension_reader_is_real ON public.authority_dimensions;
+CREATE TRIGGER trg_authority_dimension_reader_is_real BEFORE INSERT OR UPDATE ON public.authority_dimensions FOR EACH ROW EXECUTE FUNCTION authority_dimension_reader_is_real();
 DROP TRIGGER IF EXISTS authority_rules_require_reader ON public.authority_rules;
 CREATE TRIGGER authority_rules_require_reader BEFORE INSERT OR UPDATE ON public.authority_rules FOR EACH ROW EXECUTE FUNCTION authority_rule_requires_a_reader();
 DROP TRIGGER IF EXISTS authority_rules_updated_at ON public.authority_rules;
@@ -53375,11 +54604,11 @@ ALTER TABLE public.ai_model_pricing ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_consultation_grants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_lifecycle_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_skills ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.oauth_connect_states ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_entity_fields ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.connector_ingest_candidates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.approval_authority ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.oauth_connect_states ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.connector_providers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.semantic_guardrail_cache ENABLE ROW LEVEL SECURITY;
@@ -53417,6 +54646,7 @@ ALTER TABLE public.draft_responses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.config_schema_instances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_billing_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_feature_toggles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.purchase_invoices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.knowledge_collections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.computer_use_runtimes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_token_usage ENABLE ROW LEVEL SECURITY;
@@ -53425,6 +54655,7 @@ ALTER TABLE public.de_product_knowledge ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_role_assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_review_narrative_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ai_change_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.account_reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_certifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_kpi_readings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.knowledge_articles ENABLE ROW LEVEL SECURITY;
@@ -53494,10 +54725,10 @@ ALTER TABLE public.audit_chain_state ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_chain_anomalies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_parity_exemptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.playbooks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.platform_runtime_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.otel_spans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.outbound_drafts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.platform_runtime_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.support_tickets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.support_triage_rules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_ai_usage ENABLE ROW LEVEL SECURITY;
@@ -53579,11 +54810,11 @@ ALTER TABLE public.profile_private ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.rate_limit_counters ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.role_certifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.schema_migrations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.scim_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.skill_categories ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.specialist_source_secrets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_branding ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.specialist_source_secrets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_compliance_packs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.scim_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_cost_tracking ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_deletion_receipts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_deletion_requests ENABLE ROW LEVEL SECURITY;
@@ -53591,13 +54822,13 @@ ALTER TABLE public.tenant_feature_overrides ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_pipeline_stages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_usage_metrics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.widget_key_secrets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.trust_policies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.unguarded_secdef_writers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.unit_tripwires ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.usage_metrics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.watch_source_catalog ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.watch_source_fields ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.widget_key_secrets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.work_item_framing ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.work_watcher_matches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workforce_actions ENABLE ROW LEVEL SECURITY;
@@ -53642,6 +54873,18 @@ CREATE POLICY de_objectives_tenant_read ON public.de_objectives FOR SELECT USING
   WHERE ((p.user_id = auth.uid()) AND (p.layer = 'platform'::text))))));
 DROP POLICY IF EXISTS account_activities_tenant_read ON public.account_activities;
 CREATE POLICY account_activities_tenant_read ON public.account_activities FOR SELECT USING ((tenant_id = auth_tenant_id()));
+DROP POLICY IF EXISTS human_tasks_de_scope ON public.human_tasks;
+CREATE POLICY human_tasks_de_scope ON public.human_tasks AS RESTRICTIVE FOR SELECT USING (((de_id IS NULL) OR can_access_de(de_id)));
+DROP POLICY IF EXISTS human_tasks_de_scope_write ON public.human_tasks;
+CREATE POLICY human_tasks_de_scope_write ON public.human_tasks AS RESTRICTIVE FOR ALL USING (((de_id IS NULL) OR can_access_de(de_id))) WITH CHECK (((de_id IS NULL) OR can_access_de(de_id)));
+DROP POLICY IF EXISTS human_tasks_proposer_insert ON public.human_tasks;
+CREATE POLICY human_tasks_proposer_insert ON public.human_tasks FOR INSERT TO trust_pattern_proposer WITH CHECK (((type = 'trust_promotion'::text) AND (de_id IS NULL) AND (status = 'pending'::text)));
+DROP POLICY IF EXISTS human_tasks_tenant_isolation ON public.human_tasks;
+CREATE POLICY human_tasks_tenant_isolation ON public.human_tasks FOR ALL USING ((tenant_id = auth_tenant_id())) WITH CHECK ((tenant_id = auth_tenant_id()));
+DROP POLICY IF EXISTS account_reviews_tenant_read ON public.account_reviews;
+CREATE POLICY account_reviews_tenant_read ON public.account_reviews FOR SELECT USING ((tenant_id IN ( SELECT p.tenant_id
+   FROM profiles p
+  WHERE (p.user_id = auth.uid()))));
 DROP POLICY IF EXISTS account_writeback_tenant_read ON public.account_writeback_requests;
 CREATE POLICY account_writeback_tenant_read ON public.account_writeback_requests FOR SELECT USING ((tenant_id = auth_tenant_id()));
 DROP POLICY IF EXISTS system_categories_platform_write ON public.system_categories;
@@ -53662,14 +54905,6 @@ DROP POLICY IF EXISTS connectors_tenant_read ON public.connectors;
 CREATE POLICY connectors_tenant_read ON public.connectors FOR SELECT USING ((tenant_id = auth_tenant_id()));
 DROP POLICY IF EXISTS connectors_tenant_write ON public.connectors;
 CREATE POLICY connectors_tenant_write ON public.connectors FOR ALL USING (((tenant_id = auth_tenant_id()) AND auth_has_tenant_role(ARRAY['tenant_owner'::text, 'tenant_admin'::text])));
-DROP POLICY IF EXISTS human_tasks_de_scope ON public.human_tasks;
-CREATE POLICY human_tasks_de_scope ON public.human_tasks AS RESTRICTIVE FOR SELECT USING (((de_id IS NULL) OR can_access_de(de_id)));
-DROP POLICY IF EXISTS human_tasks_de_scope_write ON public.human_tasks;
-CREATE POLICY human_tasks_de_scope_write ON public.human_tasks AS RESTRICTIVE FOR ALL USING (((de_id IS NULL) OR can_access_de(de_id))) WITH CHECK (((de_id IS NULL) OR can_access_de(de_id)));
-DROP POLICY IF EXISTS human_tasks_proposer_insert ON public.human_tasks;
-CREATE POLICY human_tasks_proposer_insert ON public.human_tasks FOR INSERT TO trust_pattern_proposer WITH CHECK (((type = 'trust_promotion'::text) AND (de_id IS NULL) AND (status = 'pending'::text)));
-DROP POLICY IF EXISTS human_tasks_tenant_isolation ON public.human_tasks;
-CREATE POLICY human_tasks_tenant_isolation ON public.human_tasks FOR ALL USING ((tenant_id = auth_tenant_id())) WITH CHECK ((tenant_id = auth_tenant_id()));
 DROP POLICY IF EXISTS action_executions_tenant_select ON public.action_executions;
 CREATE POLICY action_executions_tenant_select ON public.action_executions FOR SELECT USING ((tenant_id = auth_tenant_id()));
 DROP POLICY IF EXISTS activity_events_tenant_isolation ON public.activity_events;
@@ -54459,6 +55694,10 @@ DROP POLICY IF EXISTS profile_compensation_read ON public.profile_compensation;
 CREATE POLICY profile_compensation_read ON public.profile_compensation FOR SELECT USING (((tenant_id = auth_tenant_id()) AND ((user_id = auth.uid()) OR auth_has_tenant_role(ARRAY['tenant_owner'::text, 'tenant_admin'::text]))));
 DROP POLICY IF EXISTS profile_private_read ON public.profile_private;
 CREATE POLICY profile_private_read ON public.profile_private FOR SELECT USING (((tenant_id = auth_tenant_id()) AND ((user_id = auth.uid()) OR auth_has_tenant_role(ARRAY['tenant_owner'::text, 'tenant_admin'::text]))));
+DROP POLICY IF EXISTS purchase_invoices_tenant_read ON public.purchase_invoices;
+CREATE POLICY purchase_invoices_tenant_read ON public.purchase_invoices FOR SELECT USING ((tenant_id IN ( SELECT p.tenant_id
+   FROM profiles p
+  WHERE (p.user_id = auth.uid()))));
 DROP POLICY IF EXISTS push_subscriptions_owner ON public.push_subscriptions;
 CREATE POLICY push_subscriptions_owner ON public.push_subscriptions FOR ALL USING ((user_id = auth.uid())) WITH CHECK (((user_id = auth.uid()) AND (tenant_id = auth_tenant_id())));
 DROP POLICY IF EXISTS remote_access_write_log_select ON public.remote_access_write_log;
@@ -54681,6 +55920,7 @@ REVOKE ALL ON ROUTINE _pending_conflict_probe() FROM PUBLIC, anon, authenticated
 REVOKE ALL ON ROUTINE _pending_embed_backfill() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE _pending_playbook_work() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE _pending_reembed() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE account_review_draft(text,uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE action_execution_landed(action_executions) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE advance_dunning_cadence() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE alert_cert_regression() FROM PUBLIC, anon, authenticated;
@@ -54708,6 +55948,7 @@ REVOKE ALL ON ROUTINE audit_events_immutable() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE audit_events_no_truncate() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE audit_tenant_feature_parity() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE audit_unguarded_dormancy_writers() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE authority_dimension_reader_is_real() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE authority_rule_requires_a_reader() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE auto_provision_new_tenant() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE begin_objective_wake(uuid) FROM PUBLIC, anon, authenticated;
@@ -54752,12 +55993,15 @@ REVOKE ALL ON ROUTINE conclude_objective_wake(uuid,text,text) FROM PUBLIC, anon,
 REVOKE ALL ON ROUTINE connector_circuit_open(integer,timestamp with time zone) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE create_improvement_review(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE create_outbound_draft(uuid,uuid,text,text,text,text,text,text,uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE de_blocker_signature(text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_config_fingerprint(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_development_items_attempts_guard() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE de_escalation_headline(text,integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE de_escalation_scope(uuid,uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE de_escalation_title(uuid,text,text,text,uuid,uuid,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_eval_quality(uuid,uuid,integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_governance_sweep_internal() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_improvements_entity_guard() FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON ROUTINE de_kpi_action_value(uuid,uuid,text,jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_kpi_status_internal(uuid,uuid,integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_may_use_action(uuid,uuid,uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_memory_search_internal(uuid,uuid,vector,text,text,text[],integer) FROM PUBLIC, anon, authenticated;
@@ -54978,7 +56222,9 @@ REVOKE ALL ON ROUTINE resolve_review_narrative_settings(uuid,uuid) FROM PUBLIC, 
 REVOKE ALL ON ROUTINE resolve_work_item_framing(uuid,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE resume_de_work_from_decision(uuid,text,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE retire_playbook_knowledge() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE review_de_for(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE revoke_de_delegation_token(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE run_account_review_sweep(uuid,integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE run_analytics_query_internal(uuid,text,jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE run_case_timeline(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE run_de_performance_review_internal(uuid,uuid,integer) FROM PUBLIC, anon, authenticated;
@@ -55052,6 +56298,7 @@ REVOKE ALL ON ROUTINE trust_evidence_for(trust_policies) FROM PUBLIC, anon, auth
 REVOKE ALL ON ROUTINE update_onboarding_item_as_de(uuid,uuid,text,text,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE update_updated_at() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE upsert_de_skill(uuid,uuid,text,integer,integer,numeric,text,integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE upsert_external_ap_record(uuid,text,text,text,text,bigint,bigint,date,text,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE upsert_external_ar_record(uuid,text,text,text,text,bigint,date,text,text,bigint,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE upsert_external_contact(uuid,text,text,text,text,text,text,text,text,text,text,boolean) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE upsert_external_journal_entry(uuid,text,text,date,text,numeric,numeric) FROM PUBLIC, anon, authenticated;
@@ -55072,6 +56319,7 @@ REVOKE ALL ON ROUTINE wake_due_objectives(integer) FROM PUBLIC, anon, authentica
 REVOKE ALL ON ROUTINE work_de_development_program_internal() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE workforce_autonomy_paused(uuid) FROM PUBLIC, anon, authenticated;
 
+REVOKE ALL ON TABLE public.account_reviews FROM anon;
 REVOKE ALL ON TABLE public.agentic_step_messages FROM anon;
 REVOKE ALL ON TABLE public.agentic_step_policies FROM anon;
 REVOKE ALL ON TABLE public.agentic_step_runs FROM anon;
@@ -55088,6 +56336,8 @@ REVOKE ALL ON TABLE public.authority_rules FROM anon;
 REVOKE ALL ON TABLE public.benchmark_samples FROM anon;
 REVOKE ALL ON TABLE public.benchmark_samples FROM authenticated;
 REVOKE ALL ON TABLE public.connector_providers FROM anon;
+REVOKE ALL ON TABLE public.connector_secrets FROM anon;
+REVOKE ALL ON TABLE public.connector_secrets FROM authenticated;
 REVOKE ALL ON TABLE public.de_assignments FROM anon;
 REVOKE ALL ON TABLE public.de_config FROM anon;
 REVOKE ALL ON TABLE public.de_config FROM authenticated;
@@ -55121,6 +56371,8 @@ REVOKE ALL ON TABLE public.knowledge_ingestion_items FROM anon;
 REVOKE ALL ON TABLE public.knowledge_ingestion_jobs FROM anon;
 REVOKE ALL ON TABLE public.migration_number_claims FROM anon;
 REVOKE ALL ON TABLE public.migration_number_claims FROM authenticated;
+REVOKE ALL ON TABLE public.oauth_connect_states FROM anon;
+REVOKE ALL ON TABLE public.oauth_connect_states FROM authenticated;
 REVOKE ALL ON TABLE public.platform_access_events FROM anon;
 REVOKE ALL ON TABLE public.platform_capability_grants FROM anon;
 REVOKE ALL ON TABLE public.platform_capability_grants FROM authenticated;
@@ -55142,7 +56394,14 @@ REVOKE ALL ON TABLE public.platform_knowledge_shelf_state FROM anon;
 REVOKE ALL ON TABLE public.platform_knowledge_shelf_state FROM authenticated;
 REVOKE ALL ON TABLE public.platform_knowledge_usage_daily FROM anon;
 REVOKE ALL ON TABLE public.platform_knowledge_usage_daily FROM authenticated;
+REVOKE ALL ON TABLE public.platform_runtime_config FROM anon;
+REVOKE ALL ON TABLE public.platform_runtime_config FROM authenticated;
+REVOKE ALL ON TABLE public.purchase_invoices FROM anon;
 REVOKE ALL ON TABLE public.remote_access_write_log FROM anon;
+REVOKE ALL ON TABLE public.scim_tokens FROM anon;
+REVOKE ALL ON TABLE public.scim_tokens FROM authenticated;
+REVOKE ALL ON TABLE public.specialist_source_secrets FROM anon;
+REVOKE ALL ON TABLE public.specialist_source_secrets FROM authenticated;
 REVOKE ALL ON TABLE public.sso_attribute_role_map FROM anon;
 REVOKE ALL ON TABLE public.system_categories FROM anon;
 REVOKE ALL ON TABLE public.tenant_activity_log FROM anon;
@@ -55156,6 +56415,858 @@ REVOKE ALL ON TABLE public.tenant_parity_exemptions FROM anon;
 REVOKE ALL ON TABLE public.tenant_parity_exemptions FROM authenticated;
 REVOKE ALL ON TABLE public.tenant_provisioning_requests FROM anon;
 REVOKE ALL ON TABLE public.tenant_sso_policy FROM anon;
+REVOKE ALL ON TABLE public.widget_key_secrets FROM anon;
+REVOKE ALL ON TABLE public.widget_key_secrets FROM authenticated;
 REVOKE ALL ON TABLE public.work_item_claims FROM anon;
 
+-- ── Role grants (register A-12) ─────────────────────────────────────────────
+-- Without these a restore comes back CLOSED: every table present, every policy
+-- present, and no API role able to read a row. RLS decides WHICH rows a caller
+-- sees; these grants decide whether the caller may ask at all, and a policy
+-- cannot grant what the role does not hold.
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.account_activities TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.account_activities TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.account_activities TO service_role;
+GRANT SELECT ON TABLE public.account_reviews TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.account_reviews TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.account_writeback_requests TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.account_writeback_requests TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.account_writeback_requests TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.action_definitions TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.action_definitions TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.action_definitions TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.action_executions TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.action_executions TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.action_executions TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.activity_events TO anon;
+GRANT INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.activity_events TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.activity_events TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.adapter_templates TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.adapter_templates TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.adapter_templates TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.agent_actions TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.agent_actions TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.agent_actions TO service_role;
+GRANT SELECT ON TABLE public.agentic_step_messages TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.agentic_step_messages TO service_role;
+GRANT SELECT ON TABLE public.agentic_step_policies TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.agentic_step_policies TO service_role;
+GRANT SELECT ON TABLE public.agentic_step_runs TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.agentic_step_runs TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.agreement_lines TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.agreement_lines TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.agreement_lines TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.ai_change_log TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.ai_change_log TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.ai_change_log TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.ai_model_pricing TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.ai_model_pricing TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.ai_model_pricing TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.ai_session_messages TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.ai_session_messages TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.ai_session_messages TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.ai_sessions TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.ai_sessions TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.ai_sessions TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.ai_usage_events TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.ai_usage_events TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.ai_usage_events TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.amendment_metrics TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.amendment_metrics TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.amendment_metrics TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.analytics_query_defs TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.analytics_query_defs TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.analytics_query_defs TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.answer_cache TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.answer_cache TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.answer_cache TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.approval_authority TO anon;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.approval_authority TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.approval_authority TO service_role;
+GRANT SELECT ON TABLE public.approval_briefs TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.approval_briefs TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.audit_chain_anomalies TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.audit_chain_state TO service_role;
+GRANT MAINTAIN, SELECT ON TABLE public.audit_events TO anon;
+GRANT MAINTAIN, SELECT ON TABLE public.audit_events TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.audit_events TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.audit_evidence TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.audit_evidence TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.audit_evidence TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.audit_logs TO anon;
+GRANT INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.audit_logs TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.audit_logs TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.auth_login_lockouts TO service_role;
+GRANT SELECT ON TABLE public.authority_dimension_comparators TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.authority_dimension_comparators TO service_role;
+GRANT SELECT ON TABLE public.authority_dimensions TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.authority_dimensions TO service_role;
+GRANT SELECT ON TABLE public.authority_rules TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.authority_rules TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.bank_transactions TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.bank_transactions TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.bank_transactions TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.benchmark_samples TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.billable_outcomes TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.billable_outcomes TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.billable_outcomes TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.bills TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.bills TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.bills TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.capabilities TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.capabilities TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.capabilities TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.certification_types TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.certification_types TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.certification_types TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.close_tasks TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.close_tasks TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.close_tasks TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.close_workspaces TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.close_workspaces TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.close_workspaces TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.commercial_agreements TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.commercial_agreements TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.commercial_agreements TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.commercial_catalog_items TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.commercial_catalog_items TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.commercial_catalog_items TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.compliance_pack_rules TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.compliance_pack_rules TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.compliance_pack_rules TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.compliance_packs TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.compliance_packs TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.compliance_packs TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.computer_use_runtimes TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.computer_use_runtimes TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.computer_use_runtimes TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.computer_use_tasks TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.computer_use_tasks TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.computer_use_tasks TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.config_schema_instances TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.config_schema_instances TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.config_schema_instances TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.config_schema_templates TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.config_schema_templates TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.config_schema_templates TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.connector_actions TO anon;
+GRANT INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.connector_actions TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.connector_actions TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.connector_ingest_candidates TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.connector_ingest_candidates TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.connector_ingest_candidates TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.connector_objects TO anon;
+GRANT INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.connector_objects TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.connector_objects TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.connector_providers TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.connector_providers TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.connector_secrets TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.connector_secrets_decrypted TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.connector_sync_cursors TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.connector_sync_cursors TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.connector_sync_cursors TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.connectors TO anon;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.connectors TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.connectors TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.continuity_case_events TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.continuity_case_events TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.continuity_case_events TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.continuity_cases TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.continuity_cases TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.continuity_cases TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.continuity_stage_config TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.continuity_stage_config TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.continuity_stage_config TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.continuity_writeback_requests TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.continuity_writeback_requests TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.continuity_writeback_requests TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.conversation_checks TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.conversation_checks TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.conversation_checks TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.conversation_facts TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.conversation_facts TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.conversation_facts TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.conversations TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.conversations TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.conversations TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.customer_account_contacts TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.customer_account_contacts TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.customer_account_contacts TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.customer_accounts TO anon;
+GRANT INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.customer_accounts TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.customer_accounts TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.customers TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.customers TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.customers TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.data_access_grants TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.data_access_grants TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.data_access_grants TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_assignments TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_assignments TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_autonomy TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_autonomy TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_autonomy TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_budget_policies TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_budget_policies TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_budget_policies TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_case_events TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_case_events TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_case_events TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_certifications TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_certifications TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_certifications TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_channels TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_channels TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_channels TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_config TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_config_audit_log TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_config_schemas TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_connected_systems TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_connected_systems TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_connected_systems TO service_role;
+GRANT INSERT, MAINTAIN, SELECT, UPDATE ON TABLE public.de_consultation_grants TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_consultation_grants TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_conversations TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_conversations TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_conversations TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_decision_trace TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_decision_trace TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_decision_trace TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_delegation_tokens TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_delegation_tokens TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_delegation_tokens TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_deliverables TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_deliverables TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_deliverables TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_deployment_stages TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_deployment_stages TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_deployment_stages TO service_role;
+GRANT MAINTAIN, SELECT ON TABLE public.de_development_items TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_development_items TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_escalation_rules TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_escalation_rules TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_escalation_rules TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_exceptions TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_exceptions TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_exceptions TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_experience TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_experience TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_experience TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_improvements TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_improvements TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_improvements TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_incidents TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_incidents TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_incidents TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_kpi_readings TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_kpi_readings TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_kpi_readings TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_kpis TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_kpis TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_kpis TO service_role;
+GRANT SELECT ON TABLE public.de_learned_behavior_cluster_members TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_learned_behavior_cluster_members TO service_role;
+GRANT SELECT ON TABLE public.de_learned_behavior_clusters TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_learned_behavior_clusters TO service_role;
+GRANT SELECT ON TABLE public.de_learning_edits TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_learning_edits TO service_role;
+GRANT SELECT ON TABLE public.de_learning_policies TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_learning_policies TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_lifecycle_events TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_lifecycle_events TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_lifecycle_events TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_memory TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_memory TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_memory TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_messages TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_messages TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_messages TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_missions TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_missions TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_missions TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_model_routes TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_model_routes TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_model_routes TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_objective_wakes TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_objective_wakes TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_objective_wakes TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_objectives TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_objectives TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_objectives TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_performance_reviews TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_performance_reviews TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_performance_reviews TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_playbook_assignments TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_playbook_assignments TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_playbook_assignments TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_playbook_charter TO anon;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.de_playbook_charter TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_playbook_charter TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_product_knowledge TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_product_knowledge TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_product_knowledge TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_profile_fields TO anon;
+GRANT INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_profile_fields TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_profile_fields TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_review_narrative_settings TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_review_narrative_settings TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_role_assignments TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_role_assignments TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_role_assignments TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_skills TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_skills TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_skills TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_spend_ledger TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_spend_ledger TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_spend_ledger TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_system_verifications TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_system_verifications TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_system_verifications TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_task_requests TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_task_requests TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_token_usage TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_token_usage TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_token_usage TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_training_feedback TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_training_feedback TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_training_feedback TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_training_modules TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_training_modules TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_training_modules TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_training_progress TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_training_progress TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_training_progress TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_work_items TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.de_work_items TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.de_work_items TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.definition_of_done_log TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.definition_of_done_log TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.definition_of_done_log TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.departments TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.departments TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.departments TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.digital_employees TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.digital_employees TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.digital_employees TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.discovery_capability_demand TO service_role;
+GRANT SELECT ON TABLE public.discovery_capability_demand_log TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.discovery_capability_gaps TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.discovery_capability_gaps TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.discovery_dimensions TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.discovery_dimensions TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.discovery_proposals TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.discovery_proposals TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.discovery_sessions TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.discovery_sessions TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.dispatch_log TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.dormancy_writer_exemptions TO service_role;
+GRANT SELECT ON TABLE public.draft_responses TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.draft_responses TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.dunning_ladders TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.dunning_ladders TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.dunning_ladders TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.dunning_rungs TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.dunning_rungs TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.dunning_rungs TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.end_user_sessions TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.end_user_sessions TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.end_user_sessions TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.escalation_signals TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.escalation_signals TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.escalation_signals TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.escalations TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.escalations TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.escalations TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.eval_batch_items TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.eval_batch_items TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.eval_batch_items TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.eval_batch_jobs TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.eval_batch_jobs TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.eval_batch_jobs TO service_role;
+GRANT MAINTAIN, REFERENCES, TRIGGER ON TABLE public.eval_gate TO anon;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.eval_gate TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.eval_gate TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.eval_judgments TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.eval_judgments TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.eval_judgments TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.eval_runs TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.eval_runs TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.eval_runs TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.event_definitions TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.event_definitions TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.event_definitions TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.evidence_feedback TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.evidence_feedback TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.evidence_feedback TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.evidence_run_decisions TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.evidence_run_decisions TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.evidence_run_decisions TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.evidence_runs TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.evidence_runs TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.evidence_runs TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.exceptions TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.exceptions TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.exceptions TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.extraction_results TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.extraction_results TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.extraction_results TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.extraction_templates TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.extraction_templates TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.extraction_templates TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.feature_registry TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.feature_registry TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.fin_accounts TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.fin_accounts TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.fin_accounts TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.fin_documents TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.fin_documents TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.fin_documents TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.fitness_run_progress TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.fitness_run_progress TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.fitness_run_progress TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.golden_qa TO anon;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.golden_qa TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.golden_qa TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.governance_proposals TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.governance_proposals TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.governance_proposals TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.grounded_confidence_shadow_log TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.grounded_confidence_shadow_log TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.grounded_confidence_shadow_log TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.grounded_confidence_validation TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.grounded_confidence_validation TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.grounded_confidence_validation TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.guardrail_adjudication_cache TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.guardrail_adjudication_cache TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.guardrail_adjudication_cache TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.guardrail_adjudications TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.guardrail_adjudications TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.guardrail_adjudications TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.guardrail_rule_adjudicable TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.guardrail_rule_adjudicable TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.guardrail_rule_adjudicable TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.guardrail_rules TO anon;
+GRANT INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.guardrail_rules TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.guardrail_rules TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.health_score_config TO anon;
+GRANT INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.health_score_config TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.health_score_config TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.human_tasks TO anon;
+GRANT INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.human_tasks TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.human_tasks TO service_role;
+GRANT MAINTAIN, SELECT ON TABLE public.inbox_watch_state TO anon;
+GRANT MAINTAIN, SELECT ON TABLE public.inbox_watch_state TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.inbox_watch_state TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.invoice_activities TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.invoice_activities TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.invoice_activities TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.invoice_payments TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.invoice_payments TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.invoice_payments TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.invoice_writeback_requests TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.invoice_writeback_requests TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.invoice_writeback_requests TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.invoices TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.invoices TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.invoices TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.journal_entries TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.journal_entries TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.journal_entries TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_access_grants TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_access_grants TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.knowledge_access_grants TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_articles TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_articles TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.knowledge_articles TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_chunks TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_chunks TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.knowledge_chunks TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_collections TO anon;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_collections TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.knowledge_collections TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_conflict_probe_queue TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_conflict_probe_queue TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.knowledge_conflict_probe_queue TO service_role;
+GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.knowledge_conflict_probe_queue_id_seq TO anon;
+GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.knowledge_conflict_probe_queue_id_seq TO authenticated;
+GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.knowledge_conflict_probe_queue_id_seq TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_conflicts TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_conflicts TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.knowledge_conflicts TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_doc_access_paths TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_doc_access_paths TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.knowledge_doc_access_paths TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_doc_chunks TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_doc_chunks TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.knowledge_doc_chunks TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_doc_collections TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_doc_collections TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.knowledge_doc_collections TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_doc_scopes TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_doc_scopes TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.knowledge_doc_scopes TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_doc_usage_daily TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_doc_usage_daily TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.knowledge_doc_usage_daily TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_docs TO anon;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.knowledge_docs TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.knowledge_docs TO service_role;
+GRANT SELECT ON TABLE public.knowledge_gap_cluster_members TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.knowledge_gap_cluster_members TO service_role;
+GRANT SELECT ON TABLE public.knowledge_gap_clusters TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.knowledge_gap_clusters TO service_role;
+GRANT SELECT, UPDATE ON TABLE public.knowledge_gap_policies TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.knowledge_gap_policies TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_ingestion_items TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.knowledge_ingestion_items TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_ingestion_jobs TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.knowledge_ingestion_jobs TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_principal_group_members TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_principal_group_members TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.knowledge_principal_group_members TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_principal_groups TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_principal_groups TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.knowledge_principal_groups TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_revision_requests TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_revision_requests TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.knowledge_revision_requests TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_tags TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.knowledge_tags TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.knowledge_tags TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.kpi_metric_catalog TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.kpi_metric_catalog TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.kpi_metric_catalog TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.learned_tool_specs TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.learned_tool_specs TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.learned_tool_specs TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.mcp_server_allowlist TO anon;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.mcp_server_allowlist TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.mcp_server_allowlist TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.media_assets TO anon;
+GRANT INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.media_assets TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.media_assets TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.messages TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.messages TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.messages TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.migration_number_claims TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.notifications TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.notifications TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.notifications TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.oauth_connect_states TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.onboarding_projects TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.onboarding_projects TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.onboarding_projects TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.onboarding_template_versions TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.onboarding_template_versions TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.onboarding_template_versions TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.onboarding_templates TO anon;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.onboarding_templates TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.onboarding_templates TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.opportunities TO anon;
+GRANT INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.opportunities TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.opportunities TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.opportunity_activities TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.opportunity_activities TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.opportunity_activities TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.opportunity_writeback_requests TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.opportunity_writeback_requests TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.opportunity_writeback_requests TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.ops_alerts TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.ops_alerts TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.ops_alerts TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.org_unit_members TO anon;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.org_unit_members TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.org_unit_members TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.org_units TO anon;
+GRANT INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.org_units TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.org_units TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.otel_spans TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.otel_spans TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.otel_spans TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.outbound_drafts TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.outbound_drafts TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.outbound_drafts TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.payment_promises TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.payment_promises TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.payment_promises TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.payments TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.payments TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.payments TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.pipeline_summary TO anon;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.pipeline_summary TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.pipeline_summary TO service_role;
+GRANT SELECT ON TABLE public.platform_access_events TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.platform_access_events TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.platform_capability_grants TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.platform_config TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.platform_invites TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.platform_kb_change_impacts TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.platform_kb_changes TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.platform_knowledge_audit TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.platform_knowledge_chunks TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.platform_knowledge_docs TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.platform_knowledge_shelf_state TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.platform_knowledge_usage_daily TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.platform_runtime_config TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.playbook_amendments TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.playbook_amendments TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.playbook_amendments TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.playbook_definitions TO anon;
+GRANT INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.playbook_definitions TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.playbook_definitions TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.playbook_event_rules TO anon;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.playbook_event_rules TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.playbook_event_rules TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.playbook_gaps TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.playbook_gaps TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.playbook_gaps TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.playbook_runs TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.playbook_runs TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.playbook_runs TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.playbook_schedules TO anon;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.playbook_schedules TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.playbook_schedules TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.playbook_studies TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.playbook_studies TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.playbook_studies TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.playbook_trigger_fires TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.playbook_trigger_fires TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.playbook_trigger_fires TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.playbook_versions TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.playbook_versions TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.playbook_versions TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.playbooks TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.playbooks TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.playbooks TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.posting_draft_lines TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.posting_draft_lines TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.posting_draft_lines TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.posting_drafts TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.posting_drafts TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.posting_drafts TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.profile_compensation TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.profile_compensation TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.profile_compensation TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.profile_private TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.profile_private TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.profile_private TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.profiles TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.profiles TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.profiles TO service_role;
+GRANT SELECT ON TABLE public.purchase_invoices TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.purchase_invoices TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.push_subscriptions TO anon;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.push_subscriptions TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.push_subscriptions TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.rate_limit_counters TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.rate_limit_counters TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.rate_limit_counters TO service_role;
+GRANT SELECT ON TABLE public.remote_access_write_log TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.remote_access_write_log TO service_role;
+GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.remote_access_write_log_id_seq TO anon;
+GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.remote_access_write_log_id_seq TO authenticated;
+GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.remote_access_write_log_id_seq TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.renewal_invoices TO anon;
+GRANT INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.renewal_invoices TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.renewal_invoices TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.review_time_standards TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.review_time_standards TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.review_time_standards TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.role_archetypes TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.role_archetypes TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.role_archetypes TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.role_certifications TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.role_certifications TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.role_certifications TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.schema_migrations TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.schema_migrations TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.schema_migrations TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.scim_tokens TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.scim_user_links TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.scim_user_links TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.scim_user_links TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.semantic_guardrail_cache TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.semantic_guardrail_cache TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.semantic_guardrail_cache TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.semantic_guardrail_shadow_log TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.semantic_guardrail_shadow_log TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.semantic_guardrail_shadow_log TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.sim_runs TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.sim_runs TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.sim_runs TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.skill_catalog TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.skill_catalog TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.skill_catalog TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.skill_categories TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.skill_categories TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.skill_categories TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.specialist_source_secrets TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.specialist_source_secrets_decrypted TO service_role;
+GRANT SELECT ON TABLE public.sso_attribute_role_map TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.sso_attribute_role_map TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.staleness_escalations TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.staleness_escalations TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.staleness_escalations TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.staleness_policies TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.staleness_policies TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.staleness_policies TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.support_tickets TO anon;
+GRANT INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.support_tickets TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.support_tickets TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.support_triage_rules TO anon;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.support_triage_rules TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.support_triage_rules TO service_role;
+GRANT SELECT ON TABLE public.system_categories TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.system_categories TO service_role;
+GRANT SELECT ON TABLE public.tenant_activity_log TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_activity_log TO service_role;
+GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.tenant_activity_log_id_seq TO anon;
+GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.tenant_activity_log_id_seq TO authenticated;
+GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.tenant_activity_log_id_seq TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_ai_usage TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_ai_usage TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_ai_usage TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_ancestry TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_api_keys TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_api_keys TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_api_keys TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_billing_config TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_billing_config TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_billing_config TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_brand_identity TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_brand_identity TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_brand_identity TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_branding TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_branding TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_branding TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_comms_settings TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_comms_settings TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_comms_settings TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_compliance_packs TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_compliance_packs TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_compliance_packs TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_cost_tracking TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_cost_tracking TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_cost_tracking TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_deletion_receipts TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_deletion_receipts TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_deletion_receipts TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_deletion_requests TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_deletion_requests TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_deletion_requests TO service_role;
+GRANT SELECT ON TABLE public.tenant_domains TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_domains TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_entity_fields TO anon;
+GRANT INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_entity_fields TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_entity_fields TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_feature_overrides TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_feature_overrides TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_feature_toggles TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_feature_toggles TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_feature_toggles TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_ip_allowlist_entries TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_ip_allowlist_entries TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_ip_allowlist_entries TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_ip_allowlists TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_ip_allowlists TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_ip_allowlists TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_llm_credentials TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_outcome_pricing TO anon;
+GRANT INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.tenant_outcome_pricing TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_outcome_pricing TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_parity_exemptions TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_pipeline_stages TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_pipeline_stages TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_pipeline_stages TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_provisioning_requests TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_provisioning_requests TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_session_policies TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_session_policies TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_session_policies TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.tenant_sso_effective_policy TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_sso_effective_policy TO service_role;
+GRANT INSERT, SELECT, UPDATE ON TABLE public.tenant_sso_policy TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_sso_policy TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_usage_metrics TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenant_usage_metrics TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenant_usage_metrics TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenants TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.tenants TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.tenants TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.trust_policies TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.trust_policies TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.trust_policies TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.unguarded_secdef_writers TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.unguarded_secdef_writers TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.unguarded_secdef_writers TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.unit_tripwires TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.unit_tripwires TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.unit_tripwires TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.usage_metrics TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.usage_metrics TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.usage_metrics TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.vendors TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.vendors TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.vendors TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.voice_appointments TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.voice_appointments TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.voice_appointments TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.voice_messages TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.voice_messages TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.voice_messages TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.watch_source_catalog TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.watch_source_catalog TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.watch_source_catalog TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.watch_source_fields TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.watch_source_fields TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.watch_source_fields TO service_role;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.widget_key_secrets TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.widget_keys TO anon;
+GRANT INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.widget_keys TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.widget_keys TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.work_assignment_rules TO anon;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.work_assignment_rules TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.work_assignment_rules TO service_role;
+GRANT MAINTAIN, SELECT ON TABLE public.work_item_claims TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.work_item_claims TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.work_item_framing TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.work_item_framing TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.work_item_framing TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.work_watcher_matches TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.work_watcher_matches TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.work_watcher_matches TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.work_watchers TO anon;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.work_watchers TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.work_watchers TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.workforce_actions TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER, UPDATE ON TABLE public.workforce_actions TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.workforce_actions TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.workforce_baselines TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.workforce_baselines TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.workforce_baselines TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.workforce_conversations TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.workforce_conversations TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.workforce_conversations TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.workforce_entity_amendments TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.workforce_entity_amendments TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.workforce_entity_amendments TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.workforce_entity_studies TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.workforce_entity_studies TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.workforce_entity_studies TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.workforce_team_members TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.workforce_team_members TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.workforce_team_members TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.workforce_teams TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.workforce_teams TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.workforce_teams TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.workforce_trust_posture TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.workforce_trust_posture TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.workforce_trust_posture TO service_role;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.workspaces TO anon;
+GRANT MAINTAIN, REFERENCES, SELECT, TRIGGER ON TABLE public.workspaces TO authenticated;
+GRANT DELETE, INSERT, MAINTAIN, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON TABLE public.workspaces TO service_role;
+
 NOTIFY pgrst, 'reload schema';
+306 tables · 1 sequences · 7 views · 867 functions · 296 triggers · 404 policies
+404 functions emitted with an explicit REVOKE (closed perimeter preserved)
+841 role grants emitted across tables, views and sequences (OPEN perimeter preserved — register A-12)

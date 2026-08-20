@@ -224,6 +224,31 @@ const tblAcl = await q(`
    where n.nspname = 'public' and c.relkind = 'r'
    order by c.relname`);
 
+// ── The OTHER half of the perimeter, and the half this file used to drop ───
+// The REVOKEs below preserve what is CLOSED. Nothing preserved what is OPEN,
+// so a restore produced a database where every API role had nothing and no
+// client could talk to it. Measured 2026-08-20 (register A-12): production
+// holds 5964 grants in public — anon 712, authenticated 872, service_role
+// 2185 — and dev, rebuilt from this file, held ZERO while matching production
+// on tables, functions and policies exactly. Structurally perfect, unusable.
+//
+// aclexplode over pg_class rather than information_schema.role_table_grants:
+// one query covers tables, views, materialised views AND sequences, and gives
+// the exact privilege set instead of the SELECT/INSERT booleans above. A
+// sequence with no USAGE is how an INSERT fails on a table that looks granted.
+const relAcl = await q(`
+  select c.relkind::text as kind, c.relname as rel,
+         pg_get_userbyid(a.grantee) as grantee,
+         string_agg(distinct a.privilege_type, ', ' order by a.privilege_type) as privs
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    cross join lateral aclexplode(c.relacl) a
+   where n.nspname = 'public'
+     and c.relkind in ('r', 'v', 'm', 'S')
+     and pg_get_userbyid(a.grantee) in ('anon', 'authenticated', 'service_role')
+   group by 1, 2, 3
+   order by 2, 3`);
+
 const by = (rows, key) => rows.reduce((m, r) => ((m[r[key]] ??= []).push(r), m), {});
 const C = by(cols, 'tbl'), K = by(cons, 'tbl'), I = by(idx, 'tbl'),
       P = by(pol, 'tbl'), T = by(trigs, 'tbl');
@@ -257,14 +282,18 @@ o.push(`-- file is the schema half of the answer; data is NOT in here (see below
 o.push(`--`);
 o.push(`-- Contents: ${exts.length} extensions · ${enums.length} enums · ${ordered.length} tables ·`);
 o.push(`-- ${cons.length} constraints · ${idx.length} indexes · ${funcs.length} functions ·`);
-o.push(`-- ${trigs.length} triggers · ${pol.length} policies · explicit REVOKEs for the closed perimeter.`);
+o.push(`-- ${trigs.length} triggers · ${pol.length} policies · ${relAcl.length} role grants ·
+-- explicit REVOKEs for the closed perimeter.`);
 o.push(`--`);
 o.push(`-- WHAT THIS DOES NOT COVER, so nobody mistakes it for a full backup:`);
 o.push(`--   · no table DATA — tenants, users, documents, conversations are all absent`);
 o.push(`--   · no auth.users — accounts do not come back from this file`);
 o.push(`--   · no storage objects, no vault secrets, no edge-function code`);
 o.push(`--   · no pg_cron schedules`);
-o.push(`-- Restoring this yields an EMPTY, correctly-shaped, correctly-secured database.`);
+o.push(`-- Restoring this yields an EMPTY, correctly-shaped, correctly-secured and
+-- REACHABLE database — the last of those was missing until 2026-08-20: the file
+-- carried the REVOKEs and none of the GRANTs, so a restore came back with every
+-- table present and no API role able to read one (register A-12).`);
 o.push(`-- ============================================================================`);
 o.push('');
 o.push(`-- ── Extensions ──────────────────────────────────────────────────────────────`);
@@ -396,8 +425,25 @@ for (const t of tblAcl) {
   if (!t.auth_r && !t.auth_w) o.push(`REVOKE ALL ON TABLE public.${t.tbl} FROM authenticated;`);
 }
 o.push('');
+
+// ── Grants. AFTER the revokes, deliberately ────────────────────────────────
+// A table that appears in both lists must end up granted: the REVOKE above is
+// keyed on "holds neither SELECT nor INSERT", so anything holding only, say,
+// UPDATE would be revoked and then correctly re-granted here. Emitting these
+// first would let the revoke win and reproduce the very bug this closes.
+o.push(`-- ── Role grants (register A-12) ─────────────────────────────────────────────`);
+o.push(`-- Without these a restore comes back CLOSED: every table present, every policy`);
+o.push(`-- present, and no API role able to read a row. RLS decides WHICH rows a caller`);
+o.push(`-- sees; these grants decide whether the caller may ask at all, and a policy`);
+o.push(`-- cannot grant what the role does not hold.`);
+const REL_KEYWORD = { r: 'TABLE', v: 'TABLE', m: 'TABLE', S: 'SEQUENCE' };
+for (const a of relAcl) {
+  o.push(`GRANT ${a.privs} ON ${REL_KEYWORD[a.kind]} public.${a.rel} TO ${a.grantee};`);
+}
+o.push('');
 o.push(`NOTIFY pgrst, 'reload schema';`);
 
 process.stdout.write(o.join('\n') + '\n');
 say(`${ordered.length} tables · ${seqs.length} sequences · ${views.length} views · ${funcs.length} functions · ${trigs.length} triggers · ${pol.length} policies`);
 say(`${closed.length} functions emitted with an explicit REVOKE (closed perimeter preserved)`);
+say(`${relAcl.length} role grants emitted across tables, views and sequences (OPEN perimeter preserved — register A-12)`);
