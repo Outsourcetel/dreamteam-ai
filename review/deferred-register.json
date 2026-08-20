@@ -100,7 +100,7 @@
         "date": "2026-08-10",
         "source": "mig 663 header / docs/45-certification-scoreboard.md"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from public.profiles p join auth.users u on u.id = p.user_id where p.tenant_id is null and p.role not like 'platform%' and u.created_at < now() - interval '30 days'",
@@ -109,7 +109,9 @@
           "n": 1
         },
         "note": "Repointed 2026-08-20 to measure the real generator. Counts only ABANDONED signups — non-platform profiles with no tenant whose auth user is older than 30 days — so a signup genuinely in progress does not read as a defect, and platform_super_admin (tenant_id NULL by design, 2 rows) is excluded. The previous pin counted every NULL tenant_id, which included those two correct rows and could not be closed without deleting legitimate data."
-      }
+      },
+      "closed_by": "The one abandoned-signup profile (spjamesvelez+1@gmail.com, a +1 alias of the founder's own account, signed up 2026-07-09, complete_signup never run) deleted on the founder's instruction 2026-08-20. Checked all 13 FKs into profiles first — no referencing rows — and the auth.users account survives, so only the orphaned profile row went. Abandoned signups now 0. The FK stays ON DELETE SET NULL deliberately: delete_tenant already removes member profiles at step 6b, and switching to CASCADE would move that to cascade time where 10 NO ACTION FKs would block every future tenant deletion.",
+      "closed_on": "2026-08-20"
     },
     {
       "id": "A-6",
