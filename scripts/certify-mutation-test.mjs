@@ -3034,8 +3034,11 @@ const CASES = [
     // A population row. tenant_id is null so the drift arm (which re-reads
     // starter_template_state_internal per tenant) correctly skips fixtures.
     const pop = (slug, itemsJson, touched) =>
-      `select '${slug}'::text as slug, null::uuid as tenant_id, '${slug}'::text as template_id, `
+      `select '${slug}'::text as slug, '${FXT}'::uuid as tenant_id, '${slug}'::text as template_id, `
       + `'${itemsJson}'::jsonb as items, md5('${itemsJson}') as items_md5, ${touched} as touched`;
+    // A tenant id that is deliberately NOT in public.tenants, so the drift
+    // arm correctly skips these synthetic rows.
+    const FXT = '00000000-0000-0000-0000-0000000000f1';
     const ONE_ITEM = '[{"key":"a","label":"A"}]';
     const BEHIND = pop('fx-behind', ONE_ITEM, false);
     const BEHIND_TOUCHED = pop('fx-touched', ONE_ITEM, true);
@@ -3054,7 +3057,7 @@ const CASES = [
     };
     const catalog = (over = {}) => Object.entries({ ...BODIES, ...over })
       .filter(([, v]) => v !== null)
-      .map(([k, v]) => `select '${k}'::text as fname, '${v[0]}'::text as fargs, $q${v[1]}$q$::text as body`)
+      .map(([k, v]) => `select '${k}'::text as fname, '${v[0]}'::text as fargs, '${v[1].replace(/'/g, "''")}'::text as body`)
       .join('\n union all ');
 
     // Symmetric privilege fixture: [args, anon, authenticated].
@@ -3071,7 +3074,7 @@ const CASES = [
       .join('\n union all ');
 
     const clean = { templatesSql: CURRENT, canonSql: CANON2, acksSql: noAcks, catalogSql: catalog(), privSql: privs() };
-    const S = (o) => starterTemplateBaselineSql({ ...clean, ...o });
+    const S = (o) => 'select violation from (' + starterTemplateBaselineSql({ ...clean, ...o }) + ') z where violation is not null';
 
     return [
       {
@@ -3095,11 +3098,11 @@ const CASES = [
         name: 'starter-template-baseline (a LAPSED acknowledgement fires; a live one is silent)',
         fires: S({
           templatesSql: BEHIND,
-          acksSql: `select null::uuid as tenant_id, 'stale-hash'::text as items_md5, 'stale-hash'::text as canon_md5`,
+          acksSql: `select '${FXT}'::uuid as tenant_id, 'stale-hash'::text as items_md5, 'stale-hash'::text as canon_md5`,
         }),
         silent: S({
           templatesSql: BEHIND,
-          acksSql: `select null::uuid as tenant_id, md5('${ONE_ITEM}') as items_md5, `
+          acksSql: `select '${FXT}'::uuid as tenant_id, md5('${ONE_ITEM}') as items_md5, `
             + `(select md5(items::text) from (${CANON2}) c) as canon_md5`,
         }),
       },

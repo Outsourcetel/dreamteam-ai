@@ -128,9 +128,18 @@ export function starterTemplateBaselineSql(o = {}) {
   const ACKS = o.acksSql ?? ACKS_DEFAULT;
 
   // The live catalog: which of the required functions exist, and their bodies.
+  //
+  // ⚠ oidvectortypes, NOT pg_get_function_identity_arguments. The latter
+  // includes PARAMETER NAMES — it returns 'p_note text', not 'text' — so
+  // comparing it to a signature written as 'text' never matches and
+  // `mechanism-missing` fires for every function whether it exists or not: a
+  // gate red for a reason that has nothing to do with what it guards. Caught
+  // by running the privilege query by hand before trusting this, which is also
+  // why the same expression is what builds the signature handed to
+  // has_function_privilege below — one derivation, so the two cannot disagree.
   const CATALOG = o.catalogSql ?? `
     select p.proname::text as fname,
-           pg_get_function_identity_arguments(p.oid)::text as fargs,
+           pg_catalog.oidvectortypes(p.proargtypes)::text as fargs,
            p.prosrc as body
       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
      where n.nspname = 'public'`;
@@ -229,7 +238,12 @@ arm_drift as (
     'classifier-disagrees: for workspace "%s" this probe derives status "%s" but starter_template_state_internal says "%s". The probe re-derives the touched flag itself so it can be mutation-tested on synthetic rows; that second copy has now drifted from the one the RPCs use, and the gate and the product no longer mean the same thing by "outdated".',
     s.slug, s.status, public.starter_template_state_internal(s.tenant_id)->>'status') as violation
   from scored s
-  where s.tenant_id is not null
+  -- Only rows that are a REAL workspace. starter_template_state_internal reads
+  -- the table, so it can only be compared against a tenant that exists; a
+  -- synthetic mutation-test row would always "disagree" and turn this arm into
+  -- noise. Gating on public.tenants is not a weakening — every production row
+  -- reaching this probe joins tenants to get here in the first place.
+  where exists (select 1 from public.tenants t where t.id = s.tenant_id)
     and public.starter_template_state_internal(s.tenant_id)->>'status' is distinct from s.status
 ),
 
