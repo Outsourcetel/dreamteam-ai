@@ -90,6 +90,20 @@ export const GRANDFATHERED = Object.freeze({
   '741_a_proposal_becomes_a_thing_or_says_why_not.sql': 36,
   '742_every_workspace_gets_its_own_topics.sql': 6,
   '743_a_connector_without_a_credential_is_not_a_source.sql': 6,
+  // Superseded in production, same shape as the four above. 806 defines
+  // account_review_draft, and migs 807 + 808 later redefined it using
+  // array_append(). Verified against the LIVE function before pinning rather
+  // than assumed from the commit messages:
+  //
+  //   account_review_draft   bare_append false   uses_array_append true
+  //   review_de_for          bare_append false
+  //   run_account_review_sweep bare_append false
+  //
+  // All 3 instances sit in account_review_draft, which is the one that was
+  // fixed. 806 is applied (2026-08-20) so its file must keep describing what
+  // ran; pinning is the only correct move, and the ratchet still bites — a
+  // fourth instance or an edit to the file turns this red.
+  '806_reviews_that_recur_and_never_pile_up.sql': 3,
 });
 
 /** Strip line comments and split into statements, so a `||` inside a `--`
