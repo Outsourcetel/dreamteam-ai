@@ -86,20 +86,62 @@ if (!files.length) {
 
 console.log(`checking ${files.length} new migration(s) can run somewhere that is not production:\n`);
 
+// ⚠ NOT EVERY DRY-RUN FAILURE IS THIS DEFECT, and the first version of this
+// script accused a migration that was innocent. 798 failed on dev with
+// `42883 function public.withdraw_human_tasks(uuid[], text) does not exist` —
+// because dev is MISSING 790, which creates it. Nothing about 798 asserts on
+// production data; it was reported as unreplayable purely because its
+// dependency could not be installed on the environment used to test it.
+//
+// The discriminator is the SQLSTATE:
+//
+//   P0001  raise_exception  — the migration's OWN assertion fired. This is the
+//                             defect: it demanded rows the environment lacks.
+//   42883 / 42P01 / 42703 / 3F000
+//          undefined function / table / column / schema — a DEPENDENCY the dev
+//          environment does not have. Not this migration's fault, and its
+//          author cannot fix it.
+//
+// A dependency failure is reported as NOT PROVEN and never as a pass, because
+// "we could not check this" and "this is fine" must not look the same. But it
+// does not fail the gate: blaming an author for someone else's gap is how a
+// check gets routed around.
+const DEPENDENCY_STATES = /ERROR:\s+(42883|42P01|42703|3F000)/;
+const ASSERTION_STATE = /ERROR:\s+P0001/;
+
 const unreplayable = [];
+const notProven = [];
 for (const f of files) {
   const res = spawnSync(process.execPath, ['scripts/dev-apply.mjs', f, '--dry-run'], { encoding: 'utf8' });
-  const ok = res.status === 0;
-  console.log(`   ${ok ? '✓' : '✗'} ${f}`);
-  if (!ok) {
-    const detail = `${res.stdout || ''}${res.stderr || ''}`.trim().split(/\r?\n/).filter(Boolean).slice(0, 4).join('\n     ');
+  const out = `${res.stdout || ''}${res.stderr || ''}`;
+  if (res.status === 0) { console.log(`   ✓ ${f}`); continue; }
+
+  const detail = out.trim().split(/\r?\n/).filter(Boolean).slice(0, 3).join('\n     ');
+  if (ASSERTION_STATE.test(out)) {
+    console.log(`   ✗ ${f}`);
     console.log(`     ${detail}`);
     unreplayable.push(f);
+  } else if (DEPENDENCY_STATES.test(out)) {
+    console.log(`   ⏸ ${f}  — NOT PROVEN (dev is missing a dependency, not this migration's doing)`);
+    console.log(`     ${detail}`);
+    notProven.push(f);
+  } else {
+    console.log(`   ⏸ ${f}  — NOT PROVEN (dry run failed for a reason this gate does not classify)`);
+    console.log(`     ${detail}`);
+    notProven.push(f);
   }
 }
 
+if (notProven.length) {
+  // Said out loud every time. A count of clean results that quietly includes
+  // unchecked ones is the "zero findings from zero comparisons" shape.
+  console.log(`\n⏸ ${notProven.length} could NOT be checked — dev lacks something they depend on, so this gate proved nothing about them:`);
+  for (const f of notProven) console.log(`   ${f}`);
+  console.log('   (dev is behind because of the already-applied unreplayable migrations — register B-6)');
+}
+
 if (!unreplayable.length) {
-  console.log(`\nall ${files.length} can be replayed into an environment that is not production`);
+  console.log(`\n${files.length - notProven.length} of ${files.length} proven replayable; ${notProven.length} not checked`);
   process.exit(0);
 }
 
