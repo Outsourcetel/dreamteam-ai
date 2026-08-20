@@ -6,10 +6,14 @@
 // Both are needed: restoring the schema alone gives you a correctly-secured
 // EMPTY system — no tenants, no employees, no documents, no conversations.
 //
-// WHY: the Supabase org is on the FREE plan, and the backups endpoint returns
-// an empty list. There is no automated backup of this database, so until PITR
-// is purchased this script is the only thing standing between a bad afternoon
-// and losing 16 tenants' data permanently.
+// WHY (updated 2026-08-20; the original said "free plan, no backups" — false
+// since 2026-08-05 and exactly the kind of stale claim that gets believed in
+// an emergency): Supabase now takes DAILY physical backups (7 retained), but
+// PITR is OFF, a daily can silently go missing (2026-08-02 did), the managed
+// restore has never been rehearsed and goes IN PLACE, and physical backups
+// exclude nothing-tells-you-what. This export is the copy WE control: it is
+// the input to scripts/restore-data-drill.mjs, the only restore this project
+// has actually watched succeed.
 //
 //   node scripts/backup-data.mjs                 # everything, to backups/<date>/
 //   node scripts/backup-data.mjs --out DIR       # somewhere else
@@ -48,14 +52,35 @@ function token() {
 
 async function q(sql) {
   if (!/^\s*(select|with)\b/i.test(sql)) throw new Error('read-only: SELECT/WITH only');
-  const res = await fetch(ENDPOINT, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query: sql }),
-  });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
-  return JSON.parse(text);
+  // Retries transport failures and 429/5xx — a 3-minute export makes hundreds
+  // of calls and WILL meet a rate limit; dying on it silently truncates the
+  // backup (proven live 2026-08-20: the run died at audit_events and the
+  // pipeline's tail masked the crash as exit 0). A non-429 4xx is a real
+  // answer and is not retried. JSON.parse failures are thrown to the CALLER,
+  // which knows whether shrinking the page is the right response.
+  for (let attempt = 0; ; attempt++) {
+    let res, text;
+    try {
+      res = await fetch(ENDPOINT, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: sql }),
+      });
+      text = await res.text();
+    } catch (e) {
+      if (attempt >= 5) throw e;
+      await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+      continue;
+    }
+    if (!res.ok) {
+      if ((res.status === 429 || res.status >= 500) && attempt < 5) {
+        await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+        continue;
+      }
+      throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
+    }
+    return JSON.parse(text);
+  }
 }
 
 // The run is stamped by the caller's clock, which is fine — this is a local
@@ -93,16 +118,33 @@ for (const { tbl, vector_cols } of tables) {
     : '*';
   if (!cols) { console.log(`  ${tbl.padEnd(44)} skipped (only vector columns)`); continue; }
 
+  // Adaptive page size: the Management API truncates very large response
+  // bodies MID-JSON with HTTP 200 (proven live 2026-08-20 on audit_events —
+  // 500 rows of jsonb detail overran the cap and JSON.parse got half a
+  // document). Truncation presents as a parse failure, so on one of those we
+  // halve the page for THIS table and re-fetch the SAME offset. Halving below
+  // 10 means single rows are oversized — that is a real answer, not a retry.
+  let pageSize = PAGE;
   for (;;) {
-    const page = await q(
-      `select coalesce(json_agg(t), '[]'::json) as d from (
-         select ${cols} from public.${tbl} order by ctid limit ${PAGE} offset ${offset}) t`);
+    let page;
+    try {
+      page = await q(
+        `select coalesce(json_agg(t), '[]'::json) as d from (
+           select ${cols} from public.${tbl} order by ctid limit ${pageSize} offset ${offset}) t`);
+    } catch (e) {
+      if (e instanceof SyntaxError && pageSize > 10) {
+        pageSize = Math.max(10, Math.floor(pageSize / 2));
+        console.log(`  ${tbl}: response truncated, retrying at page size ${pageSize}`);
+        continue;
+      }
+      throw e;
+    }
     const data = page[0].d;
     if (!data.length) break;
     appendFileSync(file, data.map((r) => JSON.stringify(r)).join('\n') + '\n');
     rows += data.length;
-    offset += PAGE;
-    if (data.length < PAGE) break;
+    offset += data.length;
+    if (data.length < pageSize) break;
   }
 
   grandTotal += rows;
