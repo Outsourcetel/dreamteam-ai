@@ -917,7 +917,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
               how many steps each one releases — counted through the chain,
               not just the next step. */}
           {groups.some(g => g.strands > 0) && (
-            <div className="mb-3 rounded-dt border border-dt-line bg-dt-surface p-3">
+            <div className="mb-3 rounded-xl border border-dt-border bg-dt-card p-4">
               <div className="text-dt-body font-medium mb-2">
                 {groups.reduce((n, g) => n + Number(g.strands || 0), 0)} steps of work are waiting on{' '}
                 {groups.reduce((n, g) => n + Number(g.gates_work || 0), 0)} of these decisions
@@ -927,7 +927,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                   <button
                     key={`${g.task_type}-${g.de_id ?? 'none'}`}
                     onClick={() => { setPicked(new Set(g.task_ids)); setBatchPreview(null); }}
-                    className="text-left rounded-dt border border-dt-line px-3 py-2 hover:border-dt-support"
+                    className="text-left rounded-xl border border-dt-border px-3 py-2 hover:border-dt-accent"
                   >
                     <div className="text-dt-body">{g.de_name ?? 'Unassigned'}</div>
                     <div className="text-dt-faint">
@@ -985,7 +985,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                 </>
               )}
               {picked.size > 0 && batchPreview && (
-                <div className="w-full mt-2 rounded-dt border border-dt-line bg-dt-surface p-3">
+                <div className="w-full mt-2 rounded-xl border border-dt-border bg-dt-card p-4">
                   <div className="flex items-center gap-3 flex-wrap">
                     <span className="text-dt-body font-medium">
                       {batchPreview.would_succeed} will go through
