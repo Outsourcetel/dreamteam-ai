@@ -29,48 +29,47 @@ describe('tenant isolation (RLS)', () => {
   }, 30000);
 
   afterAll(async () => {
-    // Clean up as each tenant's own owner — RLS-scoped deletes, not a
-    // service-role bypass, so this only ever touches this test's own
-    // rows even if something above failed partway through.
+    // ⛔ THIS DELIBERATELY DOES NOT DELETE ANYTHING, AND THAT IS THE POINT.
     //
-    // Hardened after the 2026-08-10 flake (failed twice inside certify, green
-    // standalone and in a 7× golden-path-adjacency reproduction loop — the
-    // trigger was environmental, most plausibly a parallel session loading the
-    // same dev project). Three rules, none of which weaken anything:
-    //   1. Each tenant's cleanup is attempted INDEPENDENTLY — one tenant's
-    //      transport hiccup must not abandon the other's rows.
-    //   2. Transient failures retry with backoff before they count.
-    //   3. A genuine final failure still FAILS the suite — but with the full
-    //      underlying error, so the next investigation starts with evidence
-    //      instead of a truncated frame.
-    const deleteWithRetry = async (t: TestTenant, label: string) => {
-      let lastErr: unknown = null;
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          const { error } = await t.client
-            .from('customer_accounts')
-            .delete()
-            .eq('tenant_id', t.tenantId);
-          if (!error) return null;
-          lastErr = error;             // PostgREST-level error object
-        } catch (e) {
-          lastErr = e;                 // transport-level rejection (fetch failed)
-        }
-        if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 1500));
-      }
-      return `${label} (tenant ${t.tenantId}): ${JSON.stringify(lastErr, Object.getOwnPropertyNames(lastErr ?? {}))}`;
-    };
-
-    const failures = (
-      await Promise.all([
-        deleteWithRetry(tenantA, 'tenant A cleanup'),
-        deleteWithRetry(tenantB, 'tenant B cleanup'),
-      ])
-    ).filter((f): f is string => f !== null);
-    if (failures.length > 0) {
-      throw new Error(`teardown failed after 3 attempts each:\n${failures.join('\n')}`);
-    }
+    // It used to DELETE each tenant's customer_accounts as that tenant's own
+    // owner, retrying three times with backoff and failing the suite if it
+    // could not. That cleanup CANNOT succeed and has not been able to since
+    // the write-perimeter work (migs 714-720) revoked DELETE on
+    // customer_accounts from `authenticated`. Measured on the dev project:
+    //
+    //   has_table_privilege('authenticated', 'customer_accounts', 'DELETE')  false
+    //   has_table_privilege('authenticated', 'customer_accounts', 'SELECT')  true
+    //
+    // So every run spent ~9 seconds retrying an operation the database is
+    // correct to refuse, then failed the suite on 42501 — with four passing
+    // tests above it. A green security suite reported as red by its own
+    // cleanup, for doing exactly what it was hardened to do.
+    //
+    // The refusal is not an obstacle to work around: it IS the property this
+    // file exists to prove, so it is asserted as a test below rather than
+    // discovered in a teardown.
+    //
+    // ⚠ WHAT HAPPENS TO THE ROWS. They stay. Two test tenants and a handful
+    // of customer_accounts rows per run accumulate in the DEV project, which
+    // the nightly rebuild reclaims. Restoring cleanup would mean either a
+    // service-role client — which this suite refuses on purpose, since a
+    // service-role bypass in an RLS test can hide the very failure it is
+    // looking for — or re-granting DELETE to `authenticated`, which would
+    // undo a deliberate security decision to tidy a test.
   }, 60000);
+
+  // The write perimeter, asserted rather than assumed. This is the check the
+  // old teardown was accidentally performing and then reporting as a crash.
+  it('refuses a tenant owner DELETE on customer_accounts — the write perimeter holds', async () => {
+    const { error } = await tenantA.client
+      .from('customer_accounts')
+      .delete()
+      .eq('tenant_id', tenantA.tenantId);
+    // 42501 = insufficient_privilege. Not RLS filtering the rows away — the
+    // role has no DELETE on this table at all, which is the stronger boundary
+    // and the one migs 714-720 put there.
+    expect(error?.code).toBe('42501');
+  });
 
   it('lets a tenant owner see their own account', async () => {
     const { data, error } = await tenantA.client
