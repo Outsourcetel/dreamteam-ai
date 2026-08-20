@@ -784,6 +784,129 @@ async function zohoToken(c: Ctx): Promise<{ ok: boolean; token?: string; error?:
   return { ok: true, token: tok.access_token };
 }
 
+// ── Google Calendar (C2, practical-work program 2026-08-11) ────────────────
+// Same self-refreshing shape as zohoToken above: the per-tenant connector
+// secret carries {client_id, client_secret, refresh_token, access_token,
+// expires_at}; a refreshed token is written back so a long-lived connector
+// keeps working. D1's shared OAuth framework will POPULATE these fields; the
+// adapter does not care who put them there — which is exactly why C2 can ship
+// before the founder's Google app exists.
+async function googleToken(c: Ctx): Promise<{ ok: boolean; token?: string; error?: string }> {
+  const s = c.secret as Record<string, unknown>;
+  const access = String(s.access_token ?? '');
+  const expiresAt = Number(s.expires_at ?? 0);
+  if (access && Date.now() < expiresAt) return { ok: true, token: access };
+  const refresh = String(s.refresh_token ?? '');
+  const clientId = String(s.client_id ?? '');
+  const clientSecret = String(s.client_secret ?? '');
+  if (!refresh || !clientId || !clientSecret) {
+    return access ? { ok: true, token: access } : { ok: false, error: 'google_oauth_incomplete' };
+  }
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refresh, client_id: clientId, client_secret: clientSecret }).toString(),
+  }).catch(() => null);
+  const tok = res ? await res.json().catch(() => null) as { access_token?: string; expires_in?: number } | null : null;
+  if (!res || !res.ok || !tok?.access_token) return { ok: false, error: 'google_refresh_failed' };
+  const next = { ...s, access_token: tok.access_token, expires_at: Date.now() + (Number(tok.expires_in ?? 3600) - 60) * 1000 };
+  if (c.admin && c.connectorId) {
+    await c.admin.rpc('set_connector_secret_sysadmin', { p_connector_id: c.connectorId, p_secret: JSON.stringify(next) });
+  }
+  s.access_token = tok.access_token; s.expires_at = next.expires_at;
+  return { ok: true, token: tok.access_token };
+}
+
+const googlecalendar = {
+  async hdrs(c: Ctx): Promise<Record<string, string> | null> {
+    const t = await googleToken(c);
+    if (!t.ok) return null;
+    return { Authorization: 'Bearer ' + t.token, Accept: 'application/json' };
+  },
+  async testConnection(c: Ctx): Promise<AdapterResult> {
+    const h = await this.hdrs(c);
+    if (!h) return { ok: false, error: 'google_oauth_incomplete' };
+    const r = await httpJson('https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=1', { headers: h });
+    if (!r.ok) return { ok: false, error: r.error };
+    return { ok: true, items: [] };
+  },
+  // "Recent" for a diary = what is coming, not what has been: the next
+  // upcoming events, so a front-desk employee can answer "when are we free".
+  async listRecent(c: Ctx): Promise<AdapterResult> {
+    const h = await this.hdrs(c);
+    if (!h) return { ok: false, error: 'google_oauth_incomplete' };
+    const cal = String((c.config as Record<string, unknown> | null)?.calendar_id ?? 'primary');
+    const qs = new URLSearchParams({ maxResults: '10', singleEvents: 'true', orderBy: 'startTime', timeMin: new Date().toISOString() });
+    const r = await httpJson('https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(cal) + '/events?' + qs, { headers: h });
+    if (!r.ok) return { ok: false, error: r.error };
+    const rows = (r.body as { items?: Array<Record<string, unknown>> })?.items ?? [];
+    return { ok: true, items: rows.map((e) => ({
+      type: 'event', external_ref: String(e.id ?? ''),
+      title: String(e.summary ?? '(no title)'),
+      snippet: String(((e.start as Record<string, unknown>)?.dateTime ?? (e.start as Record<string, unknown>)?.date) ?? ''),
+      url: String(e.htmlLink ?? ''),
+    })) };
+  },
+  async search(c: Ctx, query: string): Promise<AdapterResult> {
+    const h = await this.hdrs(c);
+    if (!h) return { ok: false, error: 'google_oauth_incomplete' };
+    const cal = String((c.config as Record<string, unknown> | null)?.calendar_id ?? 'primary');
+    const qs = new URLSearchParams({ q: String(query ?? '').slice(0, 80), maxResults: '10', singleEvents: 'true', timeMin: new Date().toISOString() });
+    const r = await httpJson('https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(cal) + '/events?' + qs, { headers: h });
+    if (!r.ok) return { ok: false, error: r.error };
+    const rows = (r.body as { items?: Array<Record<string, unknown>> })?.items ?? [];
+    return { ok: true, items: rows.map((e) => ({ type: 'event', external_ref: String(e.id ?? ''), title: String(e.summary ?? ''), snippet: '', url: String(e.htmlLink ?? '') })) };
+  },
+  async fetchRecord(c: Ctx, _t: string, ref: string): Promise<AdapterResult> {
+    const h = await this.hdrs(c);
+    if (!h) return { ok: false, error: 'google_oauth_incomplete' };
+    const cal = String((c.config as Record<string, unknown> | null)?.calendar_id ?? 'primary');
+    const r = await httpJson('https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(cal) + '/events/' + encodeURIComponent(ref), { headers: h });
+    if (!r.ok) return { ok: false, error: r.error };
+    const e = (r.body ?? {}) as Record<string, unknown>;
+    return { ok: true, items: [{ type: 'event', external_ref: String(e.id ?? ref), title: String(e.summary ?? ''), snippet: '', url: String(e.htmlLink ?? '') }] };
+  },
+};
+
+const googleCalendarActions: Record<string, NativeAction> = {
+  // Booking an appointment is a promise to a CUSTOMER made in their inbox
+  // (sendUpdates emails every attendee), so it is destructive and always
+  // human-gated — the same law as the dunning emails.
+  google_calendar_create_event: {
+    render(c, p) {
+      if (!p.title?.trim()) return { ok: false, error: 'param_required', detail: 'title is required.' };
+      if (!p.start_iso?.trim() || !p.end_iso?.trim()) return { ok: false, error: 'param_required', detail: 'start_iso and end_iso (RFC3339, e.g. 2026-08-20T15:00:00+05:00) are required.' };
+      if (Number.isNaN(Date.parse(p.start_iso)) || Number.isNaN(Date.parse(p.end_iso))) return { ok: false, error: 'bad_param', detail: 'start_iso/end_iso must be valid RFC3339 timestamps.' };
+      if (Date.parse(p.end_iso) <= Date.parse(p.start_iso)) return { ok: false, error: 'bad_param', detail: 'end_iso must be after start_iso.' };
+      const cal = String((c.config as Record<string, unknown> | null)?.calendar_id ?? 'primary');
+      return {
+        ok: true, method: 'POST',
+        url: 'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(cal) + '/events?sendUpdates=all',
+        body: {
+          summary: p.title.trim(),
+          start: { dateTime: p.start_iso.trim() },
+          end: { dateTime: p.end_iso.trim() },
+          ...(p.description?.trim() ? { description: p.description.trim() } : {}),
+          ...(p.attendee_email?.trim() ? { attendees: [{ email: p.attendee_email.trim() }] } : {}),
+        },
+      };
+    },
+    async run(c, p) {
+      const r = this.render(c, p);
+      if (!r.ok) return { ok: false, error: r.error, detail: r.detail };
+      const h = await googlecalendar.hdrs(c);
+      if (!h) return { ok: false, error: 'google_oauth_incomplete', detail: 'This calendar connector has no working Google credentials yet.' };
+      const res = await httpJson(r.url!, { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify(r.body) });
+      if (!res.ok) return { ok: false, status: res.status, error: res.error, raw: res.body };
+      const e = (res.body ?? {}) as { id?: string; htmlLink?: string };
+      return { ok: true, status: res.status, raw: res.body,
+        receipt: 'Booked "' + p.title + '" from ' + p.start_iso + ' to ' + p.end_iso
+          + (p.attendee_email ? ' with ' + p.attendee_email + ' (they were sent the invitation)' : '')
+          + (e.id ? ' — event ' + e.id : '') + '.' };
+    },
+  },
+};
+
 const zohocrm = {
   api: (c: Ctx) => String(c.secret.api_domain ?? 'https://www.zohoapis.com').replace(/\/+$/, ''),
   async hdrs(c: Ctx): Promise<Record<string, string> | null> {
@@ -4277,7 +4400,7 @@ const mcpActions: Record<string, NativeAction> = {
   },
 };
 
-const NATIVE_ACTIONS: Record<string, NativeAction> = { ...zendeskActions, ...freshdeskActions, ...slackActions, ...servicenowActions, ...githubActions, ...gitlabActions, ...asanaActions, ...dreamteamActions, ...erpnextActions, ...hubspotActions, ...salesforceActions, ...quickbooksActions, ...xeroActions, ...stripeActions, ...mcpActions, ...intercomActions, ...gorgiasActions, ...bamboohrActions, ...squareActions, ...shopifyActions };
+const NATIVE_ACTIONS: Record<string, NativeAction> = { ...zendeskActions, ...freshdeskActions, ...slackActions, ...servicenowActions, ...githubActions, ...gitlabActions, ...asanaActions, ...dreamteamActions, ...erpnextActions, ...hubspotActions, ...salesforceActions, ...quickbooksActions, ...xeroActions, ...stripeActions, ...mcpActions, ...intercomActions, ...gorgiasActions, ...bamboohrActions, ...squareActions, ...shopifyActions, ...googleCalendarActions };
 
 // ── clickup ── secret: { token } (personal token, raw — not Bearer) · fixed
 // base. product_system (tasks).
@@ -6475,7 +6598,7 @@ serve(async (req) => {
       close, kustomer, mailchimp, gitbook,
       netsuite, powerschool, ellucian, toast, athenahealth, epic, cerner,
       dropbox, twilio, typeform, calendly, okta, contentful,
-      erpnext, mcp, chargebee, clover, zohocrm, zohodesk,
+      erpnext, mcp, chargebee, clover, zohocrm, zohodesk, googlecalendar,
     };
     // deno-lint-ignore no-explicit-any
     const adapter: any = templateExec ? templateAdapter(templateExec) : adapters[connector.provider];
