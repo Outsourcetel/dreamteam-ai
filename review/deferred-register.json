@@ -1204,7 +1204,7 @@
         "date": "2026-08-18",
         "source": "docs/58 Workstream I, 2026-08-18"
       },
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "sql",
         "sql": "select count(*)::int as n from de_messages where role='assistant' and delivery='blocked'",
@@ -1212,7 +1212,9 @@
           "op": "==",
           "n": 0
         }
-      }
+      },
+      "closed_by": "The premise was false: the guardrail layer HAD blocked, 10 times, and nothing counted it. widget-ask marked the notice delivery='blocked'; de-answer inserted the identical notice omitting delivery, so it defaulted to 'sent' — and every count of delivery='blocked' measured the widget alone, which has carried 1 message against the dock's 157 and exams' 282. Fixed forward in de-answer (sets delivery='blocked' explicitly) and backfilled by mig 813 on an exact-content predicate. Verified live after apply. Note recorded in the commit: the row count moved from 13 to 10 mid-analysis with no erasure, deletion or migration to explain it; not registered as a finding because the earlier premise is no longer re-verifiable.",
+      "closed_on": "2026-08-20"
     },
     {
       "id": "A-7",
