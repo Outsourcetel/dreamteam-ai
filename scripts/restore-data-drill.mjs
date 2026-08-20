@@ -56,14 +56,32 @@ const manifest = JSON.parse(readFileSync(join(DIR, '_manifest.json'), 'utf8'));
 function docker(argv, opts = {}) {
   return execFileSync('docker', argv, { encoding: 'utf8', maxBuffer: 1024 * 1024 * 64, ...opts });
 }
-// psql into the container, SQL on stdin. Returns { ok, out } — callers decide
-// whether a failure is fatal, because for the schema apply it is a COUNT, not
-// an exception.
-function psql(sql, { onErrorStop = true, user = 'postgres' } = {}) {
+// psql into the container. The payload travels as a FILE (docker cp → -f),
+// never as stdin: spawnSync feeding a multi-MB string down docker's stdin
+// pipe on Windows chokes SILENTLY — proven on this drill's first run, where
+// the 3MB schema "applied" as a no-op, zero objects landed, and only the
+// count check said anything. Runs as supabase_admin over TCP: the image's
+// only superuser (postgres is not one here), needed to own auth.* and to
+// guarantee session_replication_role.
+let payloadSeq = 0;
+function psql(sql, { onErrorStop = true } = {}) {
+  const host = join(tmpdir(), `drill_payload_${process.pid}_${payloadSeq++}.sql`);
+  writeFileSync(host, sql);
+  const inGuest = `/tmp/drill_payload_${payloadSeq}.sql`;
+  const cp = spawnSync('docker', ['cp', host, `${CONTAINER}:${inGuest}`], { encoding: 'utf8' });
+  if (cp.status !== 0) {
+    rmSync(host, { force: true });
+    return { ok: false, out: 'docker cp failed: ' + ((cp.stderr ?? '') + (cp.stdout ?? '')).slice(0, 300) };
+  }
   const r = spawnSync('docker',
-    ['exec', '-i', '-e', 'PGPASSWORD=drill', CONTAINER, 'psql', '-U', user, '-d', 'postgres',
-     '-v', `ON_ERROR_STOP=${onErrorStop ? 1 : 0}`, '-X', '-q', '-At', '-f', '-'],
-    { input: sql, encoding: 'utf8', maxBuffer: 1024 * 1024 * 256 });
+    ['exec', '-e', 'PGPASSWORD=drill', CONTAINER, 'psql', '-h', '127.0.0.1', '-U', 'supabase_admin',
+     '-d', 'postgres', '-v', `ON_ERROR_STOP=${onErrorStop ? 1 : 0}`, '-X', '-q', '-At', '-f', inGuest],
+    { encoding: 'utf8', maxBuffer: 1024 * 1024 * 256 });
+  rmSync(host, { force: true });
+  spawnSync('docker', ['exec', CONTAINER, 'rm', '-f', inGuest], { stdio: 'ignore' });
+  if (r.status !== 0 && !r.stdout && !r.stderr) {
+    return { ok: false, out: 'docker exec produced no output (spawn error: ' + String(r.error ?? 'unknown') + ')' };
+  }
   return { ok: r.status === 0, out: (r.stdout ?? '') + (r.stderr ?? '') };
 }
 function q1(sql) {
@@ -144,6 +162,12 @@ const schemaErrors = (schemaRes.out.match(/^psql:.*ERROR:/gm) ?? schemaRes.out.m
 notes.push(`schema apply reported ${schemaErrors.length} error line(s)`);
 if (schemaErrors.length) notes.push('  first errors: ' + schemaErrors.slice(0, 3).join(' | ').slice(0, 400));
 
+if (!schemaRes.ok && schemaRes.out.length < 200) {
+  // A schema apply that failed AND said almost nothing is an invocation
+  // failure, not a SQL story — surface it whole instead of counting zero
+  // errors in empty output (the first run's exact blindness).
+  throw new Error('schema apply produced no usable output: ' + schemaRes.out);
+}
 const counts = {
   tables: +q1(`select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r'`),
   functions: +q1(`select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.prokind in ('f','p')`),
@@ -151,6 +175,9 @@ const counts = {
   rls_tables: +q1(`select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relkind='r' and c.relrowsecurity`),
 };
 console.log(`Restored shape: ${counts.tables} tables · ${counts.functions} functions · ${counts.policies} policies · RLS on ${counts.rls_tables}`);
+if (counts.tables === 0) {
+  throw new Error('schema apply landed ZERO tables — refusing to "load data" into nothing. First psql output: ' + schemaRes.out.slice(0, 400));
+}
 
 // ── 3. data ──────────────────────────────────────────────────────────────────
 // Per-table column strategy comes from the RESTORED schema, not the export:
@@ -185,14 +212,9 @@ function loadTable(tbl, file, schema, table) {
     const sql = `set session_replication_role = replica;
 insert into ${targetIdent} (${colList})${overriding}
 select ${colList} from jsonb_populate_recordset(null::${targetIdent}, $${tag}$${json}$${tag}$::jsonb);`;
-    const f = join(tmp, 'batch.sql');
-    writeFileSync(f, sql);
-    const r = spawnSync('docker',
-      ['exec', '-i', '-e', 'PGPASSWORD=drill', CONTAINER, 'psql', '-U', 'postgres', '-d', 'postgres',
-       '-v', 'ON_ERROR_STOP=1', '-X', '-q', '-f', '-'],
-      { input: readFileSync(f), encoding: 'utf8', maxBuffer: 1024 * 1024 * 256 });
-    if (r.status !== 0) {
-      loadErrors.push(`${tbl} @row ${i}: ${((r.stderr ?? '') + (r.stdout ?? '')).slice(0, 220)}`);
+    const r = psql(sql);
+    if (!r.ok) {
+      loadErrors.push(`${tbl} @row ${i}: ${r.out.slice(0, 220)}`);
       return rows; // stop this table, keep drilling the rest
     }
     rows += batch.length;

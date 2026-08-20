@@ -296,6 +296,14 @@ o.push(`-- Restoring this yields an EMPTY, correctly-shaped, correctly-secured a
 -- table present and no API role able to read one (register A-12).`);
 o.push(`-- ============================================================================`);
 o.push('');
+// LANGUAGE sql function bodies are validated at CREATE time, so a function
+// that calls a function defined later in this file kills the restore — caught
+// live 2026-08-20 by restore-drill: five callers of evidence_is_production
+// (mig 682) precede its definition. pg_dump solves this with exactly this
+// knob, and so do we. plpgsql was never affected (bodies parse lazily), and
+// views are unaffected (emitted after all functions).
+o.push(`SET check_function_bodies = off;`);
+o.push('');
 o.push(`-- ── Extensions ──────────────────────────────────────────────────────────────`);
 for (const e of exts) o.push(`CREATE EXTENSION IF NOT EXISTS "${e.extname}" WITH SCHEMA ${e.schema};`);
 o.push('');

@@ -153,13 +153,52 @@ try {
 
 console.log('2/4  restoring into a throwaway schema on the dev project…');
 const dump = readFileSync(FILE, 'utf8').replace(/public\./g, `${SCHEMA}.`);
-// `extensions` is on the path because Supabase installs pgcrypto there and
-// column defaults call gen_random_bytes() unqualified. `public` is on it
-// because a CHECK constraint calls a function unqualified. Neither is a defect
-// in the dump — both resolve normally when restoring into `public` for real.
-await run(DEV_REF,
-  `DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE;\nCREATE SCHEMA ${SCHEMA};\n` +
-  `SET search_path = ${SCHEMA}, public, extensions;\n` + dump);
+
+// The dump outgrew a single request: register A-12's 841 grant lines pushed
+// it past the Management API's body cap (HTTP 413, 2026-08-20). So it now
+// travels as chunks of WHOLE STATEMENTS — split dollar-quote- and
+// comment-aware, because a naive split on ';' would cut every plpgsql body in
+// half. Each request is its own session, so each chunk re-states search_path.
+function splitStatements(sql) {
+  const stmts = [];
+  let start = 0, i = 0;
+  while (i < sql.length) {
+    const ch = sql[i];
+    if (ch === '-' && sql[i + 1] === '-') {              // line comment
+      i = sql.indexOf('\n', i); if (i === -1) break; i++;
+    } else if (ch === "'") {                             // string literal ('' escapes)
+      i++;
+      while (i < sql.length) { if (sql[i] === "'") { if (sql[i + 1] === "'") { i += 2; continue; } i++; break; } i++; }
+    } else if (ch === '$') {                             // dollar quoting
+      const m = /^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/.exec(sql.slice(i));
+      if (m) { const close = sql.indexOf(m[0], i + m[0].length); i = close === -1 ? sql.length : close + m[0].length; }
+      else i++;
+    } else if (ch === ';') {
+      stmts.push(sql.slice(start, i + 1)); i++; start = i;
+    } else i++;
+  }
+  if (sql.slice(start).trim()) stmts.push(sql.slice(start));
+  return stmts;
+}
+// Each chunk is its own Management-API session, so session GUCs must be
+// re-stated per chunk: the search_path AND check_function_bodies (the dump
+// sets it on line 1, which only the first chunk's session ever sees).
+const SEARCH_PATH = `SET search_path = ${SCHEMA}, public, extensions;\nSET check_function_bodies = off;\n`;
+const CHUNK_LIMIT = 512 * 1024;
+const statements = splitStatements(dump);
+const chunks = [];
+let cur = `DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE;\nCREATE SCHEMA ${SCHEMA};\n${SEARCH_PATH}`;
+for (const st of statements) {
+  if (cur.length + st.length > CHUNK_LIMIT && cur.length > SEARCH_PATH.length) {
+    chunks.push(cur); cur = SEARCH_PATH;
+  }
+  cur += st;
+}
+if (cur.trim().length > SEARCH_PATH.trim().length) chunks.push(cur);
+console.log(`     ${statements.length} statements in ${chunks.length} chunk(s) of ≤${CHUNK_LIMIT / 1024}KB`);
+for (let c = 0; c < chunks.length; c++) {
+  await run(DEV_REF, chunks[c]);
+}
 
 console.log('3/4  comparing the rebuilt schema to production…');
 const [got] = await run(DEV_REF, census(SCHEMA, false));
