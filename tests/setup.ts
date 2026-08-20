@@ -43,8 +43,27 @@ if (!TEST_SUPABASE_URL || !TEST_SUPABASE_ANON_KEY) {
 // So: ask it, ONCE, before any test runs, and say what is actually wrong. One
 // honest failure beats N misleading ones. Costs a single HEAD request and
 // cannot pass on a dead key.
-const probe = await fetch(`${TEST_SUPABASE_URL}/rest/v1/`, {
-  method: 'HEAD',
+// ⚠ ASK AUTH, NOT POSTGREST — and this correction cost a second day.
+// The probe above used to be HEAD /rest/v1/, which conflates two completely
+// different failures because PostgREST returns HTTP 401 for a Postgres
+// PERMISSION error (SQLSTATE 42501) as readily as for a bad key. Measured
+// 2026-08-20, the body behind that 401 was:
+//
+//   {"code":"42501","message":"permission denied for table tenants",
+//    "hint":"GRANT SELECT ON public.tenants TO anon;"}
+//
+// The key was perfectly valid. What had changed was the anon perimeter — the
+// revokes that took `anon` off tables it never needed (mig 787 and the sweep
+// around it). So this guard turned a SUCCESSFUL security hardening into
+// "your key was rotated", and would have sent someone to rotate keys that
+// were fine — the same misdiagnosis, in the opposite direction, as the
+// rotation it was written to catch.
+//
+// Proof it is now the right question: the CURRENT publishable key also
+// returned 401 from the old probe, so it could not tell a live key from a
+// dead one at all. /auth/v1/settings validates the KEY and nothing else —
+// valid 200, garbage 401, truncated 401, all verified against the dev project.
+const probe = await fetch(`${TEST_SUPABASE_URL}/auth/v1/settings`, {
   headers: { apikey: TEST_SUPABASE_ANON_KEY, Authorization: `Bearer ${TEST_SUPABASE_ANON_KEY}` },
 }).catch(() => ({ status: 0 } as Response));
 

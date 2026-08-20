@@ -1505,6 +1505,30 @@
       },
       "closed_by": "mig 805 applied to production 2026-08-20 with the connector-hub half in the same commit. payment_entry_for_invoice and create_journal_entry now declare amount_cents (integer), and erpnext.unitsFromCents() divides by 100 at the ERPNext boundary — the rename alone would have made the gate read dollars as cents, a 100x under-count on a destructive action. Verified: tests/action-gate.test.ts 18/18, the migration assertion inverted (fixing one action leaves it firing on the other), 0 executions and 0 stored params affected.",
       "closed_on": "2026-08-20"
+    },
+    {
+      "id": "A-12",
+      "what": "supabase/baseline/full_schema.sql carries NO table grants for the API roles, so every rebuild from it produces a database no client can use. Measured 2026-08-20 — production: anon 712 grants over 239 tables, authenticated 872 over 280, service_role 2185 over 313, 5964 public grants in total. Dev after rebuild-dev-from-baseline: ZERO for all three, 2177 total (owner roles only). Dev matched production on every object class the rebuild census counts (304 tables, 965 functions, 402 policies) and is unusable through PostgREST. Three consequences: (1) the nightly dev-rebuild workflow reproduces this every night; (2) restore-drill.mjs compares STRUCTURE only, so it calls such a restore a success; (3) a real disaster recovery from this baseline yields a database no client can talk to — the backup story is materially weaker than believed. golden-path PASSES against grant-less dev, so it does not exercise the API-role path and cannot be relied on to catch this. Fix is in scripts/backup-schema.mjs: emit table GRANTs as it already emits the 400 function REVOKEs.",
+      "where": "scripts/backup-schema.mjs; supabase/baseline/full_schema.sql; scripts/rebuild-dev-from-baseline.mjs",
+      "severity": "security",
+      "why_skipped": "walked-past",
+      "first_named": {
+        "date": "2026-08-20",
+        "source": "certify 2026-08-20: tenant-isolation failed 'permission denied for table profiles' once the key-probe bug stopped masking it"
+      },
+      "state": "open",
+      "verification": {
+        "kind": "grep",
+        "paths": [
+          "supabase/baseline/full_schema.sql"
+        ],
+        "pattern": "GRANT .* ON TABLE|grant .* on public\\.",
+        "count": "matches",
+        "open_if": {
+          "op": "<",
+          "n": 1
+        }
+      }
     }
   ]
 }
