@@ -1656,7 +1656,7 @@
         "source": "the D-12 false-closure audit (this session)"
       },
       "subject": "deployed-edge",
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "deployed-edge",
         "probe": "drift-from-main",
@@ -1666,7 +1666,9 @@
           "n": 1
         },
         "note": "⚠ CONTENT, NEVER TIMESTAMPS. The obvious check compares deployed updated_at against file mtime; it was tried during the audit that found D-12 and flagged 61 of 65 functions, nearly all byte-identical to main — a ~94% false-positive rate is noise that trains people to ignore the section. This downloads each deployed ESZIP bundle, reads the module sources the runtime actually executes, and compares them to `git show origin/main:` through one normalizer (tsc transpile, comments dropped, redundant parens unwrapped at the AST level, whitespace and trailing commas normalized) because the bundle stores deno's EMIT, not the .ts. A bundle that will not parse is UNVERIFIABLE and throws, so it lands as F3 rather than as in-sync. EXCLUSIONS, each a hole that has to justify itself: de-answer (unmerged fix in flight in a parallel session — remove the exclusion when that branch lands) and mcp-demo-server (in the repo, never deployed; absent from the deployed list entirely). Denominators at first measurement: 64 deployed, 63 compared, 36 in sync, 27 drifted, 0 unverifiable, 1 in repo never deployed."
-      }
+      },
+      "closed_by": "checker-accuracy fix in scripts/edge-deployed-parity.mjs (normalizeModule): all 27 DRIFTED verdicts of 2026-08-20 were FALSE POSITIVES, not drift. The eszip stores deno's EMIT and the repo stores SOURCE; the normalizer did not canonicalise three purely syntactic differences — single arrow parameter ((o)=> vs o=>), braces around a single-statement body (24 pairs, 23 of them _shared/serviceCaller.ts), and a right-nested ??/||/&& chain (playbook-draft/index.ts:459). Character-level evidence: tool-learn/index.ts differed at 3 chars of 5758, _shared/contentHash.ts at 1 of 427, de-simulate/index.ts at 1 of 8885. All 34 differing (slug,file) pairs were enumerated and every one reduced to those three forms; none was a real change. Canonicalisation is AST-level (arrows re-synthesized to bare; bodies always braced; ||/&&/?? linearised left-nested — those three operators only, since -, + and * are not associative). RE-MEASURED LIVE 2026-08-21: 64 deployed, 63 compared, 63 IN SYNC over 384 module pairs, 0 DRIFTED, 0 UNVERIFIABLE, 1 excluded (de-answer, unmerged in a parallel session), 1 in repo never deployed (mcp-demo-server). LIVENESS PROVEN, same machinery and only the tree changed: the same 63 bundles vs the pre-fix tree a54d5b54^ report 62/63 DRIFTED over 360 pairs, so the probe still sees real staleness. Self-test: node scripts/edge-deployed-parity.mjs --self-test (27/27, offline) plus 8 mutation cases in both directions, all caught and named. Nothing was deployed to reach this number.",
+      "closed_on": "2026-08-20"
     }
   ]
 }

@@ -1569,6 +1569,52 @@ const CASES = [
     name: `deferred-register --mutate=${mut} (MANUAL, a JS evaluation over a JSON register: a SELECT cannot fake it)`,
     manual: `${evidence} Re-run 2026-08-20 against the live register (68 items, 59 verified, 9 carried on claim); all 11 cases exit 0. ⚠ Scoring is strict in BOTH directions: a "caught" case needs ONE failure line carrying every expected substring, and a "silent" case fails if ANY line carries every forbidden one. An errored or no-op run is INCONCLUSIVE and is fixed and re-run, never counted.`,
   })),
+
+  // ── edge-parity NORMALIZER (B-16) ─────────────────────────────────────────
+  // The parity probe compares deno's EMIT against the repo's SOURCE, so both
+  // sides go through one normalizer. On 2026-08-20 that normalizer reported 27
+  // of 63 deployed functions DRIFTED; all 27 were measured and ALL 27 WERE
+  // FALSE — three purely syntactic differences between the two emitters
+  // (`(o) =>` vs `o =>`, `if (x) { … }` vs `if (x) …`, and `a ?? (b ?? c)` vs
+  // `a ?? b ?? c`). tool-learn/index.ts differed at 3 characters of 5,758;
+  // _shared/contentHash.ts at 1 of 427.
+  //
+  // ⚠⚠ FIXING THAT IS THE DANGEROUS DIRECTION, WHICH IS WHY THESE CASES EXIST.
+  // A normalizer that canonicalises too much erases a REAL change and reports
+  // a fleet in perfect parity while production runs stale code — D-12 exactly,
+  // one layer down and wearing a green tick. "0 drifted" from a broken
+  // normalizer is indistinguishable from "0 drifted" from a healthy fleet, so
+  // the only evidence that it still works is a mutation that makes it fail.
+  //
+  // BOTH DIRECTIONS ARE PROVEN and they are opposite failures: TOO LOOSE
+  // (erases a real difference) and TOO TIGHT (manufactures the 27 again).
+  //
+  // Re-run any of them with:
+  //   node scripts/edge-deployed-parity.mjs --mutate=<case>
+  // and the whole suite offline, with no token and no network, with:
+  //   node scripts/edge-deployed-parity.mjs --self-test
+  ...[
+    ['erase-everything',
+      'TOO LOOSE, the catastrophic shape. normalizeModule() returns a constant, so every module equals every other and the probe reports total parity. CAUGHT — "⚠ ERASED A REAL DIFFERENCE — the KNOWN-STALE supabase/functions/de-work/index.ts (a54d5b54^) normalized EQUAL to `main`". ⚠ The known-stale fixture is REAL HISTORY, not a toy: de-work and eval-run as they stood at a54d5b54^, carrying the `bearer === Deno.env.get(\'SUPABASE_SERVICE_ROLE_KEY\')` string-equality check that began 401-ing on 2026-08-18 when Supabase rotated the key, against those same files on `main`, which call serviceCaller(). It is put through cosmeticVariant() first, so the real change has to survive every difference the normalizer now erases.'],
+    ['reassociate-across-operators',
+      'TOO LOOSE. Drops the operator-EQUALITY test, so `a && (b || c)` and `a && (b && c)` both collapse to `a && b && c`. CAUGHT — "⚠ ERASED A REAL DIFFERENCE — BOUND: regrouping ACROSS operators". ⚠ THIS CASE WAS INCONCLUSIVE ON ITS FIRST RUN AND IS RECORDED AS FIXED, NOT AS A PASS: the bound pair was originally `(a || b) && c` vs `a || (b && c)`, which shares no OUTER operator, so the rebuilt spines stayed different (`a && b && c` vs `a || b || c`) and the case passed with the check removed — scoring exactly like a real catch. The pair now shares an outer `&&`, which is the only shape that can detect this mutation.'],
+    ['reassociate-minus',
+      'TOO LOOSE. Adds `-` to the associative set. Subtraction is not associative, so `a - (b - c)` would be flattened into `(a - b) - c`. CAUGHT — "⚠ ERASED A REAL DIFFERENCE — BOUND: `-` is not associative and must NOT be re-associated".'],
+    ['reassociate-plus',
+      'TOO LOOSE. Adds `+`. Not associative once a string is involved: `1 + (2 + "3")` is "123", `(1 + 2) + "3"` is "33". CAUGHT — "⚠ ERASED A REAL DIFFERENCE — BOUND: `+` is not associative once a string is involved". Together with the case above, these two are what keep the associative set at exactly `||`, `&&`, `??`.'],
+    ['drop-arrow-canonicalisation',
+      'TOO TIGHT — the false positives come back. Reverts the arrow-parameter step, so `.map((o) => …)` vs `.map(o => …)` reads as drift again (4 of the original 27, tool-learn among them). CAUGHT — "FALSE POSITIVE — arrow single parameter".'],
+    ['drop-brace-canonicalisation',
+      'TOO TIGHT. Reverts the block-wrapping step, so `if (x) { f(); }` vs `if (x) f();` reads as drift again — 24 of the original 27, including every one of the 23 driven by _shared/serviceCaller.ts. CAUGHT — "FALSE POSITIVE — braces around a single-statement body".'],
+    ['drop-assoc-canonicalisation',
+      'TOO TIGHT. Reverts the re-association step, so playbook-draft/index.ts:459 (`deId ?? ((targetDef.de_id as string | null) ?? null)`) reads as drift again. CAUGHT — "FALSE POSITIVE — nullish chain re-associated".'],
+    ['no-perturbation',
+      '⚠ THE ARM THAT STOPS THE SUITE BEING THEATRE. Makes cosmeticVariant() a no-op, so every negative arm compares a file with itself and passes having compared nothing — zero findings from zero comparisons, which looks exactly like a clean result. CAUGHT — "NO-COMPARISONS — cosmeticVariant() perturbed NONE of the self-test modules". The suite counts how many real modules the noise generator actually changed (5 of 6; contentHash.ts carries only the arrow form, which the printer cannot re-introduce) and fails at zero.'],
+  ].map(([mut, evidence]) => ({
+    name: `edge-parity-normalizer --mutate=${mut} (MANUAL, a pure-function comparison over source text: a SELECT cannot fake it)`,
+    manual: `${evidence} Run 2026-08-21, offline, no token: the unmutated suite passes 27/27 checks (4 cosmetic-only pairs that must be IN SYNC, 15 behaviourally-different pairs that must be DRIFTED, 2 known-stale real-history fixtures, 6 real modules at full size) and all 8 mutations exit 0. ⚠ Scoring is strict: a case passes ONLY if a failure line carries EVERY expected substring; a silent or errored run is INCONCLUSIVE and is fixed and re-run, never counted. ⚠ LIVE END-TO-END EVIDENCE, same machinery, only the tree changed: against origin/main the 63 deployed bundles are 63/63 IN SYNC over 384 module pairs; against the pre-fix tree a54d5b54^ the same bundles are 62/63 DRIFTED over 360 pairs. A normalizer that had erased real differences could not produce the second number.`,
+  })),
+
   // ── provider-catalog ─────────────────────────────────────────────────────
   // The section's three newest assertions — the connectors_provider_check edge
   // in BOTH directions, field-level drift, and the AMBIGUOUS_ALIASES ratchet —
