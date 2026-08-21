@@ -1725,7 +1725,7 @@
     {
       "id": "B-19",
       "what": "Nothing in the app can create an opportunity. CustomersHubPage NORMALIZEs entity_customer_bd to entity_customer_sales, so CustomerBDPage never renders — and CustomerBDLive behind it is the ONLY surface carrying '+ Add prospect', '+ Import CSV' and ImportOpportunitiesModal. createOpportunity() and ImportOpportunitiesModal each have exactly one call site and it is inside that dark component. Dead by accident with a real product consequence; NOT a deletion candidate.",
-      "where": "src/pages/tenant/entity/CustomersHubPage.tsx:20-23 (NORMALIZE) vs src/pages/tenant/entity/PipelineLive.tsx:416 CustomerBDLive",
+      "where": "src/pages/tenant/entity/PipelineLive.tsx CustomerSalesLive (the surface CustomersHubPage renders for entity_customer_sales, and for entity_customer_bd via NORMALIZE)",
       "severity": "correctness",
       "why_skipped": "founder-decision",
       "first_named": {
@@ -1733,19 +1733,22 @@
         "source": "unreachable-UI sweep 2026-08-21"
       },
       "subject": "repo-source",
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
           "src"
         ],
-        "pattern": "<CustomerBDPage\\b",
+        "pattern": "export function CustomerSalesLive\\(\\)[\\s\\S]*createOpportunity\\(",
         "count": "matches",
         "open_if": {
           "op": "==",
           "n": 0
-        }
-      }
+        },
+        "note": "REPOINTED 2026-08-21. The original pattern was '<CustomerBDPage\\b' in src, which presumed the fix would RESTORE the BD route. It went the other way: commit 280f5c51 folded BD into Sales on the founder's instruction, so the repair is to carry the controls onto the surviving surface and the BD wrapper is deleted — which means the old pattern reads 0 on a broken tree AND on a fixed one, i.e. it could never go green. This asks the question that actually distinguishes them: does the pipeline surface the hub renders call createOpportunity at all. Measured both ways before it was written: 0 on HEAD eaade419 (OPEN), 1 on the fixed tree (CLOSED). WHAT IT CANNOT SEE: that CustomersHubPage still routes to CustomerSalesLive, and that the button is not hidden behind a permanently-false condition — one regex cannot span two files."
+      },
+      "closed_by": "commit 086fd2511c4127cf3c0550cc5eae286d1dfda0f5 — controls moved onto CustomerSalesLive (the surface the hub renders), role-gated by useCanWritePipeline; write path proven both directions on the dev project",
+      "closed_on": "2026-08-21"
     },
     {
       "id": "B-20",

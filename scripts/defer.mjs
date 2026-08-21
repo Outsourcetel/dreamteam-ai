@@ -85,7 +85,8 @@ const USAGE = `
   npm run defer -- --list
   npm run defer -- --close <id> --by "<commit or migration that closed it>"
   npm run defer -- --update <id> [--what "…"] [--where "…"] [--why <reason>] \\
-                   [--note "…"] [--sql "…" --open-if ">=1"]
+                   [--note "…"] [--sql "…" --open-if ">=1"] \\
+                   [--grep "<regex>" --paths "<a,b>" --open-if "==0"]
                    # amend an item that is STILL OPEN. Cannot close one — that
                    # needs --close and a citation. Re-runs the F8 matrix, the
                    # validator and the dry run, so an amendment cannot seed a
@@ -202,6 +203,30 @@ if (has('update')) {
     if (it.verification.kind !== 'sql') { console.error(`${id}.verification.kind is "${it.verification.kind}"; --sql can only repoint a sql verification.`); process.exit(1); }
     it.verification.sql = flag('sql'); touched.push('verification.sql');
   }
+  // ⚠ AND THE GREP HALF, which was missing and had a direction.
+  //
+  // Until this existed, `--sql` was the ONLY verification an amendment could
+  // repoint, so a repo-source item whose CORRECT fix changes what should be
+  // grepped had exactly two options: hand-edit the JSON (four paragraphs at
+  // the top of this file explain why that must never happen) or close it
+  // against a check now aimed at the wrong shape. Both are the cheap-path-is-
+  // the-dishonest-path failure `--update` was written to remove; it just left
+  // it standing for half the register.
+  //
+  // Live case: B-19. It was recorded expecting the fix to RESTORE a BD route
+  // (`<CustomerBDPage` appearing in src). The fix went the other way — the
+  // controls moved onto the surviving surface, per the founder's own "BD folds
+  // into Sales" — so the original pattern can never match and the item could
+  // never verify closed no matter how thoroughly it was fixed.
+  if (has('grep')) {
+    if (it.verification.kind !== 'grep') { console.error(`${id}.verification.kind is "${it.verification.kind}"; --grep can only repoint a grep verification.`); process.exit(1); }
+    it.verification.pattern = flag('grep'); touched.push('verification.pattern');
+  }
+  if (has('paths')) {
+    if (it.verification.kind !== 'grep') { console.error(`${id}.verification.kind is "${it.verification.kind}"; --paths only applies to a grep verification.`); process.exit(1); }
+    it.verification.paths = String(flag('paths')).split(',').map((s) => s.trim()).filter(Boolean);
+    touched.push('verification.paths');
+  }
   if (has('open-if')) { it.verification.open_if = parseOpenIf(flag('open-if')); touched.push('verification.open_if'); }
   if (!touched.length) { console.error('--update needs something to change: --what, --where, --why, --note, --sql, --open-if.'); process.exit(1); }
 
@@ -229,6 +254,25 @@ if (has('update')) {
     console.log(`  dry run: the amended verification returned n=${n}; open_if ${it.verification.open_if.op} ${it.verification.open_if.n} ⇒ ${isOpen ? 'OPEN' : 'CLOSED'}`);
     if (isOpen !== (it.state === 'open')) {
       console.error(`\nREFUSED: ${id} is recorded "${it.state}", but the amended verification says ${isOpen ? 'OPEN' : 'CLOSED'} right now.`);
+      process.exit(1);
+    }
+  }
+  // Same hard stop for a repointed grep, run through THE SAME runGrep certify
+  // uses — not a paraphrase of it, for the reason mig 661 exists.
+  if (it.verification.kind === 'grep') {
+    let n;
+    try { n = runGrep(it.verification); }
+    catch (e) {
+      console.error(`the amended verification does not run: ${String(e.message ?? e).slice(0, 300)}`);
+      console.error('NOT WRITTEN. A verification that cannot run would land in the register as an F3 failure on the next certify run.');
+      process.exit(1);
+    }
+    const OPS = { '>=': (a, b) => a >= b, '>': (a, b) => a > b, '==': (a, b) => a === b, '<=': (a, b) => a <= b, '<': (a, b) => a < b };
+    const isOpen = OPS[it.verification.open_if.op](n, it.verification.open_if.n);
+    console.log(`  dry run: the amended grep matched n=${n}; open_if ${it.verification.open_if.op} ${it.verification.open_if.n} ⇒ ${isOpen ? 'OPEN' : 'CLOSED'}`);
+    if (isOpen !== (it.state === 'open')) {
+      console.error(`\nREFUSED: ${id} is recorded "${it.state}", but the amended verification says ${isOpen ? 'OPEN' : 'CLOSED'} right now.`);
+      console.error('If you have already shipped the fix, repoint the check BEFORE the fix (or against the pre-fix tree) so the pin is seen to fire, then --close it.');
       process.exit(1);
     }
   }
