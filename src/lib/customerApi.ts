@@ -1213,6 +1213,40 @@ export type DecisionGroup = {
   task_ids: string[];
 };
 
+export type WorkforceBlocker = {
+  cause: string;
+  /** false for the bucket holding escalations that recorded no cause. Over
+   *  half of them, today — shown rather than dropped. */
+  scoped: boolean;
+  classes: string[] | null;
+  escalations: number;
+  employees: number;
+  employee_names: string[] | null;
+  objectives_blocked: number;
+  /** Transitive: everything frozen behind this cause's work item, since
+   *  claim_de_work_items will not touch a successor until its predecessor is
+   *  done (mig 800's chain walk). */
+  work_items_frozen: number;
+  /** The platform can confirm this one on its own — a blocked_input cause in a
+   *  workspace whose connector circuit is open (mig 819's test). */
+  corroborated: boolean;
+  oldest_at: string;
+  oldest_days: number;
+  task_ids: string[];
+};
+
+/** What is actually wrong with the workforce, by CAUSE rather than by task
+ *  (mig 826).
+ *
+ *  47 objectives and 129 work items trace back to about a dozen problems. The
+ *  queue shows them as hundreds of rows because one cause spans many
+ *  escalations and, sometimes, many employees. */
+export async function listWorkforceBlockers(): Promise<WorkforceBlocker[]> {
+  const { data, error } = await supabase.rpc('list_workforce_blockers');
+  if (error) raise('listWorkforceBlockers', error);
+  return (data ?? []) as WorkforceBlocker[];
+}
+
 /** The queue as about a dozen decisions instead of 412 rows (mig 795). */
 export async function listDecisionGroups(): Promise<DecisionGroup[]> {
   const { data, error } = await supabase.rpc('list_decision_groups');
