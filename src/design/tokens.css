@@ -23,6 +23,10 @@
   --dt-card:    #171e3966; /* card on page; on a panel use --dt-inset       */
   --dt-inset:   #0c112399; /* wells inside cards (code, previews, forms)    */
 
+  /* ── Typography ────────────────────────────────────────────────────── */
+  --dt-font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+                  "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
   /* ── Borders (exactly two + focus) ───────────────────────────────────── */
   --dt-border:        #2d355499; /* navy-700/60 — default hairline          */
   --dt-border-strong: #414b6e;   /* navy-600 — hover / emphasis             */
@@ -100,6 +104,10 @@
   --dt-panel:   #ffffff;
   --dt-card:    #ffffff;
   --dt-inset:   #f2f4f7;
+
+  /* ── Typography ── */
+  --dt-font-sans: "Instrument Sans Variable", ui-sans-serif, system-ui, -apple-system,
+                  BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 
   /* ── Borders ── */
   --dt-border:        #e4e7ec;

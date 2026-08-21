@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './style.css';
+import '@fontsource-variable/instrument-sans';
 import { initSentry, SentryErrorBoundary } from './lib/sentry';
 
 initSentry();

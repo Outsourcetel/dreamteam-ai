@@ -4,18 +4,7 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: [
-          'Inter',
-          'ui-sans-serif',
-          'system-ui',
-          '-apple-system',
-          'BlinkMacSystemFont',
-          '"Segoe UI"',
-          'Roboto',
-          '"Helvetica Neue"',
-          'Arial',
-          'sans-serif',
-        ],
+        sans: ['var(--dt-font-sans)'],
       },
       // ── DreamTeam Design System v1 — semantic tokens (src/design/tokens.css).
       // New/touched UI composes from these; raw slate-* classes are legacy and
