@@ -455,9 +455,16 @@ select 'DEFAULT PRIVILEGES (grantor postgres, schema storage, objtype ' || o.obj
                                        || 'is MISSING. A deleted row is not a clean slate: for functions the '
                                        || 'built-in default is EXECUTE TO PUBLIC.'
                else '.' end
-       || ' Mig 839 revoked exactly this. RLS does not police TRUNCATE, so a table born with D is one '
-       || 'statement from empty. Re-apply: alter default privileges for role postgres in schema storage '
-       || 'revoke all on ' || case o.objtype when 'r' then 'tables' when 'f' then 'functions' else 'sequences' end
+       || ' RLS does not police TRUNCATE, so a table born with D is one statement from empty. '
+       || 'Migration 839 (supabase/migrations/839_storage_default_privileges_stop_granting_the_internet.sql) '
+       || 'revokes exactly this. TWO CAUSES, and they need opposite actions — establish which before doing '
+       || 'anything. (1) 839 is NOT in this database''s ledger: apply it — node scripts/db-query.mjs '
+       || 'supabase/migrations/839_storage_default_privileges_stop_granting_the_internet.sql — do NOT write a '
+       || 'second migration. Check with: select 1 from public.schema_migrations where filename like ''839!_%'' '
+       || 'escape ''!''. (2) 839 IS in the ledger and this is still open: something re-granted the default '
+       || 'after it ran, which is the regrowth this arm exists for. Either way the statement is: alter default '
+       || 'privileges for role postgres in schema storage revoke all on '
+       || case o.objtype when 'r' then 'tables' when 'f' then 'functions' else 'sequences' end
        || ' from anon, authenticated, public;' as violation,
        null::text as note
   from defacl_open o
@@ -480,8 +487,17 @@ union all
 -- ── ARM 6a: a bucket recorded PRIVATE is now PUBLIC, or has vanished. ────
 select 'bucket ' || pb.name || ': recorded PRIVATE (migs 024/031/652 define its RLS policies on the '
        || 'assumption that the bucket itself grants nothing) and it is now '
-       || coalesce(case when b.is_public then 'PUBLIC — every object in it is readable by URL with no key at all'
-                        else 'private' end, 'GONE — the bucket does not exist')
+       -- ⚠ THE NULL BRANCH MUST BE TESTED FIRST, not coalesced around. The first
+       -- draft wrote coalesce(case when b.is_public ... else 'private' end,
+       -- 'GONE'), and "case when NULL then ... else 'private'" returns 'private'
+       -- rather than NULL — so the coalesce never fired and a MISSING bucket was
+       -- reported as "recorded PRIVATE ... and it is now private", which reads as
+       -- nonsense and hides the actual finding. Caught on dev, which is missing
+       -- specialist-media; the vanished-bucket mutation asserts the word GONE for
+       -- exactly this reason.
+       || case when b.id is null then 'GONE — the bucket does not exist'
+               when b.is_public then 'PUBLIC — every object in it is readable by URL with no key at all'
+               else 'private' end
        || '. Either restore it or amend PRIVATE_BUCKETS in scripts/storage-write-perimeter.mjs.' as violation,
        null::text as note
   from (values ${privateBuckets.map((b) => '(' + literal(b) + ')').join(', ')}) pb(name)
@@ -573,7 +589,14 @@ select null::text,
 }
 
 // ── CLI ───────────────────────────────────────────────────────────────────
+// ⚠ certify always reads PRODUCTION; the --dev flag exists only so the
+// mutation suite can be driven against a database that HAS migration 839,
+// during the window where it is applied to dev and not yet to production. It
+// is not a second target for the gate — a checker you can point at a friendlier
+// database is a checker that reports whichever answer you preferred.
 const PROD_REF = 'rfsvmhcqeiyrxivbmpel';
+const DEV_REF = 'nmuntxrcdksyhsdywpan';
+const TARGET_REF = process.argv.includes('--dev') ? DEV_REF : PROD_REF;
 
 function readToken() {
   const env = readFileSync('.env.local', 'utf8').replace(/^﻿/, '');
@@ -582,7 +605,7 @@ function readToken() {
   return line.slice('SUPABASE_ACCESS_TOKEN='.length).replace(/^["']|["']$/g, '').trim();
 }
 
-async function runSql(sql, ref = PROD_REF) {
+async function runSql(sql, ref = TARGET_REF) {
   const res = await fetch(`https://api.supabase.com/v1/projects/${ref}/database/query`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${readToken()}`, 'Content-Type': 'application/json' },
@@ -631,15 +654,15 @@ const BASELINE_WITH_WIDENED = [...BASELINE, 'storage.selftest_widened|anon=r|aut
 const CTRL_UNCHANGED_EXISTING = `  select 'storage.selftest_widened'::text, 'supabase_storage_admin'::text, 'r'::text, 'r'::text, 'supabase_storage_admin'::text`;
 
 /** ARM 4 — a default-ACL row that still grants the surface. */
-const MUT_DEFACL_OPEN = `  select 'r'::text, '{postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres}'::aclitem[], 1::int`;
+const MUT_DEFACL_OPEN = `  select 'r'::text as objtype, '{postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres}'::aclitem[] as eff_acl, 1::int as row_present`;
 
 /** ARM 4 (missing-row form) — no pg_default_acl row for functions, so the
  *  BUILT-IN default (EXECUTE TO PUBLIC) applies. Must be named, and must say
  *  the row is missing. */
-const MUT_DEFACL_MISSING = `  select 'f'::text, acldefault('f', 'postgres'::regrole), 0::int`;
+const MUT_DEFACL_MISSING = `  select 'f'::text as objtype, acldefault('f', 'postgres'::regrole) as eff_acl, 0::int as row_present`;
 
 /** CONTROL — a default-ACL row granting only postgres and service_role. Silent. */
-const CTRL_DEFACL_CLOSED = `  select 'r'::text, '{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}'::aclitem[], 1::int`;
+const CTRL_DEFACL_CLOSED = `  select 'r'::text as objtype, '{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}'::aclitem[] as eff_acl, 1::int as row_present`;
 
 /** ARM 6a — a recorded-private bucket flipped public. */
 const MUT_BUCKET_PUBLIC = `  select 'selftest-private-bucket'::text, true`;
@@ -658,10 +681,30 @@ async function selftest() {
   const notes = (rows) => rows.filter((r) => r.note != null).map((r) => r.note);
 
   // ── DIRECTION 1: the real catalogue must be SILENT and must still count ──
+  // ⚠ SILENCE IS REQUIRED ON PRODUCTION ONLY, and that is a statement about
+  // which database the GATE reads, not a softer bar. Every other check below
+  // asserts a DELTA from `base`, so they are exact whatever `base` is — but
+  // "the live catalogue is clean" is a claim about the real perimeter and only
+  // production has one. On --dev the baseline is PRINTED IN FULL instead of
+  // being asserted, because dev is a rebuilt copy that drifts (register item
+  // B-6) and passing a dev run off as a production result is the D-12 defect:
+  // a check that was right about the wrong subject.
+  const onDev = TARGET_REF === DEV_REF;
   const clean = await runSql(storageWritePerimeterSql());
   const base = violations(clean).length;
-  check('live catalogue is silent', base === 0,
-    base ? violations(clean).join(' | ').slice(0, 500) : 'no violations');
+  if (onDev) {
+    console.log(`  INFO  running against DEV (${DEV_REF}) — the gate reads PRODUCTION. `
+      + `${base} live violation(s) here are DEV'S OWN STATE and are NOT asserted away; `
+      + `every mutation below asserts a delta from that number.`);
+    for (const v of violations(clean)) console.log(`        · ${v.slice(0, 200)}`);
+  }
+  // NOT a check() on dev — a check that cannot fail inflates the pass count and
+  // is the theatre this repo has already paid for. It is simply not run there,
+  // and the tally says so.
+  if (!onDev) {
+    check('live catalogue is silent', base === 0,
+      base ? violations(clean).join(' | ').slice(0, 500) : 'no violations');
+  }
   check('denominator prints on a PASS', notes(clean).length === 1,
     notes(clean)[0]?.slice(0, 200) ?? '(no note — the denominator is missing)');
   check('the denominator names the KNOWN-BLOCKED items and the escalation doc',
@@ -820,7 +863,8 @@ async function selftest() {
     violations(v4).some((v) => v.includes('0 role/privilege pairs were checked')),
     `${violations(v4).length} violation(s)`);
 
-  console.log(`\n${pass + fail} mutation(s) · ${pass} passed · ${fail} failed`);
+  console.log(`\n${pass + fail} mutation(s) · ${pass} passed · ${fail} failed  [target: `
+    + `${onDev ? `DEV ${DEV_REF} — the live-silence check is NOT run here` : `PRODUCTION ${PROD_REF}`}]`);
   return fail === 0 ? 0 : 1;
 }
 
