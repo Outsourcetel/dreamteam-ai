@@ -467,17 +467,88 @@ node scripts/db-query.mjs --file supabase/migrations/NNN_an_approver_who_is_not_
 
 ### Task 3: A role declares what a step grants
 
-⚠ **Blocked on the Prerequisite above.** Do not start until the authority seam is agreed.
+⚠ **UNBLOCKED 2026-08-21. The authority seam was investigated and resolves; the
+original "do not start" gate is lifted, and the reasoning is recorded here so it is
+not re-litigated.**
+
+**Why the seam does not block this task.** The concern was that the authority cutover
+might move the meaning of a granted limit from `de_autonomy` to `authority_rules`
+underneath this work. Measured on production:
+
+- `authority_rules` holds **0 rows**, so `evaluate_authority` falls through and allows.
+- `evaluate_authority(p_tenant_id, p_actor_kind, p_actor_id, p_category, p_measures)`
+  exists with **3 callers** — wired and inert, exactly as the spec described.
+- `decide_action_execution` reads `de_autonomy.max_amount_cents` directly. **That is the
+  enforced path today.**
+
+So this task writes through `trust_apply_level` into `de_autonomy`, which is what
+already happens, and the ladder merely supplies the values. It does not obstruct a
+future cutover: whoever moves the limit into `authority_rules` moves one writer, and
+the ladder keeps declaring what a step means regardless of where the limit lands.
+
+⚠ **THE "WHY THIS TASK EXISTS" BELOW WAS WRONG TWICE AND IS CORRECTED HERE.**
+
+The original text said levels 1, 2 and 3 are "identical and unlimited" and that
+approving a first step "would remove a limit rather than loosen one." Measured:
+
+| level | `enabled` | `max_amount_cents` |
+|---|---|---|
+| 0 | **false** | null |
+| 1 / 2 / 3 | true | **null** |
+
+Level 0 is **off**, not unlimited — so a first step is not a loosening at all, it is
+off-to-on. But "unlimited" is also wrong, and this is the part that matters. The actual
+gate in `decide_action_execution` reads:
+
+```sql
+if coalesce(v_autonomy.enabled, false)
+   and (p_amount_cents is null
+        or (v_autonomy.max_amount_cents is not null and p_amount_cents <= v_autonomy.max_amount_cents))
+```
+
+A null `max_amount_cents` with a non-null amount evaluates **false**, so the action
+does NOT auto-execute — it escalates to a person. **The null cap fails closed on
+money.** Guardrails (`require_approval_over_cents`, 14 rules configured live; blocked
+phrases; blocked topics; the destructive floor) gate independently on top of that.
+
+**So the true statement of the defect is narrower and should be built against, not the
+alarming version:** approving a step today turns on auto-execution for actions that
+carry **no monetary amount**, without bound, and levels 1, 2 and 3 are
+indistinguishable from each other — so "earning" level 2 means nothing concrete. A role
+must be able to say what a step grants before an employee in it can take one.
+
+**Why this task exists.** `trust_policies.ladder` is the per-policy override that would
+express this, and it is NULL on all **58** policies (not 66 — the count fell as
+policies were retired). Both currently-eligible policies are `action_execute`.
+
+**What already exists — do not rebuild it.** Verified live before this task was
+written:
+
+- `validate_trust_ladder(p_ladder jsonb, p_uses_confidence boolean, p_uses_amount boolean, p_max_level integer default 3)`
+  — a full shape validator: array-ness, 1..max_level entries with level 0 implicit,
+  and monotonicity of rank/confidence/amount. **Use it; do not write a second
+  validator.**
+- `trust_ladder_settings(p_policy trust_policies, p_level integer)` — reads a policy's
+  ladder and returns the settings for a level.
+- `set_trust_ladder(p_policy_id uuid, p_ladder jsonb, p_display_name text default null, p_criteria jsonb default null, p_clear_ladder boolean default false)`
+  — the per-policy writer.
+- `instantiate_role_archetype_internal(p_tenant_id uuid, p_archetype_key text, p_de_name text, p_persona_name text default null, p_via text default 'internal')`
+  — the hire-time writer that already copies `autonomy_templates`.
+- `trust_apply_level(p_tenant_id uuid, p_category text, p_level integer, p_actor uuid, p_source_category text default null, p_de_id uuid default null)`
+  — writes `de_autonomy`.
+
+**What is missing, and is this task's whole scope:** the **role-level** declaration
+(`role_archetypes.trust_ladder`), its inheritance at hire, and the refusal —
+`promotion_is_possible`, so that a role which has declared nothing cannot have its
+employees promoted.
+
 
 **Files:**
 - Create: `supabase/migrations/NNN_a_role_declares_what_a_step_grants.sql` (claim in Step 1)
 - Test: `tests/trust-promotion.test.ts` (create in Step 6)
-
 **Interfaces:**
 - Consumes: `role_archetypes` (key text PK, `autonomy_templates` jsonb), `instantiate_role_archetype_internal`, `trust_policies.ladder` jsonb, `validate_trust_ladder`, `set_trust_ladder`.
 - Produces: `role_archetypes.trust_ladder jsonb`; `trust_policies.ladder` populated at hire; `public.promotion_is_possible(p_policy_id uuid) → jsonb` returning `{"possible": bool, "why": text}`.
-
-**Why this task exists.** `trust_level_settings` returns, for `action_execute`, `enabled: true, max_amount_cents: null, min_confidence: null` at **every** level — levels 1, 2 and 3 are identical and unlimited. Both currently-eligible policies are `action_execute`, so approving their first step would remove a limit rather than loosen one. `trust_policies.ladder` is the per-policy override and is NULL on all 66.
 
 - [ ] **Step 1: Claim the migration number**
 
