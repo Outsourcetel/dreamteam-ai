@@ -23,6 +23,14 @@ import { listAssignablePeople } from '../../../lib/orgApi';
 // pre-fill or trigger a decision; the decide path below is untouched.
 import { listApprovalBriefs, briefSortKey, BRIEF_CHIP } from '../../../lib/approvalBriefsApi';
 import type { ApprovalBrief } from '../../../lib/approvalBriefsApi';
+// Task 6 (trust-promotion program, 2026-08-21): "the evidence is on the card,
+// and thin evidence says so". getTrustPolicyById reads the pending_evidence
+// snapshot a trust_promotion task points at; trustPromotionPresentation turns
+// it into copy without ever touching supabase itself (pure, unit-tested —
+// tests/trust-promotion.test.ts).
+import { getTrustPolicyById } from '../../../lib/trustApi';
+import type { TrustPolicy } from '../../../lib/trustApi';
+import { trustPromotionCardCopy, isThinTrustEvidence, extractPolicyEvidence } from '../../../lib/trustPromotionPresentation';
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -332,6 +340,15 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [deciding, setDeciding] = useState(false);
   const [gatedExec, setGatedExec] = useState<GatedExecutionPreview | null>(null);
+  // Task 6: the trust policy a pending trust_promotion task points at, and
+  // the employee it names (de_id resolved separately — human_tasks carries
+  // no de_id for this type; only related_table/related_id, to trust_policies).
+  // Raw data only, same discipline as gatedExec — the card copy is derived
+  // inline below, next to gatedDraft, rather than stored.
+  const [trustPolicy, setTrustPolicy] = useState<TrustPolicy | null>(null);
+  const [trustEmployeeName, setTrustEmployeeName] = useState<string | null>(null);
+  const [trustLoading, setTrustLoading] = useState(false);
+  const [trustLoadError, setTrustLoadError] = useState<string | null>(null);
   const [impRole, setImpRole] = useState<{ archetype: string; peers: number } | null>(null);
   const [impScope, setImpScope] = useState<'de' | 'role'>('de');
   // Entity-guard signals (fix-pass 2026-07-28): a proposal naming a live
@@ -423,6 +440,41 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
     void import('../../../lib/connectorApi').then(({ getGatedExecutionForTask }) =>
       getGatedExecutionForTask(sel.id).then(exec => { if (!cancelled) setGatedExec(exec); })
     ).catch(() => { /* draft panel is an overlay — task still decidable */ });
+    return () => { cancelled = true; };
+  }, [selectedId, tasks]);
+
+  // Task 6: "the evidence is on the card, and thin evidence says so". A
+  // trust_promotion task's own row carries no evidence — it lives on the
+  // linked trust_policies row (related_table = 'trust_policies', related_id =
+  // policy id), so an approver had to leave this page to find it. Load it
+  // whenever a trust_promotion task is selected, same pattern as gatedExec.
+  useEffect(() => {
+    setTrustPolicy(null); setTrustEmployeeName(null); setTrustLoadError(null); setTrustLoading(false);
+    const sel = tasks.find(t => t.id === selectedId);
+    if (!sel || sel.type !== 'trust_promotion' || !sel.related_id) return;
+    let cancelled = false;
+    setTrustLoading(true);
+    void getTrustPolicyById(sel.related_id)
+      .then(async policy => {
+        if (cancelled) return;
+        setTrustPolicy(policy);
+        // human_tasks carries no de_id for this type (confirmed against the
+        // writers that raise it — neither sets the column), so the employee
+        // name comes from the policy's own de_id, resolved separately. A
+        // tenant-scoped policy (de_id null) names no single employee — the
+        // card falls back to naming the workspace instead.
+        if (policy?.de_id) {
+          try {
+            const des = await listDigitalEmployees(true); // include retired — still the right name
+            if (!cancelled) {
+              const de = des.find(d => d.id === policy.de_id);
+              setTrustEmployeeName(de ? (de.persona_name || de.name) : null);
+            }
+          } catch { /* falls back to the workspace phrasing below */ }
+        }
+      })
+      .catch(err => { if (!cancelled) setTrustLoadError((err as Error)?.message || 'Could not load the evidence behind this request.'); })
+      .finally(() => { if (!cancelled) setTrustLoading(false); });
     return () => { cancelled = true; };
   }, [selectedId, tasks]);
 
@@ -755,6 +807,24 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   // Same precedence as the Full-draft display below — the text the approver
   // sees is exactly the text their edit replaces.
   const gatedDraft = gatedExec ? (gatedExec.params.body || gatedExec.params.note || '') : '';
+
+  // Task 6: derived from the raw trustPolicy/trustEmployeeName state above,
+  // same discipline as gatedDraft — computed on render rather than stored, so
+  // there is only one place (the effect) that can leave it stale.
+  // extractPolicyEvidence handles BOTH shapes pending_evidence is shipped in
+  // today (see its own header) — a policy with no readable criteria at all
+  // (neither shape matched) renders as an explicit "no evidence snapshot"
+  // notice below, never as a silent zero.
+  const trustEvidence = trustPolicy ? extractPolicyEvidence(trustPolicy.pending_evidence) : null;
+  const trustCopy = (trustPolicy && trustEvidence) ? trustPromotionCardCopy({
+    employeeName: trustEmployeeName || 'This workspace',
+    category: trustPolicy.action_category,
+    currentLevel: trustPolicy.current_level,
+    targetLevel: trustPolicy.target_level,
+    evidence: trustEvidence,
+    ladder: trustPolicy.ladder ?? null,
+  }) : null;
+  const trustThin = trustEvidence ? isThinTrustEvidence(trustEvidence) : false;
 
   return (
     <div className="p-6">
@@ -1382,6 +1452,39 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                           </button>
                         </div>
                       </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Task 6 (trust-promotion program, 2026-08-21): "the evidence
+                    is on the card, and thin evidence says so". Read straight
+                    off the linked policy's pending_evidence snapshot — the
+                    same numbers trust_evidence_for computed when this request
+                    was raised — so deciding is a read, not an investigation.
+                    ⚠ Thin evidence is RAISED, not suppressed (founder ruling):
+                    this block never hides a no-history request, it says so —
+                    both in the sentence and in the chip beside it. */}
+                {selected.type === 'trust_promotion' && (
+                  <div className="mt-4 bg-dt-page border border-dt-border rounded-lg px-3 py-2.5">
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <p className="text-[11px] uppercase tracking-wide text-dt-muted">
+                        Evidence behind this request
+                      </p>
+                      {trustThin && <Chip tone="warn">Thin evidence</Chip>}
+                    </div>
+                    {trustLoading ? (
+                      <p className="text-xs text-dt-support">Loading the evidence behind this request…</p>
+                    ) : trustLoadError ? (
+                      <p className="text-xs text-amber-300">{trustLoadError}</p>
+                    ) : !trustPolicy ? (
+                      <p className="text-xs text-dt-support">No trust policy is linked to this request — approving would change nothing.</p>
+                    ) : !trustCopy ? (
+                      <p className="text-xs text-dt-support">This request carries no readable evidence snapshot.</p>
+                    ) : (
+                      <>
+                        <p className="text-xs text-dt-body mb-1.5">{trustCopy.detail}</p>
+                        <p className="text-[11px] text-dt-muted">{trustCopy.meta}</p>
+                      </>
                     )}
                   </div>
                 )}

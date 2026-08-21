@@ -63,6 +63,14 @@ export interface TrustPolicy {
   ladder?: TrustLadderLevel[] | null;
   display_name?: string | null;
   max_level?: number;
+  /** The evidence snapshot a promotion request was raised with (set by
+   *  request_trust_promotion / raise_trust_widening_proposals / — once
+   *  migration 828 applies — open_trust_promotion_request), cleared when the
+   *  request is decided. `unknown` because its shape depends on which writer
+   *  raised it: a flat trust_evidence_for() return, or {dial, pattern,
+   *  policy_evidence} — see trustPromotionPresentation.ts's
+   *  extractPolicyEvidence, which is the only place this should be parsed. */
+  pending_evidence?: unknown;
 }
 
 // ── The surface-derived Trust tab (list_de_trust_surface) ────────────────
@@ -299,6 +307,19 @@ export function earnedLadderSettings(
 
 export async function listTrustPolicies(): Promise<TrustPolicy[]> {
   return listTenantRows<TrustPolicy>('trust_policies', 'action_category', true, 'listTrustPolicies');
+}
+
+/** One policy by id, including its pending_evidence snapshot — the review
+ *  card (Task 6, trust-promotion program) reads this for the human_tasks row
+ *  a pending trust_promotion task points at (related_table = 'trust_policies',
+ *  related_id = this id). RLS already scopes trust_policies to the caller's
+ *  tenant, so a row that is gone or in another tenant comes back as null, not
+ *  a thrown error — but a REAL failure (network, RLS misconfiguration) still
+ *  throws via raise(), unlike getDeGateStatus above, which swallows both. */
+export async function getTrustPolicyById(id: string): Promise<TrustPolicy | null> {
+  const { data, error } = await supabase.from('trust_policies').select('*').eq('id', id).maybeSingle();
+  if (error) raise('getTrustPolicyById', error);
+  return (data as TrustPolicy | null) ?? null;
 }
 
 export type TrustReadinessRow = {
