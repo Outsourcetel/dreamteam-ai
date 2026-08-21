@@ -17,12 +17,16 @@
 //   which re-verifies evidence and is undone by trust_demote.
 //
 //   EVIDENCE — every OPEN system-raised proposal (trust_policies.requested_by
-//   IS NULL is the marker; the human path always stamps auth.uid()) cites
-//   >= 3 decisions that the ledger, RE-READ at probe time, confirms as
-//   approved + production-origin + landed (mig 679's shared predicate). A
-//   stored citation is a stored marker, never truth (mig 642) — so the arms
-//   join back to human_tasks and action_executions rather than trusting
-//   pending_evidence.
+//   IS NULL is the marker; the human path always stamps auth.uid()) is
+//   re-derivable from the ledger, RE-READ at probe time, not trusted from
+//   pending_evidence (mig 642: a stored marker is never truth). Mig 828 gave
+//   this population TWO shapes, and each is re-derived its own way: a
+//   PATTERN-FILED proposal (raise_trust_widening_proposals, the detector)
+//   cites >= 3 decisions that the ledger confirms as approved +
+//   production-origin + landed (mig 679's shared predicate) — arms 9/10. A
+//   CRITERIA-FILED proposal (request_eligible_promotions, via
+//   trust_evidence_for) carries no citations to re-verify; instead its
+//   policy must STILL satisfy its own criteria when re-asked — arm 9b.
 //
 // ⚠ has_function_privilege / has_table_privilege answer INCLUDING
 // inheritance through PUBLIC — a REVOKE is not a description of the
@@ -126,6 +130,13 @@ ${orphanExtra}` : ''}
 ),
 counted as (
   select (select count(*) from open_proposals) as proposals_scanned,
+         -- Split by shape (mig 828 gave the population two writers): arm 9's
+         -- real denominator and arm 9b's, so neither can quietly fall to
+         -- zero while the combined total still reads healthy.
+         (select count(*) filter (where op.pending_evidence ? 'pattern')
+            from open_proposals op) as pattern_filed,
+         (select count(*) filter (where not (op.pending_evidence ? 'pattern'))
+            from open_proposals op) as criteria_filed,
          (select count(*) from cited) as citations_checked,
          (select count(*) from orphan_scan) as orphan_scanned
 )
@@ -317,9 +328,16 @@ select 'sweep-unfed — de_governance_sweep_internal no longer calls '
 
 union all
 
--- ── 9. CITATION BELOW FLOOR — an open system proposal must cite >= 3
---      decisions. One that does not should not exist (the writer only files
---      what the detector qualified at N=3). ────────────────────────────────
+-- ── 9. CITATION BELOW FLOOR — an open, PATTERN-FILED system proposal must
+--      cite >= 3 decisions. One that does not should not exist (the writer
+--      only files what the detector qualified at N=3). Scoped to proposals
+--      carrying a 'pattern' key — the detector's shape (raise_trust_
+--      widening_proposals). Mig 828 added a SECOND writer
+--      (request_eligible_promotions, via trust_evidence_for) whose evidence
+--      carries 'criteria' and no 'pattern' at all — it never claimed a
+--      citation count, so it is not this arm's population. That shape is
+--      judged by 9b below, on whether its policy's OWN criteria still hold,
+--      not on a citation floor it was never subject to. ───────────────────
 select 'citation-below-floor — ' || op.slug || ' [task ' || op.task_id || ']: '
        || 'open system-raised proposal cites '
        || coalesce(jsonb_array_length(op.pending_evidence->'pattern'->'decisions'), 0)
@@ -327,7 +345,26 @@ select 'citation-below-floor — ' || op.slug || ' [task ' || op.task_id || ']: 
        || 'edited after filing or a writer bypassed the detector.' as violation,
        null::text as note
   from open_proposals op
- where coalesce(jsonb_array_length(op.pending_evidence->'pattern'->'decisions'), 0) < 3
+ where op.pending_evidence ? 'pattern'
+   and coalesce(jsonb_array_length(op.pending_evidence->'pattern'->'decisions'), 0) < 3
+
+union all
+
+-- ── 9b. ELIGIBILITY NOT RE-DERIVABLE — a criteria-filed proposal whose policy
+--       does not currently satisfy its own criteria. The stored payload is a
+--       stored marker; this arm re-asks trust_evidence_for (mig 642), the
+--       same discipline arm 10 applies to citations. Population: every open
+--       proposal WITHOUT a 'pattern' key (mig 828's second writer; see arm
+--       9's comment). ───────────────────────────────────────────────────────
+select 'eligibility-not-re-derivable — ' || op.slug || ' [task ' || op.task_id
+       || ']: open criteria-filed proposal whose policy does NOT currently '
+       || 'satisfy its own criteria. Either the evidence was edited after '
+       || 'filing, or a writer bypassed the eligibility check.' as violation,
+       null::text as note
+  from open_proposals op
+  join trust_policies tp on tp.pending_task_id = op.task_id
+ where not (op.pending_evidence ? 'pattern')
+   and coalesce((public.trust_evidence_for(tp)->>'eligible')::boolean, false) is not true
 
 union all
 
@@ -374,7 +411,9 @@ union all
 --    failed on). Zero open proposals is a legal state — the line says so. ───
 select null::text as violation,
        'trust-proposer-boundary: ' || c.proposals_scanned
-       || ' open system proposal(s) scanned; ' || c.citations_checked
+       || ' open system proposal(s) scanned (' || c.pattern_filed
+       || ' pattern-filed, judged at the N=3 floor; ' || c.criteria_filed
+       || ' criteria-filed, judged by re-derived eligibility); ' || c.citations_checked
        || ' citation(s) re-verified against the ledger; ' || c.orphan_scanned
        || ' pending trust_promotion task(s) in the orphan scan; detector '
        || 'currently reports '
