@@ -38,7 +38,7 @@ const STEP_LABEL: Record<string, string> = {
 };
 const OUTCOME_CHIP: Record<string, [string, string]> = {
   ok: ['OK', 'bg-emerald-500/20 text-emerald-400'],
-  skipped_not_connected: ['Not connected — skipped', 'bg-slate-500 text-dt-body'],
+  skipped_not_connected: ['Not connected — skipped', 'bg-dt-border-strong text-dt-body'],
   failed: ['Failed', 'bg-red-500/20 text-red-400'],
   denied_no_access: ['No access — blocked', 'bg-rose-500/20 text-rose-300'],
 };
@@ -78,13 +78,13 @@ function StepList({ steps }: { steps: EvidenceStep[] }) {
   return (
     <div className="space-y-2 mt-2">
       {steps.map((s, i) => {
-        const [ol, oc] = OUTCOME_CHIP[s.outcome] ?? [s.outcome, 'bg-slate-600 text-dt-support'];
+        const [ol, oc] = OUTCOME_CHIP[s.outcome] ?? [s.outcome, 'bg-dt-border-strong text-dt-support'];
         return (
           <div key={i} className="flex gap-2">
             <span className="text-sm leading-5">{STEP_ICON[s.kind] ?? '•'}</span>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[11px] font-medium text-white">{STEP_LABEL[s.kind] ?? s.kind}</span>
+                <span className="text-[11px] font-medium text-dt-title">{STEP_LABEL[s.kind] ?? s.kind}</span>
                 <span className="text-[10px] text-dt-support">{s.system}</span>
                 <Chip label={ol} cls={oc} />
               </div>

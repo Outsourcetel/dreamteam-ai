@@ -173,7 +173,7 @@ function taskBadgeStyle(type: TaskType): string {
   if (type === 'knowledge_revision') return 'bg-amber-500/20 text-amber-300';
   if (type === 'inquiry_review') return 'bg-sky-500/20 text-sky-300';
   if (type === 'action_approval') return 'bg-fuchsia-500/20 text-fuchsia-300';
-  return 'bg-slate-600 text-dt-support';
+  return 'bg-dt-border-strong text-dt-support';
 }
 
 function taskBadgeLabel(type: TaskType): string {
@@ -195,10 +195,10 @@ function statusBadge(status: TaskStatus) {
     pending: 'bg-amber-500/15 text-amber-400',
     approved: 'bg-emerald-500/15 text-emerald-400',
     rejected: 'bg-red-500/15 text-red-400',
-    completed: 'bg-slate-600 text-dt-support',
+    completed: 'bg-dt-border-strong text-dt-support',
     // Approved, but never carried out, and now voided (migration 642). Not a
     // rejection — nobody said no — so it must not wear the rejection colour.
-    expired: 'bg-slate-600 text-dt-support',
+    expired: 'bg-dt-border-strong text-dt-support',
   };
   const labels: Record<TaskStatus, string> = {
     pending: 'Pending', approved: 'Approved', rejected: 'Rejected',
@@ -796,8 +796,8 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
             {[
               { label: 'Pending', value: String(pending.length), color: pending.length > 0 ? 'text-amber-300' : 'text-emerald-300' },
               { label: 'Stalled work', value: String(stalledCount), color: stalledCount > 0 ? 'text-orange-300' : 'text-emerald-300' },
-              { label: 'Decided', value: String(decidedCount), color: 'text-white' },
-              { label: 'Approval rate', value: `${approvalRate}%`, color: 'text-white' },
+              { label: 'Decided', value: String(decidedCount), color: 'text-dt-title' },
+              { label: 'Approval rate', value: `${approvalRate}%`, color: 'text-dt-title' },
             ].map(s => (
               <div key={s.label} className="bg-dt-card border border-dt-border rounded-xl p-4">
                 <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{s.label}</p>
@@ -1200,10 +1200,10 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
               <div className="col-span-2 bg-dt-card border border-dt-border rounded-2xl p-5 sticky top-0 max-h-[calc(100vh-3rem)] overflow-y-auto">
                 <div className="flex items-center justify-between mb-3">
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${taskBadgeStyle(selected.type)}`}>{taskBadgeLabel(selected.type)}</span>
-                  <button onClick={() => setSelectedId(null)} className="w-6 h-6 rounded bg-dt-panel text-dt-muted hover:text-white flex items-center justify-center text-xs">×</button>
+                  <button onClick={() => setSelectedId(null)} className="w-6 h-6 rounded bg-dt-panel text-dt-muted hover:text-dt-body flex items-center justify-center text-xs">×</button>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap mb-1">
-                  <h3 className="text-sm font-semibold text-white">{selected.title}</h3>
+                  <h3 className="text-sm font-semibold text-dt-title">{selected.title}</h3>
                   {selectedStale && stalledBadge(selectedStale.tier)}
                 </div>
                 {/* ⚠ whitespace-pre-wrap is LOAD-BEARING, not styling. An

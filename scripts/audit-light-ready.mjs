@@ -13,12 +13,90 @@ const NO_COMMENTS = `| grep -v '^[[:space:]]*\\(//\\|\\*\\)'`;
 // (bg-indigo-500/10) is effectively the surface underneath — white text on it
 // is a real light-theme hazard, so the shade must NOT carry a /NN opacity
 // suffix. (?![\d/]) also stops bg-indigo-500/10 half-matching as bg-indigo-50.
-const COLORED_BG = 'bg-((?:indigo|rose|emerald|sky|amber|violet|purple|blue|green|red|teal|cyan|orange|fuchsia|pink)-\\d+(?![\\d/])|dt-accent-strong|dt-accent-hover|gradient)';
+// `dt-accent` (bare, not just -strong/-hover) added 2026-08-21 (Task 5, group
+// 8): it is opaque in every theme block including dt-force-dark (tokens.css),
+// so it belongs beside dt-accent-strong/-hover for the same reason they're
+// here — WorkforceEconomicsPanel.tsx's "Save baseline" button was the one
+// real case this closed.
+const COLORED_BG = 'bg-((?:indigo|rose|emerald|sky|amber|violet|purple|blue|green|red|teal|cyan|orange|fuchsia|pink)-\\d+(?![\\d/])|dt-accent(?:-strong|-hover)?|gradient)';
+
+// ── Sanctioned survivors (doc §7) — excluded by NAME, not by softening the
+// baseline. Both lists are grep-blind spots: COLORED_BG only recognizes a
+// literal `bg-<color>-NNN` class in the SAME line, so it cannot see a runtime
+// `style={{backgroundColor: ...}}` (often on an adjacent line) or a
+// template-literal class like `${de.color}` — both are genuine, always-opaque
+// solid fills, just invisible to a className-string regex. Each entry below
+// is one doc §7 row; if a matched line's surrounding code changes, re-verify
+// it's still a solid-fill/control-shade line before leaving it excluded.
+const SOLID_FILL_SURVIVORS = [
+  // EndUserChatPage.tsx — accentColor/brandColor (or literal #64748b for
+  // role==='system') inline-style fills: header/avatar/composer/send button
+  // and the customer's own outgoing bubble.
+  { file: 'EndUserChatPage.tsx', contains: 'text-xl font-bold text-white mb-3' },
+  { file: 'EndUserChatPage.tsx', contains: 'text-sm font-semibold text-white rounded-xl transition-all hover:opacity-90' },
+  { file: 'EndUserChatPage.tsx', contains: 'text-sm font-bold text-white"' },
+  { file: 'EndUserChatPage.tsx', contains: 'text-xs font-bold text-white mr-2.5 mt-0.5' },
+  { file: 'EndUserChatPage.tsx', contains: "'text-white rounded-br-sm'" },
+  { file: 'EndUserChatPage.tsx', contains: 'text-xs font-bold text-white mr-2.5"' },
+  { file: 'EndUserChatPage.tsx', contains: 'rounded-xl text-white text-sm font-medium disabled:opacity-40' },
+  // DEChatDock.tsx — `${de.color}`/`${msgDe.color}` template-literal avatar
+  // fills; de.color is always one of the file's own fixed bg-*-600 literals.
+  { file: 'DEChatDock.tsx', contains: '${de.color} flex items-center justify-center text-white text-xs font-bold flex-shrink-0' },
+  { file: 'DEChatDock.tsx', contains: '${de.color} mx-auto flex items-center justify-center text-white text-lg font-bold' },
+  { file: 'DEChatDock.tsx', contains: '${msgDe.color} flex items-center justify-center text-white text-xs flex-shrink-0 mt-0.5' },
+  { file: 'DEChatDock.tsx', contains: '${de.color} flex items-center justify-center text-white text-xs flex-shrink-0 mt-0.5' },
+  { file: 'DEChatDock.tsx', contains: '${de.color} flex items-center justify-center text-white text-[10px] font-bold' },
+  { file: 'DEChatDock.tsx', contains: '${de.color} hover:brightness-110 text-white text-base font-bold' },
+  // SettingsPage.tsx — accentColor inline-style fills: active nav tab plus
+  // every primary Save/Copy/Generate button on the page.
+  { file: 'SettingsPage.tsx', contains: "activeTab === t ? 'text-white'" },
+  { file: 'SettingsPage.tsx', contains: 'px-6 py-2.5 text-white text-sm font-medium rounded-xl disabled:opacity-50 transition-all' },
+  { file: 'SettingsPage.tsx', contains: 'px-6 py-2.5 text-white text-sm font-medium rounded-xl disabled:opacity-40 transition-all' },
+  { file: 'SettingsPage.tsx', contains: 'px-3 py-1.5 text-xs text-white rounded-lg disabled:opacity-40 transition-all' },
+  { file: 'SettingsPage.tsx', contains: 'px-3 py-2 text-xs text-white rounded-lg flex-shrink-0' },
+  { file: 'SettingsPage.tsx', contains: 'px-5 py-2.5 text-white text-sm font-medium rounded-xl disabled:opacity-50 flex-shrink-0' },
+  // UserManagementPage.tsx — accentColor inline-style fills: invite-modal
+  // submit, "+ Invite Member", active status-filter pill, "Open Organisation".
+  { file: 'UserManagementPage.tsx', contains: 'py-2.5 rounded-xl text-sm font-medium text-white transition-all disabled:opacity-50' },
+  { file: 'UserManagementPage.tsx', contains: 'px-4 py-2 rounded-xl text-white text-sm font-medium"' },
+  { file: 'UserManagementPage.tsx', contains: "statusFilter === s ? 'text-white'" },
+  { file: 'UserManagementPage.tsx', contains: 'text-xs px-3 py-1.5 rounded-lg text-white transition-all shrink-0' },
+  // CommsSettingsCard.tsx — accentColor inline-style Save button.
+  { file: 'CommsSettingsCard.tsx', contains: 'text-white text-sm font-medium rounded-xl disabled:opacity-50 transition-all' },
+  // PageTabs.tsx — shared portal tab-bar; active branch is accentColor via
+  // style prop (the inactive branch's hover was a real hazard and IS
+  // converted, so only the active-state literal survives here).
+  { file: 'PageTabs.tsx', contains: "page === t.id ? 'text-white'" },
+  // Sidebar.tsx — collapsed-sidebar company badge, activeCompany.badgeColor.
+  { file: 'Sidebar.tsx', contains: 'text-xs font-bold text-white cursor-pointer' },
+  // LoginPage.tsx leftPanel — fixed dark-navy gradient marketing hero
+  // (hidden lg:flex), not theme-reactive at all.
+  { file: 'LoginPage.tsx', contains: 'bg-white/20 flex items-center justify-center text-white font-bold' },
+  { file: 'LoginPage.tsx', contains: '"text-white font-bold text-lg"' },
+  { file: 'LoginPage.tsx', contains: 'text-4xl font-bold text-white mb-4 leading-tight' },
+  { file: 'LoginPage.tsx', contains: '"text-white text-sm font-medium"' },
+];
+
+// Control-shade focus rings (doc §7): `focus:border-slate-500/600`, always
+// paired with `placeholder-slate-500/600` on the same input. Kept literal
+// because `dt-border-strong`'s light value is ~1.4:1 against white — an
+// invisible focus ring — while slate-500 holds ~4.2:1 in both themes by not
+// riding the theme remap. Exactly five lines; see doc §7 for the contrast math.
+const CONTROL_SHADE_FOCUS_RING = [
+  { file: 'AISessionPanel.tsx', contains: 'focus:outline-none focus:border-slate-500' },
+  { file: 'GovernanceAIPanel.tsx', contains: 'focus:outline-none focus:border-slate-500' },
+  { file: 'SecurityAccessPage.tsx', contains: 'placeholder-slate-600 focus:outline-none focus:border-slate-500' },
+  { file: 'LivePlaybookBuilder.tsx', contains: 'focus:outline-none focus:border-slate-500' },
+];
+
+const excluded = (l, list) => list.some((e) => l.includes(e.file) && l.includes(e.contains));
 
 const lines = (pat) => sh(`grep -rn "${pat}" ${G} ${NO_COMMENTS}`).split('\n').filter(Boolean);
-const bareWhite = lines('text-white').filter(l => !new RegExp(COLORED_BG).test(l));
+const bareWhite = lines('text-white')
+  .filter(l => !new RegExp(COLORED_BG).test(l))
+  .filter(l => !excluded(l, SOLID_FILL_SURVIVORS));
 const slateBg = lines('bg-slate-');
-const slateBorder = lines('border-slate-');
+const slateBorder = lines('border-slate-').filter(l => !excluded(l, CONTROL_SHADE_FOCUS_RING));
 const slateText = lines('text-slate-');
 
 // Baselines pinned 2026-08-21 (first measurement). Tighten in the SAME
@@ -330,7 +408,75 @@ const slateText = lines('text-slate-');
 // (1 hit) — WorkforceBoard.tsx's actual JSX render-consumer, but an ops page
 // not named here. All left for a later pass. No `divide-slate-` hits in any
 // file in this group (checked by grep across the whole set).
-const BASELINE = { 'bare text-white': 216, 'bg-slate': 28, 'border-slate': 6, 'text-slate': 2 };
+//
+// RATCHETED 2026-08-21 (Task 5, group 8 — CLOSING THE SWEEP). Everything
+// `--files` still listed, plus the two deferred items named by this group's
+// brief. Converted 185 bare text-white (PlatformConsolePage.tsx 35,
+// EndUserChatPage.tsx 9 real + 7 identified as sanctioned inline-fill
+// survivors, DEChatDock.tsx 9 real + 6 survivors, PipelineLive.tsx,
+// CustomerOnboardingLive.tsx, IntelligencePages.tsx, CommercialContinuity
+// Page.tsx, CustomerRenewalPage.tsx, GettingStartedGuide.tsx,
+// MfaEnrollmentPanel.tsx, LiveProvingGround.tsx, SelfLearningPage.tsx,
+// LiveOutcomesPage.tsx, ChangePasswordModal.tsx, PlatformEmailKeyPanel.tsx,
+// OrgSetupScreen.tsx, PlatformInvitesPanel.tsx, PlatformTeamPage.tsx,
+// HumanTasksPage.tsx, ChatCore.tsx, SetPasswordScreen.tsx,
+// SupportTriageRulesPage.tsx, MyAccountBadge.tsx, App.tsx (also both
+// text-slate hits), PlatformAIEnginePanel.tsx, PageErrorBoundary.tsx,
+// LiveDataStates.tsx, PageTabs.tsx (the real hazard half — see below),
+// HostedChatPage.tsx, DEActivityPage.tsx) and AISessionPanel.tsx's 5 (header,
+// close button, composer text, Undo link, and — the group's first named
+// deferred item — the `bg-dt-panel text-white` chat bubble, all converted to
+// match GovernanceAIPanel.tsx, its already-shipped sibling, line for line:
+// `text-dt-title`/`text-dt-body`/`hover:text-dt-body` and the bubble itself
+// to `bg-dt-panel text-dt-body`; the Undo link's `hover:text-white` became
+// `hover:text-teal-100` — a tone-family brighten, not a jump to neutral,
+// matching the CustomerOnboardingLive.tsx `text-teal-400 hover:text-teal-300`
+// precedent). Converted all 28 remaining bg-slate (Badge.tsx's default/fallback `slate`
+// variant — a live, default-frequency chip, not rare, confirmed by its one
+// consumer PlatformConsolePage.tsx passing color="slate" for every
+// non-enterprise/non-growth tenant plan — to the doc §7 neutral-chip pair
+// `bg-dt-neutral-soft text-dt-neutral border-dt-neutral-border`; toggle
+// tracks and small dots to `bg-dt-border-strong` per the mapping table and
+// the established "a soft tint on a small dot/track reads as invisible"
+// precedent; already-translucent chips to `bg-dt-neutral-soft`;
+// DraftApprovalCard.tsx's Reject button to the LiveConnectorsPage
+// `bg-dt-border-strong hover:bg-dt-panel text-dt-title` precedent). Converted
+// all 7 `divide-slate-700` (5 in PlatformConsolePage.tsx, 1 each in
+// PlatformInvitesPanel.tsx and PlatformTeamPage.tsx — uncounted by the four
+// metrics, per the brief's separate grep instruction) to `divide-dt-border`.
+// The other deferred item —
+// OnboardingArchitectPage.tsx's `border-white/10 bg-white/[0.03]` /
+// `bg-black/20|30` overlay vocabulary — was converted by meaning (panel/
+// inset/border), also uncounted by these four metrics; see the group report
+// for the mapping. One real hazard found on judgment, not by the count:
+// PlatformConsolePage.tsx:306's tenant-initial avatar used a TRANSLUCENT
+// `style={{backgroundColor: t.primaryColor + '30'}}` (~19% alpha) under bare
+// text-white — a per-tenant brand-color wash that goes near-white on a light
+// page, the same shape of bug as the Workforce group's HireEmployeeWizard
+// finding — fixed to `text-dt-title`, which the COLORED_BG regex would not
+// have exempted anyway (translucent fills never qualify) but which the raw
+// count also would not have flagged as urgent by itself.
+//
+// The regex itself changed once: `dt-accent` (bare, not just -strong/-hover)
+// joined COLORED_BG — it is opaque in every theme block, so text-white on it
+// (WorkforceEconomicsPanel.tsx's "Save baseline" button) is a real exemption,
+// not a survivor to document.
+//
+// EVERYTHING ELSE remaining after conversion is a named, script-excluded
+// survivor — doc §7 has the full tables: SOLID_FILL_SURVIVORS (30 lines, 8
+// files — accentColor/brandColor/badgeColor inline-style fills the COLORED_BG
+// regex cannot see because the style attribute isn't on the matched line, the
+// DEChatDock `${de.color}` template-literal avatar fills, and LoginPage's
+// fixed dark-gradient marketing hero) and CONTROL_SHADE_FOCUS_RING (5 lines,
+// 4 files — `focus:border-slate-500` composer/input focus rings, kept literal
+// because dt-border-strong's light value is ~1.4:1 against white, an
+// all-but-invisible focus ring, versus slate-500's ~4.2:1 in both themes).
+// Both lists are enumerated above this baseline, one entry per doc §7 row, so
+// a new bare hit anywhere else is a real regression the moment it lands.
+//
+// Baselines below are the TRUE floor: 0/0/0/0. `--strict` now fails on the
+// first unaccounted-for hit, not on drift past a padded number.
+const BASELINE = { 'bare text-white': 0, 'bg-slate': 0, 'border-slate': 0, 'text-slate': 0 };
 const NOW = {
   'bare text-white': bareWhite.length,
   'bg-slate': slateBg.length,

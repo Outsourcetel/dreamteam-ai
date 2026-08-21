@@ -51,14 +51,14 @@ const MyAccountBadge = () => {
         <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
           {(authedUser.name || authedUser.email || '?')[0].toUpperCase()}
         </div>
-        <span className="text-xs text-white font-medium whitespace-nowrap hidden sm:inline">{authedUser.name || authedUser.email}</span>
+        <span className="text-xs text-dt-title font-medium whitespace-nowrap hidden sm:inline">{authedUser.name || authedUser.email}</span>
         <span className="text-dt-faint text-[10px]">▾</span>
       </button>
 
       {open && (
         <div className="absolute right-0 top-full mt-2 w-56 bg-dt-page border border-dt-border-strong rounded-xl shadow-2xl overflow-hidden z-40">
           <div className="px-3 py-2.5 border-b border-dt-border">
-            <p className="text-xs text-white font-medium truncate">{authedUser.name || authedUser.email}</p>
+            <p className="text-xs text-dt-title font-medium truncate">{authedUser.name || authedUser.email}</p>
             <p className="text-[11px] text-dt-muted truncate">{authedUser.email}</p>
             {roleLabel && <p className="text-[10px] text-indigo-400 mt-1">{roleLabel}</p>}
           </div>

@@ -36,7 +36,7 @@ import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../
 // (020). Winning a deal closes the Customer Lifecycle loop.
 // ============================================================
 
-const inputCls = 'bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-indigo-500';
+const inputCls = 'bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-indigo-500';
 
 const stageChip = (s: OppStage) =>
   s === 'won' ? 'bg-emerald-500/15 text-emerald-300'
@@ -44,7 +44,7 @@ const stageChip = (s: OppStage) =>
   : s === 'negotiation' ? 'bg-emerald-500/15 text-emerald-300'
   : s === 'proposal' ? 'bg-indigo-500/15 text-indigo-300'
   : s === 'qualified' ? 'bg-sky-500/15 text-sky-300'
-  : 'bg-slate-600/50 text-dt-support';
+  : 'bg-dt-neutral-soft text-dt-support';
 
 const fmtAmount = (cents: number | null) => (cents == null ? '—' : fmtMoneyK(cents));
 
@@ -71,7 +71,7 @@ function SummaryStrip({ summary, stages }: { summary: PipelineSummaryRow[]; stag
     .reduce((acc, r) => acc + r.amount_cents, 0);
   const winRate = summary.find(r => r.win_rate_90d != null)?.win_rate_90d ?? null;
   const cards = [
-    { label: 'Open pipeline', value: fmtMoneyK(openTotal), color: 'text-white' },
+    { label: 'Open pipeline', value: fmtMoneyK(openTotal), color: 'text-dt-title' },
     ...stages.map(st => ({
       label: st.label,
       value: `${bystage(st.stage_key)?.opp_count ?? 0} · ${fmtAmount(bystage(st.stage_key)?.amount_cents ?? 0)}`,
@@ -177,7 +177,7 @@ function ImportOpportunitiesModal({ onClose, onImported }: { onClose: () => void
             </div>
             <textarea value={csvText} onChange={e => setCsvText(e.target.value)} rows={5}
               placeholder={'company,name,stage,amount,close_date,owner\nLakeside Retail,Lakeside — Growth,qualified,$96K,2026-07-25,S. Mitchell'}
-              className="w-full bg-dt-page border border-dt-border-strong text-white text-xs font-mono rounded-xl px-3 py-2.5 placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
+              className="w-full bg-dt-page border border-dt-border-strong text-dt-body text-xs font-mono rounded-xl px-3 py-2.5 placeholder-slate-600 focus:outline-none focus:border-indigo-500" />
           </div>
           {parsed && (
             <div>
@@ -188,7 +188,7 @@ function ImportOpportunitiesModal({ onClose, onImported }: { onClose: () => void
                     <span className="text-xs text-dt-support flex-1 truncate">{f.label}{f.required && <span className="text-rose-400"> *</span>}</span>
                     <select value={mapping[f.key] ?? -1}
                       onChange={e => setMapping(prev => ({ ...prev, [f.key]: Number(e.target.value) }))}
-                      className="bg-dt-page border border-dt-border-strong rounded text-xs text-white px-2 py-1 focus:outline-none focus:border-indigo-500 max-w-[140px]">
+                      className="bg-dt-page border border-dt-border-strong rounded text-xs text-dt-body px-2 py-1 focus:outline-none focus:border-indigo-500 max-w-[140px]">
                       <option value={-1}>— skip —</option>
                       {parsed.headers.map((h, i) => <option key={i} value={i}>{h || `(column ${i + 1})`}</option>)}
                     </select>
@@ -313,7 +313,7 @@ function WonModal({ opp, onClose, onWon }: {
               <div className="rounded-xl border border-dt-border bg-dt-inset p-3">
                 <p className="text-xs text-dt-muted mb-2">No published onboarding template yet.</p>
                 <button onClick={() => void installStarter()} disabled={installing}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong disabled:opacity-40 transition-colors">
+                  className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body hover:border-dt-border-strong disabled:opacity-40 transition-colors">
                   {installing ? 'Installing…' : 'Install the 10-step starter template'}
                 </button>
               </div>
@@ -469,7 +469,7 @@ export function CustomerBDLive() {
         />
         {!missingTables && !loading && (
           <div className="flex gap-2">
-            <button onClick={() => setShowImport(true)} className="px-3 py-1.5 rounded-lg text-xs text-dt-support border border-dt-border-strong hover:border-dt-border-strong hover:text-white transition-colors">
+            <button onClick={() => setShowImport(true)} className="px-3 py-1.5 rounded-lg text-xs text-dt-support border border-dt-border-strong hover:border-dt-border-strong hover:text-dt-body transition-colors">
               + Import CSV
             </button>
             <button onClick={() => setShowAdd(true)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 transition-colors">
@@ -498,7 +498,7 @@ export function CustomerBDLive() {
             />
           ) : (
             <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
-              <h3 className="text-sm font-semibold text-white mb-1">Prospect list</h3>
+              <h3 className="text-sm font-semibold text-dt-title mb-1">Prospect list</h3>
               <p className="text-[11px] text-dt-muted mb-3">Qualify a prospect to hand it to the Sales lens — same pipeline, next stage.</p>
               <div className="overflow-x-auto rounded-xl border border-dt-border">
                 <table className="w-full text-sm border-collapse">
@@ -510,11 +510,11 @@ export function CustomerBDLive() {
                   <tbody>
                     {prospects.map((p, i) => (
                       <tr key={p.id} className={`border-b border-dt-border hover:bg-dt-panel transition-colors ${i === prospects.length - 1 ? 'border-b-0' : ''}`}>
-                        <td className={`${td} font-medium text-white`}>{p.company_name || '—'}</td>
+                        <td className={`${td} font-medium text-dt-title`}>{p.company_name || '—'}</td>
                         <td className={`${td} text-dt-support text-xs`}>{p.name}</td>
                         <td className={`${td} text-dt-support text-xs`}>{p.owner || 'Unassigned'}</td>
                         <td className={`${td} text-xs`}>
-                          <span className={`px-2 py-0.5 rounded-full ${p.source === 'native' ? 'bg-slate-600/50 text-dt-support' : 'bg-indigo-500/15 text-indigo-300'}`}>{p.source}</span>
+                          <span className={`px-2 py-0.5 rounded-full ${p.source === 'native' ? 'bg-dt-neutral-soft text-dt-support' : 'bg-indigo-500/15 text-indigo-300'}`}>{p.source}</span>
                         </td>
                         <td className={`${td} text-dt-muted text-xs whitespace-nowrap`}>{new Date(p.created_at).toLocaleDateString()}</td>
                         <td className={`${td} text-right`}>
@@ -637,7 +637,7 @@ export function CustomerSalesLive() {
           <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
             <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
               <div>
-                <h3 className="text-sm font-semibold text-white">Pipeline</h3>
+                <h3 className="text-sm font-semibold text-dt-title">Pipeline</h3>
                 <p className="text-[11px] text-dt-muted">
                   Change the stage inline · Won opens the account + onboarding handoff · Lost requires a reason.
                   {prospectCount > 0 && ` ${prospectCount} prospect(s) are still in the BD lens.`}
@@ -646,7 +646,7 @@ export function CustomerSalesLive() {
               <div className="flex gap-1 bg-dt-panel rounded-xl p-1">
                 {(['open', 'won', 'lost'] as const).map(f => (
                   <button key={f} onClick={() => setStageFilter(f)}
-                    className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${stageFilter === f ? 'bg-indigo-600 text-white' : 'text-dt-support hover:text-white'}`}>
+                    className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${stageFilter === f ? 'bg-indigo-600 text-white' : 'text-dt-support hover:text-dt-body'}`}>
                     {f === 'open' ? 'Open' : STAGE_LABELS[f]}
                   </button>
                 ))}
@@ -671,7 +671,7 @@ export function CustomerSalesLive() {
                       const closed = o.stage === 'won' || o.stage === 'lost';
                       return (
                         <tr key={o.id} className={`border-b border-dt-border hover:bg-dt-panel transition-colors ${i === deals.length - 1 ? 'border-b-0' : ''}`}>
-                          <td className={`${td} font-medium text-white`}>
+                          <td className={`${td} font-medium text-dt-title`}>
                             {o.name}
                             {o.stage === 'lost' && o.lost_reason && <p className="text-[10px] text-dt-muted font-normal mt-0.5">Lost: {o.lost_reason}</p>}
                           </td>
@@ -687,7 +687,7 @@ export function CustomerSalesLive() {
                               <span className={`text-xs px-2 py-0.5 rounded-full ${stageChip(o.stage)}`}>{stageLabel(o.stage)}</span>
                             ) : (
                               <select value={o.stage} onChange={e => void onStageSelect(o, e.target.value)}
-                                className="bg-dt-page border border-dt-border-strong rounded-lg text-xs text-white px-2 py-1 focus:outline-none focus:border-indigo-500">
+                                className="bg-dt-page border border-dt-border-strong rounded-lg text-xs text-dt-body px-2 py-1 focus:outline-none focus:border-indigo-500">
                                 {salesStages.map(s => (
                                   <option key={s} value={s}>{stageLabel(s)}</option>
                                 ))}
@@ -707,10 +707,10 @@ export function CustomerSalesLive() {
                             {!closed && (editing === o.id ? (
                               <span className="flex gap-1 justify-end">
                                 <button onClick={() => void saveEdit(o)} className="text-xs px-2 py-1 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 transition-colors">Save</button>
-                                <button onClick={() => setEditing(null)} className="text-xs px-2 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:text-white transition-colors">✕</button>
+                                <button onClick={() => setEditing(null)} className="text-xs px-2 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body transition-colors">✕</button>
                               </span>
                             ) : (
-                              <button onClick={() => startEdit(o)} className="text-xs px-2 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">Edit</button>
+                              <button onClick={() => startEdit(o)} className="text-xs px-2 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body hover:border-dt-border-strong transition-colors">Edit</button>
                             ))}
                             {o.stage === 'won' && o.account_id && (
                               <span className="text-[10px] text-emerald-400/80">→ account live</span>

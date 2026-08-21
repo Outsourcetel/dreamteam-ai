@@ -488,7 +488,7 @@ export default function DEChatDock() {
               {de.name[0]}
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-semibold text-white truncate">{de.name}</div>
+              <div className="text-sm font-semibold text-dt-title truncate">{de.name}</div>
               <div className="flex items-center gap-1.5 text-xs text-dt-support truncate">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
                 {de.role}
@@ -508,7 +508,7 @@ export default function DEChatDock() {
             <div className="relative flex-shrink-0">
               <button
                 onClick={() => setMenuOpen(v => !v)}
-                className="w-6 h-6 rounded bg-dt-panel text-dt-muted hover:text-white flex items-center justify-center text-xs transition-colors"
+                className="w-6 h-6 rounded bg-dt-panel text-dt-muted hover:text-dt-body flex items-center justify-center text-xs transition-colors"
                 aria-label="Menu"
               >
                 ⋯
@@ -517,7 +517,7 @@ export default function DEChatDock() {
                 <div className="absolute right-0 top-7 bg-dt-page border border-dt-border-strong rounded-lg py-1 w-40 shadow-xl">
                   <button
                     onClick={clearThread}
-                    className="w-full text-left px-3 py-1.5 text-xs text-dt-support hover:text-white hover:bg-dt-panel transition-colors"
+                    className="w-full text-left px-3 py-1.5 text-xs text-dt-support hover:text-dt-body hover:bg-dt-panel transition-colors"
                   >
                     Clear conversation
                   </button>
@@ -526,7 +526,7 @@ export default function DEChatDock() {
             </div>
             <button
               onClick={() => { setOpen(false); setMenuOpen(false); }}
-              className="w-6 h-6 rounded bg-dt-panel text-dt-muted hover:text-white flex items-center justify-center text-xs flex-shrink-0 transition-colors"
+              className="w-6 h-6 rounded bg-dt-panel text-dt-muted hover:text-dt-body flex items-center justify-center text-xs flex-shrink-0 transition-colors"
               aria-label="Minimize"
             >
               ×
@@ -541,7 +541,7 @@ export default function DEChatDock() {
               {([['ask', 'Ask a question'], ['do', 'Change something']] as const).map(([m, label]) => (
                 <button key={m} onClick={() => setDockMode(m)}
                   className={`flex-1 text-[11px] px-2 py-1.5 rounded-lg transition-colors ${
-                    dockMode === m ? 'bg-dt-panel text-white' : 'text-dt-support hover:text-dt-body'}`}>
+                    dockMode === m ? 'bg-dt-panel text-dt-title' : 'text-dt-support hover:text-dt-body'}`}>
                   {label}
                 </button>
               ))}
@@ -642,7 +642,7 @@ export default function DEChatDock() {
                         I've escalated this to your team —{' '}
                         {canOpenTasks && <button
                           onClick={() => handleSetPage('ops_human_tasks')}
-                          className="underline underline-offset-2 hover:text-white transition-colors"
+                          className="underline underline-offset-2 hover:text-amber-100 transition-colors"
                         >
                           view Human Tasks →
                         </button>}
@@ -683,7 +683,7 @@ export default function DEChatDock() {
                     {[0, 150, 300].map(delay => (
                       <div
                         key={delay}
-                        className={`w-1.5 h-1.5 rounded-full bg-slate-500 ${reduceMotion ? '' : 'animate-bounce'}`}
+                        className={`w-1.5 h-1.5 rounded-full bg-dt-border-strong ${reduceMotion ? '' : 'animate-bounce'}`}
                         style={reduceMotion ? undefined : { animationDelay: `${delay}ms` }}
                       />
                     ))}
@@ -717,7 +717,7 @@ export default function DEChatDock() {
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
                 placeholder={`Ask ${de.name} anything...`}
-                className="flex-1 text-xs bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                className="flex-1 text-xs bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2 text-dt-body placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
               />
               <button
                 onClick={() => send()}
@@ -743,7 +743,7 @@ export default function DEChatDock() {
         >
           <div className="flex items-center gap-2 mb-1">
             <span className={`w-5 h-5 rounded-full ${de.color} flex items-center justify-center text-white text-[10px] font-bold`}>{de.name[0]}</span>
-            <span className="text-xs font-medium text-white">{de.name}</span>
+            <span className="text-xs font-medium text-dt-title">{de.name}</span>
           </div>
           <p className="text-[11px] text-dt-support leading-snug">
             {activeCompanyId === 'tcp' ? 5 : 4} human tasks are waiting — want a summary?

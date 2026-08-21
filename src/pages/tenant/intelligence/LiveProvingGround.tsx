@@ -278,7 +278,7 @@ const LiveProvingGround = () => {
             <tbody>
               {qas.map((qa) => (
                 <tr key={qa.id} className="border-b border-dt-border hover:bg-dt-panel transition-colors">
-                  <td className={`${td} text-white max-w-sm`}>{qa.question}</td>
+                  <td className={`${td} text-dt-body max-w-sm`}>{qa.question}</td>
                   <td className={td}>
                     <div className="flex flex-wrap gap-1">
                       {qa.expected_fragments.map((f) => (
@@ -326,7 +326,7 @@ const LiveProvingGround = () => {
       {latestShown && (
         <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-6">
           <div className="flex items-center gap-3 mb-3">
-            <h2 className="text-sm font-semibold text-white">Latest run</h2>
+            <h2 className="text-sm font-semibold text-dt-title">Latest run</h2>
             <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_CHIP[latestShown.status]?.cls ?? ''}`}>
               {STATUS_CHIP[latestShown.status]?.label ?? latestShown.status}
             </span>
@@ -368,7 +368,7 @@ const LiveProvingGround = () => {
       {/* Run history */}
       <div className="rounded-2xl border border-dt-border bg-dt-card overflow-hidden">
         <div className="px-5 py-3 border-b border-dt-border">
-          <h2 className="text-sm font-semibold text-white">Run history</h2>
+          <h2 className="text-sm font-semibold text-dt-title">Run history</h2>
         </div>
         {runs.length === 0 ? (
           <LiveEmptyState icon="◎" title="No runs yet" body={'The first "Run evals" lands here.'} />
@@ -443,14 +443,14 @@ const LiveProvingGround = () => {
               value={editor.question}
               onChange={(e) => setEditor({ ...editor, question: e.target.value })}
               placeholder="e.g. What is our refund window?"
-              className="w-full mb-3 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              className="w-full mb-3 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500"
             />
             <label className="block text-xs text-dt-muted mb-1">Expected fragments (comma-separated — the answer must contain ALL, case-insensitive)</label>
             <input
               value={editor.fragments}
               onChange={(e) => setEditor({ ...editor, fragments: e.target.value })}
               placeholder="30 days, full refund"
-              className="w-full mb-3 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              className="w-full mb-3 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500"
             />
             <div className="flex gap-3 mb-5">
               <div className="flex-1">
@@ -467,7 +467,7 @@ const LiveProvingGround = () => {
                 <select
                   value={editor.category}
                   onChange={(e) => setEditor({ ...editor, category: e.target.value as GoldenCategory })}
-                  className="text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                  className="text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body focus:outline-none focus:border-indigo-500"
                 >
                   {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>

@@ -134,7 +134,7 @@ function RangeSelector({ value, onChange }: { value: number | null; onChange: (d
 function StatTile({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
   return (
     <div className="bg-dt-card border border-dt-border rounded-xl px-4 py-3">
-      <div className={`text-2xl font-bold tabular-nums ${tone ?? 'text-white'}`}>{value}</div>
+      <div className={`text-2xl font-bold tabular-nums ${tone ?? 'text-dt-title'}`}>{value}</div>
       <div className="text-[11px] text-dt-support mt-0.5">{label}</div>
       {sub && <div className="text-[10px] text-dt-muted mt-0.5">{sub}</div>}
     </div>
@@ -235,7 +235,7 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
       {metering && (metering.totals.resolutions > 0 || metering.totals.escalations > 0) && (
         <div className="bg-dt-card border border-dt-border rounded-xl p-4 mb-6">
           <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-            <p className="text-sm font-semibold text-white">Outcome value</p>
+            <p className="text-sm font-semibold text-dt-title">Outcome value</p>
             <p className="text-[11px] text-dt-muted">metered at ${(metering.price_per_resolution_cents / 100).toFixed(2)} per resolution · escalations to your team are free</p>
           </div>
           <div className="grid grid-cols-3 gap-3">
@@ -248,7 +248,7 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
               <p className="text-[11px] text-dt-muted mt-0.5">handed to your team (free)</p>
             </div>
             <div>
-              <p className="text-2xl font-semibold text-white">${(metering.totals.billable_amount_cents / 100).toFixed(2)}</p>
+              <p className="text-2xl font-semibold text-dt-title">${(metering.totals.billable_amount_cents / 100).toFixed(2)}</p>
               <p className="text-[11px] text-dt-muted mt-0.5">metered value this period</p>
             </div>
           </div>
@@ -303,7 +303,7 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
                   <div className="flex items-center gap-3">
                     <span className="w-9 h-9 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold">{(de.persona_name ?? de.name)[0]}</span>
                     <div>
-                      <p className="text-sm font-semibold text-white">{de.persona_name ?? de.name}</p>
+                      <p className="text-sm font-semibold text-dt-title">{de.persona_name ?? de.name}</p>
                       <p className="text-[11px] text-dt-muted">{de.persona_name ? de.name : (de.description || de.category)}</p>
                     </div>
                   </div>
@@ -612,7 +612,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
       {benchmark && (benchmark.outcomes.resolutions + benchmark.outcomes.escalations > 0 || benchmark.judged_quality.graded > 0) && (
         <div className="bg-dt-card border border-dt-border rounded-xl p-4 mb-6">
           <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-            <p className="text-sm font-semibold text-white">Benchmark — honest numbers</p>
+            <p className="text-sm font-semibold text-dt-title">Benchmark — honest numbers</p>
             <p className="text-[11px] text-dt-muted">all traffic counted, nothing cherry-picked · recountable from raw data</p>
           </div>
           {/* ── THE DEFINITIONS WERE IN TOOLTIPS ────────────────────────────
@@ -646,7 +646,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
               <p className="text-xs text-dt-muted mt-1">{benchmark.definitions.csat}</p>
             </div>
             <div>
-              <p className="text-2xl font-semibold text-white">{benchmark.cost.cost_per_resolution_cents != null ? `$${(benchmark.cost.cost_per_resolution_cents / 100).toFixed(2)}` : '—'}</p>
+              <p className="text-2xl font-semibold text-dt-title">{benchmark.cost.cost_per_resolution_cents != null ? `$${(benchmark.cost.cost_per_resolution_cents / 100).toFixed(2)}` : '—'}</p>
               <p className="text-xs font-medium text-dt-body mt-0.5">per thing resolved</p>
               <p className="text-xs text-dt-muted mt-1">{benchmark.definitions.cost_per_resolution_cents}</p>
             </div>
@@ -669,7 +669,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
           {trendCards.map(t => (
             <div key={t.name} className="bg-dt-card border border-dt-border rounded-xl p-4 flex items-center justify-between">
               <div>
-                <p className="text-sm font-semibold text-white">{t.name}</p>
+                <p className="text-sm font-semibold text-dt-title">{t.name}</p>
                 <p className={`text-xs ${t.delta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                   {t.delta >= 0 ? '↑' : '↓'} {Math.abs(t.delta).toFixed(0)} pts resolution rate
                 </p>
@@ -689,7 +689,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
             <div key={`fail-${f.de_id}`} className={`rounded-xl border p-4 ${f.severity === 'high' ? 'border-red-500/30 bg-red-500/5' : 'border-amber-500/25 bg-amber-500/5'}`}>
               <div className="flex items-center gap-2 flex-wrap mb-1.5">
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-300">ACTION FAILED</span>
-                <span className="text-sm font-medium text-white">{f.name}: {f.failed} action{f.failed === 1 ? '' : 's'} failed</span>
+                <span className="text-sm font-medium text-dt-title">{f.name}: {f.failed} action{f.failed === 1 ? '' : 's'} failed</span>
                 <span className={`ml-auto text-[10px] uppercase px-1.5 py-0.5 rounded ${f.severity === 'high' ? 'bg-red-500/15 text-red-300' : 'bg-amber-500/15 text-amber-300'}`}>{f.severity}</span>
               </div>
               <p className="text-xs text-dt-support leading-relaxed">
@@ -704,7 +704,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
             <div key={`bottleneck-${b.de_id}`} className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-4">
               <div className="flex items-center gap-2 flex-wrap mb-1.5">
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">OPPORTUNITY</span>
-                <span className="text-sm font-medium text-white">{b.name} routed {b.sent} action{b.sent === 1 ? '' : 's'} for approval</span>
+                <span className="text-sm font-medium text-dt-title">{b.name} routed {b.sent} action{b.sent === 1 ? '' : 's'} for approval</span>
               </div>
               <p className="text-xs text-dt-support leading-relaxed">
                 {b.autonomy != null ? `Only ${b.autonomy}% of its actions ran without a human. ` : 'It needs a person for most actions. '}
@@ -718,7 +718,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
             <div key={a.deName} className="rounded-xl border border-red-500/30 bg-red-500/5 p-4">
               <div className="flex items-center gap-2 flex-wrap mb-1.5">
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-300">ANOMALY</span>
-                <span className="text-sm font-medium text-white">{a.deName} escalation rate spiked</span>
+                <span className="text-sm font-medium text-dt-title">{a.deName} escalation rate spiked</span>
               </div>
               <p className="text-xs text-dt-support leading-relaxed">{a.detail}</p>
             </div>
@@ -728,7 +728,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
             <div key={g.de_id ?? `tenant-${i}`} className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4">
               <div className="flex items-center gap-2 flex-wrap mb-1.5">
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">CONFIG DRIFT</span>
-                <span className="text-sm font-medium text-white">
+                <span className="text-sm font-medium text-dt-title">
                   {g.de_name ? `${g.de_name}: ${g.gated_count + g.blocked_count} guardrail event(s)` : 'Guardrail activity recorded'}
                 </span>
               </div>
@@ -747,7 +747,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
             <div key={e.id} className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-4">
               <div className="flex items-center gap-2 flex-wrap mb-1.5">
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300">PROVING GROUND</span>
-                <span className="text-sm font-medium text-white">{e.failed} of {e.total} scenarios failed</span>
+                <span className="text-sm font-medium text-dt-title">{e.failed} of {e.total} scenarios failed</span>
               </div>
               <p className="text-xs text-dt-support leading-relaxed">
                 {e.trigger} eval run on {new Date(e.started_at).toLocaleDateString()} — {e.passed} passed, {e.failed} failed.

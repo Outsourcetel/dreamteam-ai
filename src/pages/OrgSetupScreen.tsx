@@ -72,12 +72,12 @@ export default function OrgSetupScreen() {
         <div className="flex items-center gap-3 mb-8 justify-center">
           <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold">DT</div>
           <div>
-            <div className="text-white font-bold text-lg">DreamTeam AI</div>
+            <div className="text-dt-title font-bold text-lg">DreamTeam AI</div>
             <div className="text-indigo-300 text-xs">Digital Workforce Platform</div>
           </div>
         </div>
 
-        <h2 className="text-2xl font-bold text-white mb-1 text-center">One last step</h2>
+        <h2 className="text-2xl font-bold text-dt-title mb-1 text-center">One last step</h2>
         <p className="text-dt-support text-sm mb-6 text-center leading-relaxed">
           Your email is confirmed. Let's set up your organization so you can start using your workspace.
         </p>
@@ -91,7 +91,7 @@ export default function OrgSetupScreen() {
               type="text"
               placeholder="Acme Corp"
               autoFocus
-              className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
             />
           </div>
           <div>
@@ -99,7 +99,7 @@ export default function OrgSetupScreen() {
             <select
               value={industry}
               onChange={e => setIndustry(e.target.value)}
-              className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500"
+              className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500"
             >
               {INDUSTRIES.map(i => <option key={i}>{i}</option>)}
             </select>

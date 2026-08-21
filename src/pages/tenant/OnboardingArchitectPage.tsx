@@ -38,7 +38,7 @@ function ProposalCard({ p, onApproved }: { p: ArchitectProposal; onApproved: () 
   };
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+    <div className="rounded-xl border border-dt-border bg-dt-card p-4">
       <div className="flex items-start gap-3">
         <div className="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-indigo-500/15 text-indigo-300 text-lg">{meta.icon}</div>
         <div className="min-w-0 flex-1">
@@ -54,7 +54,7 @@ function ProposalCard({ p, onApproved }: { p: ArchitectProposal; onApproved: () 
             {str(params.category) && !str(params.provider) && <div><span className="text-dt-muted">Type:</span> {str(params.category)}</div>}
             {str(params.description) && <p className="text-dt-support">{str(params.description)}</p>}
             {str(params.outline) && (
-              <div className="mt-1 rounded-lg bg-black/20 border border-white/5 p-2.5 whitespace-pre-wrap text-dt-support text-[12.5px]">{str(params.outline)}</div>
+              <div className="mt-1 rounded-lg bg-dt-inset border border-dt-border p-2.5 whitespace-pre-wrap text-dt-support text-[12.5px]">{str(params.outline)}</div>
             )}
             {str(params.charter) && <p className="text-dt-support">{str(params.charter)}</p>}
             {str(params.provider) && <div><span className="text-dt-muted">System:</span> {str(params.provider)}</div>}
@@ -117,7 +117,7 @@ export default function OnboardingArchitectPage({ setPage }: { setPage?: (p: Pag
       {(
         <>
           {/* The brief */}
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+          <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
             <label className="block text-sm font-medium text-dt-body">Tell Ada about your business</label>
             <p className="mt-1 text-[13px] text-dt-support">What do you do, and what would you like your AI team to handle for your customers?</p>
             <textarea
@@ -125,7 +125,7 @@ export default function OnboardingArchitectPage({ setPage }: { setPage?: (p: Pag
               onChange={(e) => setDesc(e.target.value)}
               rows={4}
               placeholder="e.g. We run a dental clinic and want an employee that answers patient questions about appointments, billing and insurance…"
-              className="mt-3 w-full resize-y rounded-xl border border-white/10 bg-black/30 p-3 text-[14px] text-dt-body placeholder:text-dt-faint outline-none focus:border-indigo-400/60"
+              className="mt-3 w-full resize-y rounded-xl border border-dt-border bg-dt-inset p-3 text-[14px] text-dt-body placeholder:text-dt-faint outline-none focus:border-indigo-400/60"
             />
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
@@ -140,7 +140,7 @@ export default function OnboardingArchitectPage({ setPage }: { setPage?: (p: Pag
               )}
             </div>
             {!result && !busy && (
-              <div className="mt-4 border-t border-white/5 pt-3">
+              <div className="mt-4 border-t border-dt-border pt-3">
                 <div className="text-[11px] uppercase tracking-wide text-dt-muted font-semibold mb-2">Need inspiration?</div>
                 <div className="flex flex-col gap-1.5">
                   {EXAMPLES.map((ex) => (
@@ -156,7 +156,7 @@ export default function OnboardingArchitectPage({ setPage }: { setPage?: (p: Pag
           )}
 
           {busy && (
-            <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-[13.5px] text-dt-support">
+            <div className="mt-4 rounded-xl border border-dt-border bg-dt-card p-4 text-[13.5px] text-dt-support">
               Ada is reading your brief and designing the smallest setup that fits…
             </div>
           )}
@@ -176,7 +176,7 @@ export default function OnboardingArchitectPage({ setPage }: { setPage?: (p: Pag
                 // real signups. (llm/budget failures are typed server-side
                 // and land in the red `fatal` box above, not here.)
                 result.status === 'completed' ? (
-                  <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-[13.5px] text-dt-support">
+                  <div className="rounded-xl border border-dt-border bg-dt-card p-4 text-[13.5px] text-dt-support">
                     Ada read your brief but didn't propose anything this time. Try describing your needs with a bit more detail — what you do, and what you want handled.
                   </div>
                 ) : (

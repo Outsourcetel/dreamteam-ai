@@ -35,7 +35,7 @@ function dateChip(dateStr: string | null): { label: string; cls: string } {
   return { label: `in ${d}d`, cls: 'text-dt-support' };
 }
 
-function StatCard({ label, value, sub, color = 'text-white' }: { label: string; value: string; sub?: string; color?: string }) {
+function StatCard({ label, value, sub, color = 'text-dt-title' }: { label: string; value: string; sub?: string; color?: string }) {
   return (
     <div className="bg-dt-card border border-dt-border rounded-xl p-4">
       <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{label}</p>
@@ -189,7 +189,7 @@ function CaseDrawer({
 
         {/* Gated actions */}
         <div className="rounded-xl border border-dt-border bg-dt-card p-4 mb-5">
-          <h3 className="text-sm font-semibold text-white mb-1">Work the case</h3>
+          <h3 className="text-sm font-semibold text-dt-title mb-1">Work the case</h3>
           <p className="text-[11px] text-dt-muted mb-3">
             Every action runs through the approval gate — money and stage changes route to Human Tasks; safe logs may auto-apply. Nothing is written directly.
           </p>
@@ -229,7 +229,7 @@ function CaseDrawer({
         </div>
 
         {/* Timeline */}
-        <h3 className="text-sm font-semibold text-white mb-2">Case timeline</h3>
+        <h3 className="text-sm font-semibold text-dt-title mb-2">Case timeline</h3>
         {loadingEvents ? (
           <p className="text-xs text-dt-muted">Loading…</p>
         ) : events.length === 0 ? (
@@ -238,7 +238,7 @@ function CaseDrawer({
           <ol className="space-y-2">
             {events.map(e => (
               <li key={e.id} className="flex items-start gap-2 text-xs">
-                <span className={`mt-0.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${e.to_stage ? 'bg-amber-400' : 'bg-slate-500'}`} />
+                <span className={`mt-0.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${e.to_stage ? 'bg-amber-400' : 'bg-dt-border-strong'}`} />
                 <div className="min-w-0">
                   <p className="text-dt-body">{e.summary}</p>
                   <p className="text-[10px] text-dt-muted">{e.actor_kind} · {new Date(e.created_at).toLocaleString()}</p>
@@ -316,7 +316,7 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
     <div className="p-6">
       <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-white">Commercial Continuity</h1>
+          <h1 className="text-2xl font-bold text-dt-title">Commercial Continuity</h1>
           <p className="text-dt-support text-sm mt-1">
             {liveTenantName || 'Your company'} · One employee working every motion — renewals, reorders, warranties and vendor contracts — off each agreement's own dates. Money and stage changes are always human-gated.
           </p>
@@ -332,7 +332,7 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
       <div className="flex gap-1 mb-5 border-b border-dt-border">
         {([['command', 'Command Center'], ['portfolio', 'Portfolio'], ['cases', 'Case Workspace']] as [Tab, string][]).map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === id ? 'border-indigo-500 text-white' : 'border-transparent text-dt-support hover:text-dt-body'}`}>
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === id ? 'border-indigo-500 text-dt-title' : 'border-transparent text-dt-support hover:text-dt-body'}`}>
             {label}
           </button>
         ))}
@@ -364,14 +364,14 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
                 <StatCard label="At-risk value" value={fmtMoneyK(metrics.atRiskValue)} sub={`${metrics.atRisk.length} case(s)`} color={metrics.atRisk.length ? 'text-rose-400' : 'text-emerald-300'} />
               </div>
               <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
-                <h3 className="text-sm font-semibold text-white mb-3">Cases by motion</h3>
+                <h3 className="text-sm font-semibold text-dt-title mb-3">Cases by motion</h3>
                 {Object.keys(metrics.byMotion).length === 0 ? (
                   <p className="text-xs text-dt-muted">No open cases yet — they open automatically as agreement dates approach.</p>
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     {Object.entries(metrics.byMotion).sort((a, b) => b[1] - a[1]).map(([m, n]) => (
                       <span key={m} className="text-xs px-3 py-1.5 rounded-lg bg-dt-card border border-dt-border text-dt-support">
-                        {motionLabel(m as ContinuityCase['motion'])} <span className="text-white font-semibold ml-1">{n}</span>
+                        {motionLabel(m as ContinuityCase['motion'])} <span className="text-dt-title font-semibold ml-1">{n}</span>
                       </span>
                     ))}
                   </div>
@@ -384,7 +384,7 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
           {tab === 'portfolio' && (
             <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                <h3 className="text-base font-semibold text-white">Agreement portfolio</h3>
+                <h3 className="text-base font-semibold text-dt-title">Agreement portfolio</h3>
                 <div className="flex items-center gap-2 text-xs text-dt-support">
                   <span>Sort by</span>
                   <select value={sortKey} onChange={e => setSortKey(e.target.value as typeof sortKey)}
@@ -412,7 +412,7 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
                         const rc = dateChip(a.renewal_date), nc = dateChip(a.notice_deadline);
                         return (
                           <tr key={a.id} className={`border-b border-dt-border hover:bg-dt-panel transition-colors ${i === sortedAgreements.length - 1 ? 'border-b-0' : ''}`}>
-                            <td className="py-3 px-4 font-medium text-white">{a.counterparty_name}</td>
+                            <td className="py-3 px-4 font-medium text-dt-title">{a.counterparty_name}</td>
                             <td className="py-3 px-4"><span className="text-[10px] px-2 py-0.5 rounded bg-dt-panel text-dt-support">{a.party_side === 'buy' ? 'Vendor' : 'Customer'}</span></td>
                             <td className="py-3 px-4 text-dt-support">{a.agreement_type.replace(/_/g, ' ')}</td>
                             <td className="py-3 px-4 text-dt-support text-xs">{a.status}</td>
@@ -432,7 +432,7 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
           {/* ── Case Workspace ── */}
           {tab === 'cases' && (
             <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
-              <h3 className="text-base font-semibold text-white mb-1">Continuity cases</h3>
+              <h3 className="text-base font-semibold text-dt-title mb-1">Continuity cases</h3>
               <p className="text-xs text-dt-muted mb-4">Open a case to work it — advance the stage, log activity, or set the next step. Every action runs through the approval gate.</p>
               {cases.length === 0 ? (
                 <p className="text-xs text-dt-muted">No open cases yet — they open automatically as agreement dates approach.</p>
@@ -449,7 +449,7 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
                     <tbody>
                       {cases.map((c, i) => (
                         <tr key={c.objective_id} className={`border-b border-dt-border hover:bg-dt-panel transition-colors cursor-pointer ${i === cases.length - 1 ? 'border-b-0' : ''}`} onClick={() => setSelected(c)}>
-                          <td className="py-3 px-4 font-medium text-white max-w-xs truncate">{c.title || '—'}</td>
+                          <td className="py-3 px-4 font-medium text-dt-title max-w-xs truncate">{c.title || '—'}</td>
                           <td className="py-3 px-4"><span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300">{motionLabel(c.motion)}</span></td>
                           <td className="py-3 px-4 text-dt-support">{c.counterparty_name || '—'}</td>
                           <td className="py-3 px-4 text-dt-support text-xs">{c.stage_key ? c.stage_key.replace(/_/g, ' ') : '—'}</td>

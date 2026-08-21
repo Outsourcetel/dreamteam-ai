@@ -64,7 +64,7 @@ export function DraftApprovalCard({ action }: DraftApprovalCardProps) {
         <button
           onClick={handleApprove}
           disabled={isApproving || !canApproveDrafts}
-          className="flex-1 px-2 py-1 bg-green-600 hover:bg-green-700 disabled:bg-slate-600 text-white rounded text-xs transition flex items-center justify-center gap-1"
+          className="flex-1 px-2 py-1 bg-green-600 hover:bg-green-700 disabled:bg-dt-border-strong text-white rounded text-xs transition flex items-center justify-center gap-1"
         >
           {isApproving ? (
             <>
@@ -78,7 +78,7 @@ export function DraftApprovalCard({ action }: DraftApprovalCardProps) {
             </>
           )}
         </button>
-        <button className="flex-1 px-2 py-1 bg-slate-600 hover:bg-slate-500 text-dt-title rounded text-xs transition flex items-center justify-center gap-1">
+        <button className="flex-1 px-2 py-1 bg-dt-border-strong hover:bg-dt-panel text-dt-title rounded text-xs transition flex items-center justify-center gap-1">
           <XCircle className="w-3 h-3" />
           Reject
         </button>

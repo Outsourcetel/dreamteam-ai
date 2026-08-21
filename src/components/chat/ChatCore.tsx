@@ -44,7 +44,7 @@ function renderInline(text: string, keyBase: string): React.ReactNode[] {
   const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
   parts.forEach((p, i) => {
     if (p.startsWith('**') && p.endsWith('**') && p.length > 4) {
-      out.push(<strong key={`${keyBase}b${i}`} className="font-semibold text-white">{p.slice(2, -2)}</strong>);
+      out.push(<strong key={`${keyBase}b${i}`} className="font-semibold text-dt-title">{p.slice(2, -2)}</strong>);
     } else if (p.startsWith('`') && p.endsWith('`') && p.length > 2) {
       out.push(<code key={`${keyBase}c${i}`} className="px-1 py-0.5 rounded bg-white/10 text-[13px] font-mono">{p.slice(1, -1)}</code>);
     } else if (p) {
@@ -60,7 +60,7 @@ export function renderLite(text: string): React.ReactNode {
   const lines = text.split('\n');
   return lines.map((line, i) => {
     const h = line.match(/^(#{1,4})\s+(.*)$/);
-    if (h) return <div key={i} className="font-semibold text-white mt-1">{renderInline(h[2], `l${i}`)}</div>;
+    if (h) return <div key={i} className="font-semibold text-dt-title mt-1">{renderInline(h[2], `l${i}`)}</div>;
     const bullet = line.match(/^\s*[-•]\s+(.*)$/);
     if (bullet) return <div key={i} className="pl-4 relative"><span className="absolute left-1">•</span>{renderInline(bullet[1], `l${i}`)}</div>;
     const num = line.match(/^\s*(\d+)[.)]\s+(.*)$/);
@@ -264,7 +264,7 @@ export default function ChatCore({
           </div>
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-white truncate">{brandName}</p>
+          <p className="text-sm font-semibold text-dt-title truncate">{brandName}</p>
           <p className="text-[11px] text-emerald-300/90 flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_2px_rgba(52,211,153,0.7)]" /> Online now
           </p>

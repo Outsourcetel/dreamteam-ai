@@ -27,7 +27,7 @@ export default function HostedChatPage() {
       {!widgetKey ? (
         <div className="relative z-10 max-w-md text-center px-6">
           <div className="mx-auto mb-5 w-14 h-14 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-xl flex items-center justify-center text-2xl">🔑</div>
-          <h1 className="text-lg font-semibold text-white mb-1.5">This chat link is missing its key</h1>
+          <h1 className="text-lg font-semibold text-dt-title mb-1.5">This chat link is missing its key</h1>
           <p className="text-sm text-dt-support leading-relaxed">Ask the team for the correct URL — it should include{' '}
             <code className="bg-white/10 px-1.5 py-0.5 rounded text-dt-body">?k=…</code>.</p>
         </div>

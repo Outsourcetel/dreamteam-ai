@@ -135,7 +135,7 @@ const PlatformConsolePage = ({
     return (
       <div className="p-6">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-white">Platform Overview</h1>
+          <h1 className="text-2xl font-bold text-dt-title">Platform Overview</h1>
           <p className="text-dt-support text-sm mt-1">
             DreamTeam AI — Master control centre for all tenants and system
             health
@@ -223,7 +223,7 @@ const PlatformConsolePage = ({
       <div className="p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-white">Tenants & Remote Access</h1>
+            <h1 className="text-2xl font-bold text-dt-title">Tenants & Remote Access</h1>
             <p className="text-dt-support text-sm mt-1">
               Manage all client workspaces — view, configure, support tenants, or start remote access sessions. Indented rows are sub-tenants nested under their parent.
             </p>
@@ -254,7 +254,7 @@ const PlatformConsolePage = ({
             value={tenantSearch}
             onChange={(e) => { setTenantSearch(e.target.value); setTenantRowLimit(TENANT_PAGE_SIZE); }}
             placeholder="Search by name, ID, slug, or email…"
-            className="w-full max-w-md bg-dt-card border border-dt-border text-white text-sm rounded-xl px-4 py-2 focus:outline-none focus:border-indigo-500"
+            className="w-full max-w-md bg-dt-card border border-dt-border text-dt-body text-sm rounded-xl px-4 py-2 focus:outline-none focus:border-indigo-500"
           />
           <span className="text-xs text-dt-muted">
             {searchedRows.length} tenant{searchedRows.length === 1 ? '' : 's'}{searchTerm ? ` matching "${tenantSearch.trim()}"` : ''}
@@ -293,7 +293,7 @@ const PlatformConsolePage = ({
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-700">
+            <tbody className="divide-y divide-dt-border">
               {rowsToRender.map(({ tenant: t, depth }) => (
                 <tr
                   key={t.id}
@@ -303,7 +303,7 @@ const PlatformConsolePage = ({
                     <div className="flex items-center gap-3" style={{ paddingLeft: depth * 24 }}>
                       {depth > 0 && <span className="text-dt-faint text-xs flex-shrink-0">&#8627;</span>}
                       <div
-                        className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-dt-title flex-shrink-0"
                         style={{
                           backgroundColor: t.primaryColor + '30',
                           border: '1px solid ' + t.primaryColor + '60',
@@ -312,7 +312,7 @@ const PlatformConsolePage = ({
                         {t.name[0]}
                       </div>
                       <div>
-                        <div className="text-sm font-medium text-white">
+                        <div className="text-sm font-medium text-dt-title">
                           {t.name}
                           {t.allowSelfServeSubtenants && (
                             <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 align-middle">
@@ -329,7 +329,7 @@ const PlatformConsolePage = ({
                   <td className="px-4 py-3">
                     {tenantOverview[t.id]?.admin_email ? (
                       <div>
-                        <div className="text-sm text-white">{tenantOverview[t.id]?.admin_name || '—'}</div>
+                        <div className="text-sm text-dt-body">{tenantOverview[t.id]?.admin_name || '—'}</div>
                         <div className="text-xs text-dt-muted">{tenantOverview[t.id]?.admin_email}</div>
                       </div>
                     ) : (
@@ -360,10 +360,10 @@ const PlatformConsolePage = ({
                       }
                     />
                   </td>
-                  <td className="px-4 py-3 text-sm text-white">
+                  <td className="px-4 py-3 text-sm text-dt-body">
                     {tenantOverview[t.id]?.de_count ?? '—'}
                   </td>
-                  <td className="px-4 py-3 text-sm text-white">
+                  <td className="px-4 py-3 text-sm text-dt-body">
                     {tenantOverview[t.id]?.user_count ?? '—'}
                   </td>
                   <td className="px-4 py-3 text-xs text-dt-support">
@@ -449,7 +449,7 @@ const PlatformConsolePage = ({
                     <div className="text-xs text-dt-support mb-0.5">
                       {item.label}
                     </div>
-                    <div className={`text-sm font-medium text-white ${(item as { noCap?: boolean }).noCap ? '' : 'capitalize'} break-all`}>
+                    <div className={`text-sm font-medium text-dt-title ${(item as { noCap?: boolean }).noCap ? '' : 'capitalize'} break-all`}>
                       {item.value}
                     </div>
                   </div>
@@ -462,7 +462,7 @@ const PlatformConsolePage = ({
 
               <div className="bg-dt-panel rounded-xl p-4 flex items-center justify-between gap-4">
                 <div>
-                  <div className="text-sm font-medium text-white">
+                  <div className="text-sm font-medium text-dt-title">
                     Let this tenant create sub-tenants instantly
                   </div>
                   <div className="text-xs text-dt-support mt-0.5">
@@ -476,7 +476,7 @@ const PlatformConsolePage = ({
 
               <div className="bg-dt-panel rounded-xl p-4">
                 <div className="flex items-center justify-between gap-4 mb-1">
-                  <div className="text-sm font-medium text-white">Plan</div>
+                  <div className="text-sm font-medium text-dt-title">Plan</div>
                   <PlanSelector
                     tenant={selectedTenant}
                     onChanged={(plan, budget) => setSelectedTenant({ ...selectedTenant, plan, monthlyTokens: selectedTenant.monthlyTokens, tokenLimit: budget })}
@@ -500,7 +500,7 @@ const PlatformConsolePage = ({
                   nothing. */}
               <div className="bg-dt-panel rounded-xl p-4">
                 <div className="flex items-center justify-between gap-4 mb-1">
-                  <div className="text-sm font-medium text-white">AI billed to</div>
+                  <div className="text-sm font-medium text-dt-title">AI billed to</div>
                   <KeyModeSelector
                     tenant={selectedTenant}
                     onChanged={(mode) => setSelectedTenant({ ...selectedTenant, llmKeyMode: mode })}
@@ -577,7 +577,7 @@ const PlatformConsolePage = ({
                 </div>
                 <div className="flex justify-between">
                   <span>Recorded</span>
-                  <span className="text-white">Yes — every session is logged</span>
+                  <span className="text-dt-title">Yes — every session is logged</span>
                 </div>
               </div>
               {enterError && <p className="text-xs text-red-400">{enterError}</p>}
@@ -606,7 +606,7 @@ const PlatformConsolePage = ({
     return (
       <div className="p-6">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-white">Revenue</h1>
+          <h1 className="text-2xl font-bold text-dt-title">Revenue</h1>
           <p className="text-dt-support text-sm mt-1">
             Plan mix across all tenants — no billing system is connected yet, so no dollar figures are shown.
           </p>
@@ -640,10 +640,10 @@ const PlatformConsolePage = ({
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-700">
+            <tbody className="divide-y divide-dt-border">
               {tenants.slice(0, revenueRowLimit).map((t) => (
                 <tr key={t.id} className="hover:bg-dt-panel transition-all">
-                  <td className="px-4 py-3 text-sm text-white">{t.name}</td>
+                  <td className="px-4 py-3 text-sm text-dt-body">{t.name}</td>
                   <td className="px-4 py-3">
                     <Badge
                       label={t.plan}
@@ -851,7 +851,7 @@ const PlatformHealthPage = () => {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">System Health</h1>
+        <h1 className="text-2xl font-bold text-dt-title">System Health</h1>
         <p className="text-dt-support text-sm mt-1">
           Connector health across every tenant, and whether the platform's own outbound calls and
           scheduled jobs are succeeding.
@@ -932,13 +932,13 @@ const PlatformHealthPage = () => {
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-700">
+            <tbody className="divide-y divide-dt-border">
               {rows.map((r) => (
                 <tr key={r.connector_id} className="hover:bg-dt-panel transition-all">
-                  <td className="px-4 py-3 text-sm text-white">{r.tenant_name}</td>
+                  <td className="px-4 py-3 text-sm text-dt-body">{r.tenant_name}</td>
                   <td className="px-4 py-3 text-sm text-dt-support">{r.display_name || r.provider}</td>
                   <td className="px-4 py-3">{statusBadge(r)}</td>
-                  <td className="px-4 py-3 text-sm text-white">{r.consecutive_failures}</td>
+                  <td className="px-4 py-3 text-sm text-dt-body">{r.consecutive_failures}</td>
                   <td className="px-4 py-3 text-xs text-dt-support">{relativeTime(r.last_ok_at)}</td>
                   <td className="px-4 py-3 text-xs text-dt-support max-w-xs truncate">{r.last_error || '—'}</td>
                 </tr>
@@ -1041,7 +1041,7 @@ const RecentPlatformEventsPanel = ({ tenants }: { tenants: Tenant[] }) => {
 
   return (
     <div className="bg-dt-card border border-dt-border rounded-xl p-5">
-      <h2 className="text-sm font-semibold text-white mb-4">Recent Platform Events</h2>
+      <h2 className="text-sm font-semibold text-dt-title mb-4">Recent Platform Events</h2>
       {events === null && (
         <p className="text-xs text-dt-muted text-center py-6">Loading recent activity…</p>
       )}
@@ -1199,7 +1199,7 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants, operatorUserId }: {
         className="w-full px-5 py-4 flex items-center justify-between gap-4 text-left"
       >
         <div>
-          <p className="text-sm font-semibold text-white">Write audit log</p>
+          <p className="text-sm font-semibold text-dt-title">Write audit log</p>
           <p className="text-xs text-dt-support mt-0.5">
             Every change made to a tenant's data during a remote-access session — who, what, and where.
           </p>
@@ -1220,7 +1220,7 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants, operatorUserId }: {
                   <select
                     value={tenantFilter}
                     onChange={(e) => setTenantFilter(e.target.value)}
-                    className="bg-dt-panel border border-dt-border-strong text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500"
+                    className="bg-dt-panel border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500"
                   >
                     <option value="all">All tenants</option>
                     {tenantIdsInLog.map((tid) => (
@@ -1265,7 +1265,7 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants, operatorUserId }: {
                         <th className="px-3 py-2 text-xs font-medium text-dt-muted">Changed fields</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-700">
+                    <tbody className="divide-y divide-dt-border">
                       {visibleRows.map((row) => {
                         const fields = changedFields(row);
                         return (
@@ -1277,7 +1277,7 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants, operatorUserId }: {
                             <td className="px-3 py-2.5 text-xs text-dt-support whitespace-nowrap">
                               {new Date(row.created_at).toLocaleString()}
                             </td>
-                            <td className="px-3 py-2.5 text-xs text-white whitespace-nowrap">
+                            <td className="px-3 py-2.5 text-xs text-dt-body whitespace-nowrap">
                               {row.operator_name || 'Platform admin'}
                             </td>
                             <td className="px-3 py-2.5 text-xs text-dt-support whitespace-nowrap">
@@ -1285,7 +1285,7 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants, operatorUserId }: {
                             </td>
                             <td className="px-3 py-2.5 text-xs text-dt-support font-mono">{row.table_name}</td>
                             <td className="px-3 py-2.5">
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${operationBadgeClasses[row.operation] || 'bg-slate-600 text-dt-support'}`}>
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${operationBadgeClasses[row.operation] || 'bg-dt-neutral-soft text-dt-support'}`}>
                                 {row.operation}
                               </span>
                             </td>
@@ -1338,7 +1338,7 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants, operatorUserId }: {
                         </div>
                         <div>
                           <span className="text-dt-muted">after:</span>{' '}
-                          <span className="font-mono break-all text-white">
+                          <span className="font-mono break-all text-dt-title">
                             {detailRow.new_data ? JSON.stringify(detailRow.new_data[field]) : '—'}
                           </span>
                         </div>
@@ -1402,7 +1402,7 @@ const PendingApprovalsPanel = () => {
     <div className="bg-dt-card border border-amber-500/30 rounded-xl overflow-hidden mb-6">
       <div className="px-5 py-4 border-b border-dt-border flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold text-white">Waiting on your approval</p>
+          <p className="text-sm font-semibold text-dt-title">Waiting on your approval</p>
           <p className="text-xs text-dt-support mt-0.5">
             These tenants asked to create a sub-account. Nothing is created until you approve or reject.
           </p>
@@ -1411,11 +1411,11 @@ const PendingApprovalsPanel = () => {
           {requests.length} pending
         </span>
       </div>
-      <div className="divide-y divide-slate-700">
+      <div className="divide-y divide-dt-border">
         {requests.map((r) => (
           <div key={r.id} className="px-5 py-3 flex items-center justify-between gap-4">
             <div className="min-w-0">
-              <div className="text-sm text-white font-medium">{r.proposed_name}</div>
+              <div className="text-sm text-dt-title font-medium">{r.proposed_name}</div>
               <div className="text-xs text-dt-muted mt-0.5">
                 {r.proposed_industry ? r.proposed_industry + ' · ' : ''}
                 requested {new Date(r.created_at).toLocaleString()}
@@ -1451,7 +1451,7 @@ const PendingApprovalsPanel = () => {
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
               placeholder="e.g. Please provide more detail about the intended use case"
-              className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-red-500 min-h-[90px]"
+              className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-red-500 min-h-[90px]"
             />
             <button
               disabled={!rejectReason.trim()}
@@ -1491,7 +1491,7 @@ const SelfServeToggle = ({ tenant, onChanged }: { tenant: Tenant; onChanged: (v:
       onClick={toggle}
       disabled={saving}
       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${
-        enabled ? 'bg-emerald-600' : 'bg-slate-600'
+        enabled ? 'bg-emerald-600' : 'bg-dt-border-strong'
       }`}
     >
       <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'}`} />
@@ -1531,7 +1531,7 @@ const SuspendToggle = ({ tenant, onChanged }: { tenant: Tenant; onChanged: (stat
         </button>
         <button
           onClick={() => setConfirming(false)}
-          className="px-3 py-2.5 text-sm text-dt-support hover:text-white transition-all"
+          className="px-3 py-2.5 text-sm text-dt-support hover:text-dt-body transition-all"
         >
           Cancel
         </button>
@@ -1546,7 +1546,7 @@ const SuspendToggle = ({ tenant, onChanged }: { tenant: Tenant; onChanged: (stat
       className={`px-4 py-2.5 text-sm font-medium rounded-xl transition-all disabled:opacity-50 ${
         isSuspended
           ? 'text-emerald-300 bg-emerald-500/20 hover:bg-emerald-500/30'
-          : 'text-dt-support hover:text-white bg-dt-panel'
+          : 'text-dt-support hover:text-dt-body bg-dt-panel'
       }`}
     >
       {saving ? 'Working…' : isSuspended ? 'Reactivate' : 'Suspend'}
@@ -1612,7 +1612,7 @@ const DeleteTenantControl = ({ tenant, onDeleted }: { tenant: Tenant; onDeleted:
             onChange={(e) => setConfirmText(e.target.value)}
             placeholder={tenant.slug}
             autoFocus
-            className="w-full bg-dt-page border border-dt-border text-white text-sm rounded-lg px-3 py-2 font-mono focus:outline-none focus:border-red-500"
+            className="w-full bg-dt-page border border-dt-border text-dt-body text-sm rounded-lg px-3 py-2 font-mono focus:outline-none focus:border-red-500"
           />
           {error && <p className="text-xs text-red-400">{error}</p>}
           <div className="flex gap-2">
@@ -1626,7 +1626,7 @@ const DeleteTenantControl = ({ tenant, onDeleted }: { tenant: Tenant; onDeleted:
             <button
               onClick={() => { setArming(false); setError(''); setConfirmText(''); }}
               disabled={busy}
-              className="px-3 py-2 text-sm text-dt-support hover:text-white transition-all"
+              className="px-3 py-2 text-sm text-dt-support hover:text-dt-body transition-all"
             >
               Cancel
             </button>
@@ -1669,7 +1669,7 @@ const PlanSelector = ({ tenant, onChanged }: { tenant: Tenant; onChanged: (plan:
         value={tenant.plan}
         onChange={(e) => void handleChange(e.target.value as Tenant['plan'])}
         disabled={saving}
-        className="bg-dt-card border border-dt-border-strong text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+        className="bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
       >
         <option value="starter">Starter</option>
         <option value="growth">Growth</option>
@@ -1718,7 +1718,7 @@ const KeyModeSelector = ({ tenant, onChanged }: { tenant: Tenant; onChanged?: (m
         value={mode}
         onChange={(e) => void handleChange(e.target.value as 'platform' | 'byo')}
         disabled={saving}
-        className="bg-dt-card border border-dt-border-strong text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+        className="bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
       >
         <option value="platform">We pay</option>
         <option value="byo">They pay (own key)</option>
@@ -1763,7 +1763,7 @@ const ProvisionTenantModal = ({ onClose, onCreated }: { onClose: () => void; onC
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Acme Manufacturing"
-            className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+            className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
           />
         </div>
         <div>
@@ -1772,7 +1772,7 @@ const ProvisionTenantModal = ({ onClose, onCreated }: { onClose: () => void; onC
             value={industry}
             onChange={(e) => setIndustry(e.target.value)}
             placeholder="e.g. Manufacturing"
-            className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+            className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
           />
         </div>
         {error && <p className="text-xs text-red-400">{error}</p>}
@@ -1833,7 +1833,7 @@ const FeatureTogglePanel = ({ tenant }: { tenant: Tenant }) => {
               return (
                 <div key={r.key} className="bg-dt-panel rounded-xl p-3 flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-sm text-white font-medium">{r.label}</div>
+                    <div className="text-sm text-dt-title font-medium">{r.label}</div>
                     <div className="text-xs text-dt-muted mt-0.5">
                       {r.description} · {r.default_enabled ? 'ON by default' : 'OFF by default'},
                       {' '}currently {isOn ? 'ON' : 'OFF'} for this tenant{hasOverride ? ' (custom override)' : ''}
@@ -1843,7 +1843,7 @@ const FeatureTogglePanel = ({ tenant }: { tenant: Tenant }) => {
                     onClick={() => handleToggle(r.key, isOn)}
                     disabled={savingKey === r.key}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 disabled:opacity-50 ${
-                      isOn ? 'bg-emerald-600' : 'bg-slate-600'
+                      isOn ? 'bg-emerald-600' : 'bg-dt-border-strong'
                     }`}
                   >
                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isOn ? 'translate-x-6' : 'translate-x-1'}`} />

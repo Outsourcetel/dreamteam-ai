@@ -34,9 +34,9 @@ import ProjectRequirements from './onboarding/ProjectRequirements';
 // the R1-activation upgrade — not built yet.
 // ============================================================
 
-const inputCls = 'bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-indigo-500';
+const inputCls = 'bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-indigo-500';
 const btnPrimary = 'text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-40 transition-colors';
-const btnGhost = 'text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong disabled:opacity-40 transition-colors';
+const btnGhost = 'text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body hover:border-dt-border-strong disabled:opacity-40 transition-colors';
 
 const STATUS_META: Record<OnboardingItemStatus, { label: string; cls: string }> = {
   pending: { label: 'Pending', cls: 'bg-dt-panel text-dt-support' },
@@ -50,7 +50,7 @@ const PROJECT_STATUS_CLS: Record<OnboardingProject['status'], string> = {
   active: 'bg-indigo-500/15 text-indigo-300',
   on_hold: 'bg-amber-500/15 text-amber-300',
   completed: 'bg-emerald-500/15 text-emerald-300',
-  cancelled: 'bg-slate-600/50 text-dt-support',
+  cancelled: 'bg-dt-neutral-soft text-dt-support',
 };
 
 function ProgressBar({ pct }: { pct: number }) {
@@ -145,11 +145,11 @@ function ProjectDetail({ project, onBack, onChanged, setPage }: {
 
   return (
     <div>
-      <button onClick={onBack} className="text-xs text-dt-support hover:text-white mb-3 transition-colors">← All projects</button>
+      <button onClick={onBack} className="text-xs text-dt-support hover:text-dt-body mb-3 transition-colors">← All projects</button>
       <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-4">
         <div className="flex items-start justify-between flex-wrap gap-3 mb-3">
           <div>
-            <h3 className="text-white font-semibold">{proj.name}</h3>
+            <h3 className="text-dt-title font-semibold">{proj.name}</h3>
             <p className="text-xs text-dt-muted mt-0.5">
               {proj.customer_accounts?.name || project.customer_accounts?.name || 'Account'}
               {version && <> · {version.name} v{version.version}</>}
@@ -223,7 +223,7 @@ function ProjectDetail({ project, onBack, onChanged, setPage }: {
                     <div key={item.key} className={`rounded-xl border p-3 ${awaitingSignoff ? 'border-amber-800/50 bg-amber-500/5' : 'border-dt-border bg-dt-inset'}`}>
                       <div className="flex items-center gap-3 flex-wrap">
                         <div className="flex-1 min-w-[180px]">
-                          <p className="text-sm text-white">{item.label}
+                          <p className="text-sm text-dt-title">{item.label}
                             {item.requires_signoff && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 align-middle">sign-off</span>}
                             <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted align-middle">{item.owner_type}</span>
                             {item.verify && (
@@ -285,7 +285,7 @@ function ProjectDetail({ project, onBack, onChanged, setPage }: {
                         )}
                         {!locked && (
                           <button onClick={() => { setNoteKey(noteKey === item.key ? null : item.key); setNoteDraft(st.note ?? ''); }}
-                            className="text-xs text-dt-muted hover:text-white transition-colors" disabled={busy}>
+                            className="text-xs text-dt-muted hover:text-dt-body transition-colors" disabled={busy}>
                             {st.note ? 'Edit note' : '+ Note'}
                           </button>
                         )}
@@ -526,8 +526,8 @@ function TemplateEditor({ template, onClose, onSaved }: {
           {items.map((it, idx) => (
             <div key={idx} className="rounded-xl border border-dt-border bg-dt-inset p-3 flex items-center gap-2 flex-wrap">
               <div className="flex flex-col gap-0.5">
-                <button onClick={() => move(idx, -1)} disabled={idx === 0} className="text-dt-faint hover:text-white disabled:opacity-30 text-xs leading-none">▲</button>
-                <button onClick={() => move(idx, 1)} disabled={idx === items.length - 1} className="text-dt-faint hover:text-white disabled:opacity-30 text-xs leading-none">▼</button>
+                <button onClick={() => move(idx, -1)} disabled={idx === 0} className="text-dt-faint hover:text-dt-body disabled:opacity-30 text-xs leading-none">▲</button>
+                <button onClick={() => move(idx, 1)} disabled={idx === items.length - 1} className="text-dt-faint hover:text-dt-body disabled:opacity-30 text-xs leading-none">▼</button>
               </div>
               <input value={it.label} onChange={e => setItem(idx, { label: e.target.value })} placeholder="Item label" className={`${inputCls} flex-1 min-w-[160px] !py-1.5 !text-xs`} />
               <select value={it.phase} onChange={e => setItem(idx, { phase: e.target.value as OnboardingPhase })} className={`${inputCls} !py-1.5 !text-xs`}>
@@ -696,7 +696,7 @@ export default function CustomerOnboardingLive({ setPage }: { setPage?: (p: Page
             {(['projects', 'templates'] as const).map(t => (
               <button key={t} onClick={() => setTab(t)}
                 className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                  tab === t ? 'border-indigo-500 text-white' : 'border-transparent text-dt-muted hover:text-dt-support'
+                  tab === t ? 'border-indigo-500 text-dt-title' : 'border-transparent text-dt-muted hover:text-dt-support'
                 }`}>
                 {t === 'projects' ? `Projects (${projects.length})` : `Templates (${templates.length})`}
               </button>
@@ -720,7 +720,7 @@ export default function CustomerOnboardingLive({ setPage }: { setPage?: (p: Page
               <>
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
                   {[
-                    { label: 'Active projects', value: String(activeProjects.length), color: 'text-white' },
+                    { label: 'Active projects', value: String(activeProjects.length), color: 'text-dt-title' },
                     { label: 'Completed', value: String(projects.filter(p => p.status === 'completed').length), color: 'text-emerald-300' },
                     { label: 'Avg progress (active)', value: activeProjects.length ? `${Math.round(activeProjects.reduce((s, p) => s + p.progress_pct, 0) / activeProjects.length)}%` : '—', color: 'text-indigo-300' },
                     { label: 'Go-lives in 14d', value: String(activeProjects.filter(p => { const d = daysUntil(p.target_golive); return d !== null && d >= 0 && d <= 14; }).length), color: 'text-amber-300' },
@@ -738,7 +738,7 @@ export default function CustomerOnboardingLive({ setPage }: { setPage?: (p: Page
                       <button key={p.id} onClick={() => setDetail(p)}
                         className="text-left rounded-2xl border border-dt-border bg-dt-card p-4 hover:border-dt-border-strong transition-colors">
                         <div className="flex items-start justify-between gap-2 mb-1">
-                          <p className="text-sm font-medium text-white truncate">{p.customer_accounts?.name || p.name}</p>
+                          <p className="text-sm font-medium text-dt-title truncate">{p.customer_accounts?.name || p.name}</p>
                           <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap ${PROJECT_STATUS_CLS[p.status]}`}>{p.status.replace('_', ' ')}</span>
                         </div>
                         <p className="text-[11px] text-dt-muted truncate mb-3">{p.name}</p>
@@ -778,7 +778,7 @@ export default function CustomerOnboardingLive({ setPage }: { setPage?: (p: Page
                 {templates.map(t => (
                   <div key={t.id} className="rounded-2xl border border-dt-border bg-dt-card p-4 flex items-center gap-3 flex-wrap">
                     <div className="flex-1 min-w-[200px]">
-                      <p className="text-sm font-medium text-white">{t.name}
+                      <p className="text-sm font-medium text-dt-title">{t.name}
                         <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded align-middle ${t.status === 'published' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>
                           {t.status === 'published' ? `published v${t.version}` : t.version > 0 ? `draft (v${t.version} live)` : 'draft'}
                         </span>

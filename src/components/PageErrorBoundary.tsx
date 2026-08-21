@@ -31,7 +31,7 @@ export default class PageErrorBoundary extends React.Component<Props, State> {
       <div className="p-6 flex items-center justify-center">
         <div className="max-w-md w-full bg-dt-card border border-dt-border rounded-2xl p-8 text-center">
           <div className="w-12 h-12 rounded-full bg-rose-500/15 text-rose-300 flex items-center justify-center text-xl mx-auto mb-4">!</div>
-          <h2 className="text-lg font-semibold text-white mb-2">This page hit an error</h2>
+          <h2 className="text-lg font-semibold text-dt-title mb-2">This page hit an error</h2>
           <p className="text-sm text-dt-support mb-1">
             The rest of the app is still working — use the sidebar to go somewhere else, or try again.
           </p>

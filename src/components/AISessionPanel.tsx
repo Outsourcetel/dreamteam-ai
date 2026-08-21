@@ -140,12 +140,12 @@ export default function AISessionPanel({
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-dt-border bg-dt-card">
         <div className="min-w-0">
-          <div className="text-sm font-semibold text-white">Edit with AI</div>
+          <div className="text-sm font-semibold text-dt-title">Edit with AI</div>
           <div className="text-xs text-dt-support truncate">{subjectLabel}</div>
         </div>
         {onClose && (
           <button onClick={onClose} aria-label="Close"
-            className="text-dt-support hover:text-white text-lg leading-none px-2">×</button>
+            className="text-dt-support hover:text-dt-body text-lg leading-none px-2">×</button>
         )}
       </div>
 
@@ -177,7 +177,7 @@ export default function AISessionPanel({
           turns.map((t, i) => (
             <div key={i} className={t.role === 'user' ? 'flex justify-end' : ''}>
               <div className={t.role === 'user'
-                ? 'bg-dt-panel text-white rounded-lg px-3 py-2 max-w-[85%] whitespace-pre-wrap'
+                ? 'bg-dt-panel text-dt-body rounded-lg px-3 py-2 max-w-[85%] whitespace-pre-wrap'
                 : 'text-dt-body whitespace-pre-wrap max-w-[95%]'}>
                 {t.role === 'assistant' ? renderLite(t.content) : t.content}
 
@@ -201,7 +201,7 @@ export default function AISessionPanel({
                       </span>
                       {!isUndone && (
                         <button onClick={() => handleUndo(c.change_id)} disabled={undoing === c.change_id}
-                          className="text-teal-300 hover:text-white underline disabled:opacity-50 shrink-0">
+                          className="text-teal-300 hover:text-teal-100 underline disabled:opacity-50 shrink-0">
                           {undoing === c.change_id ? 'Undoing…' : 'Undo'}
                         </button>
                       )}
@@ -239,7 +239,7 @@ export default function AISessionPanel({
             }}
             rows={2}
             placeholder="Describe what you want changed…"
-            className="flex-1 resize-none bg-dt-card border border-dt-border rounded px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-slate-500"
+            className="flex-1 resize-none bg-dt-card border border-dt-border rounded px-3 py-2 text-sm text-dt-body placeholder-slate-500 focus:outline-none focus:border-slate-500"
           />
           <button
             onClick={() => void send(input)}

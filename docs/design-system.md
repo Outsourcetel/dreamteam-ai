@@ -216,21 +216,41 @@ a next action) · **error** (`Banner tone="danger"` + retry) · **loaded**.
   border variants · 13 radii · 8 local StatCards · 8 local Modals · 85 inline
   styles · 19 raw hex.
 
-## 7. Sanctioned exceptions + sweep record (2026-07-22)
+## 7. Sanctioned exceptions + sweep record (2026-07-22 → 2026-08-21)
 
 The estate-wide token sweep is DONE (commits 5ceb9e6 → this one): every page and
 shared component runs on `dt-*` tokens; `ui.tsx`, `StatCard.tsx`, and
 `Modal.tsx` in `src/components/` are now thin ADAPTERS over the primitives —
 legacy imports keep working, new code imports `src/design/primitives` directly.
-Detector baselines are ratcheted to the post-sweep floor (8 bg-slate · 3
-border-slate · 7 StatCard files · 8 Modal files); they only go down from there.
+The Task-5 estate sweep (groups 1–8, closed 2026-08-21) drove all four
+`audit-light-ready.mjs` metrics — bare `text-white`, `bg-slate-*`,
+`border-slate-*`, `text-slate-*` — from a combined 216/28/6/2 to **zero**,
+with every remaining raw hit either converted to a `dt-*` token or recorded
+below as a named, script-excluded survivor. Nothing is silent baseline slack:
+`node scripts/audit-light-ready.mjs --strict` reports 0/0/0/0 and any new hit
+outside these rows is a real regression, not noise.
 
 **Sanctioned raw-slate survivors** (do NOT convert; anything else is drift):
 - **Control shades** — `slate-500`/`slate-600` (+alphas) on toggle knobs and
   tracks, placeholders (`placeholder-slate-500`), and focus rings. These are
   interaction affordances, not surfaces or text; they ride the navy remap and
-  read correctly in both surface families. If a `dt-control` token lands later,
-  convert them all in one scripted pass.
+  read correctly in both surface families. Toggle-track and status-chip
+  *backgrounds* were converted in the Task-5 sweep (`bg-slate-500/600` →
+  `bg-dt-border-strong`, or `bg-dt-neutral-soft` where the source was already
+  translucent) — this exception is now narrowed to `focus:border-slate-500`/
+  `600` and its paired `placeholder-slate-500`/`600`, which is genuinely load-
+  bearing: `--dt-border-strong`'s light value (`#d0d5dd`) contrasts roughly
+  1.4:1 against a white page — an all-but-invisible focus ring — while
+  `slate-500` (`#64748b`) holds ~4.2:1 in both themes, because it does not
+  ride the theme remap at all. Converting these would trade a correct
+  fix for a real regression, so they stay literal until a `dt-control` token
+  models focus-visible contrast explicitly. Exactly five lines, held by
+  `scripts/audit-light-ready.mjs`'s `CONTROL_SHADE_FOCUS_RING` exclude:
+  `AISessionPanel.tsx:242`, `GovernanceAIPanel.tsx:157`,
+  `SecurityAccessPage.tsx:412`, `SecurityAccessPage.tsx:417`,
+  `LivePlaybookBuilder.tsx:97` (all `focus:outline-none focus:border-slate-500`
+  composer/input pairs). If a `dt-control` token lands later, convert them all
+  in one scripted pass and delete the exclude.
 - ~~**EmbedWidget light-theme branch**~~ — REMOVED 2026-08-06 along with
   `src/components/EmbedWidget.tsx` and the `/embed` route (it called an RPC that
   was never created). The customer-facing widget is `public/widget.js`, which is
@@ -238,10 +258,33 @@ border-slate · 7 StatCard files · 8 Modal files); they only go down from there
   light-neutral exemption that used to be recorded here no longer applies to any
   file under `src/`.
 
+**Sanctioned bare-`text-white` survivors** (Task 5, group 8 — the audit's
+`COLORED_BG` regex only recognizes literal `bg-<tailwind-color>-NNN` class
+names; it cannot see a runtime `style={{backgroundColor: ...}}` or a
+template-literal class like `` `${de.color}` ``, so these read as "bare" even
+though the fill under them is a genuine, always-opaque solid color. Converting
+any of these would be the wrong call under the mapping table's own "text-white
+on a solid colored fill stays" rule — held by `scripts/audit-light-ready.mjs`'s
+`SOLID_FILL_SURVIVORS` exclude list, one entry per line below):
+
+| File : line | Fill | Reason |
+|---|---|---|
+| `EndUserChatPage.tsx` :321,363,385,433,460,533,635 | `style={{backgroundColor: brandColor \| accentColor}}` (one branch also uses a literal `#64748b` for `role==='system'`) | Portal chat header/avatar/composer/send-button and the customer's own outgoing bubble — brand-color fill, always opaque |
+| `DEChatDock.tsx` :487,571,590,678,745,768 | `` className={`... ${de.color} ...`} `` | Per-DE avatar circles; `de.color` is always one of the file's own fixed `bg-{indigo,violet,sky,teal}-600` literals (never translucent) |
+| `SettingsPage.tsx` :444,550,737,848,916,935 | `style={{backgroundColor: accentColor}}` | Active settings-nav tab + every primary Save/Copy/Generate button on the page |
+| `UserManagementPage.tsx` :165,240,286,486 | `style={{backgroundColor: accentColor}}` | Invite-modal submit, "+ Invite Member", active status-filter pill, "Open Organisation" |
+| `CommsSettingsCard.tsx` :53 | `style={{backgroundColor: accentColor}}` | Save button |
+| `PageTabs.tsx` :27 | `style={page === t.id ? {backgroundColor: accentColor \|\| DEFAULT_ACCENT} : {}}` | Shared portal tab-bar primitive's active state (the inactive branch's `hover:text-white` was a real hazard and WAS converted to `hover:text-dt-body`) |
+| `Sidebar.tsx` :320 | `style={{background: activeCompany.badgeColor}}` | Collapsed-sidebar company badge |
+| `LoginPage.tsx` :146,148,152,167 | `style={{background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e1b4b 100%)'}}` on the `leftPanel` | Desktop-only (`hidden lg:flex`) marketing hero — a fixed dark-navy gradient that does not participate in the light/dark theme at all, so `text-white` is correct in both app themes |
+
 **Hover/neutral vocabulary** (match the primitives, never invent):
 secondary-button hover border = `hover:border-dt-muted`; neutral status chip =
 `bg-dt-neutral-soft text-dt-neutral`; deep inset wells = `bg-dt-inset`;
-punched-out rings on avatars/dots = `border-dt-page`.
+punched-out rings on avatars/dots = `border-dt-page`; ghost-button/icon hover =
+`hover:text-dt-body`; a colored link/button brightens within its own tone
+family on hover (`text-teal-300 hover:text-teal-100`, `text-amber-500
+hover:text-amber-300`) — never jump to a neutral or white hover state.
 
 ## 8. Width verification — the 3-width procedure
 

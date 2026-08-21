@@ -85,7 +85,7 @@ export default function SetPasswordScreen({ onDone }: { onDone: () => void }) {
     <div className="min-h-screen flex items-center justify-center bg-dt-bg px-4">
       <div className="w-full max-w-md">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-white">Choose a password</h1>
+          <h1 className="text-2xl font-bold text-dt-title">Choose a password</h1>
           <p className="text-sm text-dt-support mt-2">
             You signed in through an invite link. That link only works once, so pick a password now —
             it is how you will get back in.
@@ -98,7 +98,7 @@ export default function SetPasswordScreen({ onDone }: { onDone: () => void }) {
             <input
               type="password" value={pw} onChange={e => setPw(e.target.value)}
               autoFocus autoComplete="new-password"
-              className="w-full bg-dt-inset border border-dt-border rounded-lg px-3 py-2 text-sm text-white"
+              className="w-full bg-dt-inset border border-dt-border rounded-lg px-3 py-2 text-sm text-dt-body"
             />
             {tooShort && <p className="text-xs text-amber-300 mt-1">At least 8 characters.</p>}
           </div>
@@ -108,7 +108,7 @@ export default function SetPasswordScreen({ onDone }: { onDone: () => void }) {
             <input
               type="password" value={confirm} onChange={e => setConfirm(e.target.value)}
               autoComplete="new-password"
-              className="w-full bg-dt-inset border border-dt-border rounded-lg px-3 py-2 text-sm text-white"
+              className="w-full bg-dt-inset border border-dt-border rounded-lg px-3 py-2 text-sm text-dt-body"
             />
             {mismatch && <p className="text-xs text-amber-300 mt-1">These do not match.</p>}
           </div>

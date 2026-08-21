@@ -84,7 +84,7 @@ export default function PlatformAIEnginePanel() {
   return (
     <div className="bg-dt-card border border-dt-border rounded-xl p-5">
       <div className="flex items-center justify-between mb-1">
-        <h2 className="text-sm font-semibold text-white">AI engine — providers & failover</h2>
+        <h2 className="text-sm font-semibold text-dt-title">AI engine — providers & failover</h2>
         <button onClick={() => void load()} className="text-xs text-indigo-400 hover:text-indigo-300">Refresh</button>
       </div>
       <p className="text-xs text-dt-muted mb-4 max-w-2xl">
@@ -102,7 +102,7 @@ export default function PlatformAIEnginePanel() {
                 <span className="text-xs text-dt-body">{PROVIDER_LABEL[t.provider] ?? t.provider}</span>
                 {t.armed
                   ? <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300">armed · {t.source}</span>
-                  : <span className="text-[11px] px-2 py-0.5 rounded bg-slate-600/50 text-dt-support">no key</span>}
+                  : <span className="text-[11px] px-2 py-0.5 rounded bg-dt-neutral-soft text-dt-support">no key</span>}
               </div>
             ))}
           </div>

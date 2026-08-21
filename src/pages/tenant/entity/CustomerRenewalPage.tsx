@@ -63,7 +63,7 @@ function RunTimeline({ run, setPage }: { run: PlaybookRun; setPage: (p: Page) =>
     <div className="rounded-xl border border-dt-border bg-dt-inset p-4">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-white">{acct}</span>
+          <span className="text-xs font-medium text-dt-title">{acct}</span>
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support font-mono">{run.playbook_key}</span>
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300" title="Executed by the playbook-execute edge function — the run survives closed tabs">server-run</span>
         </div>
@@ -207,7 +207,7 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">{vocab.renewal_label} &amp; Expansion — {vocab.party_singular} Lifecycle</h1>
+        <h1 className="text-2xl font-bold text-dt-title">{vocab.renewal_label} &amp; Expansion — {vocab.party_singular} Lifecycle</h1>
         <p className="text-dt-support text-sm mt-1">{liveTenantName || 'Your company'} · Live {vocab.renewal_label.toLowerCase()} pipeline — invoices above {fmtMoneyK(thresholdCents)} route through a human approval gate (guardrail-configured)</p>
       </div>
 
@@ -230,7 +230,7 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
           {/* Stat cards */}
           <div className="grid grid-cols-3 gap-3 mb-5">
             {[
-              { label: 'Invoices outstanding', value: fmtMoneyK(outstandingCents), sub: `${invoices.filter(i => i.status === 'sent' || i.status === 'overdue').length} invoice(s)`, color: 'text-white' },
+              { label: 'Invoices outstanding', value: fmtMoneyK(outstandingCents), sub: `${invoices.filter(i => i.status === 'sent' || i.status === 'overdue').length} invoice(s)`, color: 'text-dt-title' },
               { label: 'Awaiting approval', value: String(awaitingApproval.length), sub: awaitingApproval.length > 0 ? fmtMoneyK(awaitingApproval.reduce((s, i) => s + i.amount_cents, 0)) : '—', color: awaitingApproval.length > 0 ? 'text-amber-300' : 'text-emerald-300' },
               { label: 'Collected', value: fmtMoneyK(paidCents), sub: `${invoices.filter(i => i.status === 'paid').length} paid`, color: 'text-emerald-300' },
             ].map(s => (
@@ -243,7 +243,7 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
           </div>
 
           {/* Invoices table */}
-          <h3 className="text-sm font-semibold text-white mb-3">Renewal invoices</h3>
+          <h3 className="text-sm font-semibold text-dt-title mb-3">Renewal invoices</h3>
           {invoices.length === 0 ? (
             <p className="text-xs text-dt-muted mb-5">No invoices yet — generate one from the accounts below.</p>
           ) : (
@@ -259,7 +259,7 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
                 <tbody>
                   {invoices.map((inv, i) => (
                     <tr key={inv.id} className={`border-b border-dt-border hover:bg-dt-panel transition-colors ${i === invoices.length - 1 ? 'border-b-0' : ''}`}>
-                      <td className="py-3 px-4 font-medium text-white">{inv.customer_accounts?.name || '—'}</td>
+                      <td className="py-3 px-4 font-medium text-dt-title">{inv.customer_accounts?.name || '—'}</td>
                       <td className="py-3 px-4 text-dt-support">{fmtMoneyK(inv.amount_cents)}</td>
                       <td className="py-3 px-4">
                         <span className={`text-xs ${invoiceStatusClass[inv.status]}`}>{invoiceStatusLabel[inv.status]}</span>
@@ -284,7 +284,7 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
           )}
 
           {/* Generate section */}
-          <h3 className="text-sm font-semibold text-white mb-1">Generate renewal invoices</h3>
+          <h3 className="text-sm font-semibold text-dt-title mb-1">Generate renewal invoices</h3>
           <p className="text-xs text-dt-muted mb-3">
             Accounts without an open invoice. Amounts above {fmtMoneyK(thresholdCents)} require human approval before sending. "Run playbook" executes the full renewal_v1 flow — check → invoice → guardrail → human gate → send — with every step audited.
           </p>
@@ -303,7 +303,7 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
                 <tbody>
                   {generatable.map((a, i) => (
                     <tr key={a.id} className={`border-b border-dt-border hover:bg-dt-panel transition-colors ${i === generatable.length - 1 ? 'border-b-0' : ''}`}>
-                      <td className="py-3 px-4 font-medium text-white">{a.name}</td>
+                      <td className="py-3 px-4 font-medium text-dt-title">{a.name}</td>
                       <td className="py-3 px-4 text-dt-support">{fmtMoneyK(a.arr_cents)}</td>
                       <td className="py-3 px-4 text-dt-support text-xs whitespace-nowrap">{a.renewal_date || '—'}</td>
                       <td className="py-3 px-4">
@@ -327,7 +327,7 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
           {/* Playbook runs */}
           {runs.length > 0 && (
             <div className="mt-6">
-              <h3 className="text-sm font-semibold text-white mb-1">Renewal playbook runs</h3>
+              <h3 className="text-sm font-semibold text-dt-title mb-1">Renewal playbook runs</h3>
               <p className="text-xs text-dt-muted mb-3">
                 Live step timeline — runs pause at the human gate when an invoice exceeds the guardrail threshold, and resume when the approval is decided.
               </p>
@@ -344,7 +344,7 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
         <Modal size="sm" onClose={() => setGenModal(null)} title="Generate renewal invoice">
           <div>
             <p className="text-sm text-dt-support mb-2">
-              Generate renewal invoice for <span className="text-white font-medium">{genModal.name}</span> —{' '}
+              Generate renewal invoice for <span className="text-dt-title font-medium">{genModal.name}</span> —{' '}
               <span className="text-indigo-300 font-medium">{fmtMoneyK(genModal.arr_cents)}</span>?
             </p>
             {genModal.arr_cents > thresholdCents && (

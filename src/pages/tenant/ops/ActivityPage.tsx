@@ -131,7 +131,7 @@ function dotColor(type: ActivityType): string {
   if (type === 'resolved') return 'bg-emerald-400';
   if (type === 'escalated') return 'bg-amber-400';
   if (type === 'kb_gap') return 'bg-blue-400';
-  if (type === 'config_change') return 'bg-slate-500';
+  if (type === 'config_change') return 'bg-dt-border-strong';
   if (type === 'guardrail_block') return 'bg-red-500';
   return 'bg-red-400';
 }

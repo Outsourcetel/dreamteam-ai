@@ -53,7 +53,7 @@ interface KpiStatusRow {
 const HEALTH_STYLE: Record<string, string> = {
   healthy: 'bg-emerald-500/15 text-emerald-300',
   improving: 'bg-sky-500/15 text-sky-300',
-  insufficient_data: 'bg-slate-600/40 text-dt-support',
+  insufficient_data: 'bg-dt-neutral-soft text-dt-support',
   degraded: 'bg-rose-500/15 text-rose-300',
   low_confidence: 'bg-amber-500/15 text-amber-300',
   high_cost: 'bg-amber-500/15 text-amber-300',
@@ -70,7 +70,7 @@ function Tile({ label, value, sub, tone }: { label: string; value: string; sub?:
   return (
     <div className="bg-dt-card border border-dt-border rounded-xl p-4">
       <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{label}</p>
-      <p className={`text-xl font-bold ${tone ?? 'text-white'}`}>{value}</p>
+      <p className={`text-xl font-bold ${tone ?? 'text-dt-title'}`}>{value}</p>
       {sub && <p className="text-[10px] text-dt-muted mt-1">{sub}</p>}
     </div>
   );
@@ -245,7 +245,7 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
       {/* ── 2. Delivery, by department ── */}
       <div className="mb-6 rounded-2xl border border-dt-border bg-dt-card p-5">
         <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
-          <h3 className="text-sm font-semibold text-white">Delivery</h3>
+          <h3 className="text-sm font-semibold text-dt-title">Delivery</h3>
           <span className="text-[11px] text-dt-muted">{kpisMet + kpisMissed > 0 ? `${kpisMet}/${kpisMet + kpisMissed} KPI targets met` : 'No KPI targets set yet — add them on each employee\'s profile'}</span>
         </div>
         <p className="text-[11px] text-dt-muted mb-3">Grouped by department — the same grouping guardrail scoping uses.</p>
@@ -297,7 +297,7 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
 
       {/* ── 3. Risk posture (30 days) ── */}
       <div className="mb-6 rounded-2xl border border-dt-border bg-dt-card p-5">
-        <h3 className="text-sm font-semibold text-white mb-3">Risk posture · last 30 days</h3>
+        <h3 className="text-sm font-semibold text-dt-title mb-3">Risk posture · last 30 days</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
           <Tile label="Guardrail interventions" value={String(tenantGuardrailEvents)} sub="gated or blocked by your rules" />
           <Tile label="High-frustration inquiries" value={String(highFrustration)} sub="routed to a human" />
@@ -316,7 +316,7 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
 
       {/* ── 4. Work in your pipeline (drill into Company Data) ── */}
       <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
-        <h3 className="text-sm font-semibold text-white mb-1">Work in flight</h3>
+        <h3 className="text-sm font-semibold text-dt-title mb-1">Work in flight</h3>
         <p className="text-[11px] text-dt-muted mb-3">Live counts from your business records — click through for the detail.</p>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {([
@@ -329,7 +329,7 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
             <button key={t.label} onClick={() => setPage(t.page)}
               className="bg-dt-card border border-dt-border hover:border-dt-border-strong rounded-xl p-4 text-left transition-colors">
               <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{t.label}</p>
-              <p className="text-xl font-bold text-white">{t.value}</p>
+              <p className="text-xl font-bold text-dt-title">{t.value}</p>
               <p className="text-[10px] text-indigo-400 mt-1">Open →</p>
             </button>
           ))}
