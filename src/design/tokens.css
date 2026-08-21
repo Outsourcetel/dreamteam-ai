@@ -88,11 +88,41 @@
   --dt-field-max:    420px; /* a form field wider than this is harder to read */
 }
 
-/* Light theme lands here later — semantic names stay identical. */
+/* ═══ DAYLIGHT — the light theme (founder-approved 2026-08-21). Same token
+   names, second value set. Activated by class `light` on <html>; per-tenant
+   branding still overrides accent vars on top via inline style. ═══ */
 :root.light {
-  /* Reserved for the light ramp. The one line that must live here from the
-     start: whenever this class is used, the browser-painted surfaces have to
-     flip back with it, or a light theme inherits dark scrollbars and pickers —
-     the same defect as D-13, mirrored. */
+  /* Browser-painted surfaces flip with the theme (mirror of D-13). */
   color-scheme: light;
+
+  /* ── Surfaces ── */
+  --dt-page:    #f4f5f7;
+  --dt-panel:   #ffffff;
+  --dt-card:    #ffffff;
+  --dt-inset:   #f2f4f7;
+
+  /* ── Borders ── */
+  --dt-border:        #e4e7ec;
+  --dt-border-strong: #d0d5dd;
+
+  /* ── Text (same five levels; dt-muted stays the floor for copy) ── */
+  --dt-text-title:   #101828;
+  --dt-text-body:    #1d2939;
+  --dt-text-support: #475467;
+  --dt-text-muted:   #667085;
+  --dt-text-faint:   #98a2b3;
+
+  /* ── Accent (Daylight cobalt; tenant-brandable at runtime) ── */
+  --dt-accent:        #155eef;
+  --dt-accent-strong: #1146d4;
+  --dt-accent-hover:  #155eef;
+  --dt-accent-soft:   #155eef14;
+  --dt-accent-text:   #1146d4;
+
+  /* ── Semantics (solid pastels — alpha washes vanish on white) ── */
+  --dt-ok:        #067647; --dt-ok-soft:     #e8f5ee; --dt-ok-border:     #b7dfc8;
+  --dt-warn:      #b54708; --dt-warn-soft:   #fdf3e0; --dt-warn-border:   #f5d698;
+  --dt-danger:    #d92d20; --dt-danger-soft: #fdecea; --dt-danger-border: #f4b3ae;
+  --dt-info:      #0b6bab; --dt-info-soft:   #e7f3fb; --dt-info-border:   #b3d9f0;
+  --dt-neutral:   #475467; --dt-neutral-soft:#f2f4f7; --dt-neutral-border:#e0e3e9;
 }

@@ -6,6 +6,19 @@ import { initSentry, SentryErrorBoundary } from './lib/sentry';
 
 initSentry();
 
+// Theme bootstrapping. The class must be on <html> BEFORE first paint or the
+// app flashes the wrong theme. Order of authority: dev URL override → the
+// last surface family branding applied (cached by applyBranding in
+// src/design/branding.ts) → dark default (flips to light in the
+// default-flip task, after the estate is verified).
+const LIGHT_SURFACES = new Set(['daylight']);
+{
+  const urlTheme = new URLSearchParams(window.location.search).get('theme');
+  const cached = localStorage.getItem('dt.surface');
+  const light = urlTheme ? urlTheme === 'light' : (cached ? LIGHT_SURFACES.has(cached) : false);
+  document.documentElement.classList.toggle('light', light);
+}
+
 function CrashFallback() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-dt-page p-6">

@@ -8,13 +8,13 @@
    a bright 17px gutter carving up every panel). Thin + slate everywhere. ── */
 @layer base {
   * {
-    scrollbar-width: thin;                    /* Firefox */
-    scrollbar-color: #334155 transparent;     /* slate-700 thumb */
+    scrollbar-width: thin;                                  /* Firefox */
+    scrollbar-color: var(--dt-border-strong) transparent;
   }
   *::-webkit-scrollbar { width: 8px; height: 8px; }
   *::-webkit-scrollbar-track { background: transparent; }
-  *::-webkit-scrollbar-thumb { background: #334155; border-radius: 8px; }
-  *::-webkit-scrollbar-thumb:hover { background: #475569; }
+  *::-webkit-scrollbar-thumb { background: var(--dt-border-strong); border-radius: 8px; }
+  *::-webkit-scrollbar-thumb:hover { background: var(--dt-text-faint); }
   *::-webkit-scrollbar-corner { background: transparent; }
 }
 
