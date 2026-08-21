@@ -28,6 +28,7 @@
 //   node scripts/rebuild-dev-from-baseline.mjs --confirm
 // ============================================================================
 import { readFileSync } from 'node:fs';
+import { splitStatements, chunkStatements, countCreateTable, dumpProblems, sessionSetOf } from './sql-statements.mjs';
 
 const DEV_REF = 'nmuntxrcdksyhsdywpan';
 const PROD_REF = 'rfsvmhcqeiyrxivbmpel';
@@ -63,6 +64,21 @@ async function run(ref, query) {
 }
 
 const qi = (s) => '"' + String(s).replace(/"/g, '""') + '"';
+
+// ⚠ THE BASELINE NO LONGER FITS IN ONE REQUEST. On 2026-08-20 this script
+// sent all 3.0MB at once and got SQL 413 back AFTER dropping dev, leaving the
+// project with zero tables and no way to put them back. The endpoint ceiling
+// is between 2MB and 3MB (measured: 2048KB -> 201, 3072KB -> 413).
+//
+// 1MB is half the largest body proven to succeed, and comfortably clear of the
+// single largest statement in the dump (409KB), which cannot be subdivided and
+// has to fit in one request on its own.
+const CHUNK_BYTES = 1024 * 1024;
+
+// Headroom inside the cap for the per-chunk prologue — search_path plus the
+// session GUCs the dump has set so far. About 100 bytes today; reserved
+// generously so that adding one never silently pushes a chunk over.
+const PROLOGUE_RESERVE = 4096;
 
 // Same batching reasoning as restore-drill.mjs: one statement per object gets
 // rate-limited, one statement for everything exceeds max_locks_per_transaction.
@@ -131,12 +147,67 @@ const ledger = await run(PROD_REF, 'select filename, checksum, applied_at, appli
 console.log(`2/6  production ledger: ${ledger.length} row(s) to copy across`);
 
 // ── 3. drop + restore ───────────────────────────────────────────────────────
+// ⚠ EVERYTHING CHECKABLE IS CHECKED BEFORE THE DROP. The 2026-08-20 failure was
+// not that the restore was impossible — it was that we found out AFTER dev had
+// been destroyed. A rebuild that refuses leaves a stale dev, which is a bad day.
+// A rebuild that drops and then discovers it cannot restore leaves NO dev, which
+// is a bad week. Every check that does not require an empty database belongs
+// here, above `dropPublicInBatches()`, and none of them may be moved below it.
+const dump = readFileSync(FILE, 'utf8');
+const statements = splitStatements(dump);
+const chunks = chunkStatements(statements, CHUNK_BYTES - PROLOGUE_RESERVE);
+const [want] = await census(PROD_REF);
+
+{
+  const problems = dumpProblems(dump, statements, CHUNK_BYTES - PROLOGUE_RESERVE);
+
+  // Is this a schema dump at all, or a fragment? The workflow regenerates the
+  // baseline from production immediately before calling this and applies its
+  // own floor — but the script is also run by hand, where nothing does. A
+  // truncated dump passes every other check here and restores a partial dev
+  // that the census at the end would happily call a mismatch AFTER the damage.
+  const dumpTables = countCreateTable(dump);
+  if (dumpTables < want.tables * 0.9) {
+    problems.push(`${FILE} carries ${dumpTables} CREATE TABLE statements and production has ${want.tables} — this dump is truncated`);
+  }
+
+  if (problems.length) {
+    for (const p of problems) console.error(`REFUSING: ${p}`);
+    console.error('Dev has NOT been touched.');
+    process.exit(1);
+  }
+
+  console.log(`     pre-flight OK: ${(dump.length / 1048576).toFixed(2)}MB · ${dumpTables} tables · ${statements.length} statements · ${chunks.length} chunk(s) of at most ${CHUNK_BYTES / 1024}KB`);
+}
+
 console.log('3/6  emptying dev public schema of app objects (batched, extensions kept)…');
 await dropPublicInBatches();
 
-console.log('4/6  restoring the proven baseline into public…');
-const dump = readFileSync(FILE, 'utf8');
-await run(DEV_REF, 'SET search_path = public, extensions;\n' + dump);
+console.log(`4/6  restoring the proven baseline into public (${chunks.length} chunks)…`);
+const carried = [];   // session GUCs the dump has set in the chunks already sent
+for (let c = 0; c < chunks.length; c += 1) {
+  // Each request is its own session, so everything session-scoped is restated:
+  // search_path, and every SET the dump itself has executed so far. Setting
+  // them once in chunk 1 silently does nothing for chunks 2..n — which is how
+  // the functions-before-tables ordering died on `check_function_bodies`.
+  const prologue = ['SET search_path = public, extensions;', ...carried].join('\n') + '\n';
+  const body = prologue + chunks[c].join('\n');
+  if (body.length > CHUNK_BYTES) {
+    throw new Error(`chunk ${c + 1} is ${body.length} bytes with its prologue, over the ${CHUNK_BYTES} cap — raise PROLOGUE_RESERVE`);
+  }
+  for (const st of chunks[c]) {
+    const set = sessionSetOf(st);
+    if (set) carried.push(set);
+  }
+  try {
+    await run(DEV_REF, body);
+  } catch (e) {
+    console.error(`     chunk ${c + 1}/${chunks.length} FAILED (${body.length} bytes, ${chunks[c].length} statements): ${e.message}`);
+    console.error(`     dev is now PARTIALLY restored — chunks 1..${c} applied. Re-run once the cause is fixed.`);
+    throw e;
+  }
+  console.log(`     chunk ${c + 1}/${chunks.length} applied — ${(body.length / 1024).toFixed(0)}KB, ${chunks[c].length} statements`);
+}
 
 // ── 4. put the cross-schema triggers back ───────────────────────────────────
 console.log('5/6  recreating cross-schema triggers…');
@@ -160,7 +231,8 @@ for (let i = 0; i < ledger.length; i += 100) {
 // ── 6. prove it ─────────────────────────────────────────────────────────────
 console.log('6/6  comparing dev to production…');
 const [got] = await census(DEV_REF);
-const [want] = await census(PROD_REF);
+// `want` was read before the drop — the pre-flight needed production's table
+// count to tell a truncated dump from a real one.
 const [devLedger] = await run(DEV_REF, 'select count(*)::int as n from public.schema_migrations');
 const rows = Object.keys(want).map((k) => ({
   object: k, production: want[k], dev: got[k], match: want[k] === got[k] ? 'OK' : 'MISMATCH',
