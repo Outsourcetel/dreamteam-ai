@@ -45,6 +45,21 @@ Usage is already being recorded for every tenant with no billing configured at a
 so a converted pilot arrives with its history intact — what it consumed, and what it
 would have owed. Nothing about being free now forecloses charging later.
 
+**THE CONVERSION SHEET — DECIDED 2026-08-20 (founder, in session):**
+**$199 per digital employee per month + $0.60 per resolved conversation**
+($600.00 per 1k responses). Pilots stay free; converting a tenant is ONE row:
+
+```sql
+-- Verify units against calculate_tenant_monthly_cost before first use, then:
+insert into tenant_billing_config (tenant_id, cost_per_de, cost_per_1k_responses, billing_cycle_day, billing_email)
+values (<tenant_id>, 199.00, 600.00, 1, <billing email>);
+```
+
+Rationale on record: AI cost $0.072/conversation and ~$3.38 human review per
+escalated decision (docs/59); Fin charges $0.99/resolution — we undercut per
+resolution and carry the governance premium in the per-DE fee. A 3-employee
+customer lands ~$800–1,100/mo. Floor defended in the proposal: $199 — we are at it.
+
 ⚠ **What is still missing is the counter.** Nothing anywhere counts pilots against
 the 100, so "until 100" is an intention rather than a threshold — the sort of number
 that is discovered at 140. Today: **16 tenants**. Making it real needs one of:
