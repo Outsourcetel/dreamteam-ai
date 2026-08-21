@@ -651,6 +651,66 @@ Found by the final whole-branch review (2026-08-21): the estate carries ~749 lin
 
 ---
 
+### Task 8: Warm Editorial — the fourth surface family (founder-requested 2026-08-21)
+
+Option C from the design canvas becomes a choosable surface family, riding the exact machinery Tasks 1–6 built: a second LIGHT family expressed as class overrides on top of `:root.light`, one tile, one constraint widening. The one new mechanism is a **display-font token** for Editorial's serif headlines — invisible in every other theme because it defaults to the sans stack.
+
+**Files:**
+- Modify: `package.json`/lockfile (+ `@fontsource-variable/newsreader`, `@fontsource-variable/schibsted-grotesk`), `src/main.tsx` (font imports + boot), `src/design/tokens.css`, `tailwind.config.js`, `src/design/primitives.tsx`, `src/design/branding.ts`, `src/design/BrandingCard.tsx`
+- Create: `supabase/migrations/NNN_warm_editorial_surface_family.sql` (NNN via `npm run migrate:next -- warm_editorial_surface_family`)
+
+**Interfaces:**
+- Produces: family key `'editorial'` (LIGHT); root classes `light editorial` together; `--dt-font-display` token + Tailwind `font-display`; dev override `?theme=light&surface=editorial`.
+
+- [ ] **Step 1: Editorial token block in `src/design/tokens.css`**, AFTER `:root.light`:
+
+```css
+/* ═══ WARM EDITORIAL — the second light family (founder-requested 2026-08-21).
+   Overrides on top of :root.light; activated by classes `light editorial`
+   together. Cream paper, ink text, terracotta accent, serif display. ═══ */
+:root.light.editorial {
+  --dt-page:    #faf6ef;
+  --dt-panel:   #fffdf8;
+  --dt-card:    #fffdf8;
+  --dt-inset:   #f3ede1;
+  --dt-border:        #e5dcc9;
+  --dt-border-strong: #d3c6ab;
+  --dt-text-title:   #221c14;
+  --dt-text-body:    #383024;
+  --dt-text-support: #6b6152;
+  --dt-text-muted:   #8a7f6e;
+  --dt-text-faint:   #b0a693;
+  --dt-accent:        #c14d21;
+  --dt-accent-strong: #a63e17;
+  --dt-accent-hover:  #c14d21;
+  --dt-accent-soft:   #c14d2114;
+  --dt-accent-text:   #a63e17;
+  --dt-accent-border: #c14d214d;
+  --dt-ok:      #37613a; --dt-ok-soft:     #e7efe0; --dt-ok-border:     #c3d5c4;
+  --dt-warn:    #8a5406; --dt-warn-soft:   #f7ead0; --dt-warn-border:   #e8d3a4;
+  --dt-danger:  #b42318; --dt-danger-soft: #fdecea; --dt-danger-border: #f4b3ae;
+  --dt-info:    #16606c; --dt-info-soft:   #e3edee; --dt-info-border:   #b7d3d8;
+  --dt-neutral: #6b6152; --dt-neutral-soft:#ede6d8; --dt-neutral-border:#dcd2c0;
+  --dt-font-sans: "Schibsted Grotesk Variable", ui-sans-serif, system-ui, -apple-system,
+                  BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --dt-font-display: "Newsreader Variable", Georgia, "Times New Roman", serif;
+}
+```
+
+- [ ] **Step 2: the display-font token everywhere else.** In `:root` (next to `--dt-font-sans`): `--dt-font-display: var(--dt-font-sans);` — one line, chained, so every existing theme renders headings exactly as today. Do NOT add it to `:root.light` or `.dt-force-dark` (the chain resolves per-element; the `:root` declaration suffices — verify with a computed-style probe that a `.dt-force-dark` heading still resolves to the sans stack in editorial mode; if the chain surprises, add explicit declarations and say so).
+
+- [ ] **Step 3: Tailwind + fonts.** `tailwind.config.js` fontFamily gains `display: ['var(--dt-font-display)']`. `npm install @fontsource-variable/newsreader @fontsource-variable/schibsted-grotesk`; import both in `src/main.tsx` below the instrument-sans import. (No CDN substitutes; BLOCKED if unresolvable.)
+
+- [ ] **Step 4: display wiring in `src/design/primitives.tsx`** — add `font-display` to exactly three elements: PageHeaderV2's title `h1`/`h2` element, PanelCard's header `h2`, StatTile's value div. Nothing else (EntityRow names, chips, body copy stay sans). Every non-editorial theme renders these identically (token defaults to sans) — state the verification for that claim.
+
+- [ ] **Step 5: boot + branding.** `src/main.tsx`: the boot block gains a `surface` URL param (dev vehicle): `?theme=light&surface=editorial` toggles class `editorial` alongside `light`; otherwise `editorial` is toggled when the cached `dt.surface === 'editorial'`. `src/design/branding.ts`: `TenantBranding` union + `SURFACES.editorial = {}` + `LIGHT_SURFACES` gains `'editorial'` (BOTH copies — main.tsx and branding.ts, keep identical) + `applyBranding` toggles `document.documentElement.classList.toggle('editorial', key === 'editorial')` next to the `light` toggle. `src/design/BrandingCard.tsx`: tile `{ key: 'editorial', label: 'Warm Editorial', swatch: '#faf6ef' }` after Daylight.
+
+- [ ] **Step 6: migration** — `npm run migrate:next -- warm_editorial_surface_family`; fetch the LIVE `set_tenant_branding` prosrc (it now includes daylight) and inline verbatim with the validation list widened to `('midnight','graphite','daylight','editorial')`; CHECK constraint drop/re-add with all four; absence-of-violation + schema assertions; `NOTIFY pgrst, 'reload schema';`. `npm run audit:replayable` passes. Commit on the branch; NO push, NO apply (founder-gated).
+
+- [ ] **Step 7: verify + guards.** Dev server probes at `?theme=light&surface=editorial`: page bg `#faf6ef`, PanelCard h2 computed font-family starts "Newsreader Variable" AND `document.fonts.check('16px "Newsreader Variable"')` true; body text Schibsted; `?theme=light` (no surface): Daylight unchanged, headings still sans; `?theme=dark`: unchanged. All five audit metrics 0; drift clean; tsc; build. Commit code as `feat(theme): Warm Editorial surface family — cream, terracotta, serif display`.
+
+---
+
 ## Deferred (explicitly out of scope, recorded so it isn't lost)
 
 - **Command Deck theme + Operator toggle:** a `:root.deck` token block (carbon palette, `--dt-font-mono` for numerals, radius/density tokens), `deck` in both `LIGHT_SURFACES`-style lists as a dark family, a per-USER toggle (profile-backed, not workspace-wide) in the header. Everything in Tasks 1–2 was shaped so this is additive.
