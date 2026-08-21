@@ -777,7 +777,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                   <td className={td}>
                     <input type="checkbox" checked={selected.has(d.id)} onChange={() => toggleSel(d.id)} />
                   </td>
-                  <td className={`${td} text-white font-medium`}>
+                  <td className={`${td} text-dt-body font-medium`}>
                     <div className="flex items-center gap-2">
                       <span className="truncate">{d.title}</span>
                       {(d.lifecycle_status !== 'published' || d.verification_state === 'needs_verification') && (
@@ -873,7 +873,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
           run + reviewer note that triggered the draft. */}
       {(revisions.length > 0 || revisionsLoading) && (
         <div className="mt-6 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
-          <h3 className="text-sm font-semibold text-white mb-1">Knowledge Revisions — pending your approval</h3>
+          <h3 className="text-sm font-semibold text-dt-title mb-1">Knowledge Revisions — pending your approval</h3>
           <p className="text-[11px] text-dt-muted mb-3">
             Drafted automatically when a reviewer marked resolved-inquiry evidence "needs improvement" or "inaccurate."
             Nothing changes in the knowledge base until you approve here.
@@ -895,7 +895,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                         if (next && r.source_doc_id) void getKnowledgeDoc(r.source_doc_id).then(d => setExpandedRevisionDoc(d?.content ?? ''));
                       }}
                     >
-                      <span className="text-xs text-white font-medium flex-1 truncate">{r.proposed_title}</span>
+                      <span className="text-xs text-dt-body font-medium flex-1 truncate">{r.proposed_title}</span>
                       <span className={`text-[10px] px-2 py-0.5 rounded-full ${r.source_doc_id ? 'bg-indigo-500/20 text-indigo-300' : 'bg-teal-500/20 text-teal-300'}`}>
                         {r.source_doc_id ? 'Edit to existing doc' : 'New doc proposed'}
                       </span>
@@ -981,7 +981,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               value={editor.title}
               onChange={e => setEditor({ ...editor, title: e.target.value })}
               placeholder="e.g. Refund policy"
-              className="w-full mb-3 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              className="w-full mb-3 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500"
             />
             <label className="block text-xs text-dt-muted mb-1">Content (plain text or Markdown)</label>
             <textarea
@@ -989,14 +989,14 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               onChange={e => setEditor({ ...editor, content: e.target.value })}
               rows={10}
               placeholder="Paste the document content your employees should answer from…"
-              className="w-full mb-3 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-y"
+              className="w-full mb-3 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-y"
             />
             <label className="block text-xs text-dt-muted mb-1">Tags (comma-separated, optional)</label>
             <input
               value={editor.tags}
               onChange={e => setEditor({ ...editor, tags: e.target.value })}
               placeholder="billing, refunds"
-              className="w-full mb-5 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              className="w-full mb-5 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500"
             />
             <div className="flex justify-end gap-2">
               <button

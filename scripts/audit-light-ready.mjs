@@ -30,7 +30,16 @@ const slateText = lines('text-slate-');
 // (LoginPage, Terms, Privacy, ProofPage, PlatformInviteRedeemPage,
 // ResetPasswordScreen) moved off text-white/text-slate onto dt-* tokens —
 // 54 bare text-white instances and 1 text-slate instance closed for real.
-const BASELINE = { 'bare text-white': 467, 'bg-slate': 67, 'border-slate': 6, 'text-slate': 2 };
+//
+// RATCHETED 2026-08-21 (Task 5, Knowledge group). The seven
+// src/pages/tenant/knowledge/* pages plus the three panels used only there
+// (IngestionQueuePanel, KnowledgeGroupsPanel, KnowledgeTreePanel) and
+// PlatformShelfPanel (the "what your assistant knows" shelf, itself
+// knowledge-only) moved onto dt-* tokens — 29 bare text-white and 3 bg-slate
+// (2 status-chip fills, 1 health dot) closed for real. LiveKnowledgeLibrary's
+// bg-emerald-600/80 hover:bg-emerald-500 text-white pairing at line ~1031 is
+// left as-is (opaque hover sibling; the regex already treats it as covered).
+const BASELINE = { 'bare text-white': 438, 'bg-slate': 64, 'border-slate': 6, 'text-slate': 2 };
 const NOW = {
   'bare text-white': bareWhite.length,
   'bg-slate': slateBg.length,

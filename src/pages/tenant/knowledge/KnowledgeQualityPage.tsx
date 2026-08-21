@@ -236,7 +236,7 @@ function LiveKnowledgeQuality() {
                 <tbody>
                   {tags.map(tag => (
                     <tr key={tag} className="border-b border-dt-border">
-                      <td className={`${td} text-white`}>{tag}</td>
+                      <td className={`${td} text-dt-body`}>{tag}</td>
                       {deDes.map(d => {
                         const val = coverageFor(tag, d.id);
                         return (
@@ -283,7 +283,7 @@ function LiveKnowledgeQuality() {
                       {coverage.top_gaps.slice(0, 8).map(g => (
                         <div key={g.id} className="flex items-start justify-between gap-2 bg-dt-page rounded-lg p-2.5 border border-dt-border">
                           <div className="min-w-0">
-                            <p className="text-xs font-medium text-white truncate">{g.category || g.reviewer_summary || 'Unlabeled gap'}</p>
+                            <p className="text-xs font-medium text-dt-body truncate">{g.category || g.reviewer_summary || 'Unlabeled gap'}</p>
                             <p className="text-[11px] text-dt-muted mt-0.5">
                               {g.member_count ?? 0} occurrence{g.member_count === 1 ? '' : 's'}{g.severity_score != null ? ` · severity ${Math.round(g.severity_score)}` : ''}
                             </p>
@@ -364,11 +364,11 @@ function LiveKnowledgeQuality() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
                           <div className="bg-dt-page rounded-lg p-2.5 border border-dt-border min-w-0">
                             <p className="text-[10px] text-dt-faint uppercase tracking-wide mb-0.5">Document A</p>
-                            <p className="text-xs text-white truncate">{c.doc_a_title}</p>
+                            <p className="text-xs text-dt-body truncate">{c.doc_a_title}</p>
                           </div>
                           <div className="bg-dt-page rounded-lg p-2.5 border border-dt-border min-w-0">
                             <p className="text-[10px] text-dt-faint uppercase tracking-wide mb-0.5">Document B</p>
-                            <p className="text-xs text-white truncate">{c.doc_b_title}</p>
+                            <p className="text-xs text-dt-body truncate">{c.doc_b_title}</p>
                           </div>
                         </div>
                         <div className="flex flex-wrap gap-2">
@@ -393,7 +393,7 @@ function LiveKnowledgeQuality() {
               <div className="flex items-end gap-4 h-36">
                 {buckets.map(b => (
                   <div key={b.label} className="flex-1 flex flex-col items-center justify-end h-full">
-                    <span className="text-xs font-bold text-white mb-1">{b.count}</span>
+                    <span className="text-xs font-bold text-dt-title mb-1">{b.count}</span>
                     <div className={`w-full rounded-t-lg ${b.cls}`} style={{ height: `${Math.max((b.count / maxBucket) * 100, 4)}%` }} />
                     <span className={`text-[10px] mt-2 ${b.label.includes('stale') ? 'text-red-400' : 'text-dt-muted'}`}>{b.label}</span>
                   </div>
@@ -413,7 +413,7 @@ function LiveKnowledgeQuality() {
                     <div key={doc.id} className="bg-dt-page rounded-xl p-3 border border-dt-border">
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <p className="text-xs font-medium text-white">{doc.title}</p>
+                          <p className="text-xs font-medium text-dt-body">{doc.title}</p>
                           <p className="text-[11px] text-dt-support mt-1">
                             Cited {stats.citation_count} time{stats.citation_count === 1 ? '' : 's'} · {stats.accurate_count} rated accurate, {stats.needs_improvement_count} rated needs-improvement
                           </p>
@@ -461,7 +461,7 @@ function LiveKnowledgeQuality() {
                     const stats = citationStats[d.id];
                     return (
                       <tr key={d.id} className="border-b border-dt-border">
-                        <td className={`${td} text-white font-medium`}>{d.title}</td>
+                        <td className={`${td} text-dt-body font-medium`}>{d.title}</td>
                         <td className={`${td} text-xs text-dt-support`}>{(d.tags ?? []).join(', ') || '—'}</td>
                         <td className={`${td} text-xs text-red-400`}>
                           {d.last_verified_at ? new Date(d.last_verified_at).toLocaleDateString() : 'never'} ({freshnessDays(d)}d)

@@ -104,7 +104,7 @@ export default function PlatformShelfPanel({ tenantQuery }: { tenantQuery?: stri
         {open && (
           <div className="border-t border-dt-border p-4">
             <div className="mb-3">
-              <h4 className="text-sm font-semibold text-white">What your Workspace Assistant knows</h4>
+              <h4 className="text-sm font-semibold text-dt-title">What your Workspace Assistant knows</h4>
               <p className="text-[11px] text-dt-muted mt-0.5 max-w-2xl">
                 Your Workspace Assistant is taught from these {status.docs_published} articles about how
                 DreamTeam works. They are not part of your knowledge base — they do not appear in your
