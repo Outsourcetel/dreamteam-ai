@@ -393,11 +393,26 @@ export async function requestTrustPromotion(policyId: string): Promise<{ ok: boo
  *
  *  Which means the ONE thing that must never be quietly deleted is the line
  *  below. Without it this becomes exactly the defect
- *  project_payload_refusal_sweep exists to catch: a 200 the UI reads as
+ *  project_payload_refusal_sweep exists to catch: a 200 a caller reads as
  *  success while nobody was promoted. It is pinned in two places —
  *  scripts/audit-silent-refusals.mjs (run by `npm run certify`) classifies
  *  this wrapper by that `ok === false … throw`, and
  *  tests/trust-promotion-refusal-reaches-the-user.test.ts asserts it directly.
+ *
+ *  ⚠ THIS WRAPPER CURRENTLY HAS NO CALLER, and that is not an oversight.
+ *  Migration 836 landed alongside 837 and moved the promotion INSIDE
+ *  decide_human_task, deleting hook #4 in customerApi.ts — see the long note
+ *  there, including its warning never to re-add a client-side call (it would
+ *  be a second apply, and the second one returns no_pending_policy). So the
+ *  live refusal path is 836's: decide_human_task reads this RPC's `message` /
+ *  `reason`, records refusal_reason, leaves the task pending, and the person
+ *  sees it there. Proven live 2026-08-21 — a blocked self-approval now leaves
+ *  TWO durable audit rows where it left none.
+ *
+ *  Kept anyway, deliberately: the RPC is still callable, and the next caller
+ *  should inherit a wrapper that already converts the refusal rather than
+ *  rediscovering why one is needed. Do not read the pins above as protecting
+ *  the live path — they protect this door, which is currently shut.
  *
  *  `ok` is present ONLY on a refusal. Success, an ordinary `rejected`
  *  decision, and `no_pending_policy` do not carry it, so this throws on

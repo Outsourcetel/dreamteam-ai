@@ -68,17 +68,40 @@
 --   (read live from pg_get_functiondef, not assumed), so a client-written
 --   "blocked" row would be attributed to the blocked user as a human action.
 --
---   CHOSEN -- the refusal returns instead of raising, and the throw is
---   re-established one layer up in src/lib/trustApi.ts.
---   The raise was never buying atomicity: decide_human_task is a SEPARATE RPC
---   in a SEPARATE transaction that has already committed the task decision by
---   the time this hook runs (src/lib/customerApi.ts, hook #4). All the raise
---   ever bought was that the TS promise rejects -- and that is reproducible on
---   the value channel. The call surface is exactly one wrapper
---   (trustApi.resolveTrustPromotion) and one consumer (customerApi hook #4).
---   Enumerated, not assumed: a pg_proc scan for functions whose prosrc calls
---   apply_trust_promotion returns ZERO rows, and supabase/functions contains
---   no reference to it. Grep of calls, not definitions.
+--   CHOSEN -- the refusal returns instead of raising, and whoever calls it
+--   converts that back into something the person can see.
+--   The raise was never buying atomicity: at the time this was designed,
+--   decide_human_task was a SEPARATE RPC in a SEPARATE transaction that had
+--   already committed the task decision before the trust hook ran. All the
+--   raise ever bought was that the caller's promise rejects -- reproducible on
+--   the value channel.
+--
+--   ⚠ THE CALL SURFACE CHANGED UNDER THIS MIGRATION, 15 SECONDS BEFORE IT WAS
+--   RE-APPLIED, AND THE ORIGINAL WORDING HERE IS NOW WRONG. As measured while
+--   837 was being written, a pg_proc scan for functions whose prosrc calls
+--   apply_trust_promotion returned ZERO rows and the only consumer was
+--   trustApi.resolveTrustPromotion via customerApi hook #4. Migration 836
+--   (applied 2026-08-21 12:13:45Z, 15s before 837's re-apply at 12:14:00Z)
+--   changed both: it moved the promotion INSIDE decide_human_task, so there is
+--   now exactly ONE SQL caller, and it DELETED hook #4, so resolveTrustPromotion
+--   has no caller in src/ at all. Corrected here rather than left to mislead
+--   the next reader. 836 did not redefine this function -- checked, not
+--   assumed -- so 837's CREATE OR REPLACE reverted nothing of theirs.
+--
+--   THE TWO COMPOSE, AND THAT WAS PROVEN, NOT ARGUED. 836 wraps its call in
+--   BEGIN/EXCEPTION and handles BOTH shapes: post-837 it reads the payload
+--   (`coalesce(v_trust->>'message', v_trust->>'reason', ...)`), pre-837 it
+--   catches the raise into the same variable. It then records refusal_reason
+--   on the task, writes its own human_task_decision_refused audit row, leaves
+--   the task PENDING, and RETURNS -- it does not raise, so nothing it wrote is
+--   rolled back either. Driven live through decide_human_task on 2026-08-21
+--   against a member who actually holds approval authority for the category
+--   (the first attempt never reached the guard -- mig 593's authority gate
+--   refuses earlier, and a probe that stops there proves nothing about
+--   durability): trust_promotion_blocked_self_approval = 1,
+--   human_task_decision_refused = 1, task still pending, refusal_reason equal
+--   to the guard sentence byte-for-byte, level 0, pending_task_id kept. TWO
+--   durable records on the path that used to leave NONE.
 --
 -- ⚠ THE GUARD LOGIC IS UNTOUCHED, and this migration pins that. The condition
 -- `requested_by is not null and auth.uid() = v_policy.requested_by` and both
@@ -98,6 +121,14 @@
 -- `ok === false ... throw`. So the two refusal paths return
 -- `'applied', false, 'ok', false, ...` and resolveTrustPromotion converts that
 -- back to a throw. From now on, deleting that throw is a certify failure.
+--
+-- ⚠ BUT DO NOT OVERSTATE WHAT THAT NOW PROTECTS. Since 836 deleted hook #4,
+-- resolveTrustPromotion has no caller, so its throw guards a door nobody
+-- currently walks through. It is kept, correct and pinned because the RPC is
+-- still callable and the next caller should not have to rediscover this -- not
+-- because it is what protects the live path. The LIVE path is protected by
+-- 836's own handling inside decide_human_task, which reads `message`/`reason`
+-- (never `ok`), so this migration's added field cannot disturb it.
 --
 -- `ok` is emitted ONLY on the two refusal paths. The success path, the
 -- `rejected` path and `no_pending_policy` are byte-identical to what they were
