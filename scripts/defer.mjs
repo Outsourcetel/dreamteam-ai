@@ -7,6 +7,10 @@
 //
 //   npm run defer -- --list                    # what is open, by severity
 //   npm run defer -- --close A-5 --by "mig 730"
+//   npm run defer -- --update A-3 --what "…" --note "…"   # still open, now
+//                                              # known in more detail. Cannot
+//                                              # close; see the block below it
+//                                              # for why that gap was dangerous.
 //
 // ── WHY A SCRIPT, AND NOT A DOCUMENTED ONE-LINER ────────────────────────────
 //
@@ -80,6 +84,12 @@ const mk = (ref) => async (sql) => {
 const USAGE = `
   npm run defer -- --list
   npm run defer -- --close <id> --by "<commit or migration that closed it>"
+  npm run defer -- --update <id> [--what "…"] [--where "…"] [--why <reason>] \\
+                   [--note "…"] [--sql "…" --open-if ">=1"]
+                   # amend an item that is STILL OPEN. Cannot close one — that
+                   # needs --close and a citation. Re-runs the F8 matrix, the
+                   # validator and the dry run, so an amendment cannot seed a
+                   # state nobody checked either.
   npm run defer -- --what "<one sentence>" --where "<file:line or db object>" \\
                    --sev <${SEVERITIES.join('|')}> --why <${WHY_SKIPPED.join('|')}> \\
                    --subject <${SUBJECTS.join('|')}> \\
@@ -148,6 +158,85 @@ if (has('close')) {
   writeFileSync(REGISTER_FILE, JSON.stringify(reg, null, 2) + '\n');
   console.log(`${id} closed, credited to ${by}.`);
   console.log('⚠ certify will now re-verify it. If the defect is still there, the run goes RED with F2 — which is the point.');
+  process.exit(0);
+}
+
+// ── --update ──────────────────────────────────────────────────────────────
+// ⚠ WHY THIS EXISTS, AND WHY IT IS NOT "--close but softer".
+//
+// Until 2026-08-21 the register had exactly two write paths: record a new item,
+// or close one. There was no way to say "this item is still open and we now
+// know MORE about it" — so the only route was hand-editing the JSON, which the
+// header of this file spends four paragraphs explaining is the thing that must
+// never happen. That gap has a direction, and it is the dangerous one: an
+// investigation that ends BLOCKED has nowhere to put its finding, while an
+// investigation that ends fixed has `--close` waiting for it. The cheap path
+// was closure. Register item A-3 is the live case — the obvious REVOKE runs
+// clean and changes nothing, so recording it closed would have been a lie the
+// mechanism itself made easier to tell than the truth.
+//
+// So this amends an OPEN item in place and CANNOT close one (use --close, which
+// demands a citation). It runs the same F8 subject/method matrix, the same
+// validator, and the same dry run — and it refuses, exactly as the add path
+// does, if the amended verification contradicts the state on the item. An
+// amendment is a claim like any other and cannot be seeded unchecked.
+if (has('update')) {
+  const id = flag('update');
+  const it = reg.items.find((x) => x.id === id);
+  if (!it) { console.error(`no item ${id}`); process.exit(1); }
+  if (argv.includes('--state') || has('close')) {
+    console.error('--update cannot change state. Closing an item is a separate, citable act: use --close <id> --by "<what closed it>".');
+    process.exit(1);
+  }
+
+  const touched = [];
+  if (has('what')) { it.what = flag('what'); touched.push('what'); }
+  if (has('where')) { it.where = flag('where'); touched.push('where'); }
+  if (has('why')) {
+    const why = flag('why');
+    if (!WHY_SKIPPED.includes(why)) { console.error(`--why must be one of ${WHY_SKIPPED.join(', ')}`); process.exit(1); }
+    it.why_skipped = why; touched.push('why_skipped');
+  }
+  if (has('note')) { it.verification.note = flag('note'); touched.push('verification.note'); }
+  if (has('sql')) {
+    if (it.verification.kind !== 'sql') { console.error(`${id}.verification.kind is "${it.verification.kind}"; --sql can only repoint a sql verification.`); process.exit(1); }
+    it.verification.sql = flag('sql'); touched.push('verification.sql');
+  }
+  if (has('open-if')) { it.verification.open_if = parseOpenIf(flag('open-if')); touched.push('verification.open_if'); }
+  if (!touched.length) { console.error('--update needs something to change: --what, --where, --why, --note, --sql, --open-if.'); process.exit(1); }
+
+  const badPair = subjectMethodFailures({ items: [it] });
+  if (badPair.length) { console.error(`REFUSED — ${badPair.join('\n')}`); process.exit(1); }
+
+  // ⚠ THE DRY RUN, on the AMENDED verification. Repointing a check is the one
+  // amendment that can silently invert an item's meaning, so it is measured
+  // before it is written — the same hard stop the add path has.
+  if (it.verification.kind === 'sql') {
+    let n;
+    try {
+      const rows = await mk(PROD_REF)(it.verification.sql);
+      if (!Array.isArray(rows) || rows.length !== 1 || Object.keys(rows[0]).length !== 1) {
+        throw new Error(`the query must return exactly one row with one column (alias it \`n\`); it returned ${JSON.stringify(rows).slice(0, 160)}`);
+      }
+      n = Number(Object.values(rows[0])[0]);
+    } catch (e) {
+      console.error(`the amended verification does not run: ${String(e.message ?? e).slice(0, 300)}`);
+      console.error('NOT WRITTEN. A verification that cannot run would land in the register as an F3 failure on the next certify run.');
+      process.exit(1);
+    }
+    const OPS = { '>=': (a, b) => a >= b, '>': (a, b) => a > b, '==': (a, b) => a === b, '<=': (a, b) => a <= b, '<': (a, b) => a < b };
+    const isOpen = OPS[it.verification.open_if.op](n, it.verification.open_if.n);
+    console.log(`  dry run: the amended verification returned n=${n}; open_if ${it.verification.open_if.op} ${it.verification.open_if.n} ⇒ ${isOpen ? 'OPEN' : 'CLOSED'}`);
+    if (isOpen !== (it.state === 'open')) {
+      console.error(`\nREFUSED: ${id} is recorded "${it.state}", but the amended verification says ${isOpen ? 'OPEN' : 'CLOSED'} right now.`);
+      process.exit(1);
+    }
+  }
+
+  const bad = validateRegister(reg);
+  if (bad.length) { console.error('REFUSED — the amended entry does not conform:\n  ' + bad.join('\n  ')); process.exit(1); }
+  writeFileSync(REGISTER_FILE, JSON.stringify(reg, null, 2) + '\n');
+  console.log(`${id} updated (${touched.join(', ')}); still ${it.state}. Commit the file.`);
   process.exit(0);
 }
 
