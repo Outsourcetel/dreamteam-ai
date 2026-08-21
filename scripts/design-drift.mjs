@@ -69,8 +69,15 @@ const files = (pat) => Number(sh(`grep -rlE "${pat}" ${G} | wc -l`));
 // Every one of those was a real improvement someone made that was not
 // protected, so it could have silently drifted back to 65 and the checker
 // would have called it green the whole way.
+//
+// RATCHETED 2026-08-21 (Task 5, Playbooks group). LivePlaybookBuilder's
+// three-way step-tone badge (Rail/Judgment/Guide) carried the estate's only
+// `bg-slate-600/20` — converting its "Guide" fill to bg-dt-neutral-soft
+// removed that distinct variant string entirely (bg-slate-600 with no
+// opacity suffix still exists elsewhere, untouched, so this is a real drop,
+// not a fluke of the pattern).
 const BASELINE = {
-  'bg-slate variants': 7, 'border-slate variants': 2, 'radius variants': 13,
+  'bg-slate variants': 6, 'border-slate variants': 2, 'radius variants': 13,
   'card padding variants': 9, 'local StatCard-likes (files)': 6,
   'hand-rolled dialogs': 0, 'hand-rolled toasts': 0,
   'inline style objects': 42, 'raw hex colors': 18,

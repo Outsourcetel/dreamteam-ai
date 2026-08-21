@@ -56,7 +56,29 @@ const slateText = lines('text-slate-');
 // the doc §7 sanctioned control-shade/focus-ring exception (identical to the
 // untouched instances in AISessionPanel, GovernanceAIPanel and
 // LivePlaybookBuilder) and are deliberately not converted here.
-const BASELINE = { 'bare text-white': 403, 'bg-slate': 53, 'border-slate': 6, 'text-slate': 2 };
+//
+// RATCHETED 2026-08-21 (Task 5, Playbooks group). The whole group is one
+// file: src/pages/tenant/systems/LivePlaybookBuilder.tsx (route
+// systems_playbooks, sole Sidebar entry "Playbook Builder"). No sole-consumer
+// components — its local imports are either shared design primitives or
+// shared components (AISessionPanel, LiveDataStates) reachable from many
+// other pages. TemplateBuilder.tsx was checked and excluded: it is the sole
+// consumer of LiveConnectorsPage.tsx (Connected systems group), not
+// playbooks, despite living in the same src/pages/tenant/systems/ directory.
+// Converted: 17 bare text-white (step/decision-row labels and card/section
+// headings -> dt-title; 7 `hover:text-white` on ghost-style secondary
+// buttons -> hover:text-dt-body, matching the primitives.tsx `ghost` variant
+// and the governance-group precedent) and 3 bg-slate-600 status-chip fills
+// (archived/skipped_dedup status-map entries, and the "Guide" tag in the
+// Rail/Judgment/Guide step-tone family) -> bg-dt-neutral-soft, matching doc
+// §7's "neutral status chip" vocabulary and the governance-group precedent
+// for the same shape of chip. All three were rare/fallback states, not the
+// page's default-frequency status, so softening them follows the
+// high-traffic rule rather than violating it. The file's one
+// `focus:border-slate-500` (line 97, shared input/select class) is the doc
+// §7 sanctioned control-shade/focus-ring exception already named above and
+// was deliberately left untouched — it is not part of this group's ratchet.
+const BASELINE = { 'bare text-white': 386, 'bg-slate': 50, 'border-slate': 6, 'text-slate': 2 };
 const NOW = {
   'bare text-white': bareWhite.length,
   'bg-slate': slateBg.length,

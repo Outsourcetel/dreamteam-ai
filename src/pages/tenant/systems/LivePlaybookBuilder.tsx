@@ -52,7 +52,7 @@ const statusChip = (status: string) => {
   const map: Record<string, string> = {
     draft: 'bg-amber-500/15 text-amber-300',
     published: 'bg-emerald-500/15 text-emerald-300',
-    archived: 'bg-slate-600 text-dt-support',
+    archived: 'bg-dt-neutral-soft text-dt-neutral',
     completed: 'bg-emerald-500/15 text-emerald-300',
     waiting_approval: 'bg-amber-500/15 text-amber-300',
     resume_pending: 'bg-indigo-500/15 text-indigo-300',
@@ -726,7 +726,7 @@ function DocStepRow({ s, index, publishedDefs, depth = 0 }: {
       <div style={{ marginLeft: depth * 20 }} className="rounded-xl border border-sky-800/30 bg-sky-500/5 p-3 mb-1.5">
         <div className="flex items-center gap-2 mb-1">
           {index !== null && <span className="w-6 h-6 rounded-lg bg-sky-500/20 text-sky-300 flex items-center justify-center text-[11px] font-bold flex-shrink-0">{index + 1}</span>}
-          <span className="text-sm font-medium text-white">{String(p.title ?? 'Instruction')}</span>
+          <span className="text-sm font-medium text-dt-title">{String(p.title ?? 'Instruction')}</span>
         </div>
         {p.body_md ? <p className="text-xs text-dt-support whitespace-pre-wrap ml-8">{String(p.body_md)}</p> : null}
         {media.length > 0 && <div className="ml-8 mt-2 flex flex-wrap gap-2">{media.map((m, i) => <MediaThumb key={i} m={m} />)}</div>}
@@ -741,7 +741,7 @@ function DocStepRow({ s, index, publishedDefs, depth = 0 }: {
       <div style={{ marginLeft: depth * 20 }} className="mb-1.5">
         <div className="flex items-center gap-2 rounded-xl border border-violet-800/30 bg-violet-500/5 px-3 py-2">
           {index !== null && <span className="w-6 h-6 rounded-lg bg-violet-500/20 text-violet-300 flex items-center justify-center text-[11px] font-bold flex-shrink-0">{index + 1}</span>}
-          <span className="text-sm text-white">If <code className="text-violet-300">{String(p.on ?? '?')}</code> {DECISION_OPERATORS.find(o => o.value === p.operator)?.label ?? String(p.operator ?? '')} {p.operator !== 'exists' ? <code className="text-violet-300">{String(p.value ?? '')}</code> : null}</span>
+          <span className="text-sm text-dt-title">If <code className="text-violet-300">{String(p.on ?? '?')}</code> {DECISION_OPERATORS.find(o => o.value === p.operator)?.label ?? String(p.operator ?? '')} {p.operator !== 'exists' ? <code className="text-violet-300">{String(p.value ?? '')}</code> : null}</span>
         </div>
         <div className="ml-8 mt-1">
           <p className="text-[10px] uppercase tracking-wider text-dt-faint mt-1">Then</p>
@@ -868,7 +868,7 @@ function Builder({ initial, onDone, onCancel, publishedDefs, accounts }: {
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
       <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
-        <h3 className="text-sm font-semibold text-white">{st.id ? `Edit — ${st.name}` : 'New playbook'}</h3>
+        <h3 className="text-sm font-semibold text-dt-title">{st.id ? `Edit — ${st.name}` : 'New playbook'}</h3>
         <TemplateHelp />
       </div>
 
@@ -892,7 +892,7 @@ function Builder({ initial, onDone, onCancel, publishedDefs, accounts }: {
                 <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 ${isGate ? 'bg-amber-500/20 text-amber-400' : 'bg-dt-panel text-dt-support'}`}>{i + 1}</span>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
-                    <span className="text-sm font-medium text-white">{meta?.label ?? s.key}</span>
+                    <span className="text-sm font-medium text-dt-title">{meta?.label ?? s.key}</span>
                     {isGate && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-700/30">Human Gate</span>}
                   </div>
                   <p className="text-[11px] text-dt-muted mb-2">{meta?.description}</p>
@@ -957,7 +957,7 @@ function Builder({ initial, onDone, onCancel, publishedDefs, accounts }: {
 
       <div className="flex items-center gap-2 flex-wrap mb-4">
         <button onClick={saveDraft} disabled={busy !== null}
-          className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong disabled:opacity-40 transition-colors">
+          className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body hover:border-dt-border-strong disabled:opacity-40 transition-colors">
           {busy === 'save' ? 'Saving…' : 'Save draft'}
         </button>
         <button onClick={publish} disabled={busy !== null || clientErrors.length > 0}
@@ -1058,7 +1058,7 @@ function fireChip(status: PlaybookTriggerFire['status']) {
   const map: Record<string, string> = {
     started: 'bg-emerald-500/15 text-emerald-300',
     pending_start: 'bg-indigo-500/15 text-indigo-300',
-    skipped_dedup: 'bg-slate-600 text-dt-support',
+    skipped_dedup: 'bg-dt-neutral-soft text-dt-neutral',
     error: 'bg-red-500/15 text-red-300',
   };
   const label = status === 'skipped_dedup' ? 'deduped' : status === 'pending_start' ? 'pending' : status;
@@ -1154,18 +1154,18 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-5">
       <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
-        <h3 className="text-sm font-semibold text-white">Triggers</h3>
+        <h3 className="text-sm font-semibold text-dt-title">Triggers</h3>
         <div className="flex gap-2">
           <button onClick={() => setAdding(adding === 'schedule' ? null : 'schedule')}
-            className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
+            className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body hover:border-dt-border-strong transition-colors">
             ⏰ Add schedule
           </button>
           <button onClick={() => setAdding(adding === 'event' ? null : 'event')}
-            className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
+            className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body hover:border-dt-border-strong transition-colors">
             ⚡ Add event rule
           </button>
           <button onClick={() => setShowEvents(v => !v)}
-            className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
+            className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body hover:border-dt-border-strong transition-colors">
             ◆ Manage events
           </button>
         </div>
@@ -1279,7 +1279,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
       {showEvents && (
         <div className="rounded-xl border border-dt-border-strong bg-dt-inset p-3 mb-3 space-y-3">
           <div>
-            <p className="text-xs font-semibold text-white mb-1">Your events</p>
+            <p className="text-xs font-semibold text-dt-title mb-1">Your events</p>
             <p className="text-[11px] text-dt-muted mb-2">
               Define an event your business can fire — from an Emit-event step in a playbook, the Fire button here, or the webhook below. Any playbook with a matching event rule runs when it fires.
             </p>
@@ -1301,7 +1301,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
                 <div key={d.id} className="flex items-center justify-between gap-2 bg-dt-card rounded-lg px-3 py-1.5">
                   <span className="text-[11px] text-dt-support">{d.label} <span className="text-dt-faint font-mono">· {d.event_key}</span></span>
                   <button onClick={() => void fireEvent(d.event_key)} disabled={!isTenantAdmin}
-                    className="text-[10px] px-2 py-1 rounded border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
+                    className="text-[10px] px-2 py-1 rounded border border-dt-border-strong text-dt-support hover:text-dt-body hover:border-dt-border-strong transition-colors">
                     Fire now
                   </button>
                 </div>
@@ -1840,7 +1840,7 @@ const JUDGMENT_KEYS = new Set(['custom_step', 'agentic_step', 'consult_specialis
 const GUIDE_KEYS = new Set(['instruction', 'checklist', 'decision']);
 function stepGrade(key: string): { label: string; cls: string; icon: string } {
   if (JUDGMENT_KEYS.has(key)) return { label: 'Judgment', cls: 'bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-700/40', icon: '✨' };
-  if (GUIDE_KEYS.has(key)) return { label: 'Guide', cls: 'bg-slate-600/20 text-dt-support border-dt-border-strong', icon: '📋' };
+  if (GUIDE_KEYS.has(key)) return { label: 'Guide', cls: 'bg-dt-neutral-soft text-dt-support border-dt-border-strong', icon: '📋' };
   return { label: 'Rail', cls: 'bg-cyan-500/10 text-cyan-300 border-cyan-700/40', icon: '⚙️' };
 }
 
@@ -2107,7 +2107,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
           <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-5">
             <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
               <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-base font-semibold text-white">{selectedDef.name}</h2>
+                <h2 className="text-base font-semibold text-dt-title">{selectedDef.name}</h2>
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support font-mono">{selectedDef.key}</span>
                 {statusChip(selectedDef.status)}
                 {selectedDef.status === 'published' && <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400">v{selectedDef.version}</span>}
@@ -2119,7 +2119,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
                   ✨ Edit with AI
                 </button>
                 <button onClick={() => setBuilder({ id: selectedDef.id, name: selectedDef.name, key: selectedDef.key, description: selectedDef.description, steps: selectedDef.steps, status: selectedDef.status, de_id: selectedDef.de_id ?? null })}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
+                  className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body hover:border-dt-border-strong transition-colors">
                   {selectedDef.status === 'published' ? `Edit (next publish → v${selectedDef.version + 1})` : 'Edit draft'}
                 </button>
                 <button onClick={() => void archive(selectedDef)} disabled={!canEditPlaybooks} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border text-dt-muted hover:text-rose-300 hover:border-rose-800 transition-colors disabled:opacity-50">Archive</button>
@@ -2209,7 +2209,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
 
           {/* Run history for this definition */}
           <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
-            <h3 className="text-sm font-semibold text-white mb-3">Runs</h3>
+            <h3 className="text-sm font-semibold text-dt-title mb-3">Runs</h3>
             {defRuns.length === 0 ? <p className="text-xs text-dt-muted">No runs yet.</p> : (
               <div className="space-y-2">
                 {defRuns.map(r => (
@@ -2380,7 +2380,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="text-base font-semibold text-white">Renewal Lifecycle</h3>
+                  <h3 className="text-base font-semibold text-dt-title">Renewal Lifecycle</h3>
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">BUILT-IN</span>
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support font-mono">renewal_v1</span>
                 </div>
@@ -2389,7 +2389,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
                 </p>
               </div>
               <button onClick={() => setPage('entity_customer_renewal')}
-                className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
+                className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body hover:border-dt-border-strong transition-colors">
                 Run from Renewal &amp; Expansion →
               </button>
             </div>
@@ -2404,7 +2404,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
 
           {/* All-runs history */}
           <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
-            <h3 className="text-sm font-semibold text-white mb-3">Run history</h3>
+            <h3 className="text-sm font-semibold text-dt-title mb-3">Run history</h3>
             {runs.length === 0 ? <p className="text-xs text-dt-muted">No runs yet.</p> : (
               <div className="space-y-2">
                 {runs.map(r => (
