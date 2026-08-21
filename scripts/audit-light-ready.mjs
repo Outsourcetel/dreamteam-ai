@@ -9,9 +9,11 @@ const sh = (cmd) => { try { return execSync(cmd, { encoding: 'utf8', shell: 'bas
 const G = `src/ --include='*.tsx' --include='*.ts' --exclude-dir=design`;
 const NO_COMMENTS = `| grep -v '^[[:space:]]*\\(//\\|\\*\\)'`;
 
-// text-white beside a solid colored fill is CORRECT in both themes; the
-// defect is text-white carrying content color on a token surface.
-const COLORED_BG = 'bg-(indigo|rose|emerald|sky|amber|violet|purple|blue|green|red|teal|cyan|orange|fuchsia|pink|dt-accent-strong|dt-accent-hover|gradient)';
+// Only an OPAQUE colored fill legitimizes text-white. A translucent tint
+// (bg-indigo-500/10) is effectively the surface underneath — white text on it
+// is a real light-theme hazard, so the shade must NOT carry a /NN opacity
+// suffix. (?![\d/]) also stops bg-indigo-500/10 half-matching as bg-indigo-50.
+const COLORED_BG = 'bg-((?:indigo|rose|emerald|sky|amber|violet|purple|blue|green|red|teal|cyan|orange|fuchsia|pink)-\\d+(?![\\d/])|dt-accent-strong|dt-accent-hover|gradient)';
 
 const lines = (pat) => sh(`grep -rn "${pat}" ${G} ${NO_COMMENTS}`).split('\n').filter(Boolean);
 const bareWhite = lines('text-white').filter(l => !new RegExp(COLORED_BG).test(l));
@@ -22,7 +24,7 @@ const slateText = lines('text-slate-');
 // Baselines pinned 2026-08-21 (first measurement). Tighten in the SAME
 // commit that lowers a number — design-drift.mjs enforces its own version
 // of this rule for exactly the reason recorded there.
-const BASELINE = { 'bare text-white': 520, 'bg-slate': 67, 'border-slate': 6, 'text-slate': 3 };
+const BASELINE = { 'bare text-white': 521, 'bg-slate': 67, 'border-slate': 6, 'text-slate': 3 };
 const NOW = {
   'bare text-white': bareWhite.length,
   'bg-slate': slateBg.length,
