@@ -35,6 +35,17 @@ import { providerCatalogFailures, providerCheckValues, readConnectorConstants } 
 // any of them can fire is to hand the REAL function a mutated COPY of that
 // state, never a write.
 import { discoverySpineFailures } from './discovery-spine-check.mjs';
+// certify's ACTUAL subprocessor-disclosure comparison (register A-8). Same
+// reason as the two above and then some: EVERY arm of it is silent against
+// today's state — the manifest matches the chain, both configured credentials
+// are disclosed, the page derives — and one of its stores
+// (tenant_llm_credentials) holds zero rows, so its comparison count is
+// legitimately 0. Nothing but a fired mutation distinguishes any of that from
+// a gate that cannot fail.
+import {
+  subprocessorDisclosureFailures, readManifest, readLlmChain,
+  readResolvedKeyNames, readKeyTokens, egressSources, PAGE_SRC,
+} from './subprocessor-disclosure-check.mjs';
 // certify's ACTUAL discovery-proposal-DECISION comparison — the same function,
 // imported, never a paraphrase. This one is the most important import in the
 // file: public.discovery_proposals holds ZERO rows (measured, along with 0
@@ -3221,6 +3232,205 @@ const CASES = [
       },
     ];
   })(),
+
+  // ══ A-8: subprocessor-disclosure ════════════════════════════════════════
+  // Every arm of this gate is silent against today's state — the manifest
+  // matches the chain, the two configured credentials are both disclosed, the
+  // page derives. That is precisely the shape this file exists to distrust.
+  //
+  // The brief for this work asked for the proof to be "a provider key added
+  // in a rolled-back transaction". It is not done that way, for two reasons
+  // worth stating rather than quietly working around. First, certify runs in
+  // a separate process against the Management API, so a transaction rolled
+  // back here is invisible to it — the injection would have had to COMMIT.
+  // Second, committing it means setting a real provider credential in
+  // production, which this session was explicitly forbidden to do and which
+  // is the wrong shape regardless: an interrupted run leaves a live key
+  // behind. So the equivalent injected instance is used — the REAL
+  // subprocessorDisclosureFailures(), handed a copy of live state with one
+  // thing changed, including a SYNTHESISED configured key. No writes.
+  //
+  // Every case carries `names`: the count proves an assertion fired, only the
+  // text proves it fired for the reason the case is named after.
+  ...(await (async () => {
+    const { SUBPROCESSORS, ARMING_GROUPS } = readManifest();
+    const { providers, providerToKey } = readLlmChain();
+    const sources = egressSources();
+    const resolvedKeyNames = readResolvedKeyNames(sources);
+    const repoKeyTokens = readKeyTokens(sources);
+    const cfgRows = await q(`select key from public.platform_config where secret_id is not null`);
+    const tenantRows = await q(`select distinct provider_key from public.tenant_llm_credentials`);
+    const [{ n: tenantCount }] = await q(`select count(*)::int as n from public.tenants`);
+    const configuredSecrets = [
+      ...cfgRows.map((r) => ({ key: r.key, store: 'platform_config' })),
+      ...tenantRows.map((r) => ({ key: r.provider_key, store: 'tenant_llm_credentials' })),
+    ];
+    const pageSource = readFileSync(PAGE_SRC, 'utf8');
+    const base = {
+      manifest: SUBPROCESSORS, groups: ARMING_GROUPS,
+      llmProviders: providers, llmProviderToKey: providerToKey,
+      resolvedKeyNames, repoKeyTokens, configuredSecrets, tenantCount, pageSource,
+    };
+    const clean = () => subprocessorDisclosureFailures(base).failures;
+    const withState = (patch) => () => subprocessorDisclosureFailures({ ...base, ...patch }).failures;
+    const manifestWithout = (id) => SUBPROCESSORS.filter((e) => e.id !== id);
+    const manifestPatched = (id, patch) => SUBPROCESSORS.map((e) => (e.id === id ? { ...e, ...patch } : e));
+
+    return [
+      {
+        // THE finding. A provider the chain can reach that nothing discloses.
+        // This is what would happen the day a fifth tier is added to llm.ts.
+        name: 'subprocessor-disclosure (a model provider the CODE can reach but the manifest omits fires, by name)',
+        firesJs: withState({ manifest: manifestWithout('google-gemini') }),
+        names: /UNDISCLOSED MODEL PROVIDER: .*'google'/,
+        silentJs: clean,
+      },
+      {
+        // The other direction. Only checking "is anything missing" passes a
+        // manifest that names every vendor on earth, and a disclosure that
+        // names a processor nobody sends to is also a wrong disclosure.
+        name: 'subprocessor-disclosure (a manifest tier the CODE CANNOT reach fires — over-claiming is drift too)',
+        firesJs: withState({
+          manifest: [...SUBPROCESSORS, {
+            id: 'fx-mistral', vendor: 'FX Mistral', purpose: 'fixture', arming: 'credential',
+            armedBy: ['ANTHROPIC_API_KEY'], anchor: 'supabase/functions/_shared/llm.ts', llmProvider: 'mistral',
+          }],
+        }),
+        names: /OVER-CLAIMED MODEL PROVIDER: .*fx-mistral.*'mistral'/,
+        silentJs: clean,
+      },
+      {
+        // Liveness of the chain derivation itself. If llm.ts stops yielding
+        // providers the gate must STOP, not report a clean empty chain — an
+        // empty `llmProviders` would make arm A vacuously green.
+        name: 'subprocessor-disclosure (an EMPTY derived chain cannot buy silence — every tier becomes over-claimed)',
+        firesJs: withState({ llmProviders: [] }),
+        names: /OVER-CLAIMED MODEL PROVIDER/,
+        silentJs: clean,
+      },
+      {
+        // Arm B. A new getAIKey('X_API_KEY') call site anywhere in the edge
+        // functions arrives here without anyone remembering this page exists.
+        name: 'subprocessor-disclosure (a credential the CODE resolves but nothing claims fires, by key name)',
+        firesJs: withState({ resolvedKeyNames: new Set([...resolvedKeyNames, 'COHERE_API_KEY']) }),
+        names: /UNCLAIMED CREDENTIAL: the code resolves COHERE_API_KEY/,
+        silentJs: clean,
+      },
+      {
+        // ★ Arm C — the one A-8 is actually about. A key APPEARS in the live
+        // credential store for a vendor nothing has disclosed. This is the
+        // "somebody pasted a key into Settings" event, injected rather than
+        // performed: setting a real provider key was prohibited, and would
+        // have been the wrong shape anyway.
+        name: 'subprocessor-disclosure (a provider key CONFIGURED LIVE for an undisclosed vendor fires, by key and store)',
+        firesJs: withState({
+          configuredSecrets: [...configuredSecrets, { key: 'MISTRAL_API_KEY', store: 'platform_config' }],
+        }),
+        names: /CONFIGURED BUT UNDISCLOSED: MISTRAL_API_KEY is set in platform_config/,
+        silentJs: clean,
+      },
+      {
+        // Same arm, the OTHER store. tenant_llm_credentials holds zero rows
+        // today, so its comparison count is legitimately 0 — and 0 examined
+        // looks exactly like 0 findings. This is the only thing proving the
+        // tenant half runs at all.
+        name: 'subprocessor-disclosure (a TENANT-supplied credential for an undisclosed vendor fires — the 0-row store is live)',
+        firesJs: withState({
+          configuredSecrets: [...configuredSecrets, { key: 'XAI_API_KEY', store: 'tenant_llm_credentials' }],
+        }),
+        names: /CONFIGURED BUT UNDISCLOSED: XAI_API_KEY is set in tenant_llm_credentials/,
+        silentJs: clean,
+      },
+      {
+        // The exemption list is the obvious way to buy silence, so it has its
+        // own ratchet: an exemption matching neither live state nor the code
+        // has outlived its reason.
+        name: 'subprocessor-disclosure (an exemption that matches nothing anywhere fires as STALE)',
+        firesJs: withState({
+          resolvedKeyNames: new Set([...resolvedKeyNames].filter((k) => k !== 'INBOUND_EMAIL_MAP')),
+          repoKeyTokens: new Set([...repoKeyTokens].filter((k) => k !== 'INBOUND_EMAIL_MAP')),
+        }),
+        names: /STALE EXEMPTION: NON_EGRESS_CONFIG lists INBOUND_EMAIL_MAP/,
+        silentJs: clean,
+      },
+      {
+        // A disclosure citing a module nobody can open is not evidence.
+        name: 'subprocessor-disclosure (an anchor pointing at a file that does not exist fires)',
+        firesJs: () => subprocessorDisclosureFailures({
+          ...base,
+          manifest: manifestPatched('deepgram', { anchor: 'supabase/functions/no-such-function/index.ts' }),
+          anchorExists: (p) => p !== 'supabase/functions/no-such-function/index.ts',
+        }).failures,
+        names: /entry deepgram: anchor "supabase\/functions\/no-such-function\/index\.ts" does not exist/,
+        silentJs: clean,
+      },
+      {
+        // ...and an armedBy naming a key that exists nowhere is fiction in
+        // the other direction: a disclosure describing a control nobody has.
+        name: 'subprocessor-disclosure (armedBy naming a key that exists nowhere in the codebase fires)',
+        firesJs: withState({ manifest: manifestPatched('sentry', { armedBy: ['MADE_UP_DSN_KEY'] }) }),
+        names: /entry sentry: armedBy names MADE_UP_DSN_KEY, which appears nowhere/,
+        silentJs: clean,
+      },
+      {
+        // Arm D. The regression this whole item is against: the page going
+        // back to a hand-written list, which is accurate exactly until it
+        // isn't.
+        name: 'subprocessor-disclosure (the page hardcoding a vendor name instead of rendering the list fires)',
+        firesJs: withState({
+          pageSource: pageSource.replace('{s.vendor}', 'Anthropic (Claude)'),
+        }),
+        names: /hardcodes the vendor name "Anthropic \(Claude\)"/,
+        silentJs: clean,
+      },
+      {
+        // Deleting the iteration is the other way back to prose.
+        name: 'subprocessor-disclosure (the page no longer iterating the manifest fires)',
+        firesJs: withState({ pageSource: pageSource.replace(/\.map\(/g, '.forEach(') }),
+        names: /no longer iterates SUBPROCESSORS/,
+        silentJs: clean,
+      },
+      {
+        // ★ The exact sentences that were on the page before this work: true
+        // when written, unkeepable by a static document. The ratchet is
+        // against the SHAPE, not against these words in these vendors' names.
+        name: 'subprocessor-disclosure (a re-introduced live-configuration claim on the page fires)',
+        firesJs: withState({
+          pageSource: pageSource.replace(
+            '{COUNSEL_PLACEHOLDER}',
+            '{"it is the only provider currently receiving any customer content"}',
+          ),
+        }),
+        names: /a live-configuration claim/,
+        silentJs: clean,
+      },
+      {
+        // Dropping the counsel marker would let a draft read as settled law.
+        name: 'subprocessor-disclosure (dropping the counsel placeholder fires)',
+        firesJs: withState({ pageSource: pageSource.replace(/COUNSEL_PLACEHOLDER/g, 'SOMETHING_ELSE') }),
+        names: /no longer shows COUNSEL_PLACEHOLDER/,
+        silentJs: clean,
+      },
+      {
+        // One key, one vendor. Two entries claiming the same credential means
+        // the "who receives this" answer is ambiguous in the one place it
+        // must not be.
+        name: 'subprocessor-disclosure (two entries claiming the same credential fires as ambiguous)',
+        firesJs: withState({ manifest: manifestPatched('openai', { armedBy: ['OPENAI_API_KEY', 'DEEPGRAM_API_KEY'] }) }),
+        names: /AMBIGUOUS CREDENTIAL: DEEPGRAM_API_KEY is claimed by more than one entry/,
+        silentJs: clean,
+      },
+      {
+        // An entry whose arming has no group renders NOWHERE — present in the
+        // manifest, absent from the published page. The gate would otherwise
+        // count it as disclosed.
+        name: 'subprocessor-disclosure (an entry whose arming has no render group fires — it would appear on no page)',
+        firesJs: withState({ manifest: manifestPatched('resend', { arming: 'quietly' }) }),
+        names: /entry resend: arming "quietly" has no group in ARMING_GROUPS/,
+        silentJs: clean,
+      },
+    ];
+  })()),
 ];
 
 // Optional substring filter, so one probe's cases can be re-run on their own
@@ -3250,8 +3460,17 @@ for (const c of SELECTED) {
   const firedRows = c.firesJs ? await c.firesJs() : await q(c.fires);
   const fired = firedRows.length;
   const silent = (c.silentJs ? await c.silentJs() : await q(c.silent)).length;
-  const ok = fired >= 1 && silent === 0;
-  console.log(`  ${ok ? 'PASS' : 'FAIL'}    ${c.name}  (violation→${fired} rows, clean→${silent} rows)`);
+  // STRICT SCORING, where the case asks for it. `fired >= 1` says an
+  // assertion went red; it does not say WHICH, and a gate that reds for an
+  // unrelated reason scores identically to one that caught the injection.
+  // A case carrying `names` is caught only when the output NAMES the thing
+  // that was broken. Cases without it keep the original count-only rule, so
+  // this is additive — but new cases should carry one.
+  const text = firedRows.map((r) => (typeof r === 'string' ? r : JSON.stringify(r))).join('\n');
+  const named = c.names ? c.names.test(text) : true;
+  const ok = fired >= 1 && silent === 0 && named;
+  const why = fired >= 1 && silent === 0 && !named ? `, NAMED→no (wanted ${c.names})` : '';
+  console.log(`  ${ok ? 'PASS' : 'FAIL'}    ${c.name}  (violation→${fired} rows, clean→${silent} rows${why})`);
   // --show prints WHAT the mutation made the gate say. A count proves a case
   // fired; only the text proves it fired for the reason the case is named
   // after, and "I saw this assertion go red" is a claim someone has to be

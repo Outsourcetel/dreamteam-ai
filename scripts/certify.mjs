@@ -103,6 +103,18 @@ import { providerCatalogFailures, providerCheckValues, readConnectorConstants } 
 // decides — and scripts/certify-mutation-test.mjs imports the identical
 // function so its fixtures exercise the real gate, not a paraphrase of it.
 import { discoverySpineFailures } from './discovery-spine-check.mjs';
+// Register item A-8's ratchet, same split again. The published subprocessor
+// list was accurate by COINCIDENCE OF CONFIGURATION: a model provider joins
+// the failover chain the moment its key resolves, so the page could go false
+// through an action nobody recognises as a policy decision. The page now
+// renders from src/lib/subprocessors.ts and this compares that list against
+// the chain the code can reach, the credentials the code resolves, and the
+// credentials actually SET — see the module header for the limit (env-stored
+// secrets are invisible to any query, and it says so instead of pretending).
+import {
+  subprocessorDisclosureFailures, readManifest, readLlmChain,
+  readResolvedKeyNames, readKeyTokens, egressSources, PAGE_SRC, NON_EGRESS_CONFIG,
+} from './subprocessor-disclosure-check.mjs';
 // The sibling section, same split again: the proposal-DECISION assertions the
 // 2026-08-13 discovery-proposals-and-creation plan calls Task 5. It is a
 // SEPARATE section from discovery-spine on purpose — the spine is seeded
@@ -1060,6 +1072,64 @@ const sections = [
         + `(${inCheck.size} CHECK values), ${compared} field values, ${aliasCount} aliases, `
         + `${cats.length} required categories`;
     if (!failures.length) console.log(`        provider-catalog: ${detail}`);
+    return { ok: failures.length === 0, detail };
+  }),
+  // ── The published subprocessor list cannot drift from what we can reach ─
+  // Register item A-8. The privacy policy is a COMMITMENT TO CUSTOMERS, and
+  // it was a hand-written paragraph sitting next to a failover chain that
+  // grows by one provider whenever somebody pastes a key into a settings
+  // screen. It was accurate. It was accurate by coincidence of configuration,
+  // and the person pasting the key is not thinking about the privacy policy.
+  //
+  // This section FETCHES and FORMATS; subprocessor-disclosure-check.mjs
+  // decides. The split is what lets certify-mutation-test.mjs hand the real
+  // comparison a mutated copy — including a SYNTHESISED configured provider
+  // key — instead of proving the gate works by setting one for real, which
+  // this session was forbidden to do and which would have been the wrong
+  // shape anyway: an interrupted run leaves a live credential behind.
+  section('subprocessor-disclosure', async () => {
+    const { SUBPROCESSORS, ARMING_GROUPS } = readManifest();
+    const { providers, providerToKey } = readLlmChain();
+    const sources = egressSources();
+    const resolvedKeyNames = readResolvedKeyNames(sources);
+    const repoKeyTokens = readKeyTokens(sources);
+
+    // The two credential stores a query CAN see. `secret_id is not null` is
+    // the shape test: platform_config holds both Vault-backed secrets and
+    // plain feature flags, and only the former is a credential.
+    const cfgRows = await q(`select key from public.platform_config where secret_id is not null`);
+    const tenantRows = await q(`select distinct provider_key from public.tenant_llm_credentials`);
+    const [{ n: tenantCount }] = await q(`select count(*)::int as n from public.tenants`);
+    const configuredSecrets = [
+      ...cfgRows.map((r) => ({ key: r.key, store: 'platform_config' })),
+      ...tenantRows.map((r) => ({ key: r.provider_key, store: 'tenant_llm_credentials' })),
+    ];
+
+    const { failures, counts } = subprocessorDisclosureFailures({
+      manifest: SUBPROCESSORS, groups: ARMING_GROUPS,
+      llmProviders: providers, llmProviderToKey: providerToKey,
+      resolvedKeyNames, repoKeyTokens, configuredSecrets, tenantCount,
+      pageSource: readFileSync(PAGE_SRC, 'utf8'),
+    });
+
+    // Count the comparisons, not just the findings — and print the ZEROES,
+    // because "no tenant has brought its own key" and "the tenant arm never
+    // ran" produce the same silence otherwise.
+    const detail = failures.length
+      ? failures.join('\n')
+      : `${counts.entries} disclosed vendors · ${counts.llmTiersCompared} model-tier comparisons `
+        + `(${providers.join('→')}) · ${counts.resolvedKeysCompared} credentials resolved in code · `
+        + `${counts.liveSecretsCompared} live secrets in platform_config · `
+        + `${counts.liveTenantCredentialsCompared} tenant-supplied credentials across ${counts.tenants} tenants · `
+        + `${counts.anchorsCompared} anchors, ${counts.armedByCompared} key names, `
+        + `${counts.pageClaimPatternsCompared} unverifiable-claim patterns · `
+        + `${NON_EGRESS_CONFIG.size} named exemptions ratcheted`;
+    if (!failures.length) {
+      console.log(`        subprocessor-disclosure: ${detail}`);
+      // ⚠ NOT COVERED, and said out loud rather than left to be discovered.
+      console.log('        subprocessor-disclosure: env-stored provider keys are invisible to this arm '
+        + '(aiKeys.ts falls back to Deno.env) — ai-engine-status reports source=env, wiring it in needs a platform-admin JWT (register A-8)');
+    }
     return { ok: failures.length === 0, detail };
   }),
   // ── The discovery interview's fixed spine cannot silently shrink ────────

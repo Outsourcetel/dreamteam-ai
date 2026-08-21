@@ -1,4 +1,11 @@
 import React from 'react';
+// Section 4 is GENERATED, not written. See src/lib/subprocessors.ts for why:
+// a provider joins the model failover chain the moment its key resolves, so a
+// hand-maintained list of "who receives your data" is accurate only by
+// coincidence of configuration. certify › subprocessor-disclosure checks that
+// list against what the code can reach AND what is actually configured, and
+// checks that this page still renders from it rather than restating it.
+import { SUBPROCESSORS, ARMING_GROUPS, COUNSEL_PLACEHOLDER } from '../../lib/subprocessors';
 
 // Starter draft, not a finished legal document — see the banner below.
 // Added during the pre-launch readiness review (2026-07-08): no privacy
@@ -9,12 +16,12 @@ const PrivacyPolicyPage = ({ onBack }: { onBack?: () => void }) => (
   <div className="min-h-screen bg-dt-page text-dt-support overflow-y-auto">
     <div className="max-w-3xl mx-auto px-6 py-12">
       {onBack && (
-        <button onClick={onBack} className="text-sm text-indigo-400 hover:text-indigo-300 mb-6">← Back</button>
+        <button onClick={onBack} className="text-sm text-dt-accent-text hover:text-dt-title mb-6">← Back</button>
       )}
 
-      <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-8">
-        <p className="text-sm font-medium text-amber-300 mb-1">Draft — not yet reviewed by a lawyer</p>
-        <p className="text-xs text-amber-400/80">
+      <div className="bg-dt-warn-soft border border-dt-warn-border rounded-xl p-4 mb-8">
+        <p className="text-sm font-medium text-dt-warn mb-1">Draft — not yet reviewed by a lawyer</p>
+        <p className="text-xs text-dt-warn/80">
           This is a starting-point draft written to reflect what DreamTeam AI actually does today. It is not final
           and should not be relied on as your real privacy policy until reviewed by qualified legal counsel,
           especially if you plan to serve customers in the EU (GDPR), California (CCPA/CPRA), or other regions with
@@ -22,12 +29,12 @@ const PrivacyPolicyPage = ({ onBack }: { onBack?: () => void }) => (
         </p>
       </div>
 
-      <h1 className="text-2xl font-bold text-white mb-2">Privacy Policy</h1>
+      <h1 className="text-2xl font-bold text-dt-title mb-2">Privacy Policy</h1>
       <p className="text-sm text-dt-muted mb-8">Last updated: 22 July 2026 · Effective: 22 July 2026</p>
 
       <div className="space-y-8 text-sm leading-relaxed">
         <section>
-          <h2 className="text-lg font-semibold text-white mb-2">1. What this covers</h2>
+          <h2 className="text-lg font-semibold text-dt-title mb-2">1. What this covers</h2>
           <p>
             This Privacy Policy explains what data DreamTeam AI ("we," "us") collects when you use our service, how
             we use it, and what choices you have. It applies to account data (your organization's own users) and to
@@ -36,7 +43,7 @@ const PrivacyPolicyPage = ({ onBack }: { onBack?: () => void }) => (
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-white mb-2">2. What we collect</h2>
+          <h2 className="text-lg font-semibold text-dt-title mb-2">2. What we collect</h2>
           <ul className="list-disc list-inside space-y-1 text-dt-support">
             <li><span className="text-dt-support">Account data</span> — name, email, role, and authentication details for you and your team members.</li>
             <li><span className="text-dt-support">Customer/business data</span> — whatever your organization connects or uploads (support tickets, knowledge documents, CRM records, financial data, etc.) so the Service's AI Digital Employees can act on it.</li>
@@ -46,7 +53,7 @@ const PrivacyPolicyPage = ({ onBack }: { onBack?: () => void }) => (
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-white mb-2">3. How we use it</h2>
+          <h2 className="text-lg font-semibold text-dt-title mb-2">3. How we use it</h2>
           <p>We use collected data to:</p>
           <ul className="list-disc list-inside mt-2 space-y-1 text-dt-support">
             <li>Provide the Service — including generating AI responses and automating workflows you've configured</li>
@@ -57,30 +64,49 @@ const PrivacyPolicyPage = ({ onBack }: { onBack?: () => void }) => (
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-white mb-2">4. Third parties we share data with</h2>
+          <h2 className="text-lg font-semibold text-dt-title mb-2">4. Third parties the Service can send data to</h2>
           <p>
-            To generate AI responses, the Service sends relevant portions of your data to a third-party AI model
-            provider. Today that is <strong>Anthropic (Claude)</strong> — it is the only provider currently
-            receiving any customer content.
+            This list is generated from the software itself, not maintained by hand. It names every third party this
+            product is <em>capable</em> of sending your data to, and what puts each one in that path — so it stays
+            correct when a setting changes, without anyone having to remember to edit this page.
           </p>
           <p className="mt-3">
-            The Service can also fail over to <strong>Amazon Web Services (Bedrock)</strong>, <strong>OpenAI</strong>{' '}
-            and <strong>Google</strong>. A provider only ever joins that chain once its API key is configured in
-            Settings → AI Engine, and none of the three is configured today. We list all four here rather than only
-            the one in use, because adding a key is a settings change: without this paragraph it could route your
-            conversations to a processor this policy had never named.
+            Which of these are active for your workspace at any given moment is a live setting, not a document:
+            model providers are shown in <strong>Settings → AI Engine</strong>, and connected systems in{' '}
+            <strong>Systems</strong>. We do not sell your data to anyone.
           </p>
-          <p className="mt-3">
-            Beyond the model providers, the Service relies on <strong>Supabase</strong> (database and hosting),{' '}
-            <strong>Vercel</strong> (application hosting) and <strong>Resend</strong> (outbound and inbound email).
-            [Placeholder for counsel: confirm and link each provider's data-processing terms, and state whether any
-            provider trains its own models on your data — as of this draft that should be explicitly opted out
-            wherever the provider allows it.] We do not sell your data to anyone.
-          </p>
+
+          <div className="bg-dt-warn-soft border border-dt-warn-border rounded-lg p-3 mt-4">
+            <p className="text-xs text-dt-warn/90">{COUNSEL_PLACEHOLDER}</p>
+          </div>
+
+          {ARMING_GROUPS.map((group) => {
+            const entries = SUBPROCESSORS.filter((s) => s.arming === group.arming);
+            if (entries.length === 0) return null;
+            return (
+              <div key={group.arming} className="mt-6">
+                <h3 className="text-sm font-semibold text-dt-body">{group.heading}</h3>
+                <p className="text-xs text-dt-muted mt-1">{group.note}</p>
+                <ul className="mt-3 space-y-3">
+                  {entries.map((s) => (
+                    <li key={s.id} className="border border-dt-border rounded-lg p-3 bg-dt-card">
+                      <p className="text-sm font-medium text-dt-body">{s.vendor}</p>
+                      <p className="text-xs text-dt-support mt-1">{s.purpose}</p>
+                      {s.armedBy.length > 0 && (
+                        <p className="text-xs text-dt-muted mt-1">
+                          Joins the path when configured: <code className="text-dt-faint">{s.armedBy.join(', ')}</code>
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-white mb-2">5. Data retention and deletion</h2>
+          <h2 className="text-lg font-semibold text-dt-title mb-2">5. Data retention and deletion</h2>
           <p>
             We retain your data for as long as your account is active. If you close your account or it's
             terminated, [placeholder: state the real retention/deletion window — there is currently no automated
@@ -90,7 +116,7 @@ const PrivacyPolicyPage = ({ onBack }: { onBack?: () => void }) => (
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-white mb-2">6. Security</h2>
+          <h2 className="text-lg font-semibold text-dt-title mb-2">6. Security</h2>
           <p>
             We use industry-standard safeguards to protect your data, including encrypted connections, role-based
             access controls, and an immutable audit trail of sensitive actions. No system is perfectly secure, and we
@@ -99,7 +125,7 @@ const PrivacyPolicyPage = ({ onBack }: { onBack?: () => void }) => (
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-white mb-2">7. Your rights</h2>
+          <h2 className="text-lg font-semibold text-dt-title mb-2">7. Your rights</h2>
           <p>
             Depending on where you're located, you may have rights to access, correct, export, or delete your
             personal data, and to object to certain uses of it. [Placeholder: if you'll have EU or California users,
@@ -109,20 +135,20 @@ const PrivacyPolicyPage = ({ onBack }: { onBack?: () => void }) => (
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-white mb-2">8. Children's privacy</h2>
+          <h2 className="text-lg font-semibold text-dt-title mb-2">8. Children's privacy</h2>
           <p>The Service is intended for business use and is not directed at children. We do not knowingly collect data from children.</p>
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-white mb-2">9. Contact</h2>
+          <h2 className="text-lg font-semibold text-dt-title mb-2">9. Contact</h2>
           <p>
             Questions about this Privacy Policy, or requests to access/delete your data, can be sent to{' '}
-            <a href="mailto:bkhan@outsourcetel.com" className="text-indigo-400 hover:underline">bkhan@outsourcetel.com</a>.
+            <a href="mailto:bkhan@outsourcetel.com" className="text-dt-accent-text hover:underline">bkhan@outsourcetel.com</a>.
           </p>
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-white mb-2">10. Changes to this policy</h2>
+          <h2 className="text-lg font-semibold text-dt-title mb-2">10. Changes to this policy</h2>
           <p>We may update this Privacy Policy from time to time. We'll notify active customers of material changes.</p>
         </section>
       </div>

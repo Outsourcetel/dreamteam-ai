@@ -1321,8 +1321,8 @@
     },
     {
       "id": "A-8",
-      "what": "Subprocessor disclosure is pinned to today's configuration, not to the code's capability. The LLM failover chain is anthropic -> bedrock (AWS) -> openai -> google and a provider joins the chain the moment its key is set in Settings, with no policy change and no customer notice. Today only Anthropic receives customer content (30-day usage shows Anthropic models only, and no OpenAI/Google key rows exist), and the privacy policy names only Anthropic — so adding one key in a settings screen would silently route customer conversations to an undisclosed processor",
-      "where": "supabase/functions/_shared/llm.ts chain (anthropic|bedrock|openai|google) vs src/pages/legal/PrivacyPolicyPage.tsx; docs/62",
+      "what": "The disclosure-DRIFT half is fixed and ratcheted: src/lib/subprocessors.ts is now the single source of truth for every third party this codebase can send customer data to, src/pages/legal/PrivacyPolicyPage.tsx renders from it (the two live-configuration claims it used to hardcode are gone — a static page cannot keep them true), and certify > subprocessor-disclosure goes red if that list drifts from the failover chain llm.ts can reach, from the credentials the code resolves, or from the credentials actually SET in platform_config / tenant_llm_credentials; 15 mutation cases, each scored on naming the injected break. TWO THINGS REMAIN and neither is engineering's to decide: (1) the wording is still an unreviewed draft carrying COUNSEL_PLACEHOLDER — counsel must confirm each vendor's data-processing terms, training opt-out, processing locations and DPA before this is a commitment anyone can sign against; (2) aiKeys.ts falls back to Deno.env, so an edge-function secret can still arm a provider that NO database query can see — ai-engine-status already reports source=env per tier, but reaching it from CI needs a platform-admin JWT",
+      "where": "src/lib/subprocessors.ts (the manifest) + src/pages/legal/PrivacyPolicyPage.tsx (renders it) + scripts/subprocessor-disclosure-check.mjs (the ratchet, wired into scripts/certify.mjs); chain in supabase/functions/_shared/llm.ts; the residual is the Deno.env fallback in supabase/functions/_shared/aiKeys.ts; docs/62",
       "severity": "security",
       "why_skipped": "founder-decision",
       "first_named": {
@@ -1340,7 +1340,8 @@
         "open_if": {
           "op": ">=",
           "n": 1
-        }
+        },
+        "note": "The grep pin (bedrock|openai|google in llm.ts) is a PROXY and can never go green: the chain will always name those providers, and that is the fact being disclosed rather than a defect to remove. What actually closes this is a founder+counsel decision, whose observable marker is COUNSEL_PLACEHOLDER leaving src/lib/subprocessors.ts. Repointing the pin there needs --grep/--paths, which --update cannot change and which is not worth hand-editing the register for. Enumerated while establishing ground truth and now covered by the manifest: the disclosure was honest about LLMs and silent about Deepgram (voice STT/TTS), Gmail SMTP (an outbound email path tried BEFORE Resend), the RENDER_FETCH_URL page-rendering service, Sentry, browser push services, the connector catalogue and customer-registered MCP servers."
       },
       "subject": "repo-source"
     },
