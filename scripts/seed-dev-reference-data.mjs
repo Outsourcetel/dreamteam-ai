@@ -36,6 +36,16 @@ const DEV_REF = 'nmuntxrcdksyhsdywpan';
 const PROD_REF = 'rfsvmhcqeiyrxivbmpel';
 
 // Order matters: comparators reference dimensions, pack_rules reference packs.
+// An entry is a table name, or { name, where } for a table whose CATALOG rows
+// are a subset: some tables carry tenant_id NULL for "platform default" beside
+// real tenant rows, so "no tenant_id column" (rule a) is the wrong test for
+// them — the filter keeps the platform vocabulary and leaves customer content
+// behind. Learned 2026-08-21: review_time_standards (mig 691 seeds 11 platform
+// defaults, tenant_id NULL) was invisible to rule (a), dev had zero rows, and
+// tests/review-minutes.test.ts failed on every branch. 14 more tables hold
+// NULL-tenant platform rows in production (action_definitions: 73) and are
+// NOT yet listed — each needs its own copy-safety judgment (profiles must
+// never cross: its rows reference auth.users identities).
 const TABLES = [
   // system_categories first: connectors.category is a FK to it, and
   // provision_tenant_baseline_internal creates a connector during signup — so
@@ -57,6 +67,8 @@ const TABLES = [
   'ai_model_pricing',
   'config_schema_templates',
   'computer_use_runtimes',
+  // Platform-default review minutes (mig 691). Tenant overrides stay behind.
+  { name: 'review_time_standards', where: 'tenant_id is null' },
 ];
 
 if (!process.argv.includes('--confirm')) {
@@ -95,8 +107,10 @@ async function run(ref, query) {
 // data. jsonb_populate_recordset asks the table itself, so every column is
 // coerced by the definition that will store it.
 const results = [];
-for (const table of TABLES) {
-  const rows = await run(PROD_REF, `select * from public.${table}`);
+for (const entry of TABLES) {
+  const { name: table, where } = typeof entry === 'string' ? { name: entry } : entry;
+  const filter = where ? ` where ${where}` : '';
+  const rows = await run(PROD_REF, `select * from public.${table}${filter}`);
   if (!rows.length) { results.push({ table, copied: 0, note: 'empty in production' }); continue; }
   // ⚠ CHUNK BY BYTES, NOT ROW COUNT. The first version batched 50 rows and
   // failed on role_archetypes: each row embeds a whole SOP playbook, so fifty
@@ -119,7 +133,9 @@ for (const table of TABLES) {
     if (JSON.stringify(batch).length > MAX_BYTES) { batch.pop(); await flush(); batch.push(r); }
   }
   await flush();
-  const [got] = await run(DEV_REF, `select count(*)::int as n from public.${table}`);
+  // Same filter on the verify side: without it, a filtered table would count
+  // dev's own tenant rows (tests create overrides) and report a false PARTIAL.
+  const [got] = await run(DEV_REF, `select count(*)::int as n from public.${table}${filter}`);
   results.push({ table, production: rows.length, dev: got.n, match: rows.length === got.n ? 'OK' : 'PARTIAL' });
 }
 console.table(results);
