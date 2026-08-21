@@ -19,6 +19,11 @@ initSentry();
 // default-flip task, after the estate is verified).
 // Must stay identical to LIGHT_SURFACES in src/design/branding.ts (runtime copy).
 const LIGHT_SURFACES = new Set(['daylight', 'editorial']);
+// Auto night-switching (Task 9). Must stay identical to
+// NIGHT_STARTS/NIGHT_ENDS/isNightNow in src/design/branding.ts (runtime
+// twin) — duplicated here for the same reason as LIGHT_SURFACES above: the
+// boot block cannot afford the import cost of branding.ts before first paint.
+const NIGHT_STARTS = 19, NIGHT_ENDS = 7;
 {
   const params = new URLSearchParams(window.location.search);
   const urlTheme = params.get('theme');
@@ -28,11 +33,34 @@ const LIGHT_SURFACES = new Set(['daylight', 'editorial']);
   // exists and would blank the whole app.
   let cached: string | null = null;
   try { cached = localStorage.getItem('dt.surface'); } catch { /* boot on the default */ }
-  const light = urlTheme ? urlTheme === 'light' : (cached ? LIGHT_SURFACES.has(cached) : false);
+  // dt.branding {surface, auto, night} lets a flash-free boot recompute the
+  // EFFECTIVE key itself (dt.surface alone is only last-APPLIED, which can be
+  // stale by up to a tick after the day/night boundary if the page was left
+  // open across it and reloaded before the 60s scheduler ticked). Only
+  // consulted when there's no dev override — `?theme=`/`?surface=` still wins,
+  // same precedence dt.surface already had.
+  let effectiveKey: string | null = cached;
+  if (!urlTheme) {
+    try {
+      const raw = localStorage.getItem('dt.branding');
+      if (raw) {
+        const b = JSON.parse(raw) as { surface?: string; auto?: boolean; night?: string | null };
+        if (b && b.auto) {
+          const h = new Date().getHours();
+          const isNight = h >= NIGHT_STARTS || h < NIGHT_ENDS;
+          effectiveKey = isNight ? (b.night ?? 'midnight') : (b.surface ?? cached ?? 'midnight');
+        } else if (b && b.surface) {
+          effectiveKey = b.surface;
+        }
+      }
+    } catch { /* boot on the dt.surface fallback already in effectiveKey */ }
+  }
+  const light = urlTheme ? urlTheme === 'light' : (effectiveKey ? LIGHT_SURFACES.has(effectiveKey) : false);
   document.documentElement.classList.toggle('light', light);
   // Warm Editorial (Task 8): `?theme=light&surface=editorial` is the dev
-  // vehicle; otherwise it follows the cached surface family like `light` does.
-  const editorial = urlTheme ? urlSurface === 'editorial' : cached === 'editorial';
+  // vehicle; otherwise it follows the effective surface family like `light`
+  // does (night surfaces are never editorial, so this is a no-op at night).
+  const editorial = urlTheme ? urlSurface === 'editorial' : effectiveKey === 'editorial';
   document.documentElement.classList.toggle('editorial', editorial);
 }
 
