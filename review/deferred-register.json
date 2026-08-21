@@ -1757,7 +1757,7 @@
         "source": "unreachable-UI sweep 2026-08-21"
       },
       "subject": "repo-source",
-      "state": "open",
+      "state": "closed",
       "verification": {
         "kind": "grep",
         "paths": [
@@ -1769,7 +1769,9 @@
           "op": "==",
           "n": 0
         }
-      }
+      },
+      "closed_by": "c78f4a1e",
+      "closed_on": "2026-08-21"
     },
     {
       "id": "D-16",
