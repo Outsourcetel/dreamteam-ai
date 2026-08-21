@@ -21,15 +21,18 @@ import { supabase } from '../supabase';
  *  palette; this owns the dynamic one's default. */
 export const DEFAULT_ACCENT = '#6366f1';
 
-export interface TenantBranding { accent_hex: string | null; surface_key: 'midnight' | 'graphite' }
+export interface TenantBranding { accent_hex: string | null; surface_key: 'midnight' | 'graphite' | 'daylight' }
 
 const SURFACES: Record<string, Record<string, string>> = {
-  midnight: {}, // tokens.css defaults
+  midnight: {}, // tokens.css :root defaults
+  daylight: {}, // tokens.css :root.light defaults — the class carries it
   graphite: {
     '--dt-page': '#0a0a0c', '--dt-panel': '#17171c66', '--dt-card': '#17171c66',
     '--dt-inset': '#0a0a0c99', '--dt-border': '#2c2c3499', '--dt-border-strong': '#3f3f4a',
   },
 };
+// Must stay identical to LIGHT_SURFACES in src/main.tsx (boot-time copy).
+const LIGHT_SURFACES = new Set(['daylight']);
 
 const clamp = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
 const hexToRgb = (h: string) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)] as const;
@@ -42,8 +45,11 @@ const mix = (hex: string, target: number, amt: number) => {
 export function applyBranding(b: TenantBranding | null): void {
   const root = document.documentElement;
   // Reset to defaults first so switching back is clean.
-  ['--dt-accent', '--dt-accent-strong', '--dt-accent-hover', '--dt-accent-soft', '--dt-accent-text',
+  ['--dt-accent', '--dt-accent-strong', '--dt-accent-hover', '--dt-accent-soft', '--dt-accent-text', '--dt-accent-border',
     ...Object.keys(SURFACES.graphite)].forEach(k => root.style.removeProperty(k));
+  const key = b?.surface_key ?? 'midnight';
+  document.documentElement.classList.toggle('light', LIGHT_SURFACES.has(key));
+  try { localStorage.setItem('dt.surface', key); } catch { /* cosmetic */ }
   if (!b) return;
   const surf = SURFACES[b.surface_key] ?? {};
   Object.entries(surf).forEach(([k, v]) => root.style.setProperty(k, v));
@@ -53,7 +59,9 @@ export function applyBranding(b: TenantBranding | null): void {
     root.style.setProperty('--dt-accent-strong', mix(a, 0, 0.15)); // toward black
     root.style.setProperty('--dt-accent-hover', a);
     root.style.setProperty('--dt-accent-soft', a + '1a');
-    root.style.setProperty('--dt-accent-text', mix(a, 255, 0.45)); // toward white
+    // Readable on white means darker, not lighter.
+    root.style.setProperty('--dt-accent-text', LIGHT_SURFACES.has(key) ? mix(a, 0, 0.25) : mix(a, 255, 0.45));
+    root.style.setProperty('--dt-accent-border', a + '4d');
   }
 }
 
