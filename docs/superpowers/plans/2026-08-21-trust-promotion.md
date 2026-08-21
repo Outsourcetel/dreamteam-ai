@@ -196,6 +196,153 @@ node scripts/db-query.mjs --file supabase/migrations/NNN_eligibility_can_ask_for
 
 ---
 
+### Task 1b: Teach the Ring-0 probe that proposals now come in two shapes
+
+**Files:**
+- Modify: `scripts/trust-proposer-boundary.mjs` (arm 9, the denominator line, one new arm)
+
+**Interfaces:**
+- Consumes: `public.trust_evidence_for(trust_policies) → jsonb` and the
+  `open_proposals` CTE already in the file.
+- Produces: no new export. `trustProposerBoundarySql()` keeps its signature; the
+  `opts.proposalExtra` injection point the mutation suite uses must keep working.
+
+**⚠ ORDERING: this task must land BEFORE Task 1's migration is applied.** Task 1
+is committed and dry-run but unapplied. Applying it first turns certify RED.
+
+**Why this task exists.** Arm 9 states its own premise in its comment: *"an open
+system proposal must cite >= 3 decisions. One that does not should not exist (the
+writer only files what the detector qualified at N=3)."* Task 1 adds a **second
+writer** that files what the *criteria* qualified, not what the detector did. Its
+evidence is criteria-shaped and carries no `pattern` key at all, so line 330's
+`coalesce(jsonb_array_length(op.pending_evidence->'pattern'->'decisions'), 0)`
+coalesces to **0**, `0 < 3` is true, and arm 9 reports a violation for a proposal
+that never claimed a pattern.
+
+That collides head-on with the founder ruling recorded in Task 1: *an eligible
+policy raises a request even with no approved-action history.* Both cannot hold.
+Arm 9 is not wrong — Task 1 invalidates its premise, and this task makes the
+arm's implicit scope explicit now that the population has two shapes.
+
+**Measured 2026-08-21, before any change:** the probe runs clean, scanning 1 open
+system proposal with 4 citations re-verified against the ledger. That proposal is
+pattern-shaped, so arm 9 must still judge it exactly as it does today.
+
+**What this task must NOT do.** Scoping arm 9 without adding the new arm leaves
+criteria-shaped proposals checked by nothing, and this file's own denominator arm
+rules a zero population legal — so certify would stay green over an unchecked
+population. That is the theatre this repo has paid for twice. The scope and the
+new arm ship together or neither ships.
+
+- [ ] **Step 1: Write the failing case first**
+
+Add a criteria-shaped row through the existing `opts.proposalExtra` injection
+point and confirm the CURRENT probe reports `citation-below-floor` for it. Use a
+real policy id so the row joins; give it evidence with `criteria` and no
+`pattern` key:
+
+```sql
+select gen_random_uuid() as task_id, tp.tenant_id, 'probe-fixture' as slug,
+       jsonb_build_object('criteria', jsonb_build_object('min_human_samples', 0),
+                          'eligible', true) as pending_evidence
+  from trust_policies tp limit 1
+```
+
+Expected: **one `citation-below-floor` violation.** That is the defect, reproduced
+before it is fixed. If it does not appear, stop — the fixture is not reaching arm 9
+and nothing below this line proves anything.
+
+- [ ] **Step 2: Scope arm 9 to proposals that actually claim a pattern**
+
+Change arm 9's predicate to judge only pattern-claiming proposals. Keep the floor
+of 3 exactly as it is for them — it is migration 683's founder-ratified floor and
+this task does not touch it:
+
+```sql
+ where op.pending_evidence ? 'pattern'
+   and coalesce(jsonb_array_length(op.pending_evidence->'pattern'->'decisions'), 0) < 3
+```
+
+Update the arm's comment so the premise it now relies on is written down: it
+judges proposals filed by the detector, and criteria-filed proposals are judged by
+the arm below.
+
+- [ ] **Step 3: Add the arm that judges the other shape**
+
+A criteria-filed proposal claims one thing: that the policy met its own bar. Do
+not trust the stored payload — re-derive it, the same discipline arm 10 applies to
+citations (mig 642, the stored marker is never truth):
+
+```sql
+union all
+
+-- ── 9b. ELIGIBILITY NOT RE-DERIVABLE — a criteria-filed proposal whose policy
+--       does not currently satisfy its own criteria. The stored payload is a
+--       stored marker; this arm re-asks trust_evidence_for (mig 642). ───────
+select 'eligibility-not-re-derivable — ' || op.slug || ' [task ' || op.task_id
+       || ']: open criteria-filed proposal whose policy does NOT currently '
+       || 'satisfy its own criteria. Either the evidence was edited after '
+       || 'filing, or a writer bypassed the eligibility check.' as violation,
+       null::text as note
+  from open_proposals op
+  join trust_policies tp on tp.pending_task_id = op.task_id
+ where not (op.pending_evidence ? 'pattern')
+   and coalesce((public.trust_evidence_for(tp.*)->>'eligible')::boolean, false) is not true
+```
+
+⚠ Read `trust_evidence_for`'s actual signature with `pg_get_function_arguments`
+first and match how the existing code calls it — never
+`pg_get_function_identity_arguments`, which omits defaults and has cost this repo
+`42P13` twice.
+
+- [ ] **Step 4: Make the denominator report both shapes**
+
+The closing denominator line currently says *"N open system proposal(s)
+scanned."* One number can no longer describe two populations — if criteria-filed
+proposals grow to dominate, arm 9's real denominator could fall to zero while the
+line still reports a healthy total. Split it:
+
+```
+... || ' open system proposal(s) scanned (' || c.pattern_filed
+    || ' pattern-filed, judged at the N=3 floor; ' || c.criteria_filed
+    || ' criteria-filed, judged by re-derived eligibility); '
+```
+
+Add both counts to the `counted` CTE.
+
+- [ ] **Step 5: Prove both arms fail, not just pass**
+
+Four runs, all four required. Two findings and two clean results prove nothing on
+their own — a probe that cannot fail is theatre:
+
+1. Criteria fixture with `eligible: true` on a genuinely eligible policy → **no
+   violation** (arm 9 no longer misfires; 9b is satisfied).
+2. Criteria fixture pointing at a policy that is NOT eligible → **`eligibility-not-re-derivable`** fires.
+3. Pattern fixture citing 2 decisions → **`citation-below-floor` still fires.** Arm
+   9 is unchanged for its own population.
+4. No fixtures, live data → **clean, and the denominator reads `1 pattern-filed, 0
+   criteria-filed`**, matching today's baseline.
+
+- [ ] **Step 6: Confirm the mutation suite still injects**
+
+`scripts/certify-mutation-test.mjs` feeds fixtures through `proposalExtra`, which
+is `UNION ALL`'d into `open_proposals`. Run it and confirm the trust arms still
+report as they did:
+
+```bash
+node scripts/certify-mutation-test.mjs 2>&1 | grep -i "trust-proposer"
+```
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add scripts/trust-proposer-boundary.mjs
+git commit -m "fix(certify): arm 9 judged one proposal shape; there are now two"
+```
+
+---
+
+
 ### Task 2: An approver who is not the requester
 
 **Files:**
