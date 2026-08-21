@@ -697,7 +697,7 @@ Option C from the design canvas becomes a choosable surface family, riding the e
 }
 ```
 
-- [ ] **Step 2: the display-font token everywhere else.** In `:root` (next to `--dt-font-sans`): `--dt-font-display: var(--dt-font-sans);` — one line, chained, so every existing theme renders headings exactly as today. Do NOT add it to `:root.light` or `.dt-force-dark` (the chain resolves per-element; the `:root` declaration suffices — verify with a computed-style probe that a `.dt-force-dark` heading still resolves to the sans stack in editorial mode; if the chain surprises, add explicit declarations and say so).
+- [ ] **Step 2: the display-font token everywhere else.** In `:root` (next to `--dt-font-sans`): `--dt-font-display: var(--dt-font-sans);` — chained, so every existing theme renders headings exactly as today. AND pin it inside `.dt-force-dark` (`--dt-font-display: var(--dt-font-sans);`, next to that block's existing font pin): custom properties INHERIT computed values, so a forced-dark subtree under `<html class="light editorial">` would otherwise inherit Editorial's literal serif — the original version of this step claimed the `:root` chain sufficed, and the Task 8 probe proved it wrong. Verify with a computed-style probe that a `.dt-force-dark` heading resolves to the sans stack in editorial mode.
 
 - [ ] **Step 3: Tailwind + fonts.** `tailwind.config.js` fontFamily gains `display: ['var(--dt-font-display)']`. `npm install @fontsource-variable/newsreader @fontsource-variable/schibsted-grotesk`; import both in `src/main.tsx` below the instrument-sans import. (No CDN substitutes; BLOCKED if unresolvable.)
 
