@@ -1949,6 +1949,27 @@
           "n": 0
         }
       }
+    },
+    {
+      "id": "B-21",
+      "what": "Deleting a tenant erases the record of what PLATFORM OPERATORS did inside it. delete_tenant_internal explicitly deletes from remote_access_write_log (not an FK cascade). Removing acme-telecom took 39 of 194 rows; the oldest surviving entry moved 07-07 to 07-08. This is the one trail that answers 'who deleted this workspace, and what did they touch first' - and it is removed by the act it would describe. 17 other audit-shaped tables cascade on tenant delete. Retention policy is a founder/legal call, interacting with the right-to-erasure work in migs 779-782.",
+      "where": "public.delete_tenant_internal -> remote_access_write_log",
+      "severity": "correctness",
+      "why_skipped": "founder-decision",
+      "first_named": {
+        "date": "2026-08-21",
+        "source": "verified 2026-08-21 while closing B-20; 194 rows measured 08-20, 155 after acme-telecom deletion"
+      },
+      "subject": "production-db",
+      "state": "open",
+      "verification": {
+        "kind": "sql",
+        "sql": "select count(*)::int as n from pg_proc p join pg_namespace ns on ns.oid = p.pronamespace where ns.nspname = 'public' and p.proname = 'delete_tenant_internal' and p.prosrc ilike '%remote_access_write_log%'",
+        "open_if": {
+          "op": ">=",
+          "n": 1
+        }
+      }
     }
   ]
 }
