@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Modal } from '../../../design/primitives';
+import { Button, Modal } from '../../../design/primitives';
 import { useAuth } from '../../../context/AuthContext';
+import { useCanWritePipeline } from '../../../lib/useRoleGate';
 import { PageHeader, th, td } from '../../../components/ui';
 import {
   listOpportunities, createOpportunity, updateOpportunity, moveStage, closeWon, closeLost,
@@ -16,15 +17,14 @@ import type { TemplateVersion } from '../../../lib/onboardingApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
 
 // ============================================================
-// BD + Sales — LIVE pipeline (migration 023).
+// The pipeline — LIVE (migration 023).
 //
-// DESIGN CALL — one opportunities table, two lenses: BD and Sales are
-// the same pipeline data (opportunities), not two systems. The BD page
-// is the top-of-funnel lens (prospect stage: add, import, qualify);
-// the Sales page is the deal lens (qualified → proposal → negotiation
-// → won/lost: table + stage select, no drag-drop in v1). "Qualify" on
-// BD literally moves the row into the Sales lens — one source of
-// truth, zero re-entry, which is exactly the lifecycle promise.
+// DESIGN CALL — one opportunities table, ONE surface. BD and Sales were
+// always the same pipeline data (opportunities), never two systems, and
+// since the founder's 2026-07-22 hub restructure they are also one
+// screen: the tenant's first configured stage is top-of-funnel and the
+// stage dropdown is what "qualify" means. See the banner above
+// CustomerSalesLive for why the separate BD lens is gone.
 //
 // SoR DOCTRINE: your CRM stays your CRM. This is a working cache /
 // action workspace; native mode + CSV import are the bootstrap for
@@ -411,198 +411,93 @@ function useToast(): [string | null, (m: string) => void] {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// BD lens — top of funnel: prospects, add, import, qualify.
-// ══════════════════════════════════════════════════════════════════
-export function CustomerBDLive() {
-  const { liveTenantName } = useAuth();
-  const vocab = useVocabulary();
-  const { opps, summary, stages, loading, missingTables, error, refresh } = usePipeline();
-  const [toast, setToast] = useToast();
-  const [showImport, setShowImport] = useState(false);
-  const [showAdd, setShowAdd] = useState(false);
-  const [newCompany, setNewCompany] = useState('');
-  const [newName, setNewName] = useState('');
-  const [newOwner, setNewOwner] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [qualifying, setQualifying] = useState<string | null>(null);
-
-  // Wave 4: the BD lens is the FIRST configured stage; qualifying moves
-  // a deal to the SECOND (the top of the Sales lens).
-  const bdStage = stages[0]?.stage_key ?? 'prospect';
-  const nextStage = stages[1]?.stage_key ?? 'qualified';
-  const nextStageLabel = stages[1]?.label ?? 'Qualified';
-  const prospects = useMemo(() => opps.filter(o => o.stage === bdStage), [opps, bdStage]);
-  const qualifiedCount = useMemo(() => opps.filter(o => o.stage === nextStage).length, [opps, nextStage]);
-
-  const addProspect = async () => {
-    if (!newCompany.trim()) return;
-    setSaving(true);
-    try {
-      await createOpportunity({
-        name: newName.trim() || `${newCompany.trim()} — opportunity`,
-        company_name: newCompany.trim(),
-        stage: bdStage,
-        owner: newOwner.trim(),
-      });
-      setShowAdd(false); setNewCompany(''); setNewName(''); setNewOwner('');
-      void refresh();
-    } catch (e) { setToast((e as Error).message); }
-    finally { setSaving(false); }
-  };
-
-  const qualify = async (o: Opportunity) => {
-    setQualifying(o.id);
-    try {
-      await moveStage(o.id, nextStage);
-      setToast(`${o.company_name || o.name} moved to ${nextStageLabel} — now in the Sales pipeline.`);
-      void refresh();
-    } catch (e) { setToast((e as Error).message); }
-    finally { setQualifying(null); }
-  };
-
-  return (
-    <div className="p-6">
-      <div className="flex items-start justify-between flex-wrap gap-3">
-        <PageHeader
-          title={`Business Development — ${vocab.party_singular} Lifecycle`}
-          subtitle={`${liveTenantName || 'Your company'} · top of funnel — qualify prospects into the Sales pipeline`}
-        />
-        {!missingTables && !loading && (
-          <div className="flex gap-2">
-            <button onClick={() => setShowImport(true)} className="px-3 py-1.5 rounded-lg text-xs text-dt-support border border-dt-border-strong hover:border-dt-border-strong hover:text-white transition-colors">
-              + Import CSV
-            </button>
-            <button onClick={() => setShowAdd(true)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 transition-colors">
-              + Add prospect
-            </button>
-          </div>
-        )}
-      </div>
-
-      <SorBanner />
-      {toast && <div className="mb-4 rounded-xl border border-emerald-800/50 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-300">✓ {toast}</div>}
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
-
-      {loading ? <LiveLoadingSkeleton rows={5} /> : missingTables ? <MissingTablesNotice /> : (
-        <>
-          <SummaryStrip summary={summary} stages={stages} />
-          {prospects.length === 0 ? (
-            <LiveEmptyState
-              icon="◎"
-              title="No prospects yet"
-              body={`Add prospects by hand or bootstrap from a CRM export. ${qualifiedCount > 0 ? `${qualifiedCount} qualified deal(s) are already in the Sales pipeline.` : 'Qualified prospects move into the Sales pipeline automatically.'}`}
-              primaryLabel="Import CSV"
-              onPrimary={() => setShowImport(true)}
-              secondaryLabel="Add prospect"
-              onSecondary={() => setShowAdd(true)}
-            />
-          ) : (
-            <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
-              <h3 className="text-sm font-semibold text-white mb-1">Prospect list</h3>
-              <p className="text-[11px] text-dt-muted mb-3">Qualify a prospect to hand it to the Sales lens — same pipeline, next stage.</p>
-              <div className="overflow-x-auto rounded-xl border border-dt-border">
-                <table className="w-full text-sm border-collapse">
-                  <thead>
-                    <tr className="border-b border-dt-border">
-                      {['Company', 'Opportunity', 'Owner', 'Source', 'Added', ''].map((h, i) => <th key={i} className={th}>{h}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {prospects.map((p, i) => (
-                      <tr key={p.id} className={`border-b border-dt-border hover:bg-dt-panel transition-colors ${i === prospects.length - 1 ? 'border-b-0' : ''}`}>
-                        <td className={`${td} font-medium text-white`}>{p.company_name || '—'}</td>
-                        <td className={`${td} text-dt-support text-xs`}>{p.name}</td>
-                        <td className={`${td} text-dt-support text-xs`}>{p.owner || 'Unassigned'}</td>
-                        <td className={`${td} text-xs`}>
-                          <span className={`px-2 py-0.5 rounded-full ${p.source === 'native' ? 'bg-slate-600/50 text-dt-support' : 'bg-indigo-500/15 text-indigo-300'}`}>{p.source}</span>
-                        </td>
-                        <td className={`${td} text-dt-muted text-xs whitespace-nowrap`}>{new Date(p.created_at).toLocaleDateString()}</td>
-                        <td className={`${td} text-right`}>
-                          <button onClick={() => void qualify(p)} disabled={qualifying === p.id}
-                            className="text-xs px-2.5 py-1 rounded-lg bg-sky-600/20 text-sky-300 hover:bg-sky-600/40 disabled:opacity-40 transition-colors whitespace-nowrap">
-                            {qualifying === p.id ? 'Qualifying…' : 'Qualify →'}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
-      {showAdd && (
-        <Modal size="sm" title="Add prospect" onClose={() => setShowAdd(false)}>
-          <div className="space-y-3 mb-5">
-              <div>
-                <label className="text-xs font-medium text-dt-support block mb-1">Company</label>
-                <input value={newCompany} onChange={e => setNewCompany(e.target.value)} placeholder="Acme Corp" className={`w-full ${inputCls}`} />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-dt-support block mb-1">Opportunity name (optional)</label>
-                <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Acme — Growth plan" className={`w-full ${inputCls}`} />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-dt-support block mb-1">Owner</label>
-                <input value={newOwner} onChange={e => setNewOwner(e.target.value)} placeholder="J. Cooper" className={`w-full ${inputCls}`} />
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => void addProspect()} disabled={saving || !newCompany.trim()}
-                className="flex-1 py-2 text-sm font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 transition-all">
-                {saving ? 'Saving…' : 'Add prospect'}
-              </button>
-              <button onClick={() => setShowAdd(false)} className="flex-1 py-2 text-sm rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong transition-all">
-                Cancel
-              </button>
-            </div>
-        </Modal>
-      )}
-      {showImport && <ImportOpportunitiesModal onClose={() => setShowImport(false)} onImported={() => void refresh()} />}
-    </div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════════
-// Sales lens — qualified → proposal → negotiation → won/lost.
-// Table + stage select (no drag-drop in v1 — honest simplicity).
+// THE PIPELINE — one surface, the whole funnel.
+//
+// ⚠ WHY THERE IS NO LONGER A SEPARATE BD LENS. The founder restructure of
+// 2026-07-22 (commit 280f5c51, "Pipeline (BD folds into Sales)") collapsed
+// the eight customer-journey pages into ONE hub, and CustomersHubPage has
+// NORMALIZEd `entity_customer_bd` → `entity_customer_sales` ever since. The
+// consolidation was deliberate; carrying BD's CONTROLS across was the step
+// that got missed, so `CustomerBDLive` — the only surface in the product
+// holding "+ Add prospect", "+ Import CSV" and ImportOpportunitiesModal —
+// rendered nowhere for a month, and `opportunities` held 0 rows because
+// nothing in the app could create one (register B-19).
+//
+// The fix keeps the founder's information architecture and moves the
+// controls onto the surface that survived, rather than reversing an IA
+// decision to repair a wiring omission. The first configured stage is no
+// longer filtered OUT of this table: prospects and deals are one list, and
+// "qualify" is the stage dropdown, which is what "one pipeline, two lenses"
+// always meant.
+//
+// ⚠ DO NOT MOVE THESE BUTTONS INTO PageHeader's `actions` SLOT. In-hub,
+// PageHeaderV2 returns the subtitle alone and DROPS `actions` entirely —
+// which is the same defect (a control that renders nowhere) one layer down.
 // ══════════════════════════════════════════════════════════════════
 export function CustomerSalesLive() {
   const { liveTenantName } = useAuth();
   const vocab = useVocabulary();
+  const canWrite = useCanWritePipeline();
   const { opps, summary, stages, loading, missingTables, error, refresh } = usePipeline();
   const [toast, setToast] = useToast();
+  // ⚠ A FAILED WRITE IS NOT A TOAST. The success toast renders emerald with a
+  // ✓, and every write path here used to push its error message into it — so
+  // an RLS refusal arrived looking exactly like a confirmation. Failures get
+  // their own persistent banner (the primitives' own rule: "a failure belongs
+  // in a Banner where it persists").
+  const [writeError, setWriteError] = useState<string | null>(null);
   const [stageFilter, setStageFilter] = useState<'open' | OppStage>('open');
   const [wonOpp, setWonOpp] = useState<Opportunity | null>(null);
   const [lostOpp, setLostOpp] = useState<Opportunity | null>(null);
   const [editing, setEditing] = useState<string | null>(null);   // opp id being edited
   const [editAmount, setEditAmount] = useState('');
   const [editClose, setEditClose] = useState('');
+  const [showImport, setShowImport] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newCompany, setNewCompany] = useState('');
+  const [newName, setNewName] = useState('');
+  const [newOwner, setNewOwner] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  // Wave 4: the Sales lens = every configured stage AFTER the first
-  // (the first is the BD lens). Labels come from the tenant's config.
-  const bdStage = stages[0]?.stage_key ?? 'prospect';
-  const salesStages = useMemo(() => stages.slice(1).map(s => s.stage_key), [stages]);
+  // Wave 4: stages are the TENANT'S configured open stages, in their order.
+  // The first one is top-of-funnel (a "prospect"); it is where a hand-added
+  // row and an unrecognised imported row both land.
+  const openStages = useMemo(() => stages.map(s => s.stage_key), [stages]);
+  const intakeStage = stages[0]?.stage_key ?? 'prospect';
   const stageLabel = (k: string) => stages.find(s => s.stage_key === k)?.label ?? STAGE_LABELS[k] ?? k;
 
   const deals = useMemo(() => {
-    const inSales = opps.filter(o => o.stage !== bdStage);
-    if (stageFilter === 'open') return inSales.filter(o => salesStages.includes(o.stage));
-    return inSales.filter(o => o.stage === stageFilter);
-  }, [opps, stageFilter, bdStage, salesStages]);
+    if (stageFilter === 'open') return opps.filter(o => openStages.includes(o.stage));
+    return opps.filter(o => o.stage === stageFilter);
+  }, [opps, stageFilter, openStages]);
 
-  const prospectCount = useMemo(() => opps.filter(o => o.stage === bdStage).length, [opps, bdStage]);
+  const addProspect = async () => {
+    if (!newCompany.trim()) return;
+    setSaving(true); setWriteError(null);
+    try {
+      const created = await createOpportunity({
+        name: newName.trim() || `${newCompany.trim()} — opportunity`,
+        company_name: newCompany.trim(),
+        stage: intakeStage,
+        owner: newOwner.trim(),
+      });
+      setShowAdd(false); setNewCompany(''); setNewName(''); setNewOwner('');
+      setStageFilter('open');
+      setToast(`${created.company_name || created.name} added at ${stageLabel(created.stage)}.`);
+      void refresh();
+    } catch (e) { setWriteError((e as Error).message); }
+    finally { setSaving(false); }
+  };
 
   const onStageSelect = async (o: Opportunity, next: string) => {
     if (next === o.stage) return;
     if (next === 'won') { setWonOpp(o); return; }
     if (next === 'lost') { setLostOpp(o); return; }
+    setWriteError(null);
     try {
       await moveStage(o.id, next as Exclude<OppStage, 'won' | 'lost'>);
       void refresh();
-    } catch (e) { setToast((e as Error).message); }
+    } catch (e) { setWriteError((e as Error).message); }
   };
 
   const startEdit = (o: Opportunity) => {
@@ -611,6 +506,7 @@ export function CustomerSalesLive() {
     setEditClose(o.close_date ?? '');
   };
   const saveEdit = async (o: Opportunity) => {
+    setWriteError(null);
     try {
       await updateOpportunity(o.id, {
         amount_cents: editAmount.trim() === '' ? null : Math.round((parseFloat(editAmount) || 0) * 100),
@@ -618,29 +514,54 @@ export function CustomerSalesLive() {
       });
       setEditing(null);
       void refresh();
-    } catch (e) { setToast((e as Error).message); }
+    } catch (e) { setWriteError((e as Error).message); }
   };
 
   return (
     <div className="p-6">
-      <PageHeader
-        title={`Sales — ${vocab.party_singular} Lifecycle`}
-        subtitle={`${liveTenantName || 'Your company'} · qualified deals through to won/lost — winning hands off to Onboarding automatically`}
-      />
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <PageHeader
+          title={`Pipeline — ${vocab.party_singular} Lifecycle`}
+          subtitle={`${liveTenantName || 'Your company'} · prospects through to won/lost — winning hands off to Onboarding automatically`}
+        />
+        {canWrite && !missingTables && !loading && (
+          <div className="flex gap-2">
+            <Button kind="secondary" size="sm" onClick={() => setShowImport(true)}>+ Import CSV</Button>
+            <Button kind="primary" size="sm" onClick={() => setShowAdd(true)}>+ Add prospect</Button>
+          </div>
+        )}
+      </div>
       <SorBanner />
       {toast && <div className="mb-4 rounded-xl border border-emerald-800/50 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-300">✓ {toast}</div>}
       {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {writeError && (
+        <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">
+          ✗ That did not save — {writeError}
+        </div>
+      )}
 
       {loading ? <LiveLoadingSkeleton rows={5} /> : missingTables ? <MissingTablesNotice /> : (
         <>
           <SummaryStrip summary={summary} stages={stages} />
+          {opps.length === 0 ? (
+            <LiveEmptyState
+              icon="◎"
+              title="No pipeline yet"
+              body={canWrite
+                ? 'Add a prospect by hand or bootstrap from a CRM export. Everything lands at the top of the funnel and moves along by stage.'
+                : 'Nothing has been added yet. Your role can read the pipeline but not change it.'}
+              primaryLabel={canWrite ? 'Import CSV' : undefined}
+              onPrimary={canWrite ? () => setShowImport(true) : undefined}
+              secondaryLabel={canWrite ? 'Add prospect' : undefined}
+              onSecondary={canWrite ? () => setShowAdd(true) : undefined}
+            />
+          ) : (
           <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
             <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
               <div>
                 <h3 className="text-sm font-semibold text-white">Pipeline</h3>
                 <p className="text-[11px] text-dt-muted">
                   Change the stage inline · Won opens the account + onboarding handoff · Lost requires a reason.
-                  {prospectCount > 0 && ` ${prospectCount} prospect(s) are still in the BD lens.`}
                 </p>
               </div>
               <div className="flex gap-1 bg-dt-panel rounded-xl p-1">
@@ -655,7 +576,7 @@ export function CustomerSalesLive() {
             {deals.length === 0 ? (
               <p className="text-xs text-dt-muted py-6 text-center">
                 {stageFilter === 'open'
-                  ? 'No open deals — qualify prospects in Business Development to fill the pipeline.'
+                  ? 'No open deals — every opportunity here is already closed.'
                   : `No ${stageFilter} deals yet.`}
               </p>
             ) : (
@@ -663,7 +584,7 @@ export function CustomerSalesLive() {
                 <table className="w-full text-sm border-collapse">
                   <thead>
                     <tr className="border-b border-dt-border">
-                      {['Opportunity', 'Company', 'Amount', 'Stage', 'Close date', 'Owner', ''].map((h, i) => <th key={i} className={th}>{h}</th>)}
+                      {['Opportunity', 'Company', 'Amount', 'Stage', 'Close date', 'Owner', 'Source', ''].map((h, i) => <th key={i} className={th}>{h}</th>)}
                     </tr>
                   </thead>
                   <tbody>
@@ -683,12 +604,12 @@ export function CustomerSalesLive() {
                             ) : fmtAmount(o.amount_cents)}
                           </td>
                           <td className={td}>
-                            {closed ? (
+                            {closed || !canWrite ? (
                               <span className={`text-xs px-2 py-0.5 rounded-full ${stageChip(o.stage)}`}>{stageLabel(o.stage)}</span>
                             ) : (
                               <select value={o.stage} onChange={e => void onStageSelect(o, e.target.value)}
                                 className="bg-dt-page border border-dt-border-strong rounded-lg text-xs text-white px-2 py-1 focus:outline-none focus:border-indigo-500">
-                                {salesStages.map(s => (
+                                {openStages.map(s => (
                                   <option key={s} value={s}>{stageLabel(s)}</option>
                                 ))}
                                 <option value="won">✓ Won…</option>
@@ -703,8 +624,11 @@ export function CustomerSalesLive() {
                             ) : (o.close_date || '—')}
                           </td>
                           <td className={`${td} text-dt-support text-xs`}>{o.owner || '—'}</td>
+                          <td className={`${td} text-xs`}>
+                            <span className={`px-2 py-0.5 rounded-full ${o.source === 'native' ? 'bg-slate-600/50 text-dt-support' : 'bg-indigo-500/15 text-indigo-300'}`}>{o.source}</span>
+                          </td>
                           <td className={`${td} text-right whitespace-nowrap`}>
-                            {!closed && (editing === o.id ? (
+                            {canWrite && !closed && (editing === o.id ? (
                               <span className="flex gap-1 justify-end">
                                 <button onClick={() => void saveEdit(o)} className="text-xs px-2 py-1 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 transition-colors">Save</button>
                                 <button onClick={() => setEditing(null)} className="text-xs px-2 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:text-white transition-colors">✕</button>
@@ -724,9 +648,38 @@ export function CustomerSalesLive() {
               </div>
             )}
           </div>
+          )}
         </>
       )}
 
+      {showAdd && (
+        <Modal size="sm" title="Add prospect" onClose={() => setShowAdd(false)}>
+          <div className="space-y-3 mb-5">
+            <div>
+              <label className="text-xs font-medium text-dt-support block mb-1">Company</label>
+              <input value={newCompany} onChange={e => setNewCompany(e.target.value)} placeholder="Acme Corp" className={`w-full ${inputCls}`} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-dt-support block mb-1">Opportunity name (optional)</label>
+              <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Acme — Growth plan" className={`w-full ${inputCls}`} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-dt-support block mb-1">Owner</label>
+              <input value={newOwner} onChange={e => setNewOwner(e.target.value)} placeholder="J. Cooper" className={`w-full ${inputCls}`} />
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={() => void addProspect()} disabled={saving || !newCompany.trim()}
+              className="flex-1 py-2 text-sm font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 transition-all">
+              {saving ? 'Saving…' : 'Add prospect'}
+            </button>
+            <button onClick={() => setShowAdd(false)} className="flex-1 py-2 text-sm rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong transition-all">
+              Cancel
+            </button>
+          </div>
+        </Modal>
+      )}
+      {showImport && <ImportOpportunitiesModal onClose={() => setShowImport(false)} onImported={() => void refresh()} />}
       {wonOpp && <WonModal opp={wonOpp} onClose={() => setWonOpp(null)} onWon={m => { setToast(m); void refresh(); }} />}
       {lostOpp && <LostModal opp={lostOpp} onClose={() => setLostOpp(null)} onLost={() => { setToast('Deal closed as lost — reason recorded.'); void refresh(); }} />}
     </div>
