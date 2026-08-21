@@ -345,9 +345,18 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   // no de_id for this type; only related_table/related_id, to trust_policies).
   // Raw data only, same discipline as gatedExec — the card copy is derived
   // inline below, next to gatedDraft, rather than stored.
-  const [trustPolicy, setTrustPolicy] = useState<TrustPolicy | null>(null);
+  // ⚠ FIX ROUND 2 (coordinator review): tri-state, not a resolved value plus
+  // a separate boolean. `undefined` = still looking (the ONLY state on
+  // first paint, and the state a reset lands on before its own fetch has had
+  // a chance to run) · `null` = checked, no policy linked · an object =
+  // found. A `TrustPolicy | null` initialised to `null` cannot be told apart
+  // from "checked, genuinely nothing" — which is exactly the gap that let
+  // Approve render enabled, for one real frame, beside a false "No trust
+  // policy is linked" notice. Same fix as gatedReply's `draft` two hundred
+  // lines below, which already uses this exact three-state shape for the
+  // same reason (its own comment: "`undefined` = still looking").
+  const [trustPolicy, setTrustPolicy] = useState<TrustPolicy | null | undefined>(undefined);
   const [trustEmployeeName, setTrustEmployeeName] = useState<string | null>(null);
-  const [trustLoading, setTrustLoading] = useState(false);
   const [trustLoadError, setTrustLoadError] = useState<string | null>(null);
   const [impRole, setImpRole] = useState<{ archetype: string; peers: number } | null>(null);
   const [impScope, setImpScope] = useState<'de' | 'role'>('de');
@@ -449,11 +458,10 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   // policy id), so an approver had to leave this page to find it. Load it
   // whenever a trust_promotion task is selected, same pattern as gatedExec.
   useEffect(() => {
-    setTrustPolicy(null); setTrustEmployeeName(null); setTrustLoadError(null); setTrustLoading(false);
+    setTrustPolicy(undefined); setTrustEmployeeName(null); setTrustLoadError(null);
     const sel = tasks.find(t => t.id === selectedId);
     if (!sel || sel.type !== 'trust_promotion' || !sel.related_id) return;
     let cancelled = false;
-    setTrustLoading(true);
     void getTrustPolicyById(sel.related_id)
       .then(async policy => {
         if (cancelled) return;
@@ -473,8 +481,14 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
           } catch { /* falls back to the workspace phrasing below */ }
         }
       })
-      .catch(err => { if (!cancelled) setTrustLoadError((err as Error)?.message || 'Could not load the evidence behind this request.'); })
-      .finally(() => { if (!cancelled) setTrustLoading(false); });
+      .catch(err => {
+        if (cancelled) return;
+        setTrustLoadError((err as Error)?.message || 'Could not load the evidence behind this request.');
+        // Settle OUT of "loading" on a failure too — a network hiccup must
+        // not leave Approve disabled forever. The error message says why the
+        // evidence panel is empty; the decision itself stays available.
+        setTrustPolicy(null);
+      });
     return () => { cancelled = true; };
   }, [selectedId, tasks]);
 
@@ -721,6 +735,20 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const stalledCount = pending.filter(t => staleness.has(t.id)).length;
   const matchesDecision = (t: DBHumanTask) =>
     decision === 'all' ? true : decision === 'needs_you' ? t.status === 'pending' : t.status !== 'pending';
+  // ⚠ FIX ROUND 2 (coordinator review, item 4 — do only the small half; the
+  // server-side wiring is spawned separately, not here). decide_human_tasks
+  // -> decide_human_task carries NO trust references at all — apply_trust_
+  // promotion is invoked only from decideHumanTask's client hook #4, which
+  // the batch RPC never runs. So batch-approving a trust_promotion closes the
+  // task as approved, leaves pending_task_id pointing at a dead task, writes
+  // no audit event, and PROMOTES NOBODY — while the UI reports success. The
+  // only route to approving one must stay the card. Checked: the "stranded
+  // work" quick-select buttons (mig 800) cannot smuggle one in either —
+  // list_decision_groups joins de_work_items by related_table, trust_
+  // promotion's related_table is trust_policies, so its strands/gates_work
+  // are always 0 and the .filter(g => g.strands > 0) below never renders a
+  // button for it. Checkbox and select-all are the only two live paths.
+  const batchSelectable = (t: DBHumanTask) => t.status === 'pending' && t.type !== 'trust_promotion';
   // Owner buckets, counted on what the other filters already allow — a count
   // on a chip should be a count you can click to. Declared after
   // matchesDecision on purpose: this runs immediately, and a const arrow
@@ -825,6 +853,11 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
     ladder: trustPolicy.ladder ?? null,
   }) : null;
   const trustThin = trustEvidence ? isThinTrustEvidence(trustEvidence) : false;
+  // ⚠ FIX ROUND 2: still checking, tri-state — see trustPolicy's own comment.
+  // Consulted by Approve's disabled= below: approving a trust_promotion task
+  // before this settles is deciding having seen nothing, on the exact pane
+  // the evidence block sits in.
+  const trustLoading = selected?.type === 'trust_promotion' && trustPolicy === undefined;
 
   return (
     <div className="p-6">
@@ -1019,14 +1052,16 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
             <div className="flex items-center gap-3 mb-3 flex-wrap text-xs">
               <button
                 onClick={() => {
-                  const ids = visible.filter(t => t.status === 'pending').map(t => t.id);
+                  // FIX ROUND 2: trust_promotion excluded — see the per-row
+                  // checkbox comment below for why.
+                  const ids = visible.filter(batchSelectable).map(t => t.id);
                   setPicked(picked.size === ids.length ? new Set() : new Set(ids));
                 }}
                 className="text-dt-support hover:text-dt-body underline"
               >
-                {picked.size === visible.filter(t => t.status === 'pending').length && picked.size > 0
+                {picked.size === visible.filter(batchSelectable).length && picked.size > 0
                   ? 'Clear selection'
-                  : `Select all ${visible.filter(t => t.status === 'pending').length} shown`}
+                  : `Select all ${visible.filter(batchSelectable).length} shown`}
               </button>
               {picked.size > 0 && (
                 <>
@@ -1195,8 +1230,25 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                   <div key={task.id} className="flex items-start gap-2">
                     {/* Only pending rows are selectable — withdrawing something
                         already decided is not a thing, and offering the box
-                        would imply it is. */}
-                    {task.status === 'pending' && (
+                        would imply it is.
+                        ⚠ FIX ROUND 2: trust_promotion is EXCLUDED even while
+                        pending. Batch-approving it does not run apply_trust_
+                        promotion (that hook lives only in the single-task
+                        decide path) — a batch approve would close the task,
+                        strand trust_policies.pending_task_id, write no audit
+                        event, and promote nobody, while the toast says
+                        "Approved 1 task." Shown disabled with why, not
+                        omitted — a gap where a control should be reads as a
+                        bug, not a boundary. */}
+                    {task.status === 'pending' && task.type === 'trust_promotion' ? (
+                      <input
+                        type="checkbox"
+                        disabled
+                        title="Trust promotions can't be batch-approved — the batch path skips the check that actually moves the dial. Decide it from its own card."
+                        className="mt-5 shrink-0 cursor-not-allowed opacity-40"
+                        aria-label={`"${task.title}" cannot be batch-approved — decide it from its own card`}
+                      />
+                    ) : batchSelectable(task) && (
                       <input
                         type="checkbox"
                         className="mt-5 shrink-0 accent-dt-accent"
@@ -1655,10 +1707,16 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                   <div className="flex gap-2 mt-4">
                     <button
                       onClick={() => void decide(selected, 'approved')}
-                      disabled={deciding || (selected.type === 'checklist' && !(selected.checklist_state ?? []).every(i => i.done))}
-                      title={selected.type === 'checklist' && !(selected.checklist_state ?? []).every(i => i.done) ? 'Tick every item before completing this checklist' : undefined}
+                      disabled={deciding || trustLoading || (selected.type === 'checklist' && !(selected.checklist_state ?? []).every(i => i.done))}
+                      title={selected.type === 'checklist' && !(selected.checklist_state ?? []).every(i => i.done) ? 'Tick every item before completing this checklist'
+                        // Fix round 2: same pane the evidence block renders
+                        // in — approving before it settles is deciding a
+                        // trust promotion having seen nothing.
+                        : trustLoading ? 'Still loading the evidence behind this request'
+                        : undefined}
                       className="flex-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2 transition-colors">
                       {deciding ? '…'
+                        : trustLoading ? 'Checking…'
                         : selected.type === 'checklist' ? 'Mark complete'
                         : selected.type === 'action_approval' && gatedExec?.destructive ? 'Approve & send'
                         : selected.type === 'action_approval' ? 'Approve & execute'

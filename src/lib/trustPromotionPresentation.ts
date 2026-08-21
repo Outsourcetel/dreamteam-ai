@@ -66,6 +66,18 @@ export interface TrustPromotionEvidence {
   /** The server's own eligibility verdict, when the caller has it. Display
    *  only — this module never re-derives eligibility. */
   eligible?: boolean;
+  /** trust_evidence_for's own evidence WINDOW (days), default 30. Every count
+   *  on this evidence object is scoped to it — "no approved actions" without
+   *  this qualifier reads as "ever", and it is not; it is "in this window".
+   *  Fix round 2 (coordinator review): dropping this made the card's own
+   *  central sentence an overclaim. */
+  window_days?: number;
+  /** trust_evidence_for's own timestamp — when THIS snapshot was computed.
+   *  pending_evidence is captured once, at request time, and never refreshed
+   *  until the request is decided (apply_trust_promotion re-verifies then and
+   *  can refuse as stale) — so a card with no date on it reads as current
+   *  when it may be old. Fix round 2. */
+  computed_at?: string;
 }
 
 /** A manager-authored ladder level (mirrors trustApi.ts's TrustLadderLevel,
@@ -128,6 +140,8 @@ export function extractPolicyEvidence(pendingEvidence: unknown): TrustPromotionE
     pending_reviews: typeof flat.pending_reviews === 'number' ? flat.pending_reviews : undefined,
     criteria: flat.criteria as TrustPromotionCriterion[],
     eligible: typeof flat.eligible === 'boolean' ? flat.eligible : undefined,
+    window_days: typeof flat.window_days === 'number' ? flat.window_days : undefined,
+    computed_at: typeof flat.computed_at === 'string' ? flat.computed_at : undefined,
   };
 }
 
@@ -171,8 +185,10 @@ function findCriterion(criteria: TrustPromotionCriterion[], key: string): TrustP
 
 /** The pure decided-by-a-human count, backed out of criteria['human_samples'].
  *  See the file header for why this is a subtraction rather than a straight
- *  read: the stored figure already includes both corroborated arms. */
-function humanDecidedCount(evidence: TrustPromotionEvidence): number {
+ *  read: the stored figure already includes both corroborated arms. Exported
+ *  (fix round 2) so its arithmetic is pinned by a test directly, rather than
+ *  only indirectly through isThinTrustEvidence/trustPromotionCardCopy. */
+export function humanDecidedCount(evidence: TrustPromotionEvidence): number {
   const criteria = Array.isArray(evidence.criteria) ? evidence.criteria : [];
   const samples = findCriterion(criteria, 'human_samples')?.actual ?? 0;
   const successes = evidence.corroborated_successes ?? 0;
@@ -195,6 +211,16 @@ export function isThinTrustEvidence(evidence: TrustPromotionEvidence): boolean {
 // has to special-case English exceptions one at a time.
 function plural(n: number, singular: string, pluralForm: string = `${singular}s`): string {
   return `${n} ${n === 1 ? singular : pluralForm}`;
+}
+
+/** `YYYY-MM-DD`, deterministic and locale-free (an ops card read by people in
+ *  more than one timezone should not depend on the reader's browser locale).
+ *  null for anything unparsable — the caller must render ABSENCE, never a
+ *  guessed date. */
+function formatDate(iso: string | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
 }
 
 /** The card copy for one pending trust_promotion task. Server-computed
@@ -220,28 +246,46 @@ export function trustPromotionCardCopy(input: TrustPromotionCardInput): TrustPro
     `${employeeName} would move ${catLabel} from ${fromName} to ${grant}.`,
   ];
 
+  // ⚠ FIX ROUND 2 (coordinator review): every count below is scoped to
+  // evidence.window_days (trust_evidence_for's own evidence window, default
+  // 30) — "to date" was this module's own overclaim, not the brief's; the
+  // brief only required the substring "no approved actions". A DE with real
+  // history outside the window must not read as having none, ever. window_days
+  // is optional on the type (absent from the brief's own test fixtures), so
+  // the qualifier is added only when the payload actually carries it — never
+  // fabricated.
+  const windowPhrase = evidence.window_days != null ? ` in the last ${evidence.window_days} days` : '';
+
   if (isThinTrustEvidence(evidence)) {
     // Founder ruling: raised, not suppressed — but the card must say so.
     sentences.push(
       pending > 0
-        ? `There are no approved actions to date behind this request — ${plural(pending, 'review')} still waiting on a decision.`
-        : 'There are no approved actions to date behind this request, and nothing is waiting on a decision either.'
+        ? `There are no approved actions${windowPhrase} behind this request — ${plural(pending, 'review')} still waiting on a decision.`
+        : `There are no approved actions${windowPhrase} behind this request, and nothing is waiting on a decision either.`
     );
   } else {
     const parts: string[] = [];
     if (decided > 0) parts.push(plural(decided, 'human-decided review'));
     if (refusals > 0) parts.push(plural(refusals, 'system-corroborated refusal'));
     if (successes > 0) parts.push(plural(successes, 'system-corroborated success', 'system-corroborated successes'));
-    let countSentence = `The count behind this: ${parts.join(', ')}.`;
+    let countSentence = evidence.window_days != null
+      ? `In the last ${evidence.window_days} days: ${parts.join(', ')}.`
+      : `The count behind this: ${parts.join(', ')}.`;
     if (pending > 0) countSentence += ` ${plural(pending, 'more review')} still waiting on a decision.`;
     sentences.push(countSentence);
   }
 
   const detail = sentences.join(' ');
 
+  // ⚠ FIX ROUND 2: pending_evidence is a SNAPSHOT taken once, at request
+  // time, and never refreshed until the request is decided — apply_trust_
+  // promotion re-verifies then and can refuse as stale. An undated verdict
+  // reads as current; it may be ten days old. Dated only when the payload
+  // actually carries computed_at — never guessed.
   const metCount = criteria.filter(c => c.met).length;
+  const asOf = formatDate(evidence.computed_at);
   const meta = criteria.length > 0
-    ? `${metCount} of ${criteria.length} criteria met`
+    ? `${metCount} of ${criteria.length} criteria met${asOf ? ` (as measured on ${asOf})` : ''}`
     : 'No criteria recorded';
 
   return { title, detail, meta };

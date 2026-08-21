@@ -54,13 +54,37 @@ function sliceBlock(src: string, at: string | number): string {
   throw new Error('sliceBlock: unbalanced braces');
 }
 
-/** The nearest `<TagName …>` opening tag whose `>` is at or after `around`. */
+/** The nearest `<TagName …>` opening tag whose `>` is at or after `around`.
+ *  ⚠ FIX ROUND 2: not a naive `indexOf('>')` — this button's own onClick is
+ *  an arrow function (`() => …`), which contains a `>` of its own. The naive
+ *  version happened to still work here only because this file's `disabled=`
+ *  attribute is written BEFORE `onClick=`, so the truncation landed after
+ *  the part being asserted on; the desktop equivalent
+ *  (tests/human-tasks-trust-promotion-gate.test.ts) has `onClick` FIRST and
+ *  the same naive version silently truncated before ever reaching
+ *  `disabled=`, failing for the wrong reason until this was fixed there and
+ *  mirrored back here. Tracks brace depth and string literals so a `>`
+ *  inside `{…}` (an arrow, a comparison) or a quoted attribute is never
+ *  mistaken for the tag's own close. */
 function enclosingOpenTag(src: string, tagName: string, around: number): string {
   const tagStart = src.lastIndexOf(`<${tagName}`, around);
   if (tagStart === -1) throw new Error(`enclosingOpenTag: no <${tagName} before index ${around}`);
-  const tagEnd = src.indexOf('>', around);
-  if (tagEnd === -1) throw new Error(`enclosingOpenTag: no '>' after index ${around}`);
-  return src.slice(tagStart, tagEnd + 1);
+  let i = tagStart + 1 + tagName.length;
+  let braceDepth = 0;
+  let quote: '"' | "'" | null = null;
+  for (; i < src.length; i++) {
+    const c = src[i];
+    if (quote) {
+      if (c === quote && src[i - 1] !== '\\') quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'") { quote = c; continue; }
+    if (c === '{') { braceDepth++; continue; }
+    if (c === '}') { braceDepth--; continue; }
+    if (braceDepth > 0) continue;
+    if (c === '>') return src.slice(tagStart, i + 1);
+  }
+  throw new Error(`enclosingOpenTag: no real tag-close '>' found for <${tagName} starting at ${tagStart}`);
 }
 
 // The "read it properly" screen — everything between `if (open) {` and its
@@ -112,9 +136,45 @@ describe('the "Read it" screen shows the evidence, not just the raw task text', 
     // lines away (`disabled={busy || draft === undefined}`) — a tap must not
     // be able to go through before the thing it is supposed to inform the
     // decision has arrived.
+    // ⚠ FIX ROUND 2: a bare `toMatch(/trustLoading/)` would also pass for an
+    // INVERTED gate (`disabled={!trustLoading}` contains the identifier too)
+    // — flagged by the coordinator as a real gap in this exact assertion.
+    // Requiring the literal `&& trustLoading)` close does not survive that
+    // inversion.
     const at = OPEN_VIEW.indexOf("onClick={() => void decide(open, 'approved')}");
     expect(at, 'the mobile Approve button for the open task was not found').toBeGreaterThan(-1);
     const tag = enclosingOpenTag(OPEN_VIEW, 'Button', at);
-    expect(tag).toMatch(/trustLoading/);
+    expect(tag).toContain("(open.type === 'trust_promotion' && trustLoading)");
+  });
+});
+
+describe('trustPolicy is tri-state, not a resolved value plus a separate flag (fix round 2)', () => {
+  // The coordinator's second "close the same class on mobile" finding:
+  // `trustLoading` used to be its OWN useState(false) — a resolved, settled
+  // value from the very first render — while the effect that ever set it
+  // `true` only runs after commit. For one real frame between a
+  // trust_promotion task being opened and that effect firing, the screen
+  // could show "No trust policy is linked — approving would change nothing"
+  // with Approve tappable. This file's OWN `draft` state, two hundred lines
+  // above, already dodges exactly this with a THREE-state value
+  // (`PendingConversationDraft | null | undefined`, "undefined = still
+  // looking") — trustPolicy now uses the same shape.
+  it('initialises to undefined ("still looking"), not null or a stored boolean', () => {
+    expect(SRC).toMatch(/useState<TrustPolicy \| null \| undefined>\(undefined\)/);
+  });
+
+  it('trustLoading is DERIVED from trustPolicy === undefined, never its own stored state', () => {
+    expect(SRC).not.toContain('setTrustLoading');
+    const at = SRC.indexOf('const trustLoading =');
+    expect(at, 'trustLoading is not declared as a derived const').toBeGreaterThan(-1);
+    const statement = SRC.slice(at, SRC.indexOf(';', at) + 1);
+    expect(statement).toContain('trustPolicy === undefined');
+  });
+
+  it('a failed fetch settles trustPolicy to null rather than leaving it undefined (and Approve disabled) forever', () => {
+    const at = SRC.indexOf('Could not load the evidence behind this request.');
+    expect(at, 'the catch handler\'s own error message was not found').toBeGreaterThan(-1);
+    const nearby = SRC.slice(at, at + 200);
+    expect(nearby).toContain('setTrustPolicy(null)');
   });
 });

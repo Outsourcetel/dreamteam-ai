@@ -140,15 +140,23 @@ export default function MobileShell({ setPage }: { setPage: (p: Page) => void })
   // carries no evidence, only trust_policies.pending_evidence does. Raw data
   // only; the card copy is derived inline below, next to `open`, rather than
   // stored — same discipline as `draft` above.
-  const [trustPolicy, setTrustPolicy] = useState<TrustPolicy | null>(null);
+  // ⚠ FIX ROUND 2 (coordinator review): tri-state, not a resolved value plus
+  // a separate boolean — the SAME shape `draft` two hundred lines above
+  // already uses, for the reason its own comment gives ("`undefined` = still
+  // looking"). `trustPolicy` used to start at `null` with a SEPARATE
+  // `trustLoading` flag that also started `false` — both resolved,
+  // settled-looking values — so for one real, user-visible frame between a
+  // task being opened and this effect's async fetch resolving, the screen
+  // could show "No trust policy is linked — approving would change nothing"
+  // with Approve tappable. `undefined` now means exactly "still looking",
+  // present on the very first render, no gap for a false claim to render in.
+  const [trustPolicy, setTrustPolicy] = useState<TrustPolicy | null | undefined>(undefined);
   const [trustEmployeeName, setTrustEmployeeName] = useState<string | null>(null);
-  const [trustLoading, setTrustLoading] = useState(false);
   const [trustLoadError, setTrustLoadError] = useState<string | null>(null);
   useEffect(() => {
-    setTrustPolicy(null); setTrustEmployeeName(null); setTrustLoadError(null); setTrustLoading(false);
+    setTrustPolicy(undefined); setTrustEmployeeName(null); setTrustLoadError(null);
     if (!open || open.type !== 'trust_promotion' || !open.related_id) return;
     let alive = true;
-    setTrustLoading(true);
     void getTrustPolicyById(open.related_id)
       .then(async policy => {
         if (!alive) return;
@@ -166,8 +174,13 @@ export default function MobileShell({ setPage }: { setPage: (p: Page) => void })
           } catch { /* falls back to the workspace phrasing below */ }
         }
       })
-      .catch(err => { if (alive) setTrustLoadError(err instanceof Error ? err.message : 'Could not load the evidence behind this request.'); })
-      .finally(() => { if (alive) setTrustLoading(false); });
+      .catch(err => {
+        if (!alive) return;
+        setTrustLoadError(err instanceof Error ? err.message : 'Could not load the evidence behind this request.');
+        // Settle OUT of "loading" on failure too — a network hiccup must not
+        // leave Approve disabled forever.
+        setTrustPolicy(null);
+      });
     return () => { alive = false; };
   }, [open?.id, open?.type, open?.related_id]);
 
@@ -181,6 +194,7 @@ export default function MobileShell({ setPage }: { setPage: (p: Page) => void })
     ladder: trustPolicy.ladder ?? null,
   }) : null;
   const trustThin = trustEvidence ? isThinTrustEvidence(trustEvidence) : false;
+  const trustLoading = open?.type === 'trust_promotion' && trustPolicy === undefined;
 
   const decide = async (task: DBHumanTask, decision: 'approved' | 'rejected',
                         capture?: { reasonCode?: DecisionReasonCode; note?: string }) => {
