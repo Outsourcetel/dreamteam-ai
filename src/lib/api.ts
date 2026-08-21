@@ -333,13 +333,53 @@ export const setTenantPlan = async (
 // suspended, the demo tenant is protected, you cannot delete your own
 // tenant, sub-tenants must be cleared first, and confirmSlug must match the
 // tenant's slug exactly. Everything the tenant owns cascades away.
+// ⚠ ROUTED THROUGH AN EDGE FUNCTION, AND NOT FOR TIDINESS. Calling
+// `delete_tenant` from the browser runs it as `authenticated`, which carries
+// statement_timeout = 8s. A workspace of any real size cannot be swept in
+// eight seconds — acme-telecom, 47,763 rows, takes 22-30s — so the console
+// returned "canceling statement due to statement timeout" and the workspace
+// was simply undeletable from the UI. Twelve smaller ones (78-804 rows) went
+// through fine, which is why the ceiling stayed invisible until 2026-08-20.
+//
+// The in-database fix does not exist: a statement's budget is armed when it
+// starts, so a function cannot extend the statement already running it. That
+// was written, tested, and thrown away (see mig 825's header).
+//
+// platform-tenant-delete runs as service_role, which has no statement_timeout
+// override and inherits the database default of 2min. It verifies the caller's
+// JWT and passes the VERIFIED user id as the actor, so
+// tenant_deletion_receipts.deleted_by still names the person who clicked —
+// which is the whole reason this is an edge function and not a service-role
+// shortcut.
 export const deleteTenant = async (
   tenantId: string,
   confirmSlug: string
 ): Promise<{ ok: boolean; error?: string; name?: string }> => {
-  const { data, error } = await supabase.rpc('delete_tenant', { p_tenant_id: tenantId, p_confirm_slug: confirmSlug });
-  if (error) return { ok: false, error: error.message };
-  return data as { ok: boolean; error?: string; name?: string };
+  const { data, error } = await supabase.functions.invoke('platform-tenant-delete', {
+    body: { tenant_id: tenantId, confirm_slug: confirmSlug },
+  });
+
+  if (error) {
+    // ⚠ DIG THE BODY OUT. functions.invoke reports a non-2xx as a generic
+    // "Edge Function returned a non-2xx status code" and leaves `data` null,
+    // so the database's own sentence — "suspend the tenant before deleting
+    // it", "confirmation text must exactly match the tenant slug" — is sitting
+    // unread in the response. Those messages are written for a person, and
+    // losing them is how an operator debugs the wrong thing, which is exactly
+    // what the bare timeout message caused.
+    let detail = error.message;
+    try {
+      const body = await (error as { context?: { json?: () => Promise<unknown> } }).context?.json?.();
+      const b = body as { detail?: string; error?: string } | undefined;
+      if (b?.detail || b?.error) detail = b.detail ?? b.error!;
+    } catch { /* keep the transport-level message */ }
+    return { ok: false, error: detail };
+  }
+
+  const res = data as { ok?: boolean; error?: string; detail?: string; receipt?: { name?: string } } | null;
+  if (!res?.ok) return { ok: false, error: res?.detail ?? res?.error ?? 'delete failed' };
+  // Receipt passed through so the caller can show what was actually removed.
+  return { ok: true, ...(res.receipt ?? {}) };
 };
 
 export interface PlatformConnectorHealthRow {
