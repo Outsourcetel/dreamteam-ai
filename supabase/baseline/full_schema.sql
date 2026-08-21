@@ -7,7 +7,7 @@
 -- file is the schema half of the answer; data is NOT in here (see below).
 --
 -- Contents: 9 extensions · 0 enums · 306 tables ·
--- 1413 constraints · 423 indexes · 867 functions ·
+-- 1413 constraints · 423 indexes · 880 functions ·
 -- 296 triggers · 404 policies · 841 role grants ·
 -- explicit REVOKEs for the closed perimeter.
 --
@@ -349,6 +349,58 @@ begin
   returning * into v_row;
   if v_row.id is null then raise exception 'review not found in this workspace'; end if;
   return jsonb_build_object('ok', true);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.acknowledge_starter_template_baseline(p_note text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'extensions'
+AS $function$
+declare
+  v_tenant uuid;
+  v_state  jsonb;
+  v_actor  text;
+begin
+  v_tenant := auth_tenant_id();
+  if v_tenant is null then
+    raise exception 'no tenant for caller';
+  end if;
+  if not auth_has_tenant_role(array['tenant_owner', 'tenant_admin']) then
+    raise exception 'only workspace owners/admins can decide which starter onboarding list this workspace runs';
+  end if;
+
+  v_state := public.starter_template_state_internal(v_tenant);
+  if (v_state->>'status') = 'absent' then
+    return v_state || jsonb_build_object('ok', false, 'refused', true,
+      'reason', 'not_installed',
+      'message', 'There is no starter template here to make a decision about.');
+  end if;
+
+  select coalesce(nullif(full_name, ''), 'A workspace member') into v_actor
+    from profiles where user_id = auth.uid() limit 1;
+
+  -- The two md5s are what make this expire. certify honours the
+  -- acknowledgement only while BOTH still match; edit the template or move the
+  -- canonical list and the decision lapses, because it was a decision about a
+  -- specific comparison and that comparison no longer exists.
+  perform append_audit_event_internal(
+    v_tenant, coalesce(v_actor, 'A workspace member'), 'human',
+    format('Starter onboarding list kept as-is — %s of %s items, %s behind',
+           v_state->>'tenant_items', v_state->>'canon_items', v_state->>'behind_by'),
+    'config_change',
+    jsonb_build_object('kind', 'onboarding_starter_baseline_acknowledged',
+                       'template_id', v_state->>'template_id',
+                       'items_md5', v_state->>'items_md5',
+                       'canon_md5', v_state->>'canon_md5',
+                       'status_at_ack', v_state->>'status',
+                       'behind_by', v_state->>'behind_by',
+                       'note', coalesce(p_note, '')));
+
+  return v_state || jsonb_build_object('ok', true, 'acknowledged', true,
+    'message', format('Recorded: this workspace stays on its current %s-item starter list.',
+                      v_state->>'tenant_items'));
 end;
 $function$;
 
@@ -6294,7 +6346,9 @@ begin
   select coalesce(jsonb_object_agg(req.cat,
            exists (select 1 from connectors k
                     where k.tenant_id = v_tenant and k.category = req.cat
-                      and k.status = 'connected')), '{}'::jsonb)
+                      and k.status = 'connected'
+      -- ⛔ AND ALIVE (mig 814). `status` is not written on failure.
+      and not public.connector_circuit_open(k.consecutive_failures, k.last_error_at))), '{}'::jsonb)
     into v_grounding
     from (select unnest(ra.required_connector_categories) as cat
             from digital_employees d
@@ -7227,6 +7281,296 @@ BEGIN
   RETURN json_build_object('success', true, 'de_id', v_de_id, 'message', 'Workspace Assistant provisioned successfully', 'charter', v_assistant_charter);
 END;
 $function$;
+
+CREATE OR REPLACE FUNCTION public.cron_health_findings(p_as_of timestamp with time zone DEFAULT now())
+ RETURNS TABLE(jobid bigint, jobname text, schedule text, active boolean, period interval, period_source text, last_run timestamp with time zone, last_success timestamp with time zone, first_run timestamp with time zone, fails_since integer, verdict text, headline text, detail jsonb)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  with agg as (
+    select x.jobid,
+           max(x.start_time)                                       as last_run,
+           min(x.start_time)                                       as first_run,
+           max(x.start_time) filter (where x.status = 'succeeded') as last_success,
+           count(*) filter (
+             where x.status = 'failed'
+               and x.start_time > coalesce(x.ls, '-infinity'::timestamptz)
+           )::int                                                  as fails_since,
+           -- First line only, and capped. pg_cron stores the whole error
+           -- including a DETAIL that quotes the offending ROW — tenant id,
+           -- employee id, free text. That belongs in the log, not copied into
+           -- an alert message; the ERROR line alone is what tells a human what
+           -- broke.
+           (array_agg(left(split_part(coalesce(x.return_message, ''), E'\n', 1), 200) order by x.start_time desc)
+              filter (where x.status = 'failed'))[1]               as last_error
+      from (
+        select d.jobid, d.start_time, d.status, d.return_message,
+               max(d.start_time) filter (where d.status = 'succeeded')
+                 over (partition by d.jobid) as ls
+          from cron.job_run_details d
+         where d.start_time <= p_as_of
+      ) x
+     group by x.jobid
+  ),
+  -- Fallback only. Computed for the jobs whose schedule the parser could not
+  -- read — today that set is empty, so this scans nothing. A job that is
+  -- unwatchable because nobody taught the parser its syntax would be a silent
+  -- hole, so the history answers where the text cannot.
+  gaps as (
+    select g.jobid, percentile_disc(0.5) within group (order by g.gap) as med
+      from (
+        select d.jobid,
+               d.start_time - lag(d.start_time) over (partition by d.jobid order by d.start_time) as gap
+          from cron.job_run_details d
+         where d.start_time <= p_as_of
+           and d.jobid in (select j2.jobid
+                             from cron.job j2
+                            where public.cron_schedule_period(j2.schedule) is null)
+      ) g
+     where g.gap is not null
+     group by g.jobid
+  ),
+  j as (
+    select cj.jobid, cj.jobname, cj.schedule, cj.active,
+           coalesce(public.cron_schedule_period(cj.schedule), gaps.med) as period,
+           case when public.cron_schedule_period(cj.schedule) is not null then 'parsed'
+                when gaps.med is not null                               then 'measured'
+                else 'unknown' end                                      as period_source,
+           agg.last_run, agg.last_success, agg.first_run,
+           coalesce(agg.fails_since, 0) as fails_since,
+           agg.last_error
+      from cron.job cj
+      left join agg  on agg.jobid  = cj.jobid
+      left join gaps on gaps.jobid = cj.jobid
+  ),
+  v as (
+    select j.*,
+           public.cron_health_verdict(j.active, j.period, p_as_of,
+                                      j.last_success, j.last_run, j.first_run, j.fails_since) as verdict
+      from j
+  )
+  select v.jobid, v.jobname, v.schedule, v.active, v.period, v.period_source,
+         v.last_run, v.last_success, v.first_run, v.fails_since, v.verdict,
+         case v.verdict
+           when 'failing' then format(
+             'Scheduled job "%s" (%s) has not succeeded since %s — %s failed run(s) since, %s without a success.%s',
+             v.jobname, v.schedule,
+             coalesce(to_char(v.last_success at time zone 'UTC', 'YYYY-MM-DD HH24:MI') || 'Z', 'ever'),
+             v.fails_since::text,
+             date_trunc('minute', p_as_of - coalesce(v.last_success, v.first_run))::text,
+             coalesce(' Last error: ' || v.last_error, ''))
+           when 'silent' then format(
+             'Scheduled job "%s" (%s) has not run at all since %s — %s of silence on a %s schedule. It is still marked active, so the scheduler should have fired it.',
+             v.jobname, v.schedule,
+             to_char(v.last_run at time zone 'UTC', 'YYYY-MM-DD HH24:MI') || 'Z',
+             date_trunc('minute', p_as_of - v.last_run)::text,
+             v.period::text)
+           when 'unjudgeable' then format(
+             'Scheduled job "%s" has schedule "%s", which neither the parser nor its own run history can turn into a period. It is NOT being watched.',
+             v.jobname, v.schedule)
+           when 'disabled' then format('Scheduled job "%s" is inactive — a decision, reported not alerted.', v.jobname)
+           when 'never_observed' then format(
+             'Scheduled job "%s" (%s) has no run record in the retained window. Cause is not determinable from this data — reported, not alerted.',
+             v.jobname, v.schedule)
+           else format('Scheduled job "%s" is healthy.', v.jobname)
+         end as headline,
+         jsonb_build_object(
+           'jobid', v.jobid, 'jobname', v.jobname, 'schedule', v.schedule,
+           'active', v.active, 'verdict', v.verdict,
+           'period', v.period::text, 'period_source', v.period_source,
+           'as_of', p_as_of, 'last_run', v.last_run, 'last_success', v.last_success,
+           'first_run', v.first_run, 'failed_runs_since_last_success', v.fails_since,
+           'last_error', v.last_error
+         ) as detail
+    from v;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.cron_health_scan(p_as_of timestamp with time zone DEFAULT now())
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_now       timestamptz := p_as_of;
+  r           record;
+  v_kind      text;
+  v_open      uuid;
+  v_raised    int := 0;
+  v_freshened int := 0;
+  v_resolved  int := 0;
+  v_seen      int := 0;
+  v_broken    text[] := '{}';
+begin
+  for r in select * from public.cron_health_findings(v_now) loop
+    v_seen := v_seen + 1;
+    v_kind := format('cron_job_broken:%s', r.jobname);
+
+    select a.id into v_open
+      from ops_alerts a
+     where a.kind = v_kind and a.resolved_at is null
+     order by a.created_at
+     limit 1;
+
+    if r.verdict in ('failing', 'silent', 'unjudgeable') then
+      v_broken := array_append(v_broken, r.jobname);
+      if v_open is null then
+        -- No open alert for THIS job: start one. raise_ops_alert's own hourly
+        -- window cannot suppress it, because an open alert is exactly the case
+        -- this branch does not reach.
+        perform public.raise_ops_alert(v_kind, r.headline, r.detail);
+        v_raised := v_raised + 1;
+      else
+        -- The outage is still open. Keep ONE row and keep it current, rather
+        -- than letting raise_ops_alert append a new one every hour. created_at
+        -- stays the moment it was first noticed, which is the fact worth
+        -- keeping.
+        update ops_alerts
+           set message = r.headline, detail = r.detail
+         where id = v_open;
+        v_freshened := v_freshened + 1;
+      end if;
+    elsif v_open is not null then
+      -- RECOVERY. Without this the first outage poisons the channel forever.
+      -- Scoped to this kind only: no other alert type is ever touched here.
+      update ops_alerts
+         set resolved_at = v_now
+       where kind = v_kind and resolved_at is null;
+      v_resolved := v_resolved + 1;
+    end if;
+
+    v_open := null;
+  end loop;
+
+  return jsonb_build_object(
+    'at', v_now, 'jobs_examined', v_seen, 'raised', v_raised,
+    'freshened', v_freshened, 'resolved', v_resolved,
+    'broken', to_jsonb(v_broken));
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.cron_health_status()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_last_scan timestamptz;
+  v_scan_job  boolean;
+begin
+  if not public.is_platform_admin() then
+    raise exception 'cron_health_status: platform admin only';
+  end if;
+
+  select exists (select 1 from cron.job where jobname = 'cron-health-scan-15min' and active)
+    into v_scan_job;
+  select max(d.start_time) into v_last_scan
+    from cron.job_run_details d
+    join cron.job j on j.jobid = d.jobid
+   where j.jobname = 'cron-health-scan-15min' and d.status = 'succeeded';
+
+  return jsonb_build_object(
+    'detector', jsonb_build_object(
+      'scheduled_and_active', coalesce(v_scan_job, false),
+      'last_successful_scan', v_last_scan,
+      'scan_age', case when v_last_scan is null then null
+                       else date_trunc('minute', now() - v_last_scan)::text end,
+      'stale', case when not coalesce(v_scan_job, false) then true
+                    when v_last_scan is null then true
+                    else now() - v_last_scan > interval '1 hour' end,
+      'note', 'A dead detector cannot report its own death. This timestamp is the reason silence is not proof.'),
+    'counts', (select jsonb_object_agg(verdict, n)
+                 from (select f.verdict, count(*) n
+                         from public.cron_health_findings() f group by f.verdict) c),
+    'findings', coalesce((select jsonb_agg(f.detail order by f.jobname)
+                            from public.cron_health_findings() f
+                           where f.verdict in ('failing', 'silent', 'unjudgeable')), '[]'::jsonb),
+    'not_alerted', coalesce((select jsonb_agg(jsonb_build_object('jobname', f.jobname, 'verdict', f.verdict, 'why', f.headline) order by f.jobname)
+                               from public.cron_health_findings() f
+                              where f.verdict in ('disabled', 'never_observed')), '[]'::jsonb),
+    'open_alerts', coalesce((select jsonb_agg(jsonb_build_object('kind', a.kind, 'since', a.created_at, 'message', a.message) order by a.created_at)
+                               from ops_alerts a
+                              where a.resolved_at is null and a.kind like 'cron\_job\_broken:%'), '[]'::jsonb));
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.cron_health_verdict(p_active boolean, p_period interval, p_as_of timestamp with time zone, p_last_success timestamp with time zone, p_last_run timestamp with time zone, p_first_run timestamp with time zone, p_fails_since integer)
+ RETURNS text
+ LANGUAGE plpgsql
+ IMMUTABLE
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_silent_grace interval;
+  v_fail_grace   interval;
+  v_since        timestamptz;
+begin
+  -- A decision, not a fault.
+  if not coalesce(p_active, false) then return 'disabled'; end if;
+  -- Three causes, one observation. Nothing may be asserted.
+  if p_last_run is null then return 'never_observed'; end if;
+  -- No period from either the parser or the history: say so rather than guess.
+  if p_period is null or p_period <= interval '0' then return 'unjudgeable'; end if;
+
+  -- It used to run and has stopped. No ceiling: slow jobs are silent for long
+  -- stretches by design.
+  v_silent_grace := greatest(3 * p_period, interval '1 hour');
+  if p_as_of - p_last_run > v_silent_grace then return 'silent'; end if;
+
+  -- It is running and erroring. Floor 1h (fast jobs blip), ceiling 24h (slow
+  -- jobs cannot self-heal, so their one missed chance IS the outage).
+  v_fail_grace := least(greatest(3 * p_period, interval '1 hour'), interval '24 hours');
+  v_since      := coalesce(p_last_success, p_first_run);
+  if coalesce(p_fails_since, 0) >= 1 and v_since is not null
+     and p_as_of - v_since > v_fail_grace then
+    return 'failing';
+  end if;
+
+  return 'ok';
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.cron_schedule_period(p_schedule text)
+ RETURNS interval
+ LANGUAGE plpgsql
+ IMMUTABLE
+ SET search_path TO 'public'
+AS $function$
+declare
+  f  text[];
+  mi text; hr text; dm text; mo text; dw text;
+begin
+  if p_schedule is null then return null; end if;
+  f := regexp_split_to_array(regexp_replace(btrim(p_schedule), '\s+', ' ', 'g'), ' ');
+  if array_length(f, 1) <> 5 then return null; end if;
+  mi := f[1]; hr := f[2]; dm := f[3]; mo := f[4]; dw := f[5];
+
+  -- */N * * * *  -> every N minutes
+  if mi ~ '^\*/[0-9]+$' and hr = '*' then
+    return make_interval(mins => substring(mi from 3)::int);
+  end if;
+  -- M * * * *    -> hourly
+  if mi ~ '^[0-9]+$' and hr = '*' then
+    return interval '1 hour';
+  end if;
+  -- M */N * * *  -> every N hours
+  if mi ~ '^[0-9]+$' and hr ~ '^\*/[0-9]+$' then
+    return make_interval(hours => substring(hr from 3)::int);
+  end if;
+  -- M H * * *    -> daily
+  if mi ~ '^[0-9]+$' and hr ~ '^[0-9]+$' and dm = '*' and mo = '*' and dw = '*' then
+    return interval '1 day';
+  end if;
+  -- M H * * D    -> weekly
+  if mi ~ '^[0-9]+$' and hr ~ '^[0-9]+$' and dm = '*' and mo = '*' and dw ~ '^[0-9]$' then
+    return interval '7 days';
+  end if;
+  -- M H D <month list> *  -> once per listed month
+  if mi ~ '^[0-9]+$' and hr ~ '^[0-9]+$' and dm ~ '^[0-9]+$' and mo ~ '^[0-9]+(,[0-9]+)*$' then
+    return make_interval(days => (365 / array_length(string_to_array(mo, ','), 1))::int);
+  end if;
+
+  return null;
+end $function$;
 
 CREATE OR REPLACE FUNCTION public.de_blocker_signature(p_text text)
  RETURNS text[]
@@ -8205,6 +8549,7 @@ AS $function$
 declare
   v_waited int := 0;
   v_spin int := 0;
+  v_healed int := 0;
   r record;
 begin
   -- (a) WAITING TOO LONG. Raising to 'urgent' is itself the idempotency
@@ -8258,6 +8603,30 @@ begin
        and exists (select 1 from de_work_items w
                     where w.objective_id = o.id
                       and w.status in ('queued','running','waiting_human'))
+       -- mig 820, the mig-526 law applied here: ASKED-AND-WAITING IS NEVER AN
+       -- ALARM. Flag only when the MACHINE owes motion (something running, or
+       -- queued with its dependency met) or when a human is waited on WITHOUT
+       -- an open ask (unasked waiting is a real defect and must keep firing).
+       -- A goal whose every live step chains behind a pending human task is
+       -- the approval queue's business — 45 of the founder's own undecided
+       -- goals were re-alarmed daily for 16 days by exactly this gap.
+       and (
+         exists (select 1 from de_work_items w2
+                  where w2.objective_id = o.id
+                    and (w2.status = 'running'
+                         or (w2.status = 'queued'
+                             and (w2.depends_on is null
+                                  or exists (select 1 from de_work_items pp
+                                              where pp.id = w2.depends_on
+                                                and pp.status = 'done')))))
+         or exists (select 1 from de_work_items w3
+                     where w3.objective_id = o.id
+                       and w3.status = 'waiting_human'
+                       and not exists (select 1 from human_tasks ht
+                             where ht.status = 'pending'
+                               and (ht.related_id = w3.id or ht.related_id = o.id
+                                    or ht.resolved_work_item_id = w3.id)))
+       )
        and coalesce((select max(w.updated_at) from de_work_items w where w.objective_id = o.id),
                     o.created_at) < now() - make_interval(hours => greatest(1, p_stall_hours))
      limit 200
@@ -8289,7 +8658,34 @@ begin
     v_spin := v_spin + 1;
   end loop;
 
-  return jsonb_build_object('ok', true, 'waited_too_long', v_waited, 'wake_spin', v_spin);
+  -- (c) THE CONTROL LOOP CLOSES (mig 820): a goal that spun into the flag
+  --     and has since reached asked-and-waiting stops being flagged here, and
+  --     resolve_cleared_ops_alerts retires its open alerts on the next
+  --     heartbeat (its wake_spin arm keys on the flag being cleared). One
+  --     writer, one healer, no third path.
+  update de_objectives o
+     set attention_flag = null, attention_since = null, updated_at = now()
+   where o.attention_flag = 'wake_spin'
+     and o.status in ('open','in_progress','blocked')
+     and not exists (select 1 from de_work_items w2
+                      where w2.objective_id = o.id
+                        and (w2.status = 'running'
+                             or (w2.status = 'queued'
+                                 and (w2.depends_on is null
+                                      or exists (select 1 from de_work_items pp
+                                                  where pp.id = w2.depends_on
+                                                    and pp.status = 'done')))))
+     and not exists (select 1 from de_work_items w3
+                      where w3.objective_id = o.id
+                        and w3.status = 'waiting_human'
+                        and not exists (select 1 from human_tasks ht
+                              where ht.status = 'pending'
+                                and (ht.related_id = w3.id or ht.related_id = o.id
+                                     or ht.resolved_work_item_id = w3.id)));
+  get diagnostics v_healed = row_count;
+
+  return jsonb_build_object('ok', true, 'waited_too_long', v_waited, 'wake_spin', v_spin,
+                            'asked_and_waiting_healed', v_healed);
 end;
 $function$;
 
@@ -8359,6 +8755,8 @@ reachable AS (
      AND EXISTS (SELECT 1 FROM connectors c
                   WHERE c.tenant_id = p_tenant_id
                     AND c.status = 'connected'
+      -- ⛔ AND ALIVE (mig 814). `status` is not written on failure.
+      and not public.connector_circuit_open(c.consecutive_failures, c.last_error_at)
                     AND c.category = ad.category)
    GROUP BY ad.category, ad.action_key
 ),
@@ -11023,6 +11421,46 @@ CREATE OR REPLACE FUNCTION public.delete_tenant(p_tenant_id uuid, p_confirm_slug
  SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
+begin
+  -- The same refusal this function has always given, kept here so an
+  -- unauthenticated caller never reaches the body at all.
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+  return public.delete_tenant_internal(p_tenant_id, p_confirm_slug, auth.uid());
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.delete_tenant_as(p_tenant_id uuid, p_confirm_slug text, p_actor uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  -- Only service_role. A signed-in user reaching this would be choosing their
+  -- own actor, which is the one thing this door must never allow.
+  if coalesce(auth.role(), '') <> 'service_role' then
+    raise exception 'delete_tenant_as is for the platform edge function only — use delete_tenant';
+  end if;
+  if p_actor is null then
+    raise exception 'p_actor is required: a deletion with no named actor must not be possible';
+  end if;
+  -- The body re-checks tenants.manage against p_actor anyway, so an
+  -- unauthorised actor still fails. This is here so the refusal names why.
+  if not resolve_platform_capability(p_actor, 'tenants.manage') then
+    raise exception 'the named actor does not hold tenants.manage — service_role cannot manufacture authority';
+  end if;
+  return public.delete_tenant_internal(p_tenant_id, p_confirm_slug, p_actor);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.delete_tenant_internal(p_tenant_id uuid, p_confirm_slug text, p_actor uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
 DECLARE
   v_demo_tenant_id constant uuid := 'a0000000-0000-0000-0000-000000000001';
   v_t tenants;
@@ -11040,10 +11478,10 @@ DECLARE
   v_receipt uuid;
 BEGIN
   -- ── rails (verbatim from migration 194) ──────────────────────────────────
-  IF auth.uid() IS NULL THEN
+  IF p_actor IS NULL THEN
     RAISE EXCEPTION 'not authenticated';
   END IF;
-  IF NOT resolve_platform_capability(auth.uid(), 'tenants.manage') THEN
+  IF NOT resolve_platform_capability(p_actor, 'tenants.manage') THEN
     RAISE EXCEPTION 'only a platform team member with tenant-management access may delete a tenant';
   END IF;
 
@@ -11052,11 +11490,25 @@ BEGIN
     RAISE EXCEPTION 'tenant not found';
   END IF;
 
+  -- ── the precious rail (mig 827) ──────────────────────────────────────────
+  -- Distinct from the demo-tenant check below it, and deliberately so. That
+  -- one marks a SANDBOX: guard_against_demo_tenant_assignment refuses writes
+  -- into it, complete_signup steers away from it, expire_trials skips it, and
+  -- fourteen other functions read the same constant. Pointing THAT id at a
+  -- live workspace in order to protect it would start refusing real writes to
+  -- it — protection that breaks the thing it guards.
+  --
+  -- This flag says one thing only: do not destroy this workspace. Suspension
+  -- is untouched, because suspension is reversible and delete_tenant already
+  -- requires it first; the irreversible step is the one worth gating.
+  IF coalesce(v_t.deletion_protected, false) THEN
+    RAISE EXCEPTION 'tenant "%" is marked deletion-protected. If you really mean to delete it, clear tenants.deletion_protected first — that is a separate, deliberate act.', v_t.slug;
+  END IF;
   IF p_tenant_id = v_demo_tenant_id THEN
     RAISE EXCEPTION 'the demo tenant cannot be deleted';
   END IF;
 
-  SELECT tenant_id INTO v_self FROM profiles WHERE user_id = auth.uid();
+  SELECT tenant_id INTO v_self FROM profiles WHERE user_id = p_actor;
   IF v_self IS NOT DISTINCT FROM p_tenant_id THEN
     RAISE EXCEPTION 'you cannot delete the tenant you belong to';
   END IF;
@@ -11075,7 +11527,7 @@ BEGIN
   END IF;
 
   -- ── step 1: who is doing this, captured before anything is removed ───────
-  SELECT full_name INTO v_actor FROM profiles WHERE user_id = auth.uid();
+  SELECT full_name INTO v_actor FROM profiles WHERE user_id = p_actor;
 
   -- ── step 2: pre-sweep — what is about to be destroyed ────────────────────
   -- Counted before, not after, because "rows removed" on a receipt has to be
@@ -11095,6 +11547,7 @@ BEGIN
   PERFORM set_config('app.allow_audit_purge', 'on', true);       -- audit_events (mig 194)
   PERFORM set_config('app.allow_compliance_change', 'on', true); -- guardrail_rules w/ compliance_pack_key
   PERFORM set_config('app.allow_tenant_purge', 'on', true);      -- guardrail_adjudications (§2)
+  PERFORM set_config('app.allow_task_decision', 'on', true);     -- human_tasks (mig 486) — see 811
 
   -- ── step 4: the NO ACTION children the cascade will not take ─────────────
   DELETE FROM tenant_provisioning_requests
@@ -11188,7 +11641,7 @@ BEGIN
     tenant_id, tenant_slug, tenant_name, deleted_by, deleted_by_name,
     tables_swept, rows_removed, per_table_removed, residual_after, verified, notes)
   VALUES (
-    p_tenant_id, v_t.slug, v_t.name, auth.uid(), coalesce(v_actor, 'platform operator'),
+    p_tenant_id, v_t.slug, v_t.name, p_actor, coalesce(v_actor, 'platform operator'),
     v_tables, v_rows_before, v_before, '{}'::jsonb, true,
     'Verified by tenant_rows_remaining() after deletion: 0 residual rows across '
       || v_tables || ' tenant-scoped tables. NOT covered by this receipt: auth.users '
@@ -12273,6 +12726,8 @@ begin
   for v_c in
     select id, tenant_id from connectors
     where category = 'erp_financials' and status = 'connected' and provider <> 'template'
+      -- THE LINE MIG 774 GAVE THE OTHER TWO DISPATCHERS AND NOT THIS ONE.
+      and not public.connector_circuit_open(consecutive_failures, last_error_at)
       and tenant_is_operational(tenant_id)
   loop
     begin
@@ -12678,6 +13133,13 @@ AS $function$
   join action_definitions ad on ad.id = p_action_definition_id
   where c.tenant_id = p_tenant_id
     and c.status    = 'connected'
+    -- ⛔ AND ALIVE. `status` is a stored marker that is not written on
+    -- failure; mig 774 built this breaker precisely because it keeps reading
+    -- 'connected' through thousands of failures. A collections action routed
+    -- to a dead connector is not a delayed send, it is a send the human is
+    -- told happened. run_dunning_sweep already skips a null connector and
+    -- reports `no_connector`, which is the honest outcome.
+    and not public.connector_circuit_open(c.consecutive_failures, c.last_error_at)
     and c.category  = ad.category
     and c.provider  = ad.provider;
 $function$;
@@ -14317,6 +14779,8 @@ begin
     select id, category, display_name, provider
     from connectors
     where tenant_id = p_tenant_id and status = 'connected'
+      -- ⛔ AND ALIVE (mig 814). `status` is not written on failure.
+      and not public.connector_circuit_open(consecutive_failures, last_error_at)
   loop
     for v_def in
       select *
@@ -14383,55 +14847,6 @@ begin
 
   return v_tools;
 end;
-$function$;
-
-CREATE OR REPLACE FUNCTION public.get_all_tenants_with_summary()
- RETURNS json
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-BEGIN
-  IF NOT is_platform_admin() THEN
-    RAISE EXCEPTION 'Unauthorized';
-  END IF;
-
-  RETURN json_agg(
-    json_build_object(
-      'tenant_id', t.id,
-      'name', t.name,
-      'slug', t.slug,
-      'status', t.status,
-      'plan', t.plan,
-      'industry', t.industry,
-      'admin_email', t.admin_email,
-      'adoption_score', COALESCE(t.adoption_score, 0),
-      'de_count', de_cnt.count,
-      'active_features', active_features.count,
-      'monthly_cost', COALESCE(ROUND(tct.total_cost, 2), 0),
-      'cost_vs_budget', CASE
-        WHEN tft.monthly_cost_limit IS NOT NULL
-        THEN ROUND(100 * tct.total_cost / tft.monthly_cost_limit, 1)
-        ELSE NULL
-      END,
-      'created_at', t.created_at::text
-    )
-  )
-  FROM tenants t
-  LEFT JOIN tenant_feature_toggles tft ON tft.tenant_id = t.id
-  LEFT JOIN tenant_cost_tracking tct ON tct.tenant_id = t.id
-    AND tct.billing_month = to_char(now(), 'YYYY-MM')
-  LEFT JOIN LATERAL (
-    SELECT COUNT(*) as count FROM digital_employees
-    WHERE tenant_id = t.id
-  ) de_cnt ON true
-  LEFT JOIN LATERAL (
-    SELECT COUNT(*) as count FROM tenant_feature_toggles
-    WHERE tenant_id = t.id
-    AND (sophie_config_enabled OR amendment_journeys_enabled OR metrics_tracking_enabled
-      OR reply_mode_enabled OR hosted_chat_enabled)
-  ) active_features ON true
-  ORDER BY t.created_at DESC;
-END;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.get_amendment_effectiveness(p_entity_kind text, p_entity_id uuid)
@@ -17231,6 +17646,7 @@ CREATE OR REPLACE FUNCTION public.get_tenant_details(p_tenant_id uuid)
  RETURNS json
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public'
 AS $function$
 BEGIN
   IF NOT is_platform_admin() THEN
@@ -19396,11 +19812,12 @@ CREATE OR REPLACE FUNCTION public.install_starter_onboarding_template()
  SET search_path TO 'public', 'extensions'
 AS $function$
 declare
-  v_tenant uuid;
+  v_tenant    uuid;
   v_is_active boolean;
-  v_tpl_id uuid;
-  v_pub    jsonb;
-  v_spec   jsonb := starter_onboarding_template();
+  v_tpl_id    uuid;
+  v_pub       jsonb;
+  v_spec      jsonb := public.starter_onboarding_template();
+  v_state     jsonb;
 begin
   select coalesce(is_active, true) into v_is_active from profiles where user_id = auth.uid() limit 1;
   if v_is_active is false then
@@ -19411,20 +19828,33 @@ begin
     raise exception 'no tenant for caller';
   end if;
 
-  select id into v_tpl_id from onboarding_templates
-    where tenant_id = v_tenant and name = 'SaaS onboarding — starter' limit 1;
-  if v_tpl_id is not null then
-    return jsonb_build_object('template_id', v_tpl_id, 'already_installed', true);
+  v_state := public.starter_template_state_internal(v_tenant);
+
+  if (v_state->>'status') <> 'absent' then
+    -- ⚠ THE BRANCH THIS MIGRATION EXISTS FOR. It used to return
+    -- {'template_id': …, 'already_installed': true} for a tenant six items
+    -- behind, and the caller had no way to tell that from a tenant that was
+    -- fully current. `already_installed` is kept because two call sites read
+    -- it, but it is no longer the only thing said.
+    return v_state || jsonb_build_object(
+      'ok', true,
+      'installed', false,
+      'already_installed', true);
   end if;
 
   insert into onboarding_templates (tenant_id, name, description, items)
-  values (v_tenant, 'SaaS onboarding — starter',
+  values (v_tenant, public.starter_onboarding_template_name(),
           v_spec->>'description',
           v_spec->'items')
   returning id into v_tpl_id;
 
   v_pub := publish_onboarding_template(v_tpl_id);
-  return jsonb_build_object('template_id', v_tpl_id, 'already_installed', false) || v_pub;
+
+  -- Re-read rather than describe what we believe we just wrote.
+  return public.starter_template_state_internal(v_tenant)
+      || jsonb_build_object('ok', true, 'status', 'installed',
+                            'installed', true, 'already_installed', false)
+      || v_pub;
 end;
 $function$;
 
@@ -21992,6 +22422,73 @@ AS $function$
            d.name;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.list_workforce_blockers()
+ RETURNS TABLE(cause text, scoped boolean, classes text[], escalations bigint, employees bigint, employee_names text[], objectives_blocked bigint, work_items_frozen bigint, corroborated boolean, oldest_at timestamp with time zone, oldest_days integer, task_ids uuid[])
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+  with recursive mine as (
+    select t.*
+      from human_tasks t
+     where t.tenant_id = auth_tenant_id()
+       and t.status = 'pending'
+       and t.type = 'escalation'
+       and (t.de_id is null or public.can_access_de(t.de_id))
+  ),
+  -- Everything frozen behind each escalation's work item, walked transitively.
+  chain as (
+    select m.id as task_id, w.id, 1 as depth
+      from mine m
+      join de_work_items w on w.depends_on = m.related_id
+     where m.related_table = 'de_work_items' and m.related_id is not null
+       and w.status in ('queued', 'waiting_human')
+    union all
+    select c.task_id, w.id, c.depth + 1
+      from chain c
+      join de_work_items w on w.depends_on = c.id
+     where w.status in ('queued', 'waiting_human')
+       -- Cycle guard, not a display limit: depends_on has no constraint
+       -- preventing A->B->A, and a recursive CTE meeting one never returns.
+       and c.depth < 50
+  ),
+  frozen as (
+    select task_id, count(*) as n from chain group by task_id
+  )
+  select
+    -- The null bucket is named, not hidden. Anyone reading this should see
+    -- immediately that these are ungrouped, not a cause called "unscoped".
+    coalesce(m.blocker_scope, format('(%s escalations with no recorded cause)',
+             count(*) over (partition by (m.blocker_scope is null)))) as cause,
+    (m.blocker_scope is not null)                        as scoped,
+    (select array_agg(distinct s) from
+       (select unnest(m2.blocker_signature) s from mine m2
+         where m2.blocker_scope is not distinct from m.blocker_scope) u) as classes,
+    count(*)                                             as escalations,
+    count(distinct m.de_id)                              as employees,
+    array_remove(array_agg(distinct d.name), null)       as employee_names,
+    count(distinct o.id) filter (where o.status = 'blocked') as objectives_blocked,
+    coalesce(sum(f.n), 0)                                as work_items_frozen,
+    -- Can the platform confirm this cause on its own? Same test mig 819 uses
+    -- to credit a corroborated refusal.
+    bool_or('blocked_input' = any(m.blocker_signature)
+            and exists (select 1 from connectors c
+                         where c.tenant_id = m.tenant_id
+                           and public.connector_circuit_open(c.consecutive_failures, c.last_error_at)))
+                                                         as corroborated,
+    min(m.created_at)                                    as oldest_at,
+    extract(day from (now() - min(m.created_at)))::int   as oldest_days,
+    array_agg(m.id order by m.created_at)                as task_ids
+  from mine m
+  left join digital_employees d on d.id = m.de_id
+  left join frozen f            on f.task_id = m.id
+  left join de_work_items w     on w.id = m.related_id and m.related_table = 'de_work_items'
+  left join de_objectives o     on o.id = w.objective_id
+  group by m.blocker_scope
+  -- What it holds, then how long it has held it.
+  order by coalesce(sum(f.n), 0) desc, count(*) desc, min(m.created_at);
+$function$;
+
 CREATE OR REPLACE FUNCTION public.list_workspace_people()
  RETURNS TABLE(user_id uuid, full_name text, role text)
  LANGUAGE sql
@@ -22692,6 +23189,8 @@ begin
            from public.connectors c
           where c.tenant_id = p_tenant_id
             and c.status = 'connected'
+      -- ⛔ AND ALIVE (mig 814). `status` is not written on failure.
+      and not public.connector_circuit_open(c.consecutive_failures, c.last_error_at)
             and c.category = ad.category
             and (ad.provider is null or ad.provider = c.provider or ad.provider = 'template'))
   ), one as materialized (
@@ -28043,13 +28542,20 @@ BEGIN
   -- ── wake_spin: the goal stopped spinning, one way or another ─────────────
   UPDATE ops_alerts a SET resolved_at = now()
    WHERE a.kind = 'de_objective_wake_spin' AND a.resolved_at IS NULL
-     AND EXISTS (
+     AND (
+       -- mig 821: a GHOST cannot hold an alarm open. The EXISTS shape below
+       -- silently required the goal row to still exist, so an alert about a
+       -- DELETED goal — the most-cleared condition there is — was immortal:
+       -- 37 of them, measured live, surviving every heartbeat since July.
+       NOT EXISTS (SELECT 1 FROM de_objectives og
+                    WHERE og.id = (a.detail->>'objective_id')::uuid)
+       OR EXISTS (
        SELECT 1 FROM de_objectives o
         WHERE o.id = (a.detail->>'objective_id')::uuid
           AND (o.status NOT IN ('open', 'in_progress', 'blocked')
             OR o.attention_flag IS DISTINCT FROM 'wake_spin'
             OR EXISTS (SELECT 1 FROM de_work_items w
-                        WHERE w.objective_id = o.id AND w.updated_at > a.created_at)));
+                        WHERE w.objective_id = o.id AND w.updated_at > a.created_at))));
   GET DIAGNOSTICS n_spin = ROW_COUNT;
 
   -- ── workforce_*: cleared when the heartbeat says the bucket is empty ─────
@@ -35081,6 +35587,169 @@ AS $function$
   );
 $function$;
 
+CREATE OR REPLACE FUNCTION public.starter_onboarding_template_name()
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$ select 'SaaS onboarding — starter'::text $function$;
+
+CREATE OR REPLACE FUNCTION public.starter_onboarding_template_status()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'extensions'
+AS $function$
+declare v_tenant uuid := public.auth_tenant_id();
+begin
+  if v_tenant is null then
+    raise exception 'no tenant for caller';
+  end if;
+  return public.starter_template_state_internal(v_tenant) || jsonb_build_object('ok', true);
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.starter_template_state_internal(p_tenant_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+declare
+  v_canon    jsonb := public.starter_onboarding_template()->'items';
+  v_tpl      public.onboarding_templates;
+  v_touched  boolean;
+  v_versions integer;
+begin
+  if p_tenant_id is null then
+    raise exception 'starter_template_state_internal: p_tenant_id is required — a classifier that cannot tell which workspace it is describing must refuse, not guess';
+  end if;
+
+  select * into v_tpl
+    from public.onboarding_templates
+   where tenant_id = p_tenant_id
+     and name = public.starter_onboarding_template_name()
+   order by created_at
+   limit 1;
+
+  if not found then
+    return jsonb_build_object(
+      'tenant_id', p_tenant_id, 'template_id', null,
+      'template_status', null, 'template_version', null,
+      'status', 'absent',
+      'canon_items', jsonb_array_length(v_canon),
+      'tenant_items', 0,
+      'behind_by', jsonb_array_length(v_canon),
+      'missing_keys', (select coalesce(jsonb_agg(c.value->>'key' order by c.value->>'key'), '[]'::jsonb)
+                         from jsonb_array_elements(v_canon) c),
+      'modified_keys', '[]'::jsonb, 'extra_keys', '[]'::jsonb,
+      'edited', false, 'edit_signals', '[]'::jsonb,
+      'upgrade_available', false);
+  end if;
+
+  select count(distinct md5(items::text)) into v_versions
+    from public.onboarding_template_versions where template_id = v_tpl.id;
+
+  -- Three independent ways of saying "a person has written to this row".
+  v_touched := (v_tpl.updated_at > v_tpl.created_at)
+            or (v_tpl.version > 1)
+            or (coalesce(v_versions, 0) > 1);
+
+  return public.starter_template_verdict(v_canon, v_tpl.items, v_touched)
+      || jsonb_build_object(
+           'tenant_id', p_tenant_id,
+           'template_id', v_tpl.id,
+           'template_status', v_tpl.status,
+           'template_version', v_tpl.version,
+           'items_md5', md5(v_tpl.items::text),
+           'canon_md5', md5(v_canon::text));
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.starter_template_verdict(p_canon jsonb, p_items jsonb, p_touched boolean)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ IMMUTABLE
+AS $function$
+declare
+  v_missing  text[] := '{}';
+  v_modified text[] := '{}';
+  v_extra    text[] := '{}';
+  v_signals  text[] := '{}';
+  v_status   text;
+begin
+  if p_canon is null or jsonb_typeof(p_canon) <> 'array' then
+    raise exception 'starter_template_verdict: canon must be a jsonb array';
+  end if;
+  if p_items is null or jsonb_typeof(p_items) <> 'array' then
+    raise exception 'starter_template_verdict: items must be a jsonb array';
+  end if;
+
+  -- canonical keys with no counterpart in the tenant's list
+  select coalesce(array_agg(c.value->>'key' order by c.value->>'key'), '{}')
+    into v_missing
+    from jsonb_array_elements(p_canon) c
+   where not exists (select 1 from jsonb_array_elements(p_items) t
+                      where t.value->>'key' = c.value->>'key');
+
+  -- same key, different body. jsonb <> jsonb is a SEMANTIC comparison: key
+  -- order and whitespace are normalised, so this cannot fire on formatting.
+  select coalesce(array_agg(c.value->>'key' order by c.value->>'key'), '{}')
+    into v_modified
+    from jsonb_array_elements(p_canon) c
+   where exists (select 1 from jsonb_array_elements(p_items) t
+                  where t.value->>'key' = c.value->>'key' and t.value <> c.value);
+
+  -- keys the canonical list does not name at all
+  select coalesce(array_agg(distinct t.value->>'key'), '{}')
+    into v_extra
+    from jsonb_array_elements(p_items) t
+   where not exists (select 1 from jsonb_array_elements(p_canon) c
+                      where c.value->>'key' = t.value->>'key');
+
+  if array_length(v_modified, 1) is not null then
+    v_signals := v_signals || format('%s item(s) edited in place: %s',
+                   array_length(v_modified, 1), array_to_string(v_modified, ', '));
+  end if;
+  if array_length(v_extra, 1) is not null then
+    v_signals := v_signals || format('%s item(s) this workspace added: %s',
+                   array_length(v_extra, 1), array_to_string(v_extra, ', '));
+  end if;
+
+  if array_length(v_modified, 1) is not null or array_length(v_extra, 1) is not null then
+    -- Content alone proves an edit. History is not consulted.
+    v_status := 'divergent';
+  elsif array_length(v_missing, 1) is not null then
+    -- The ONLY difference is absence, which content cannot explain. A template
+    -- a person has written to owns its absences; an untouched one is behind.
+    if coalesce(p_touched, false) then
+      v_status := 'divergent';
+      v_signals := v_signals || format(
+        'this template has been written to since it was seeded, so its %s absent item(s) are read as a choice, not as being behind: %s',
+        array_length(v_missing, 1), array_to_string(v_missing, ', '));
+    else
+      v_status := 'outdated';
+    end if;
+  else
+    -- Items ARE the canonical list. History is irrelevant: a template someone
+    -- hand-edited INTO the canonical shape is current, and calling it divergent
+    -- would be noise.
+    v_status := 'current';
+  end if;
+
+  return jsonb_build_object(
+    'status',        v_status,
+    'canon_items',   jsonb_array_length(p_canon),
+    'tenant_items',  jsonb_array_length(p_items),
+    'behind_by',     coalesce(array_length(v_missing, 1), 0),
+    'missing_keys',  to_jsonb(v_missing),
+    'modified_keys', to_jsonb(v_modified),
+    'extra_keys',    to_jsonb(v_extra),
+    'edited',        v_status = 'divergent',
+    'edit_signals',  to_jsonb(v_signals),
+    'upgrade_available', v_status in ('outdated', 'divergent')
+  );
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.submit_csat(p_conversation_id uuid, p_tenant_id uuid, p_score integer)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -36846,6 +37515,7 @@ CREATE OR REPLACE FUNCTION public.update_tenant_billing(p_tenant_id uuid, p_bill
  RETURNS json
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public'
 AS $function$
 BEGIN
   IF NOT is_platform_admin() THEN
@@ -36892,6 +37562,7 @@ CREATE OR REPLACE FUNCTION public.update_tenant_features(p_tenant_id uuid, p_fea
  RETURNS json
  LANGUAGE plpgsql
  SECURITY DEFINER
+ SET search_path TO 'public'
 AS $function$
 DECLARE
   v_user_id UUID;
@@ -36992,6 +37663,185 @@ AS $function$
 begin
   new.updated_at = now();
   return new;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.upgrade_starter_onboarding_template(p_preserve_edits boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'extensions'
+AS $function$
+declare
+  v_tenant    uuid;
+  v_is_active boolean;
+  v_state     jsonb;
+  v_status    text;
+  v_tpl_id    uuid;
+  v_tpl_stat  text;
+  v_canon     jsonb := public.starter_onboarding_template()->'items';
+  v_canon_desc text := public.starter_onboarding_template()->>'description';
+  v_old       jsonb;
+  v_new       jsonb;
+  v_added     text[];
+  v_errors    text[];
+  v_pub       jsonb := '{}'::jsonb;
+  v_after     jsonb;
+  v_before_n  integer;
+  v_after_n   integer;
+  v_desc_set  boolean := false;
+begin
+  select coalesce(is_active, true) into v_is_active from profiles where user_id = auth.uid() limit 1;
+  if v_is_active is false then
+    raise exception 'account is deactivated';
+  end if;
+  v_tenant := auth_tenant_id();
+  if v_tenant is null then
+    raise exception 'no tenant for caller';
+  end if;
+  -- Same bar publish_onboarding_template already holds. Stated here too
+  -- because this function writes items, and a guard that lives only in the
+  -- function you happen to call last is the shape mig 685 spent a paragraph on.
+  if not auth_has_tenant_role(array['tenant_owner', 'tenant_admin']) then
+    raise exception 'only workspace owners/admins can upgrade the starter onboarding template';
+  end if;
+
+  v_state  := public.starter_template_state_internal(v_tenant);
+  v_status := v_state->>'status';
+
+  if v_status = 'absent' then
+    return v_state || jsonb_build_object(
+      'ok', false, 'changed', false, 'refused', true,
+      'reason', 'not_installed',
+      'message', format('This workspace has no "%s" to upgrade. Install it first.',
+                        public.starter_onboarding_template_name()));
+  end if;
+
+  v_tpl_id := (v_state->>'template_id')::uuid;
+
+  if v_status = 'current' then
+    return v_state || jsonb_build_object(
+      'ok', true, 'changed', false, 'refused', false,
+      'reason', 'already_current',
+      'message', format('Already current — %s of %s items, nothing to add.',
+                        v_state->>'tenant_items', v_state->>'canon_items'));
+  end if;
+
+  if v_status = 'divergent' and not coalesce(p_preserve_edits, false) then
+    -- ⛔ THE REFUSAL. Somebody made this template theirs. Replacing it is worse
+    -- than the bug this migration fixes, so the default answer is no, with the
+    -- edits named so the person can see what the refusal is protecting.
+    return v_state || jsonb_build_object(
+      'ok', false, 'changed', false, 'refused', true,
+      'reason', 'template_has_local_edits',
+      'message', format(
+        'Refused: this workspace has edited its starter template, so upgrading would overwrite that work. %s Re-run with preserve-edits to ADD only the %s missing item(s) and leave every existing item exactly as it is.',
+        array_to_string(array(select jsonb_array_elements_text(v_state->'edit_signals')), ' '),
+        v_state->>'behind_by'));
+  end if;
+
+  select items into v_old
+    from onboarding_templates where id = v_tpl_id for update;
+  v_before_n := jsonb_array_length(v_old);
+  v_tpl_stat := (v_state->>'template_status');
+
+  -- The merge: canonical ORDER, but where a key already exists THE TENANT'S
+  -- OWN ITEM WINS, verbatim. Only absent canonical keys take canon's body.
+  -- Anything canon does not name is carried through at the end.
+  with merged as (
+    select c.ord as ord,
+           coalesce(
+             (select t.value
+                from jsonb_array_elements(v_old) with ordinality t(value, tord)
+               where t.value->>'key' = c.value->>'key'
+               order by t.tord limit 1),
+             c.value) as item
+      from jsonb_array_elements(v_canon) with ordinality c(value, ord)
+    union all
+    select 1000000 + t.tord, t.value
+      from jsonb_array_elements(v_old) with ordinality t(value, tord)
+     where not exists (select 1 from jsonb_array_elements(v_canon) c2
+                        where c2.value->>'key' = t.value->>'key')
+  )
+  select coalesce(jsonb_agg(item order by ord), '[]'::jsonb) into v_new from merged;
+
+  select coalesce(array_agg(c.value->>'key' order by c.value->>'key'), '{}') into v_added
+    from jsonb_array_elements(v_canon) c
+   where not exists (select 1 from jsonb_array_elements(v_old) t
+                      where t.value->>'key' = c.value->>'key');
+
+  -- ⛔ "It is a merge" is a promise about code. THIS is the guarantee: every
+  -- item that was in the old array must still be in the new one, byte-
+  -- identical. A future edit that turns this into a replacement dies here
+  -- rather than in somebody's workspace. Absence-of-violation, so it is
+  -- vacuously true on an empty template and still catches every real case.
+  if exists (
+    select 1 from jsonb_array_elements(v_old) o
+     where not exists (select 1 from jsonb_array_elements(v_new) n where n.value = o.value)
+  ) then
+    raise exception 'upgrade_starter_onboarding_template: the merge would have changed or dropped an item that already existed. Refusing to write. This is a bug in the merge, not a problem with the workspace';
+  end if;
+
+  -- The publish gate polices shape and role-reachability, and it is not
+  -- weakened or bypassed here — it is asked FIRST, so an upgrade that could
+  -- not be published is refused before anything is written.
+  v_errors := validate_onboarding_items(v_new, v_tenant);
+  if array_length(v_errors, 1) is not null then
+    return v_state || jsonb_build_object(
+      'ok', false, 'changed', false, 'refused', true,
+      'reason', 'would_not_validate',
+      'errors', to_jsonb(v_errors),
+      'message', 'Refused: the upgraded item list does not pass the publish validator, so nothing was written.');
+  end if;
+
+  -- The description is rewritten ONLY for a provably-untouched template, where
+  -- it is provably still the old seed's text. An edited template keeps its own.
+  v_desc_set := (v_status = 'outdated');
+
+  update onboarding_templates
+     set items = v_new,
+         description = case when v_desc_set then v_canon_desc else description end
+   where id = v_tpl_id;
+
+  -- Only re-publish something that was ALREADY published. Publishing a draft
+  -- somebody is still working on is its own kind of overwriting.
+  if v_tpl_stat = 'published' then
+    v_pub := publish_onboarding_template(v_tpl_id);
+    if v_pub ? 'errors' then
+      raise exception 'upgrade_starter_onboarding_template: publish refused after a validated merge — %', v_pub->>'errors';
+    end if;
+  end if;
+
+  -- Re-read and RE-DERIVE. A function that reports what it intended rather
+  -- than what the row now says is the defect at the top of this file.
+  v_after   := public.starter_template_state_internal(v_tenant);
+  v_after_n := (v_after->>'tenant_items')::integer;
+
+  perform append_audit_event_internal(
+    v_tenant, 'You', 'human',
+    format('Starter onboarding template upgraded — %s to %s items (%s added)',
+           v_before_n, v_after_n, coalesce(array_length(v_added, 1), 0)),
+    'config_change',
+    jsonb_build_object('kind', 'onboarding_starter_template_upgrade',
+                       'template_id', v_tpl_id,
+                       'items_before', v_before_n, 'items_after', v_after_n,
+                       'added_keys', to_jsonb(v_added),
+                       'preserved_edits', coalesce(p_preserve_edits, false),
+                       'was_status', v_status,
+                       'now_status', v_after->>'status',
+                       'republished', v_tpl_stat = 'published'));
+
+  return v_after || jsonb_build_object(
+    'ok', true, 'changed', true, 'refused', false,
+    'was_status', v_status,
+    'items_before', v_before_n,
+    'items_after', v_after_n,
+    'added_keys', to_jsonb(v_added),
+    'description_updated', v_desc_set,
+    'republished', v_tpl_stat = 'published',
+    'message', format('Upgraded from %s to %s items; %s added, 0 changed, 0 removed.',
+                      v_before_n, v_after_n, coalesce(array_length(v_added, 1), 0)))
+      || v_pub;
 end;
 $function$;
 
@@ -45131,6 +45981,7 @@ CREATE TABLE IF NOT EXISTS public.tenants (
   "adoption_score" numeric(5,2) DEFAULT 0,
   "knowledge_review_interval_days" integer,
   "llm_key_mode" text DEFAULT 'platform'::text NOT NULL,
+  "deletion_protected" boolean DEFAULT false NOT NULL,
   CONSTRAINT tenants_llm_key_mode_check CHECK ((llm_key_mode = ANY (ARRAY['byo'::text, 'platform'::text]))),
   CONSTRAINT tenants_not_self_parent CHECK ((id IS DISTINCT FROM parent_tenant_id)),
   CONSTRAINT tenants_plan_check CHECK ((plan = ANY (ARRAY['starter'::text, 'growth'::text, 'enterprise'::text]))),
@@ -53397,6 +54248,12 @@ declare
   v_h_total      bigint := 0;
   v_h_approved   bigint := 0;
   v_h_rate       numeric := 0;
+  -- mig 815: how many reviews are WAITING. Not evidence, and deliberately
+  -- not part of any threshold — it is the difference between "this employee
+  -- has shown nothing" and "nobody has looked at what it showed".
+  v_h_pending    bigint := 0;
+  -- mig 819: refusals the SYSTEM can corroborate, counted by distinct cause.
+  v_h_corrob     bigint := 0;
   -- guardrail evidence
   v_blocks       bigint := 0;
   -- criteria thresholds
@@ -53484,6 +54341,49 @@ begin
       else type in ('inquiry_review', 'escalation', 'review_gate')
     end
     and (p_policy.de_id is null or de_id = p_policy.de_id);
+
+  -- mig 815: the same population, still undecided. Same tenant, same window
+  -- start, same production-origin filter — so this number is comparable with
+  -- v_h_total rather than being a different question with a similar name.
+  -- Deliberately NOT scoped by the per-category CASE below: a workspace that
+  -- has not decided anything has not decided anything, and narrowing this to
+  -- one category would under-report the reason the sample size is zero.
+  select count(*) into v_h_pending
+    from human_tasks
+   where tenant_id = p_policy.tenant_id
+     and status = 'pending'
+     and evidence_is_production(origin)
+     and (p_policy.de_id is null or de_id = p_policy.de_id);
+
+  -- mig 819: A REFUSAL THE SYSTEM CAN CORROBORATE IS EVIDENCE.
+  --
+  -- An employee that declines to act because its source is unreadable, when
+  -- the platform independently knows that source is dead, has demonstrated
+  -- exactly the judgment this ladder exists to reward — and it demonstrated
+  -- it without anyone deciding anything.
+  --
+  -- ⛔ TWO GUARDS, AND BOTH ARE LOad-BEARING:
+  --
+  -- 1. IT CANNOT BE SELF-ASSERTED. The corroboration is the connector circuit
+  --    being open — >= 10 failures with a recent error. An employee cannot
+  --    make an integration fail; it can only notice that it has.
+  --
+  -- 2. DISTINCT CAUSE, NOT ROWS. Accounting DE holds 17 blocked_input
+  --    escalations about ONE dead connector. Counting rows would let a single
+  --    outage buy a promotion, which is trust farming with extra steps.
+  --    Counting distinct blocker_scope gives 1: it was right about one thing,
+  --    repeatedly, which is one piece of evidence.
+  select count(distinct t.blocker_scope) into v_h_corrob
+    from human_tasks t
+   where t.tenant_id = p_policy.tenant_id
+     and t.type = 'escalation'
+     and 'blocked_input' = any(t.blocker_signature)
+     and t.created_at >= v_since
+     and evidence_is_production(t.origin)
+     and (p_policy.de_id is null or t.de_id = p_policy.de_id)
+     and exists (select 1 from connectors c
+                  where c.tenant_id = t.tenant_id
+                    and public.connector_circuit_open(c.consecutive_failures, c.last_error_at));
   v_h_rate := case when v_h_total > 0 then round(v_h_approved::numeric / v_h_total, 4) else 0 end;
 
   -- Source 3: guardrail blocks in the window. A tenant-scoped policy counts
@@ -53525,14 +54425,36 @@ begin
       'detail', format('%s evaluated answers (needs %s)', v_eval_total, v_min_samples)),
     jsonb_build_object(
       'key', 'human_approval_rate', 'label', 'Human approval rate',
-      'actual', v_h_rate, 'required', v_min_h_rate,
-      'met', (v_min_h_n = 0 or (v_h_total >= v_min_h_n and v_h_rate >= v_min_h_rate)),
-      'detail', format('%s of %s human reviews approved in the last %s days', v_h_approved, v_h_total, v_window)),
+      'actual', case when (v_h_total + v_h_corrob) = 0 then 0
+                     else round((v_h_approved + v_h_corrob)::numeric / (v_h_total + v_h_corrob), 4) end,
+      'required', v_min_h_rate,
+      -- mig 819: corroborated refusals count on BOTH sides of the rate. A
+      -- refusal the system confirmed is an observation, and it went the right
+      -- way. Mixing them into the numerator only would inflate the rate; into
+      -- the denominator only would punish an employee for being right.
+      'met', (v_min_h_n = 0 or ((v_h_total + v_h_corrob) >= v_min_h_n
+                                and (case when (v_h_total + v_h_corrob) = 0 then 0
+                                          else round((v_h_approved + v_h_corrob)::numeric
+                                                     / (v_h_total + v_h_corrob), 4) end) >= v_min_h_rate)),
+      'detail', case
+        -- A rate over zero observations is not 0%, it is absent. Reporting
+        -- "0 of 0 approved" reads as an employee that scored nothing, which
+        -- is the opposite of what is true when the reviews are simply
+        -- sitting undecided.
+        when v_h_total = 0 and v_h_pending > 0 then
+          format('no reviews decided in the last %s days — %s awaiting a decision', v_window, v_h_pending)
+        when v_h_total = 0 then
+          format('no reviews decided in the last %s days, and none waiting', v_window)
+        else format('%s of %s human reviews approved in the last %s days', v_h_approved, v_h_total, v_window)
+      end),
     jsonb_build_object(
       'key', 'human_samples', 'label', 'Human review sample size',
-      'actual', v_h_total, 'required', v_min_h_n,
-      'met', v_h_total >= v_min_h_n,
-      'detail', format('%s decided reviews (needs %s)', v_h_total, v_min_h_n)),
+      'actual', v_h_total + v_h_corrob, 'required', v_min_h_n,
+      'met', (v_h_total + v_h_corrob) >= v_min_h_n,
+      'detail', format('%s decided review(s) + %s corroborated refusal(s) (needs %s)%s', v_h_total, v_h_corrob, v_min_h_n,
+        case when v_h_pending > 0
+             then format(' — %s awaiting a decision', v_h_pending)
+             else '' end)),
     jsonb_build_object(
       'key', 'guardrail_blocks', 'label', 'Guardrail blocks',
       'actual', v_blocks, 'required', v_max_blocks,
@@ -53549,6 +54471,8 @@ begin
     'current_level', p_policy.current_level,
     'target_level', p_policy.target_level,
     'window_days', v_window,
+    'pending_reviews', v_h_pending,
+    'corroborated_refusals', v_h_corrob,
     'criteria', v_criteria,
     -- 692: the door only shows green if it can actually open.
     'eligible', coalesce(v_eligible, false) and p_policy.current_level < v_ceiling and p_policy.status = 'active',
@@ -54829,11 +55753,11 @@ ALTER TABLE public.tenant_deletion_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_feature_overrides ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_pipeline_stages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_usage_metrics ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.tenants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.widget_key_secrets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.trust_policies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.unguarded_secdef_writers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.unit_tripwires ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tenants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.usage_metrics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.watch_source_catalog ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.watch_source_fields ENABLE ROW LEVEL SECURITY;
@@ -56001,6 +56925,10 @@ REVOKE ALL ON ROUTINE conclude_objective_wake(uuid,text,text) FROM PUBLIC, anon,
 REVOKE ALL ON ROUTINE connector_circuit_open(integer,timestamp with time zone) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE create_improvement_review(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE create_outbound_draft(uuid,uuid,text,text,text,text,text,text,uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE cron_health_findings(timestamp with time zone) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE cron_health_scan(timestamp with time zone) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE cron_health_verdict(boolean,interval,timestamp with time zone,timestamp with time zone,timestamp with time zone,timestamp with time zone,integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE cron_schedule_period(text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_blocker_signature(text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_config_fingerprint(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_development_items_attempts_guard() FROM PUBLIC, anon, authenticated;
@@ -56010,6 +56938,7 @@ REVOKE ALL ON ROUTINE de_escalation_title(uuid,text,text,text,uuid,uuid,text) FR
 REVOKE ALL ON ROUTINE de_eval_quality(uuid,uuid,integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_governance_sweep_internal() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_improvements_entity_guard() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE de_kpi_action_value(uuid,uuid,text,jsonb,integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_kpi_status_internal(uuid,uuid,integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_may_use_action(uuid,uuid,uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE de_memory_search_internal(uuid,uuid,vector,text,text,text[],integer) FROM PUBLIC, anon, authenticated;
@@ -56020,6 +56949,8 @@ REVOKE ALL ON ROUTINE de_trust_surface_candidates(uuid,uuid) FROM PUBLIC, anon, 
 REVOKE ALL ON ROUTINE decide_action_execution(uuid,text,text,boolean,uuid,bigint,text,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE decide_inquiry_triage(uuid,text,integer,uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE decide_work_item_triage(uuid,text,text,integer,uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE delete_tenant_as(uuid,text,uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE delete_tenant_internal(uuid,text,uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE deprovision_starter_de_internal(uuid,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE detect_de_development_needs_internal(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE detect_de_incidents_internal(uuid) FROM PUBLIC, anon, authenticated;
@@ -56064,6 +56995,7 @@ REVOKE ALL ON ROUTINE get_de_briefing_for_objective(uuid,text) FROM PUBLIC, anon
 REVOKE ALL ON ROUTINE get_de_briefing(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE get_platform_kb_health() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE get_review_cost_internal(uuid,integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE get_tenant_details(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE get_tenant_token_usage_this_month(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE get_unembedded_gap_candidates(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE get_unembedded_learned_behavior_candidates(uuid) FROM PUBLIC, anon, authenticated;
@@ -56272,6 +57204,8 @@ REVOKE ALL ON ROUTINE stamp_gap_cluster_on_apply() FROM PUBLIC, anon, authentica
 REVOKE ALL ON ROUTINE stamp_objective_mission_from_watcher() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE start_discovery_session(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE starter_onboarding_template() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE starter_template_state_internal(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE starter_template_verdict(jsonb,jsonb,boolean) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE submit_csat(uuid,uuid,integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE submit_draft_for_review(uuid,uuid,text,text,numeric,jsonb,integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE sync_amendment_decision() FROM PUBLIC, anon, authenticated;
@@ -56304,6 +57238,8 @@ REVOKE ALL ON ROUTINE trust_check_guardrail_block() FROM PUBLIC, anon, authentic
 REVOKE ALL ON ROUTINE trust_demote(uuid,text,text,jsonb,uuid,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE trust_evidence_for(trust_policies) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE update_onboarding_item_as_de(uuid,uuid,text,text,text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE update_tenant_billing(uuid,jsonb) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE update_tenant_features(uuid,jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE update_updated_at() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE upsert_de_skill(uuid,uuid,text,integer,integer,numeric,text,integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE upsert_external_ap_record(uuid,text,text,text,text,bigint,bigint,date,text,text) FROM PUBLIC, anon, authenticated;
