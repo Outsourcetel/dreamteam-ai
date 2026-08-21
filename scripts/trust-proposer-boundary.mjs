@@ -320,17 +320,48 @@ select 'seam-reachable — ' || f.sig || ' is executable by ' || who.r
 union all
 
 -- ── 8. SWEEP UNFED — built-but-unfed is the mig-625 breaker defect. The
---      daily governance sweep is the seam's only heartbeat; if its body
---      stops calling the proposer, patterns accumulate and nothing fires,
---      which looks exactly like "no group qualifies yet". ──────────────────
+--      daily governance sweep is the seam's only heartbeat — the cron job
+--      de-governance-sweep-daily is the single statement
+--      "select de_governance_sweep_internal()" and nothing else — so A
+--      WRITER ITS BODY DOES NOT NAME IS A WRITER THAT NEVER RUNS. Patterns
+--      accumulate, nothing fires, and it looks exactly like "no group
+--      qualifies yet".
+--
+--      ⚠ TWO WRITERS SINCE MIG 828, AND THIS ARM WATCHED ONLY ONE — which
+--      is this arm committing, against itself, the defect it is named
+--      after. 828 added request_eligible_promotions (the half that lets a
+--      policy whose own criteria are met ask for its own promotion instead
+--      of waiting for a repeated-approval pattern that may never form) and
+--      extended neither the sweep nor this arm. Measured on production
+--      2026-08-21: calls raise_trust_widening_proposals = true, calls
+--      request_eligible_promotions = false — built and starved, with this
+--      control green throughout. Mig 834 wires the call; the row below is
+--      now PER WRITER, so either one going missing is named on its own.
+--
+--      ⚠ THE NEW WRITER'S ROW IS GATED ON ITS CALLEE EXISTING. Before mig
+--      828 there is nothing to starve, and reporting a missing call to a
+--      function that does not exist would turn every environment behind
+--      828 — a fresh build, dev mid-replay — red for a defect it does not
+--      have. Once 828 is applied and 834 is not, it fires: that IS the
+--      true state, and exactly the state nothing reported.
+--
+--      f.src is comment-stripped by live_fns, so this arm cannot be
+--      satisfied by prose that merely names the writer it looks for. ─────
 select 'sweep-unfed — de_governance_sweep_internal no longer calls '
-       || 'raise_trust_widening_proposals. The seam is built and starved: '
-       || 'repeated approvals teach nothing again, silently.' as violation,
+       || w.writer || '. ' || w.why as violation,
        null::text as note
- where not exists (
+  from (values
+    ('raise_trust_widening_proposals', null::text,
+     'The seam is built and starved: repeated approvals teach nothing again, silently.'),
+    ('request_eligible_promotions', 'request_eligible_promotions(p_tenant_id uuid)',
+     'Mig 828''s eligibility writer, wired into the sweep by mig 834, is back to having no caller — so a policy that already meets its own criteria can never ask, which is the closed loop that whole task exists to break.')
+  ) w(writer, gate_sig, why)
+ where (w.gate_sig is null
+        or exists (select 1 from live_fns g where g.sig = w.gate_sig))
+   and not exists (
          select 1 from live_fns f
           where f.sig = 'de_governance_sweep_internal()'
-            and f.src ilike '%raise_trust_widening_proposals%')
+            and f.src ilike '%' || w.writer || '%')
 
 union all
 

@@ -250,6 +250,33 @@
 -- patterns found no candidates today), and the second open-request row is
 -- a pre-existing production proposal from an earlier, real run. The
 -- message now says so, so "0/2" cannot be misread as "both writers fired".
+--
+-- ── FINAL WHOLE-FEATURE REVIEW (2026-08-21) — three changes to this file ────
+-- This migration is committed but NOT APPLIED, so the ledger's filename+
+-- checksum key has not closed on it yet and it is still repairable. Three
+-- findings from the final review are therefore fixed HERE rather than in a
+-- follow-up that could never repair them:
+--
+-- IMPORTANT 2 — open_trust_promotion_request updated trust_policies with NO
+--   tenant predicate and no `if not found`. A caller handing it another
+--   tenant's policy id got a human_tasks row stamped with the CALLER's
+--   tenant, zero policy rows updated, and a returned task id that reads as
+--   success. Fixed at the update, with the reasoning at the statement, and
+--   proven both ways by PROBE 8 (a matching call still works; a mismatched
+--   one refuses with the guard's OWN message and leaves no row behind).
+--
+-- LEDGER CORRECTION — the ledger recorded request_eligible_promotions as
+--   "granted to nobody -- unreachable". Measurably wrong: ALTER DEFAULT
+--   PRIVILEGES already leaves it `postgres=X/postgres | service_role=X/
+--   postgres`. It was reachable; what was true is that its reachability rode
+--   on a default this file never states. Now granted explicitly, with the
+--   outcome (and the browser-side perimeter) pinned by PROBE 9.
+--
+-- IMPORTANT 3 — the composed human_tasks.detail, copied verbatim from
+--   migration 025, restated the criteria the Task-6 evidence card now renders
+--   directly below it AND promised "still capped by guardrails". Both are
+--   addressed at the format() call, where the measurement that settles the
+--   cap question is written out in full.
 -- ============================================================================
 
 begin;
@@ -282,12 +309,37 @@ begin
   -- See ROUND 3 / CRITICAL 1 above -- do not reintroduce a sentinel or any
   -- other transform here; NULL is the system-raised marker
   -- trust-proposer-boundary.mjs and apply_trust_promotion both key on.
+  -- ⚠ FINAL REVIEW / IMPORTANT 2 -- `and tenant_id = p_tenant_id` is
+  -- AUTHORISATION, not decoration, and the `if not found` below is half of
+  -- the same guard. Without them this writer would take a policy id from one
+  -- tenant and p_tenant_id from another, stamp the HUMAN_TASKS row with the
+  -- CALLER's tenant, update ZERO policy rows, and return a task id that reads
+  -- as success -- the exact "a tenant id passed as a parameter is an
+  -- assertion, not authorisation" family migs 662-664 and 823 closed
+  -- elsewhere. Neither of today's two callers can trip it (both pass the
+  -- policy row's OWN tenant_id, from the same row) -- but this function is
+  -- documented as a SHARED writer built to acquire more callers, and the
+  -- ledger keys on filename AND checksum, so before-it-lands is the only
+  -- moment it is fixable.
+  --
+  -- The raise sits AFTER the insert on purpose: the raise unwinds the
+  -- statement/subtransaction that wrote the human_tasks row, so a refused
+  -- call leaves NOTHING behind -- no orphan task, no audit event (the
+  -- append below never runs), no returned id. A pre-check would also work;
+  -- this ordering additionally guarantees the update and the insert can
+  -- never disagree about which tenant this request belongs to.
   update trust_policies
      set pending_task_id = v_task,
          pending_evidence = p_evidence,
          requested_by = p_requested_by,
          requested_at = now()
-   where id = p_policy_id;
+   where id = p_policy_id
+     and tenant_id = p_tenant_id;
+
+  if not found then
+    raise exception 'open_trust_promotion_request: policy % is not tenant %''s to file a request against — a policy id is not its own authorisation. No policy row was updated; the task row this call would have returned is unwound with this refusal.',
+      p_policy_id, p_tenant_id;
+  end if;
 
   perform public.append_audit_event_internal(
     p_tenant_id, p_actor, 'system', p_audit_action, 'config_change',
@@ -356,8 +408,50 @@ begin
       v_task := public.open_trust_promotion_request(
         v_p.tenant_id, v_p.id, v_ev, null,
         format('Trust promotion — %s to level %s', v_label, v_p.current_level + 1),
-        format('Evidence met all criteria: %s. Approving widens autonomy one step — still capped by guardrails.',
-          (select string_agg(x->>'detail', ' · ') from jsonb_array_elements(v_ev->'criteria') x)),
+        -- ⚠ FINAL REVIEW / IMPORTANT 3. This string used to be copied verbatim
+        -- from migration 025's request_trust_promotion:
+        --   'Evidence met all criteria: %s. Approving widens autonomy one
+        --    step — still capped by guardrails.'
+        -- Two things were wrong with carrying it here, and both were measured,
+        -- not reasoned:
+        --
+        -- 1. IT RESTATED THE EVIDENCE THE CARD NOW CARRIES. Task 6 renders a
+        --    curated evidence card from the SAME pending_evidence snapshot,
+        --    directly below this text on both the ops queue and mobile. The
+        --    approver read the criteria twice, in two voices, the SQL-composed
+        --    one first.
+        -- 2. "STILL CAPPED BY GUARDRAILS" PROMISED A LIMIT THE TRUST LADDER
+        --    DOES NOT GRANT. Measured on production: trust_level_settings
+        --    ('action_execute', 0) is enabled=false; levels 1, 2 and 3 are all
+        --    enabled=true with max_amount_cents NULL. The ladder caps nothing
+        --    for this category. Guardrails DO still gate independently --
+        --    decide_action_execution stops destructive actions, blocked
+        --    phrases/topics, and amounts over require_approval_over_cents
+        --    (default 1,000,000 cents) BEFORE it ever reads the dial -- but
+        --    that is a different mechanism, it bites only on the action-
+        --    execution path, and only some of it is an AMOUNT cap. A sentence
+        --    that says "capped" without naming which mechanism caps what is
+        --    read as "the step you are approving is bounded", and for a
+        --    non-money action_execute action it is not.
+        --
+        -- What is left is only what apply_trust_promotion itself guarantees at
+        -- the moment the button is pressed, verified against its live body:
+        -- it re-runs trust_evidence_for and refuses as stale if the evidence
+        -- regressed, and it moves the level by least(current_level + 1,
+        -- max_level) -- one step, never past this policy's own ceiling.
+        -- No claim is made here about what the new level permits; that is the
+        -- card's job, and it declines to claim a cap for the same reason.
+        --
+        -- ⚠ NOT FIXED HERE, deliberately: migration 025's request_trust_
+        -- promotion still writes the original sentence, and it is APPLIED --
+        -- the human "Request promotion" button produces the same contradiction
+        -- on the same card. Both surfaces stop rendering the raw detail beside
+        -- the curated card for criteria-shaped requests (see
+        -- trustPromotionPresentation.detailIsRedundantBesideCard), which
+        -- covers 025's copy too; rewriting an applied function's copy was not
+        -- in this fix's scope and is named in the final-fix report instead.
+        format('Raised automatically because this policy''s trust criteria are met — no human asked for it. The evidence behind it is on this request. Approving moves "%s" up one step and no further than this policy''s own ceiling; the criteria are re-verified at that moment and the request is refused if the evidence has gone stale.',
+          v_label),
         'Trust engine',
         format('Trust promotion requested — %s level %s -> %s (evidence eligible; raised automatically by the eligibility sweep, no human requested it)',
           v_label, v_p.current_level, v_p.current_level + 1),
@@ -400,6 +494,22 @@ end;
 $function$;
 
 revoke all on function public.request_eligible_promotions(uuid) from public, anon, authenticated;
+-- ⚠ FINAL REVIEW / LEDGER CORRECTION. The deferred minor recorded this
+-- function as "granted to nobody -- unreachable". That was measurably wrong:
+-- ALTER DEFAULT PRIVILEGES already leaves it `postgres=X/postgres |
+-- service_role=X/postgres` with no explicit grant statement anywhere. It was
+-- reachable; what was true is that its reachability rode entirely on a
+-- default nobody states in this file, so a change to that default would have
+-- silently un-shipped it. Stated explicitly now, exactly as its sibling
+-- open_trust_promotion_request above states its own.
+--
+-- NOT granted to trust_pattern_proposer, deliberately, and the asymmetry with
+-- the sibling is the point: this function is SECURITY DEFINER and owned by
+-- the migration runner, so granting the proposer role EXECUTE would hand a
+-- role whose entire remit is "files proposals and nothing else" a door that
+-- runs as the owner. The proposer never needs to call it -- the daily sweep
+-- does, and the sweep is owned by postgres.
+grant execute on function public.request_eligible_promotions(uuid) to postgres, service_role;
 
 -- ── raise_trust_widening_proposals: refactored to call the shared writer ───
 -- Same signature (p_tenant_id uuid default null) -> Postgres preserves this
@@ -604,6 +714,16 @@ declare
   v_pattern_brief      jsonb;
   v_src                text;
   v_suspended_tenants  int;
+  -- PROBE 8 (FINAL REVIEW / IMPORTANT 2)
+  v_p8_policy          uuid;
+  v_p8_tenant          uuid;
+  v_p8_other_tenant    uuid;
+  v_p8_task            uuid;
+  v_p8_linked          int := -1;
+  v_p8_outcome         text;
+  v_p8_rows_before     bigint;
+  v_p8_rows_after      bigint;
+  v_p8_grant_ok        boolean;
 begin
   -- IMPORTANT 4: every expected-value query below mirrors the sweep's own
   -- tenant_is_operational filter, so the probes stay a correct description
@@ -820,15 +940,181 @@ begin
     case when v_suspended_tenants = 0 then 'UNEXERCISED on this dataset (mechanism-only proof above)' else 'live' end;
 
   ----------------------------------------------------------------------
+  -- PROBE 8 -- FINAL REVIEW / IMPORTANT 2: the shared writer refuses a
+  -- policy that does not belong to the tenant it was handed, and STILL
+  -- works for one that does. Both halves, because a guard proven only on
+  -- the refusing side could have been implemented as "always refuse".
+  --
+  -- Neither subject is hardcoded: the policy and the OTHER tenant are both
+  -- DISCOVERED, and absence of either is a notice, never a finding (the
+  -- shape PROBE 6a was rewritten into in round 3 -- see the header). On a
+  -- database with no policies, or with only one tenant, the corresponding
+  -- half simply does not run and says so.
+  --
+  -- ⚠ BOTH HALVES ARE UNDONE. Each runs inside its own BEGIN/EXCEPTION
+  -- block, which is a subtransaction: the negative half is unwound by the
+  -- guard's own raise, and the positive half by a sentinel raise thrown
+  -- straight after its measurement. PL/pgSQL variable assignments are NOT
+  -- transactional, so v_p8_linked survives the rollback that discards the
+  -- rows it describes. Nothing this probe writes reaches the commit.
+  ----------------------------------------------------------------------
+  select p.id, p.tenant_id into v_p8_policy, v_p8_tenant
+    from public.trust_policies p
+   order by p.id
+   limit 1;
+
+  if v_p8_policy is null then
+    raise notice '828 PROBE 8: no trust_policies row exists -- BOTH halves of the tenant-guard proof are unexercised on this dataset.';
+  else
+    -- ── positive half: the matching tenant still works ──────────────────
+    begin
+      v_p8_task := public.open_trust_promotion_request(
+        v_p8_tenant, v_p8_policy, '{"probe": "828 PROBE 8"}'::jsonb, null,
+        '828 PROBE 8 — rolled back', '828 PROBE 8 — rolled back',
+        'Trust engine', '828 PROBE 8 — rolled back',
+        jsonb_build_object('kind', 'probe', 'policy_id', v_p8_policy));
+
+      select count(*) into v_p8_linked
+        from public.trust_policies p
+       where p.id = v_p8_policy and p.pending_task_id = v_p8_task;
+
+      raise exception 'ZZ_828_PROBE8_ROLLBACK';
+    exception when others then
+      if sqlerrm <> 'ZZ_828_PROBE8_ROLLBACK' then
+        v_p8_linked := -1;
+        v_bad := array_append(v_bad, format(
+          'PROBE 8 positive half: a MATCHING-tenant call to open_trust_promotion_request failed -- the guard refuses a caller it must accept. sqlerrm=%s', sqlerrm));
+      end if;
+    end;
+
+    v_checks := v_checks + 1;
+    if v_p8_linked <> 1 then
+      v_bad := array_append(v_bad, format(
+        'PROBE 8 positive half: matching-tenant call linked %s policy row(s), expected exactly 1', v_p8_linked));
+    end if;
+
+    -- ── negative half: a mismatched tenant is refused, not silently ok ──
+    select t.id into v_p8_other_tenant
+      from public.tenants t
+     where t.id <> v_p8_tenant
+     order by t.id
+     limit 1;
+
+    if v_p8_other_tenant is null then
+      raise notice '828 PROBE 8b: only one tenant exists -- the MISMATCHED-tenant half is unexercised on this dataset (the positive half above still ran).';
+    else
+      v_checks := v_checks + 2;   -- 8b (the verdict) and 8c (the residue)
+      v_p8_outcome := 'not-run';
+      v_p8_rows_after := -1;
+      select count(*) into v_p8_rows_before
+        from public.human_tasks where type = 'trust_promotion';
+
+      -- ⚠ TWO NESTED SUBTRANSACTIONS, and the nesting is the whole point of
+      -- 8c. A single block would have to raise its own sentinel to unwind an
+      -- ACCEPTED call -- and that sentinel would discard the very row 8c
+      -- exists to find, so 8c could never once fail: a checker that cannot
+      -- fail is theatre, by this repo's own rule, and the first draft of this
+      -- probe was exactly that. The INNER block absorbs the guard's refusal;
+      -- the OUTER one is what unwinds, and between them there is a moment
+      -- where anything the writer left behind is still visible to count.
+      begin
+        begin
+          v_p8_task := public.open_trust_promotion_request(
+            v_p8_other_tenant, v_p8_policy, '{"probe": "828 PROBE 8b"}'::jsonb, null,
+            '828 PROBE 8b — must never be written', '828 PROBE 8b — must never be written',
+            'Trust engine', '828 PROBE 8b — must never be written',
+            jsonb_build_object('kind', 'probe', 'policy_id', v_p8_policy));
+          -- Reached only if the writer ACCEPTED a policy that is not this
+          -- tenant's -- the silent success this guard exists to stop.
+          v_p8_outcome := 'accepted';
+        exception when others then
+          -- Pinned by MESSAGE, not by "something raised": an FK violation on
+          -- the human_tasks insert, a NOT NULL, or any unrelated error would
+          -- otherwise read as the guard firing. Only the guard's own words
+          -- count as a pass.
+          if sqlerrm like '%is not tenant%to file a request against%' then
+            v_p8_outcome := 'refused';
+          else
+            v_p8_outcome := 'wrong-error: ' || sqlerrm;
+          end if;
+        end;
+
+        select count(*) into v_p8_rows_after
+          from public.human_tasks where type = 'trust_promotion';
+
+        raise exception 'ZZ_828_PROBE8B_ROLLBACK';
+      exception when others then
+        if sqlerrm <> 'ZZ_828_PROBE8B_ROLLBACK' then
+          v_p8_outcome := 'probe-error: ' || sqlerrm;
+        end if;
+      end;
+
+      if v_p8_outcome = 'accepted' then
+        v_bad := array_append(v_bad, format(
+          'PROBE 8b: open_trust_promotion_request ACCEPTED policy %s for tenant %s (it belongs to %s) -- the tenant predicate is missing and a mismatched call reads as success',
+          v_p8_policy, v_p8_other_tenant, v_p8_tenant));
+      elsif v_p8_outcome <> 'refused' then
+        v_bad := array_append(v_bad, format(
+          'PROBE 8b: the mismatched-tenant call did not end in the tenant guard''s own refusal -- %s', v_p8_outcome));
+      end if;
+
+      -- 8c: the refusal leaves NOTHING behind. The writer inserts the
+      -- human_tasks row BEFORE it updates the policy, so a guard that
+      -- RETURNED (or swallowed its own exception) instead of raising would
+      -- strand an orphan pending trust_promotion task -- the mig-590/701
+      -- class arm 12 of trust-proposer-boundary watches. Measured inside the
+      -- outer block, before it unwinds, against the count taken immediately
+      -- before the call: a delta of exactly zero, or a finding.
+      if v_p8_rows_after <> v_p8_rows_before then
+        v_bad := array_append(v_bad, format(
+          'PROBE 8c: the mismatched-tenant call left %s human_tasks(type=trust_promotion) row(s) behind (%s -> %s) -- a refused request must unwind its own task row',
+          v_p8_rows_after - v_p8_rows_before, v_p8_rows_before, v_p8_rows_after));
+      end if;
+    end if;
+  end if;
+
+  ----------------------------------------------------------------------
+  -- PROBE 9 -- FINAL REVIEW / LEDGER CORRECTION: request_eligible_
+  -- promotions is EXECUTE-able by service_role and by nobody on the
+  -- browser side. This asserts the OUTCOME, which is all that is
+  -- observable -- ALTER DEFAULT PRIVILEGES and an explicit GRANT leave
+  -- byte-identical proacl entries, so no arm can prove which one caused
+  -- it. The explicit grant statement above exists so the outcome stops
+  -- depending on a default; this arm exists so a change to either is seen.
+  -- has_function_privilege answers INCLUDING inheritance through PUBLIC,
+  -- which is why the revoke above is what makes the three negative
+  -- comparisons meaningful.
+  ----------------------------------------------------------------------
+  v_checks := v_checks + 1;
+  select has_function_privilege('service_role', p.oid, 'EXECUTE') into v_p8_grant_ok
+    from pg_proc p
+   where p.proname = 'request_eligible_promotions' and p.pronamespace = 'public'::regnamespace;
+  if not coalesce(v_p8_grant_ok, false) then
+    v_bad := array_append(v_bad, 'request_eligible_promotions is not EXECUTE-able by service_role -- the daily sweep''s callee is unreachable');
+  end if;
+
+  v_checks := v_checks + 3;
+  if exists (
+    select 1 from pg_proc p
+    cross join (values ('anon'), ('authenticated'), ('public')) who(r)
+    where p.proname = 'request_eligible_promotions' and p.pronamespace = 'public'::regnamespace
+      and has_function_privilege(who.r, p.oid, 'EXECUTE')
+  ) then
+    v_bad := array_append(v_bad, 'request_eligible_promotions is EXECUTE-able from the browser side (anon/authenticated/public) -- a system sweep is not a public endpoint');
+  end if;
+
+  ----------------------------------------------------------------------
   if array_length(v_bad, 1) > 0 then
     raise exception E'828 VERIFICATION FAILED (% assertions):\n  %',
       v_checks, array_to_string(v_bad, E'\n  ');
   end if;
 
-  raise notice '828: % assertions, 0 findings. examined=%, requested=%, skipped_existing=%, thin=%, failed=%, linked=%/%, widening_examined=%, sentinel=%/% open-request policies (population, not writers exercised).',
+  raise notice '828: % assertions, 0 findings. examined=%, requested=%, skipped_existing=%, thin=%, failed=%, linked=%/%, widening_examined=%, sentinel=%/% open-request policies (population, not writers exercised). tenant-guard: positive=%, mismatched=%.',
     v_checks, v_res->>'examined', v_res->>'requested', v_res->>'skipped_existing', v_res->>'thin',
     v_res->>'failed', v_linked, coalesce(array_length(v_target_ids, 1), 0), v_widen_res->>'examined',
-    v_sentinel_count, v_open_requests;
+    v_sentinel_count, v_open_requests,
+    case when v_p8_policy is null then 'unexercised (no policies)' else v_p8_linked || ' policy row linked then rolled back' end,
+    coalesce(v_p8_outcome, 'unexercised (fewer than two tenants)');
 end;
 $verify$;
 

@@ -1132,6 +1132,37 @@ const CASES = [
       + 'production, not this arm, and are expected on dev.) Rollback confirmed: a separate read-only call '
       + 'afterward showed trust_policies back to 0 rows on dev, its state before this test.',
   },
+  {
+    // ⚠ MANUAL, and for the same reason arm 9b is: sweep-unfed reads
+    // pg_proc.prosrc for de_governance_sweep_internal, which no opts.* hook
+    // can inject into — the only way to drive it is to REPLACE a live
+    // function, which is a DDL write. Named here with its compensating
+    // control stated rather than left uncovered: migration 834's own PROBE 1
+    // asserts the same two calls, unconditionally, on every replay.
+    name: 'trust-proposer (arm 8, sweep-unfed: per-writer, five states proven against production)',
+    manual: 'Driven against PRODUCTION on 2026-08-21 in five separate self-aborting transactions (each ends '
+      + 'in RAISE EXCEPTION carrying the arm\'s rows, so nothing commits; no fixture rows, only CREATE OR '
+      + 'REPLACE of functions inside the aborted transaction). The arm was extended this day because it '
+      + 'watched ONE writer while migration 828 shipped a SECOND — request_eligible_promotions — with no '
+      + 'caller anywhere in the repo, and stayed green throughout: the built-and-starved defect committed by '
+      + 'the control named after it. Five states, each asked only for rows matching sweep-unfed: '
+      + '(P0) production as it stands, 828 NOT applied -> SILENT, correctly — the new writer does not exist, '
+      + 'so its row is gated off and no environment behind 828 is red for a defect it does not have. '
+      + '(P1) 828 applied, 834 NOT -> RED, naming request_eligible_promotions. This is the exact state the '
+      + 'un-extended arm reported as clean, and the reason this entry exists. '
+      + '(P2) 828 + 834 both applied -> SILENT. '
+      + '(P3) both applied cleanly, then the INSTALLED sweep replaced with the old writer\'s call stubbed out '
+      + '-> RED, naming raise_trust_widening_proposals. '
+      + '(P4) same, new writer\'s call stubbed -> RED, naming request_eligible_promotions. '
+      + 'P3/P4 mutate the sweep AFTER 834 rather than inside it, because 834\'s own PROBE 1 asserts the same '
+      + 'two calls and would abort the transaction before arm 8 was ever asked — which is itself the '
+      + 'compensating control this entry relies on between manual runs. live_fns strips line comments before '
+      + 'matching, so a row cannot be satisfied by prose naming the writer it looks for — P4 is the direct '
+      + 'proof: 834\'s step (f) comment names request_eligible_promotions (counted: one occurrence in the '
+      + 'installed body\'s comments), its call was the only thing stubbed, and the arm still went red. '
+      + '(P3 is not a comment-stripping proof: nothing in the '
+      + 'installed body\'s comments names raise_trust_widening_proposals.)',
+  },
   ...(() => {
     const HQ = '5bb802e1-8e92-4eef-9a7a-ac348785d43f';       // outsourcetel-hq (active)
     const ACME = 'a1b2c3d4-0000-0000-0000-000000000001';     // acme-telecom (suspended)
