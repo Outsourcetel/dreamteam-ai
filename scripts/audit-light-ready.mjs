@@ -24,7 +24,13 @@ const slateText = lines('text-slate-');
 // Baselines pinned 2026-08-21 (first measurement). Tighten in the SAME
 // commit that lowers a number — design-drift.mjs enforces its own version
 // of this rule for exactly the reason recorded there.
-const BASELINE = { 'bare text-white': 521, 'bg-slate': 67, 'border-slate': 6, 'text-slate': 3 };
+//
+// RATCHETED 2026-08-21 (Task 4, pilot screens verified light). CrashFallback,
+// Sidebar's two indigo/light-broken states, and the whole pre-auth surface
+// (LoginPage, Terms, Privacy, ProofPage, PlatformInviteRedeemPage,
+// ResetPasswordScreen) moved off text-white/text-slate onto dt-* tokens —
+// 54 bare text-white instances and 1 text-slate instance closed for real.
+const BASELINE = { 'bare text-white': 467, 'bg-slate': 67, 'border-slate': 6, 'text-slate': 2 };
 const NOW = {
   'bare text-white': bareWhite.length,
   'bg-slate': slateBg.length,

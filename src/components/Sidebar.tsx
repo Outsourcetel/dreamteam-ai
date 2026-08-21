@@ -312,7 +312,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
       <div className="w-14 bg-dt-page border-r border-dt-border flex flex-col items-center py-4 gap-3 flex-shrink-0">
         <button
           onClick={() => setCollapsed(false)}
-          className="w-8 h-8 rounded-lg bg-dt-panel text-dt-support hover:text-white text-xs flex items-center justify-center"
+          className="w-8 h-8 rounded-lg bg-dt-panel text-dt-support hover:text-dt-title text-xs flex items-center justify-center"
         >
           →
         </button>
@@ -341,8 +341,8 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
             onClick={() => setPage(item.page)}
             className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs ${
               page === item.page
-                ? 'bg-indigo-500/20 text-indigo-300'
-                : 'bg-dt-card text-dt-muted hover:text-white hover:bg-dt-panel'
+                ? 'bg-dt-accent-soft text-dt-accent-text'
+                : 'bg-dt-card text-dt-muted hover:text-dt-title hover:bg-dt-panel'
             }`}
           >
             {item.icon}
@@ -352,11 +352,11 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
         <a
           href="mailto:bkhan@outsourcetel.com?subject=DreamTeam%20AI%20support"
           title="Contact support"
-          className="w-8 h-8 rounded-lg bg-dt-card text-dt-muted hover:text-white text-xs flex items-center justify-center"
+          className="w-8 h-8 rounded-lg bg-dt-card text-dt-muted hover:text-dt-title text-xs flex items-center justify-center"
         >
           ✉
         </a>
-        <button onClick={onLogout} className="w-8 h-8 rounded-lg bg-dt-card text-dt-muted hover:text-white text-xs flex items-center justify-center">
+        <button onClick={onLogout} className="w-8 h-8 rounded-lg bg-dt-card text-dt-muted hover:text-dt-title text-xs flex items-center justify-center">
           ⇥
         </button>
       </div>
@@ -435,7 +435,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
                           onClick={() => setPage(child.id)}
                           className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors ${
                             isActive(child.id)
-                              ? 'bg-indigo-500/10 text-indigo-300'
+                              ? 'bg-dt-accent-soft text-dt-accent-text'
                               : 'text-dt-muted hover:text-dt-support hover:bg-dt-card'
                           }`}
                         >
@@ -487,7 +487,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
             </button>
             <button
               onClick={onLogout}
-              className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-dt-support hover:bg-dt-panel hover:text-red-300 transition-colors border-t border-dt-border"
+              className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-dt-support hover:bg-dt-panel hover:text-dt-danger transition-colors border-t border-dt-border"
             >
               <span className="w-4 text-center flex-shrink-0">⇥</span> Sign out
             </button>

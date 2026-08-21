@@ -28,13 +28,13 @@ function CrashFallback() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-dt-page p-6">
       <div className="max-w-sm text-center">
-        <p className="text-lg font-semibold text-white mb-2">Something went wrong</p>
-        <p className="text-sm text-slate-400 mb-4">
+        <p className="text-lg font-semibold text-dt-title mb-2">Something went wrong</p>
+        <p className="text-sm text-dt-support mb-4">
           This error has been reported. Try reloading the page — if it keeps happening, contact support.
         </p>
         <button
           onClick={() => window.location.reload()}
-          className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 transition-colors"
+          className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-dt-accent-strong hover:bg-dt-accent-hover transition-colors"
         >
           Reload
         </button>

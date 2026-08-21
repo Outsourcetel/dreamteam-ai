@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { redeemPlatformInvite } from '../lib/api';
 import { Spinner } from '../components';
+import { Banner } from '../design/primitives';
 
 /**
  * Entry point for a platform-invite link (/platform/redeem?code=...).
@@ -46,14 +47,14 @@ export default function PlatformInviteRedeemPage({ code }: { code: string }) {
         <div className="flex items-center gap-3 mb-8 justify-center">
           <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold">DT</div>
           <div>
-            <div className="text-white font-bold text-lg">DreamTeam AI</div>
-            <div className="text-indigo-300 text-xs">Digital Workforce Platform</div>
+            <div className="text-dt-title font-bold text-lg">DreamTeam AI</div>
+            <div className="text-dt-accent-text text-xs">Digital Workforce Platform</div>
           </div>
         </div>
 
         {!authedUser ? (
           <>
-            <h2 className="text-2xl font-bold text-white mb-1 text-center">Platform invitation</h2>
+            <h2 className="text-2xl font-bold text-dt-title mb-1 text-center">Platform invitation</h2>
             <p className="text-dt-support text-sm mb-6 text-center leading-relaxed">
               Sign in (or create an account) first, then come back to this same link to accept your
               invitation.
@@ -68,19 +69,19 @@ export default function PlatformInviteRedeemPage({ code }: { code: string }) {
         ) : done ? (
           <div className="text-center py-4">
             <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 flex items-center justify-center text-3xl mx-auto mb-4">✓</div>
-            <h2 className="text-xl font-bold text-white mb-2">You're in</h2>
+            <h2 className="text-xl font-bold text-dt-title mb-2">You're in</h2>
             <p className="text-dt-support text-sm leading-relaxed">
               Taking you to the Platform Console…
             </p>
           </div>
         ) : (
           <>
-            <h2 className="text-2xl font-bold text-white mb-1 text-center">Accept platform invitation</h2>
+            <h2 className="text-2xl font-bold text-dt-title mb-1 text-center">Accept platform invitation</h2>
             <p className="text-dt-support text-sm mb-6 text-center leading-relaxed">
               You're signed in as {authedUser.email}. Accepting this invitation will give this account
               platform-level access — above any single tenant.
             </p>
-            {error && <p className="text-xs text-red-400 mb-4 text-center">{error}</p>}
+            {error && <div className="mb-4 text-center"><Banner tone="danger" className="text-xs">{error}</Banner></div>}
             <button
               onClick={handleAccept}
               disabled={loading}
@@ -93,7 +94,7 @@ export default function PlatformInviteRedeemPage({ code }: { code: string }) {
                 Wrong account?{' '}
                 <button
                   onClick={() => { void (async () => { await handleLogout(); })(); }}
-                  className="text-indigo-400 hover:text-indigo-300 underline"
+                  className="text-dt-accent-text hover:underline"
                 >
                   Sign out
                 </button>
