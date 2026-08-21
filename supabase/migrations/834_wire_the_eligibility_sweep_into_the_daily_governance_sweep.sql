@@ -75,6 +75,17 @@
 -- PROBEs 4-6, and arm 8 of the Ring-0 boundary probe is what watches the
 -- linkage from here on, on every certify run.
 --
+-- ── THE SNAPSHOT PROBLEM, AND WHY THERE IS A HASH GUARD ────────────────────
+-- The body below is a SNAPSHOT of the live function taken 2026-08-21, not a
+-- merge. Anything a parallel session adds to de_governance_sweep_internal
+-- between then and apply time is silently overwritten. That was reproduced,
+-- not theorised: a simulated parallel step (g) was added and this migration
+-- then applied cleanly, raised nothing, and the step was gone. The precheck
+-- block therefore hashes the live body and refuses on anything it was not
+-- written against. Read its comments for the two accepted values, why 55000
+-- is the SQLSTATE, why whitespace normalisation is load-bearing, and the
+-- plain statement that this guard follows no existing repo convention.
+--
 -- CREATE OR REPLACE, never DROP + CREATE: the sweep is owned by postgres and
 -- carries its existing grants, and only OR REPLACE preserves both. The body
 -- below was generated from the LIVE pg_get_functiondef output, with exactly
@@ -87,6 +98,27 @@ begin;
 
 -- ── precondition, asserted about SCHEMA (true wherever this replays) ─────────
 do $precheck$
+declare
+  v_body text;
+  -- ── THE TWO ACCEPTED BODIES ───────────────────────────────────────────────
+  -- md5 of prosrc with line comments stripped and all whitespace collapsed.
+  -- Whitespace normalisation is LOAD-BEARING, not tidiness: without it a CRLF
+  -- checkout and an LF checkout of the SAME migration hash differently and
+  -- this guard would refuse on Windows. Measured: the CRLF form of the file
+  -- gives prosrc 11493 chars vs 11274, and the SAME hash.
+  --
+  -- PRE  = the body this migration expects to FIND. Installed by migration
+  --        789 and untouched since -- verified rather than assumed: five
+  --        migrations create this function (129, 430, 710, 789 and this one),
+  --        789 is the last before it, and 753/754/760/823 mention it only in
+  --        prose. Confirmed by measurement, not by reading: 789's own block,
+  --        replayed into an aborting transaction, hashes to exactly the value
+  --        production carries today.
+  -- POST = the body this migration INSTALLS. Accepted too, so that a re-apply
+  --        and a replay that reaches this file twice both stay green rather
+  --        than refusing on the migration's own work.
+  c_body_pre  constant text := 'c4183f3257ecdff627d0b263eec45ba3';
+  c_body_post constant text := '60a3ec07307ea4010267cfcdea67d887';
 begin
   -- errcode is deliberate, not decoration, and follows 832's precedent:
   -- audit-migration-replayability classifies a dry-run failure by SQLSTATE.
@@ -103,6 +135,61 @@ begin
   if to_regprocedure('public.detect_trust_widening_patterns(uuid)') is null then
     raise exception 'PRECONDITION FAILED: public.detect_trust_widening_patterns(uuid) does not exist -- migration 710 has not been applied. PROBE 2 below asserts its dedupe guard, and an absent function would let that assertion pass by comparing nothing.'
       using errcode = 'undefined_function';
+  end if;
+
+  -- ── THE STALE-SNAPSHOT GUARD ───────────────────────────────────────────────
+  -- This migration CREATE OR REPLACEs de_governance_sweep_internal from a
+  -- snapshot of its body taken on 2026-08-21. Anything a parallel session adds
+  -- to that function between then and apply time is silently overwritten --
+  -- not merged, not warned about, gone.
+  --
+  -- ⚠ NOT A HYPOTHETICAL. Reproduced: with 828 applied, a parallel session's
+  -- CREATE OR REPLACE adding a step (g) was simulated, then this migration was
+  -- applied. It applied CLEANLY, raised nothing, and the added step was gone --
+  -- `prosrc ~ 'parallel_session_step_g'` came back false. None of the ten
+  -- assertions below looks past the two writer names and the return key, so
+  -- none of them could see it.
+  --
+  -- ⚠ THERE IS NO REPO PRECEDENT FOR THIS GUARD. It is a judgment call, not a
+  -- convention being followed, and it is worth naming as one. What justifies
+  -- it is the incident class, which this repo has already paid for twice: a
+  -- shared edge function deployed from a stale tree reverted a parallel
+  -- session's work, and during THIS migration's own review a parallel session
+  -- pushed commits to origin/main that nobody in this session had pushed. The
+  -- alternative offered was "re-diff pg_get_functiondef immediately before
+  -- applying" -- a procedural control, of exactly the shape whose failures are
+  -- the reason the guard exists. So it is asserted in SQL instead.
+  --
+  -- ⚠ WHAT MAKES THIS REPLAY-SAFE, and the limit of that claim: it hashes what
+  -- the migration expects to FIND, so it is only safe while the pre-834 body is
+  -- deterministic from migration history. It is (see c_body_pre above). If a
+  -- future migration replaces this function it will sit AFTER this file in
+  -- filename order, so a replay still reaches this line with 789's body.
+  --
+  -- ⚠ SQLSTATE 55000 (object_not_in_prerequisite_state) is chosen deliberately.
+  -- The function EXISTS, so 42883 would be a lie; and this is not an assertion
+  -- about rows the environment lacks, so P0001 would make
+  -- audit-migration-replayability accuse this file of the one defect it is
+  -- most careful not to have. 55000 lands in that gate's third bucket --
+  -- "NOT PROVEN, for a reason this gate does not classify" -- which is exactly
+  -- the honest answer: never a pass, never a false accusation.
+  select md5(btrim(regexp_replace(
+           regexp_replace(prosrc, '--[^' || chr(10) || ']*', '', 'g'),
+           '\s+', ' ', 'g')))
+    into v_body
+    from pg_proc
+   where proname = 'de_governance_sweep_internal'
+     and pronamespace = 'public'::regnamespace;
+
+  if v_body is null then
+    raise exception 'PRECONDITION FAILED: public.de_governance_sweep_internal() does not exist -- migration 789 has not been applied. This migration replaces that function; without it there is nothing to replace and the daily cron has no target.'
+      using errcode = 'undefined_function';
+  end if;
+
+  if v_body not in (c_body_pre, c_body_post) then
+    raise exception E'PRECONDITION FAILED: de_governance_sweep_internal has a body this migration was not written against.\n  found    %\n  expected % (the body migration 789 installs, which this file replaces)\n  or       % (the body this file installs, so a re-apply is not refused)\nSomething changed that function after 2026-08-21 -- most likely a parallel session. Applying this migration now would SILENTLY OVERWRITE that change: the body below is a snapshot, not a merge. Re-diff pg_get_functiondef(''public.de_governance_sweep_internal()'') against the CREATE OR REPLACE in this file, fold in whatever is missing, and update c_body_pre above to the hash you just measured.',
+      v_body, c_body_pre, c_body_post
+      using errcode = 'object_not_in_prerequisite_state';
   end if;
 end
 $precheck$;
@@ -351,6 +438,11 @@ declare
   v_detector_hits   bigint := -1;
   v_raised_ids      uuid[];
   v_fixture         text := 'not-run';
+  v_installed       text;
+  -- Must equal c_body_post in the precheck block above. Restated rather than
+  -- shared because a DO block cannot see another DO block's constants; PROBE 7
+  -- is what stops the two drifting apart unnoticed.
+  c_body_post       constant text := '60a3ec07307ea4010267cfcdea67d887';
 begin
   -- Comments stripped before every source match, this repo's own convention
   -- (828 PROBE 7, trust-proposer-boundary's live_fns CTE): without it a probe
@@ -432,9 +524,48 @@ begin
   -- not transactional, so the measurements survive the rollback that
   -- discards the rows they describe.
   ----------------------------------------------------------------------
+  -- ⚠ THE SUBJECT QUERY MIRRORS THE WRITER'S OWN LOOP FILTER, and the first
+  -- version of this probe did not. request_eligible_promotions iterates
+  -- `status = 'active' and tenant_is_operational(tenant_id)` (828:385-391);
+  -- this query had neither, so it could hand PROBE 4 a policy the writer will
+  -- never look at, and PROBE 4's "run 1 must raise >= 1" arm would fail on a
+  -- migration that is working correctly.
+  --
+  -- Not argued -- REPRODUCED. With the discovered subject's tenant set to
+  -- `suspended` inside an aborting transaction, 834 died with:
+  --     834 VERIFICATION FAILED (10 assertions): PROBE 4: run 1 raised 0
+  --     requests on a policy discovered as eligible-with-its-request-cleared
+  -- That is a P0001 -- the exact class audit:replayable exists to stop -- and
+  -- that gate is DARK for this file (it reports NOT PROVEN because dev lacks
+  -- 828), so nothing would have caught it. Production has zero suspended
+  -- tenants today, which is the only reason the first version applied.
+  --
+  -- This is 828's own stated discipline, which this file had dropped:
+  -- "every expected-value query below mirrors the sweep's own
+  -- tenant_is_operational filter ... rather than one that only happens to
+  -- match today because nothing is suspended."
+  --
+  -- ⚠ HONEST ABOUT THE SECOND CONJUNCT: `status = 'active'` is SYMMETRY, not
+  -- a demonstrated fix, and the mechanism was measured rather than assumed.
+  -- trust_evidence_for consults status itself (its comment-stripped body
+  -- mentions it; pausing a policy flips eligible true -> false, measured in
+  -- an aborting transaction), so the eligibility conjunct already on this
+  -- query excludes a paused policy TRANSITIVELY -- with the one eligible
+  -- policy paused, the un-mirrored candidate count goes to 0 and this probe
+  -- takes its unexercised-notice path instead of failing. No inversion can
+  -- make it red today.
+  --
+  -- It is written out anyway, because "correct today via a conjunct in
+  -- somebody else's function" is precisely the borrowed correspondence 828's
+  -- rule forbids, and the same class was already noted once in this feature
+  -- (828's v_eligible_before was computed without status while the loop
+  -- filtered on it). The tenant filter is NOT in that category: removing it
+  -- reddens this probe for real -- see K5 in the round-2 proof.
   select p.id, p.tenant_id into v_subject, v_subject_tenant
     from public.trust_policies p
    where p.pending_task_id is not null
+     and p.status = 'active'
+     and public.tenant_is_operational(p.tenant_id)
      and coalesce((public.trust_evidence_for(p)->>'eligible')::boolean, false)
    order by p.id
    limit 1;
@@ -550,13 +681,39 @@ begin
   end if;
 
   ----------------------------------------------------------------------
+  -- PROBE 7 -- THE BODY THIS FILE INSTALLED IS THE BODY IT DECLARED.
+  -- The precheck's second accepted hash (c_body_post) exists so a re-apply
+  -- is not refused by this migration's own work. That makes it a constant
+  -- nothing would otherwise check: hand-edit one line of the function body
+  -- and forget to update it, and the FIRST apply still succeeds while every
+  -- re-apply and every replay refuses -- a trap armed at apply time and
+  -- sprung later, somewhere else. Asserted here, with the same normalisation
+  -- expression the precheck uses (if the two ever diverge, this arm is what
+  -- goes red).
+  ----------------------------------------------------------------------
+  select md5(btrim(regexp_replace(
+           regexp_replace(prosrc, '--[^' || chr(10) || ']*', '', 'g'),
+           '\s+', ' ', 'g')))
+    into v_installed
+    from pg_proc
+   where proname = 'de_governance_sweep_internal'
+     and pronamespace = 'public'::regnamespace;
+
+  v_checks := v_checks + 1;
+  if v_installed is distinct from c_body_post then
+    v_bad := array_append(v_bad, format(
+      'PROBE 7: the installed de_governance_sweep_internal hashes to %s, but this file declares %s as its post-apply body. The function body and the precheck constant have drifted -- the first apply would succeed and every re-apply would then refuse. Update c_body_post in BOTH DO blocks to the measured value.',
+      coalesce(v_installed, '(function absent)'), c_body_post));
+  end if;
+
+  ----------------------------------------------------------------------
   if array_length(v_bad, 1) > 0 then
     raise exception E'834 VERIFICATION FAILED (% assertions):\n  %',
       v_checks, array_to_string(v_bad, E'\n  ');
   end if;
 
-  raise notice '834: % assertions, 0 findings. wiring: both writers named in the sweep body. fixture=%, run1_requested=%, run2_requested=%, run2_skipped=%, orphans %->% of % pending, detector_still_offers=% of % just-raised.',
-    v_checks, v_fixture,
+  raise notice '834: % assertions, 0 findings. wiring: both writers named in the sweep body; installed body hash %. fixture=%, run1_requested=%, run2_requested=%, run2_skipped=%, orphans %->% of % pending, detector_still_offers=% of % just-raised.',
+    v_checks, v_installed, v_fixture,
     coalesce(v_run1->>'requested', 'n/a'), coalesce(v_run2->>'requested', 'n/a'),
     coalesce(v_run2->>'skipped_existing', 'n/a'),
     v_orph_before, v_orph_after, v_pending_tasks,
