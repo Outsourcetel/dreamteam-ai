@@ -116,6 +116,16 @@ export interface DBHumanTask {
   decision_reason_code?: DecisionReasonCode | null;
   decision_note?: string | null;
   decision_edit?: { before: unknown; after: unknown } | null;
+  /** Migration 836 — why the last attempt to DECIDE this was refused by the
+   *  server, with the task left OPEN. Distinct from decision_reason_code,
+   *  which is why a human decided the way they did: this is why the system
+   *  would not let the decision happen at all. Set when decide_human_task
+   *  could not carry out the decision's consequence (today: applying an
+   *  earned-trust promotion), cleared the moment a decision succeeds. NULL
+   *  means no attempt has been refused — never that none could be. */
+  refusal_reason?: string | null;
+  refused_at?: string | null;
+  refused_by?: string | null;
   /** Which employee raised it. Needed to offer a reroute (mig 504) — the
    *  destination list must exclude the current owner. Present since the
    *  column was added; the select is `*`, so it always arrives. */
@@ -873,6 +883,36 @@ export async function decideHumanTask(
     });
   }
 
+  // ── THE THIRD STATE (migration 836) ──────────────────────────────────────
+  // A row came back, so the two cases above did not fire — but the task was
+  // NOT closed. decide_human_task attempted the consequence BEFORE closing the
+  // task, the consequence refused, and rather than raising (which would have
+  // rolled back the record of the refusal along with everything else) it left
+  // the task open and wrote why onto the row.
+  //
+  // ⚠ TEST THE STATUS, NOT THE PRESENCE OF A ROW. Every check above this line
+  // asks "did I get a row?", and under the old contract that was the same
+  // question as "was it decided?". It is not any more, and treating it as if
+  // it were is precisely how batch-approving a trust promotion came to report
+  // "Approved N tasks" while promoting nobody.
+  //
+  // Returning early is not optional: every hook below this point is a
+  // CONSEQUENCE of the decision — invoice send, playbook resume, outbound
+  // delivery, gated-action execute. Running them for a task that is still
+  // pending would be the mirror image of the defect, doing the work without
+  // recording the decision.
+  const decidedRow = data as DBHumanTask;
+  if (decidedRow.status !== decision) {
+    return withOutcome(decidedRow, {
+      decided: false,
+      consequence,
+      delivered: false,
+      detail:
+        decidedRow.refusal_reason ??
+        `This could not be ${decision === 'approved' ? 'approved' : 'rejected'} and is still waiting. Nothing was changed or sent.`,
+    });
+  }
+
   if (
     decision === 'approved' &&
     task.related_table === 'renewal_invoices' &&
@@ -959,19 +999,39 @@ export async function decideHumanTask(
       // its own delivery_status (blocked/failed) and the UI can surface it.
     }
   }
-  // Hook #4 (additive, guarded — migration 025): if this task gates an
-  // earned-trust promotion, apply it server-side. The RPC re-verifies
-  // evidence is STILL eligible at apply time and blocks self-approval;
-  // a stale/self-approval rejection throws so the UI can explain it.
-  if (task.type === 'trust_promotion') {
-    try {
-      const { resolveTrustPromotion } = await import('./trustApi');
-      await resolveTrustPromotion(task.id, decision);
-    } catch (err) {
-      console.error('trust promotion hook:', err);
-      throw err;
-    }
-  }
+  // Hook #4 (migration 025) IS GONE, AND THAT IS THE FIX — migration 836.
+  //
+  // It used to call apply_trust_promotion from here. Two defects, one cause:
+  //
+  //   1. A HOOK IN THE BROWSER IS NOT A RULE. decide_human_task carried no
+  //      trust reference at all (checked, not assumed:
+  //      `pg_get_functiondef(oid) ~* 'trust'` was FALSE for it, for
+  //      decide_human_tasks and for preview_decide_human_tasks), so this hook
+  //      was the ONLY thing that ever promoted anyone. Every path that did
+  //      not run it — batch-approve via decide_human_tasks, withdrawal via
+  //      withdraw_human_task, the preview — closed the task as approved,
+  //      stranded trust_policies.pending_task_id, wrote no trust_promoted
+  //      audit event, moved current_level not at all, and reported success.
+  //
+  //   2. THE RETURN VALUE WAS DISCARDED. apply_trust_promotion signals
+  //      refusal in its PAYLOAD with an HTTP 200 —
+  //      {"applied": false, "reason": "no_pending_policy"} — so `await`ing it
+  //      proved only that the call was made. Hook #5 below already carries
+  //      this warning in full; hook #4 never got the same treatment, so even
+  //      the single-task path could close a task as approved, say "Approved.",
+  //      and promote nobody.
+  //
+  // Both are now structurally impossible rather than remembered. The
+  // promotion happens INSIDE decide_human_task, in the same transaction as
+  // the decision, and an in-payload refusal is raised there as
+  // `trust_promotion_not_applied: <reason>`. So a refusal takes the decision
+  // with it — the task stays pending, the audit row rolls back, and the
+  // `if (error) raise('decideHumanTask', error)` above is what the UI sees.
+  //
+  // ⚠ DO NOT RE-ADD A CLIENT-SIDE CALL HERE. It would be a second apply: the
+  // first one nulls pending_task_id, so the second returns
+  // {"applied": false, "reason": "no_pending_policy"} and any honest check of
+  // that payload would then throw on a promotion that had actually succeeded.
   // Hook #5 (additive, guarded — migration 032): if this task gates a
   // proposed knowledge revision, approve (apply + re-embed) or reject it
   // server-side. Approve creates a NEW knowledge_docs version (never a
