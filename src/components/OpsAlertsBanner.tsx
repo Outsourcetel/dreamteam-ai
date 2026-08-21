@@ -149,7 +149,7 @@ export default function OpsAlertsBanner() {
         </span>
       </div>
 
-      <ul className="divide-y divide-dt-border/30">
+      <ul className="divide-y divide-dt-border">
         {shown.map((a) => (
           <li key={a.id} className="flex items-start gap-3 px-4 py-3">
             <span
