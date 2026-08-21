@@ -26,7 +26,9 @@
 --              and the platform reads it through declared_trust_signals(uuid).
 --   SUBJECT    de_system_verifications.entity_ref -- what was checked. This is
 --              the unit of evidence and the anti-farming key.
---   PREDICATE  matched = true, over a NON-EMPTY expectation.
+--   PREDICATE  matched = true, over an expectation that actually compared
+--              at least one field against the record. NOT merely "non-empty"
+--              -- see FIX ROUND 1 below for why that was not enough.
 --
 -- A role can only declare a system_key it actually has: the same
 -- role_archetypes catalog already carries system_templates, and
@@ -79,7 +81,8 @@
 -- this one, because de_system_verifications has no origin column to apply it
 -- to. That is not a hole today: the only writer is verify_de_system, and its
 -- only caller anywhere in this repository is the de-work production loop's
--- verify_system tool (grepped across supabase/functions and src, and no SQL
+-- verify_in_system tool -- offered at de-work/index.ts:2018 and dispatched at
+-- :972 (grepped across supabase/functions and src, and no SQL
 -- routine references it). It becomes a hole the day an exam or simulation path
 -- is given that tool, and the fix then is an origin column on that table --
 -- not a filter invented here over a column that does not exist.
@@ -90,6 +93,50 @@
 -- decided" beside a non-zero rate. That was already true of 819's corroborated
 -- refusals; the spec's answer is to correct the LABEL where it surfaces to a
 -- customer, which is Task 6's surface, not a second redefinition here.
+--
+-- ── FIX ROUND 1 (coordinator review: 1 Critical, 1 Minor) ────────────────────
+--
+-- CRITICAL -- A VERIFICATION THAT VERIFIED NOTHING WAS COUNTING AS EVIDENCE.
+-- The first version of this migration guarded the vacuous-expectation case
+-- with "expectation <> '{}'", which closes {} and NOT {"anything": null}.
+-- Both leave verify_de_system's matched = true having compared nothing, for
+-- the reason set out beside the counting query below (mig 221:128-135:
+-- NULL IS DISTINCT FROM NULL is false, so no difference is recorded). Verified
+-- live against production by replaying that loop rather than reasoning about
+-- it: {"reference": null} -> matched = true, old guards both pass, row would
+-- have been COUNTED. The guard is now "at least one non-null expectation
+-- value", which forces a genuine field comparison. PROBE D3b (all-null values
+-- must NOT count) and PROBE D3c (a MIXED expectation with one real field MUST
+-- still count) prove it in both directions, so the fix cannot be over-broad.
+--
+-- ⚠ MY OWN ANALYSIS WAS WRONG ABOUT THIS AND THE CORRECTION IS THE POINT.
+-- The first report filed this under 819's acknowledged limit -- "it does not
+-- judge whether the employee's REASONING was sound" -- and called it a product
+-- question. It is not. 819's limit is about a check that really happened and
+-- may have been the wrong check to run. This was a check that never happened
+-- at all: the same vacuous-match case guard 2 already existed to stop, spelled
+-- differently. It needed no product decision, only a correct predicate.
+--
+-- WHY IT MATTERED MORE THAN THE RAW COUNT SUGGESTS, MEASURED HERE RATHER THAN
+-- ASSUMED: 25 of the 58 live policies are active, below their ceiling, and
+-- already meet EVERY criterion except the two human ones -- the human counter
+-- is their only remaining bar. (The review reported 23 for this; measuring it
+-- directly, with "every criterion whose key is neither human_samples nor
+-- human_approval_rate is met", gives 25. The discrepancy is in the definition,
+-- not the direction, and 25 is the worse number.) And corroborated evidence
+-- lands in BOTH the numerator and the denominator of human_approval_rate, so
+-- with zero decided reviews that rate computes to exactly 1.0. A handful of
+-- vacuous verifications would therefore have satisfied both human arms at once
+-- rather than only the sample count.
+--
+-- MINOR -- the tool named in the exam-vs-production disclosure above was
+-- written with the "_in_" missing. The tool is verify_in_system, offered at
+-- de-work/index.ts:2018 and dispatched at :972; the misspelling had ZERO hits
+-- repo-wide. That disclosure instructs its reader to grep, so a wrong name
+-- would have read back as "this tool no longer exists, the disclosure is
+-- stale". Corrected there and beside the counting query. (Deliberately not
+-- writing the wrong spelling out here either -- a future grep for it should
+-- keep returning nothing, including from this file.)
 --
 -- ── PRECONDITION ─────────────────────────────────────────────────────────────
 -- Requires migration 831 (declared_trust_signals). Migrations replay in
@@ -310,7 +357,8 @@ begin
   --              lists in role_archetypes.trust_signals -> <action_category>,
   --              read through public.declared_trust_signals (mig 831)
   --   subject    de_system_verifications.entity_ref — the anti-farming key
-  --   predicate  matched = true, over a NON-EMPTY expectation
+  --   predicate  matched = true, over an expectation that ACTUALLY COMPARED
+  --              at least one field (guard 2 below -- not merely non-empty)
   --
   -- ── WHY THIS TABLE AND NOT THE EMPLOYEE'S OWN WORD ────────────────────────
   -- 819's first load-bearing guard is "it cannot be self-asserted". The
@@ -327,11 +375,48 @@ begin
   --    declaration for this action category. A role that declares nothing
   --    earns nothing here — which is every one of the 15 active roles on the
   --    day this shipped, and is why applying this changes no eligibility.
-  -- 2. A VACUOUS CHECK EARNS NOTHING. verify_de_system computes "matched" by
-  --    looping over jsonb_object_keys(p_expectation), so an EMPTY expectation
-  --    matches vacuously — and empty is reachable: de-work passes
-  --    "input.expectation ?? {}" straight through from the model. Verifying
-  --    nothing at all is not evidence of anything, so "{}" is excluded.
+  -- 2. A CHECK THAT COMPARED NOTHING EARNS NOTHING -- and "nothing" has TWO
+  --    spellings, which is the whole of fix round 1. verify_de_system
+  --    (mig 221:128-135) walks jsonb_object_keys(p_expectation) and records a
+  --    difference only when "p_expectation->>k IS DISTINCT FROM v_actual->>k".
+  --      {}                    the loop never runs at all
+  --      {"reference": null}   ->> on a JSON null yields SQL NULL, and a field
+  --                            the record does not carry is SQL NULL too.
+  --                            NULL IS DISTINCT FROM NULL is FALSE, so no
+  --                            difference is ever recorded.
+  --    BOTH leave v_matched = true having compared nothing. Reproduced live
+  --    against production by replaying that exact loop before writing this,
+  --    not reasoned about: {"reference": null} yields matched = true, and the
+  --    first version of this migration COUNTED it.
+  --    Both are reachable, not theoretical -- de-work declares the tool's
+  --    expectation parameter as { type: "object" } with NO property schema
+  --    (de-work/index.ts:2021) and passes it straight through (:975), and
+  --    entity_ref is model-controlled whenever it is a uuid (:105-106). So an
+  --    employee could name N real records and bank N corroborated successes
+  --    having verified none of them. The guard therefore requires at least one
+  --    NON-NULL expectation value -- one field genuinely put to the system of
+  --    record -- rather than merely a non-empty object.
+  --
+  --    ⚠ THIS DECLINES TO COUNT DISHONEST DATA; IT DOES NOT STOP IT BEING
+  --    WRITTEN. The root defect is upstream: verify_de_system records
+  --    matched = true for an expectation that compared nothing, so such rows
+  --    still land in de_system_verifications and still read as "the DE came
+  --    back and checked its own work" on any surface that shows them. Fixing
+  --    that is a change to verify_de_system, deliberately NOT in this
+  --    migration's scope and handled separately. Whoever reads this next
+  --    should know the DATA is still wrong; only the COUNTING is now honest.
+  --
+  --    ⚠ AND THE WRITER IS NOT THE ONLY DOOR. service_role holds direct
+  --    DELETE/INSERT/TRUNCATE/UPDATE on de_system_verifications
+  --    (supabase/baseline/full_schema.sql:57668, confirmed live against
+  --    information_schema.role_table_grants). Nothing writes the table that
+  --    way today, but any edge function that ever does bypasses
+  --    verify_de_system's comparison entirely and can set matched = true with
+  --    no read of the system of record at all. That is also why the shape
+  --    check sits INSIDE the guard below rather than beside it: a directly
+  --    written non-object expectation is writable, jsonb_each raises on one,
+  --    and sibling WHERE quals have no guaranteed evaluation order -- a guard
+  --    that can be evaluated second is not a guard.
   -- 3. DISTINCT SUBJECT, NOT ROWS — 819's guard, applied identically. Checking
   --    one invoice seventeen times is one demonstration, not seventeen.
   --    Deliberately keyed on entity_ref ALONE rather than
@@ -345,7 +430,8 @@ begin
   -- function via evidence_is_production(...). It is NOT applied here, because
   -- de_system_verifications has no origin column to apply it to. That is not
   -- a hole TODAY: the sole writer is verify_de_system, whose sole caller in
-  -- the whole repository is the de-work production loop's verify_system tool
+  -- the whole repository is the de-work production loop's verify_in_system tool (offered at
+  -- de-work/index.ts:2018, dispatched at :972)
   -- (grepped across supabase/functions and src, and no SQL routine calls it).
   -- It BECOMES a hole the day an exam or simulation path is given that tool,
   -- and the fix then is an origin column on the table, not a filter invented
@@ -362,8 +448,11 @@ begin
    where v.tenant_id = p_policy.tenant_id
      and v.created_at >= v_since
      and v.matched
-     and jsonb_typeof(v.expectation) = 'object'
-     and v.expectation <> '{}'::jsonb
+     and exists (select 1
+                   from jsonb_each(case when jsonb_typeof(v.expectation) = 'object'
+                                        then v.expectation
+                                        else '{}'::jsonb end) e
+                  where jsonb_typeof(e.value) <> 'null')
      and (p_policy.de_id is null or v.de_id = p_policy.de_id)
      and exists (select 1 from jsonb_array_elements_text(v_signals) s(sig)
                   where s.sig = v.system_key);
@@ -505,6 +594,21 @@ declare
 
   v_ev              jsonb;
   v_before          bigint;
+  -- The count each probe expects AFTER its own insert. Arms that must NOT
+  -- count leave it alone; arms that must count raise it by one. Keeps every
+  -- expectation honest as arms are added, instead of each one hardcoding an
+  -- offset that goes stale the moment a probe is inserted above it.
+  v_expected        bigint;
+  -- ⛔ An arm that must NOT count may cascade harmlessly off an earlier
+  -- failure -- the first RED still names the real culprit. An arm that must
+  -- COUNT may not: measured against a running total it can pass by
+  -- COINCIDENCE, when an earlier broken arm has already inflated the count by
+  -- the same amount. Found exactly that way in fix round 1: inversion I4b
+  -- (demand EVERY expectation value be non-null) wrongly counted {} and
+  -- wrongly refused the mixed expectation, and the two errors cancelled, so
+  -- the must-count arm passed. Both must-count arms therefore measure their
+  -- OWN delta across their own insert, which no earlier drift can mask.
+  v_delta_before    bigint;
   v_after           bigint;
   v_samples_before  bigint;
   v_samples_after   bigint;
@@ -622,6 +726,8 @@ begin
         'PROBE C: a brand-new employee with no verifications at all scored %s corroborated success(es)', v_before));
     end if;
 
+    v_expected := v_before;
+
     -- ── PROBE C -- one verification of a DECLARED signal counts, exactly once.
     insert into public.de_system_verifications
       (tenant_id, de_id, system_key, entity_ref, expectation, actual, matched)
@@ -632,15 +738,17 @@ begin
     v_checks := v_checks + 1;
     select coalesce((public.trust_evidence_for(p)->>'corroborated_successes')::bigint, -1) into v_after
       from public.trust_policies p where p.id = v_pol_declaring;
-    if v_after <> v_before + 1 then
+    v_expected := v_expected + 1;
+    if v_after <> v_expected then
       v_bad := array_append(v_bad, format(
-        'PROBE C: corroborated_successes went %s -> %s after ONE matched verification of a declared signal, expected +1',
-        v_before, v_after));
+        'PROBE C: corroborated_successes went %s -> %s after ONE matched verification of a declared signal, expected %s',
+        v_before, v_after, v_expected));
     end if;
 
-    -- ── PROBE D -- five things that must NOT count. Asserted one at a time so
-    -- a failure names WHICH guard stopped working rather than "still 1".
-    -- Denominator: 5 comparisons, each against the count established above.
+    -- ── PROBE D -- six things that must NOT count, and one that MUST.
+    -- Asserted one at a time so a failure names WHICH guard stopped working
+    -- rather than "the number is wrong". Denominator: 7 comparisons, each
+    -- against the running expectation established above.
 
     -- D1: a signal the role did NOT declare. This is the arm that proves the
     -- declaration is actually read -- without it the platform would be
@@ -653,10 +761,10 @@ begin
     v_checks := v_checks + 1;
     select coalesce((public.trust_evidence_for(p)->>'corroborated_successes')::bigint, -1) into v_after
       from public.trust_policies p where p.id = v_pol_declaring;
-    if v_after <> v_before + 1 then
+    if v_after <> v_expected then
       v_bad := array_append(v_bad, format(
         'PROBE D1: a verification of a system_key the role never declared moved the count to %s (expected %s) -- the role archetype is not what decides this',
-        v_after, v_before + 1));
+        v_after, v_expected));
     end if;
 
     -- D2: the system of record DISAGREED. A check that failed is not a success.
@@ -668,10 +776,10 @@ begin
     v_checks := v_checks + 1;
     select coalesce((public.trust_evidence_for(p)->>'corroborated_successes')::bigint, -1) into v_after
       from public.trust_policies p where p.id = v_pol_declaring;
-    if v_after <> v_before + 1 then
+    if v_after <> v_expected then
       v_bad := array_append(v_bad, format(
         'PROBE D2: a verification with matched = false moved the count to %s (expected %s) -- a check the system of record failed is being counted as a success',
-        v_after, v_before + 1));
+        v_after, v_expected));
     end if;
 
     -- D3: an EMPTY expectation. verify_de_system loops over the expectation's
@@ -686,10 +794,58 @@ begin
     v_checks := v_checks + 1;
     select coalesce((public.trust_evidence_for(p)->>'corroborated_successes')::bigint, -1) into v_after
       from public.trust_policies p where p.id = v_pol_declaring;
-    if v_after <> v_before + 1 then
+    if v_after <> v_expected then
       v_bad := array_append(v_bad, format(
         'PROBE D3: a verification with an EMPTY expectation moved the count to %s (expected %s) -- checking nothing is being counted as evidence',
-        v_after, v_before + 1));
+        v_after, v_expected));
+    end if;
+
+    -- D3b: ⛔ THE FIX-ROUND-1 ARM, and the case the first version of this
+    -- migration got wrong. An expectation whose every value is a JSON null
+    -- compares NOTHING: verify_de_system reads p_expectation->>k as SQL NULL,
+    -- reads a field the record does not carry as SQL NULL too, and
+    -- NULL IS DISTINCT FROM NULL is FALSE -- so it records no difference and
+    -- leaves matched = true. Confirmed live by replaying that loop
+    -- (mig 221:128-135) before this arm was written, not reasoned about. The
+    -- row below carries matched = true precisely because that is what
+    -- verify_de_system WOULD have written for it; what this arm asks is
+    -- whether the COUNTER declines it. "expectation <> '{}'" did not.
+    insert into public.de_system_verifications
+      (tenant_id, de_id, system_key, entity_ref, expectation, actual, matched)
+    values
+      (v_tenant_id, v_de_declaring, v_sig_declared, 'zz_probe_832_entity_8',
+       '{"reference": null}'::jsonb, jsonb_build_object('status', 'settled'), true);
+    v_checks := v_checks + 1;
+    select coalesce((public.trust_evidence_for(p)->>'corroborated_successes')::bigint, -1) into v_after
+      from public.trust_policies p where p.id = v_pol_declaring;
+    if v_after <> v_expected then
+      v_bad := array_append(v_bad, format(
+        'PROBE D3b: a verification whose expectation compared NOTHING (every value a JSON null) moved the count to %s (expected %s) -- an employee could name real records and bank a corroborated success for each having checked none of them',
+        v_after, v_expected));
+    end if;
+
+    -- D3c: ⛔ THE CONTROL ON D3b, AND THE GUARD AGAINST OVER-CORRECTING. A
+    -- MIXED expectation -- one null value beside one real one -- DID put a
+    -- genuine field to the system of record, so it must STILL count. Without
+    -- this arm the fix could have demanded that every value be non-null and
+    -- quietly stopped counting honest work, which is the same defect facing
+    -- the other way.
+    select coalesce((public.trust_evidence_for(p)->>'corroborated_successes')::bigint, -1) into v_after
+      from public.trust_policies p where p.id = v_pol_declaring;
+    v_delta_before := v_after;
+    insert into public.de_system_verifications
+      (tenant_id, de_id, system_key, entity_ref, expectation, actual, matched)
+    values
+      (v_tenant_id, v_de_declaring, v_sig_declared, 'zz_probe_832_entity_9',
+       '{"reference": null, "status": "settled"}'::jsonb, jsonb_build_object('status', 'settled'), true);
+    v_checks := v_checks + 1;
+    select coalesce((public.trust_evidence_for(p)->>'corroborated_successes')::bigint, -1) into v_after
+      from public.trust_policies p where p.id = v_pol_declaring;
+    v_expected := v_expected + 1;
+    if (v_after - v_delta_before) <> 1 then
+      v_bad := array_append(v_bad, format(
+        'PROBE D3c: a MIXED expectation with one genuine field beside a null one changed the count by %s (%s -> %s), expected exactly +1 -- the vacuity guard is over-broad and is now refusing honest work',
+        v_after - v_delta_before, v_delta_before, v_after));
     end if;
 
     -- D4: the SAME subject checked again. 819's anti-farming guard, applied
@@ -702,10 +858,10 @@ begin
     v_checks := v_checks + 1;
     select coalesce((public.trust_evidence_for(p)->>'corroborated_successes')::bigint, -1) into v_after
       from public.trust_policies p where p.id = v_pol_declaring;
-    if v_after <> v_before + 1 then
+    if v_after <> v_expected then
       v_bad := array_append(v_bad, format(
         'PROBE D4: re-checking the SAME entity_ref moved the count to %s (expected %s) -- it is counting rows, so one subject checked repeatedly would buy a promotion',
-        v_after, v_before + 1));
+        v_after, v_expected));
     end if;
 
     -- D5: outside the evidence window. Same window as every other source in
@@ -719,15 +875,18 @@ begin
     v_checks := v_checks + 1;
     select coalesce((public.trust_evidence_for(p)->>'corroborated_successes')::bigint, -1) into v_after
       from public.trust_policies p where p.id = v_pol_declaring;
-    if v_after <> v_before + 1 then
+    if v_after <> v_expected then
       v_bad := array_append(v_bad, format(
         'PROBE D5: a verification from before the evidence window moved the count to %s (expected %s) -- old work is being counted as current evidence',
-        v_after, v_before + 1));
+        v_after, v_expected));
     end if;
 
     -- ── PROBE E -- ⛔ THE SECOND CONTROL ON PROBE D. If the counter simply
     -- stopped moving, every arm of D would pass for the wrong reason. A
     -- SECOND distinct declared subject must take it to +2.
+    select coalesce((public.trust_evidence_for(p)->>'corroborated_successes')::bigint, -1) into v_after
+      from public.trust_policies p where p.id = v_pol_declaring;
+    v_delta_before := v_after;
     insert into public.de_system_verifications
       (tenant_id, de_id, system_key, entity_ref, expectation, actual, matched)
     values
@@ -737,10 +896,11 @@ begin
     select public.trust_evidence_for(p) into v_ev
       from public.trust_policies p where p.id = v_pol_declaring;
     v_after := coalesce((v_ev->>'corroborated_successes')::bigint, -1);
-    if v_after <> v_before + 2 then
+    v_expected := v_expected + 1;
+    if (v_after - v_delta_before) <> 1 then
       v_bad := array_append(v_bad, format(
-        'PROBE E: CONTROL FAILED -- a SECOND distinct declared subject took the count to %s, expected %s. Every "must not count" arm in PROBE D above proves nothing if the counter has simply stopped moving',
-        v_after, v_before + 2));
+        'PROBE E: CONTROL FAILED -- a further distinct declared subject changed the count by %s (%s -> %s), expected exactly +1. Every "must not count" arm in PROBE D above proves nothing if the counter has simply stopped moving',
+        v_after - v_delta_before, v_delta_before, v_after));
     end if;
 
     -- ── PROBE E -- the fold. The payload number is visibility; the COUNTER is
@@ -805,10 +965,10 @@ begin
     v_checks := v_checks + 1;
     select coalesce((public.trust_evidence_for(p)->>'corroborated_successes')::bigint, -1) into v_after
       from public.trust_policies p where p.id = v_pol_declaring;
-    if v_after <> v_before + 2 then
+    if v_after <> v_expected then
       v_bad := array_append(v_bad, format(
         'PROBE F: another employee''s verification moved this policy''s count to %s (expected %s) -- one employee is being credited with another''s work',
-        v_after, v_before + 2));
+        v_after, v_expected));
     end if;
 
     -- ── cleanup. Verifications FIRST: de_system_verifications.de_id is
