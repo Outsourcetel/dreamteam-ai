@@ -20,7 +20,7 @@ const STATUS_META: Record<Status, { label: string; cls: string }> = {
   live: { label: 'Live', cls: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' },
   live_pending: { label: 'Live (pending activation)', cls: 'bg-emerald-500/10 text-emerald-300/90 border border-emerald-500/25' },
   designed: { label: 'Designed', cls: 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30' },
-  roadmap: { label: 'Roadmap', cls: 'bg-slate-600/40 text-dt-support border border-dt-border-strong' },
+  roadmap: { label: 'Roadmap', cls: 'bg-dt-neutral-soft text-dt-neutral border border-dt-border-strong' },
 }
 
 function Chip({ status }: { status: Status }) {
@@ -340,7 +340,7 @@ export default function TrustArchitecturePage() {
                     <th className={th}>Data touched</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-700/50">
+                <tbody className="divide-y divide-dt-border">
                   {SUBPROCESSORS.map(([name, role, data]) => (
                     <tr key={name}>
                       <td className={`${td} text-dt-body text-xs font-medium`}>{name}</td>

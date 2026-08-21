@@ -35,7 +35,7 @@ import type { Page } from '../../../types';
 //      one connector
 // ============================================================
 
-const selectCls = 'text-xs bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1.5 text-white focus:outline-none focus:border-indigo-500 disabled:opacity-40';
+const selectCls = 'text-xs bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body focus:outline-none focus:border-indigo-500 disabled:opacity-40';
 const PERMS: AccessPermission[] = ['search', 'read', 'ingest', 'write_back'];
 
 const fmtDate = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -169,7 +169,7 @@ export default function DataAccessPage({ setPage }: { setPage: (p: Page) => void
 
       {/* Permission ladder legend */}
       <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-6">
-        <h3 className="text-sm font-semibold text-white mb-2">How permissions work</h3>
+        <h3 className="text-sm font-semibold text-dt-title mb-2">How permissions work</h3>
         <p className="text-[11px] text-dt-muted mb-3">
           Permissions stack — each level includes everything below it. A system-specific setting beats the category default.
           No setting at all means <span className="text-dt-support">no access</span> — that is the default for everything.
@@ -177,7 +177,7 @@ export default function DataAccessPage({ setPage }: { setPage: (p: Page) => void
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
           {(['none', ...PERMS] as const).map((p) => (
             <div key={p} className="rounded-xl border border-dt-border bg-dt-inset p-3">
-              <p className="text-xs font-medium text-white mb-1">{PERMISSION_LABELS[p]}</p>
+              <p className="text-xs font-medium text-dt-body mb-1">{PERMISSION_LABELS[p]}</p>
               <p className="text-[10px] text-dt-muted leading-relaxed">{PERMISSION_EXPLAIN[p]}</p>
             </div>
           ))}
@@ -192,7 +192,7 @@ export default function DataAccessPage({ setPage }: { setPage: (p: Page) => void
         <>
           {/* 1. Category defaults */}
           <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-6">
-            <h3 className="text-sm font-semibold text-white mb-1">Category defaults</h3>
+            <h3 className="text-sm font-semibold text-dt-title mb-1">Category defaults</h3>
             <p className="text-[11px] text-dt-muted mb-3">
               "May read any helpdesk system" — applies to every connected system of that kind, current and future.
               Financial, billing and payroll categories are never granted by default.
@@ -215,7 +215,7 @@ export default function DataAccessPage({ setPage }: { setPage: (p: Page) => void
                   {subjects.map((s) => (
                     <tr key={`${s.kind}:${s.id}`} className="border-t border-dt-border">
                       <td className="px-3 py-2 whitespace-nowrap">
-                        <p className="text-xs font-medium text-white">{s.name}</p>
+                        <p className="text-xs font-medium text-dt-body">{s.name}</p>
                         <p className="text-[10px] text-dt-muted">{s.detail}</p>
                       </td>
                       {CATEGORIES.map((cat) => {
@@ -245,7 +245,7 @@ export default function DataAccessPage({ setPage }: { setPage: (p: Page) => void
 
           {/* 2. Per-system overrides */}
           <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-6">
-            <h3 className="text-sm font-semibold text-white mb-1">Connected systems — per-system overrides</h3>
+            <h3 className="text-sm font-semibold text-dt-title mb-1">Connected systems — per-system overrides</h3>
             <p className="text-[11px] text-dt-muted mb-3">
               A setting here beats the category default for that one system. "Inherit" falls back to the category default
               (or to no access when none is set).
@@ -270,7 +270,7 @@ export default function DataAccessPage({ setPage }: { setPage: (p: Page) => void
                     {subjects.map((s) => (
                       <tr key={`${s.kind}:${s.id}`} className="border-t border-dt-border">
                         <td className="px-3 py-2 whitespace-nowrap">
-                          <p className="text-xs font-medium text-white">{s.name}</p>
+                          <p className="text-xs font-medium text-dt-body">{s.name}</p>
                           <p className="text-[10px] text-dt-muted">{s.detail}</p>
                         </td>
                         {connectors.map((c) => {
@@ -310,7 +310,7 @@ export default function DataAccessPage({ setPage }: { setPage: (p: Page) => void
 
       {/* Recent denials */}
       <div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-5 mb-6">
-        <h3 className="text-sm font-semibold text-white mb-1">Recent denials</h3>
+        <h3 className="text-sm font-semibold text-dt-title mb-1">Recent denials</h3>
         <p className="text-[11px] text-dt-muted mb-3">
           Every refused request is recorded in the audit trail. If a digital employee keeps hitting a wall it genuinely needs,
           grant it above — if it doesn't need it, the wall is doing its job.
@@ -342,7 +342,7 @@ export default function DataAccessPage({ setPage }: { setPage: (p: Page) => void
       {/* MCP server allowlist — which MCP servers may be connected at all */}
       <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
         <div className="flex items-start justify-between gap-3 flex-wrap mb-1">
-          <h3 className="text-sm font-semibold text-white">MCP servers this workspace will talk to</h3>
+          <h3 className="text-sm font-semibold text-dt-title">MCP servers this workspace will talk to</h3>
           <span className={`text-[10px] px-2 py-0.5 rounded ${mcpAllow.length === 0 ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300'}`}>
             {mcpAllow.length === 0 ? 'Open — any public MCP server' : `Restricted — ${mcpAllow.length} server${mcpAllow.length === 1 ? '' : 's'}`}
           </span>
@@ -362,7 +362,7 @@ export default function DataAccessPage({ setPage }: { setPage: (p: Page) => void
           <div className="space-y-1.5 mb-3">
             {mcpAllow.map(e => (
               <div key={e.id} className="flex items-center gap-2 rounded-lg border border-dt-border bg-dt-inset px-3 py-2">
-                <span className="text-xs text-white font-mono">{e.host}</span>
+                <span className="text-xs text-dt-body font-mono">{e.host}</span>
                 {e.note && <span className="text-[11px] text-dt-muted truncate">{e.note}</span>}
                 <span className="text-[10px] text-dt-faint ml-auto whitespace-nowrap">{fmtDate(e.created_at)}</span>
               </div>
@@ -392,7 +392,7 @@ export default function DataAccessPage({ setPage }: { setPage: (p: Page) => void
 
       {/* Honest limits */}
       <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
-        <h3 className="text-sm font-semibold text-white mb-2">What this does and doesn't cover (honest)</h3>
+        <h3 className="text-sm font-semibold text-dt-title mb-2">What this does and doesn't cover (honest)</h3>
         <ul className="text-[11px] text-dt-muted space-y-1.5 list-disc pl-4">
           <li><span className="text-dt-support">Covered:</span> every machine-driven call to a connected system — the evidence pipeline, playbook connector steps, and Scribe write-backs — is checked server-side on every request.</li>
           <li><span className="text-dt-support">Humans are separate:</span> your own clicks in the connector wizard (test, health check, dry run) are governed by workspace roles, not this matrix.</li>

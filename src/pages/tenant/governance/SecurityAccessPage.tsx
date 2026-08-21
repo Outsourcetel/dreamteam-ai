@@ -30,7 +30,7 @@ const ROLE_COLORS: Record<TenantRole, string> = {
   tenant_manager: 'bg-blue-500/15 text-blue-300',
   knowledge_manager: 'bg-purple-500/15 text-purple-300',
   approver: 'bg-cyan-500/15 text-cyan-300',
-  tenant_user: 'bg-slate-600 text-dt-support',
+  tenant_user: 'bg-dt-neutral-soft text-dt-neutral',
   read_only: 'bg-dt-panel text-dt-support',
 }
 
@@ -53,7 +53,7 @@ const API_KEY_SCOPES = ['a2a.message', 'a2a.*'] as const
 function Toggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean) => void }) {
   return (
     <button onClick={() => onChange(!enabled)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? 'bg-indigo-600' : 'bg-slate-600'}`}>
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? 'bg-indigo-600' : 'bg-dt-border-strong'}`}>
       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-4' : 'translate-x-1'}`} />
     </button>
   )
@@ -129,13 +129,13 @@ function ManageSubAccountsPanel({ tenantId }: { tenantId: string }) {
             value={name}
             onChange={e => setName(e.target.value)}
             placeholder="Sub-account name (e.g. Acme Customer Portal)"
-            className="bg-dt-page border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+            className="bg-dt-page border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
           />
           <input
             value={industry}
             onChange={e => setIndustry(e.target.value)}
             placeholder="Industry (optional)"
-            className="bg-dt-page border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+            className="bg-dt-page border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
           />
         </div>
 
@@ -225,7 +225,7 @@ function ApiKeysPanel({ tenantId }: { tenantId: string }) {
             <th className={th}></th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-700/50">
+        <tbody className="divide-y divide-dt-border">
           {!loading && keys.length === 0 && (
             <tr><td colSpan={6} className={`${td} text-dt-muted text-xs text-center py-6`}>No API keys yet.</td></tr>
           )}
@@ -259,7 +259,7 @@ function ApiKeysPanel({ tenantId }: { tenantId: string }) {
                 value={newName}
                 onChange={e => setNewName(e.target.value)}
                 placeholder="e.g. Analytics export"
-                className="w-full bg-dt-page border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+                className="w-full bg-dt-page border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
               />
             </div>
             <div>
@@ -605,19 +605,19 @@ function SecurityActivityLogPanel({ canView }: { canView: boolean }) {
                   <th className="px-3 py-2 text-xs font-medium text-dt-muted">Details</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-700/50">
+              <tbody className="divide-y divide-dt-border">
                 {visible.map(row => {
                   const fields = securityChangedFields(row)
                   return (
                     <tr key={row.id} className="hover:bg-dt-panel transition-colors">
                       <td className="px-3 py-2.5 text-xs text-dt-support whitespace-nowrap">{new Date(row.created_at).toLocaleString()}</td>
                       <td className="px-3 py-2.5 text-xs whitespace-nowrap">
-                        <span className="text-white font-medium">{row.actor_name || 'Team member'}</span>
+                        <span className="text-dt-body font-medium">{row.actor_name || 'Team member'}</span>
                         {row.actor_role && <span className="text-dt-faint ml-1.5 capitalize">({row.actor_role.replace('tenant_', '')})</span>}
                       </td>
                       <td className="px-3 py-2.5 text-xs text-dt-support">{SECURITY_TABLE_LABELS[row.table_name] || row.table_name}</td>
                       <td className="px-3 py-2.5">
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${secOperationBadge[row.operation] || 'bg-slate-600 text-dt-support'}`}>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${secOperationBadge[row.operation] || 'bg-dt-neutral-soft text-dt-neutral'}`}>
                           {secOperationVerb[row.operation] || row.operation}
                         </span>
                       </td>
@@ -729,7 +729,7 @@ export default function SecurityAccessPage() {
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-700/50">
+              <tbody className="divide-y divide-dt-border">
                 {PERMISSION_AREAS.map(area => (
                   <tr key={area} className="hover:bg-dt-panel transition-colors">
                     <td className={`${td} text-dt-body text-xs`}>{area}</td>
@@ -769,7 +769,7 @@ export default function SecurityAccessPage() {
                 <th className={th}>Last active</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-700/50">
+            <tbody className="divide-y divide-dt-border">
               {!membersLoading && members.length === 0 && (
                 <tr><td colSpan={5} className={`${td} text-dt-muted text-xs text-center py-6`}>No team members yet.</td></tr>
               )}

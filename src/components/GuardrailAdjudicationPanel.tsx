@@ -111,7 +111,7 @@ export default function GuardrailAdjudicationPanel({ rules }: { rules: Guardrail
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6 mb-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
-        <h3 className="text-base font-semibold text-white">When a guardrail matches the wrong thing</h3>
+        <h3 className="text-base font-semibold text-dt-title">When a guardrail matches the wrong thing</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">can un-block content</span>
       </div>
       <p className="text-[11px] text-dt-muted mb-4 max-w-3xl">
@@ -136,11 +136,11 @@ export default function GuardrailAdjudicationPanel({ rules }: { rules: Guardrail
                 <div className="text-[10px] text-dt-muted">blocks released by AI</div>
               </div>
               <div className="rounded-xl border border-dt-border bg-dt-page p-3">
-                <div className="text-lg font-semibold text-white">{wouldHave}</div>
+                <div className="text-lg font-semibold text-dt-title">{wouldHave}</div>
                 <div className="text-[10px] text-dt-muted">would have been released (observing)</div>
               </div>
               <div className="rounded-xl border border-dt-border bg-dt-page p-3">
-                <div className="text-lg font-semibold text-white">{upheld}</div>
+                <div className="text-lg font-semibold text-dt-title">{upheld}</div>
                 <div className="text-[10px] text-dt-muted">block kept{notJudged>0?` · ${notJudged} not judged`:''}</div>
               </div>
             </div>
@@ -212,7 +212,7 @@ export default function GuardrailAdjudicationPanel({ rules }: { rules: Guardrail
 
           {error && <p className="text-xs text-rose-300 mb-3">{error}</p>}
 
-          <h4 className="text-xs font-semibold text-white mb-2">Every decision, kept</h4>
+          <h4 className="text-xs font-semibold text-dt-title mb-2">Every decision, kept</h4>
           {log.length === 0 ? (
             <p className="text-[11px] text-dt-muted">
               Nothing adjudicated yet. Decisions appear here the moment a rule above is switched on and one of

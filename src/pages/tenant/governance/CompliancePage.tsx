@@ -402,7 +402,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
               whose whole job is telling live rules from dead ones. */}
           {packs.length > 0 && (
             <div className="rounded-2xl border border-dt-border bg-dt-card p-6 mb-6">
-              <h3 className="text-base font-semibold text-white">Compliance packs</h3>
+              <h3 className="text-base font-semibold text-dt-title">Compliance packs</h3>
               <p className="text-xs text-dt-muted mt-0.5 mb-4">
                 A pack is a ready-made set of blocking rules for a regulated activity. Hiring certain
                 roles switches one on automatically, and it applies to <span className="text-dt-support">every</span> Digital
@@ -472,7 +472,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
           <div className="rounded-2xl border border-dt-border bg-dt-card p-6 mb-6">
             <div className="flex items-center justify-between mb-2 gap-3 flex-wrap">
               <div>
-                <h3 className="text-base font-semibold text-white">Guardrail rules</h3>
+                <h3 className="text-base font-semibold text-dt-title">Guardrail rules</h3>
                 <p className="text-xs text-dt-muted mt-0.5">Checked on every invoice generation and every DE answer. The same controls appear, pre-scoped, on each employee&apos;s Governance tab — this is the central view of all of them.</p>
               </div>
               <button onClick={() => setShowGovAI(v => !v)}
@@ -884,7 +884,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
         <Modal size="md" onClose={() => setConfirmDetach(null)} title={`Take the ${confirmDetach.name || confirmDetach.pack_key} pack off?`}>
           <div className="space-y-3">
             <p className="text-sm text-dt-body leading-relaxed">
-              These blocking rules stop applying to <span className="text-white">every Digital Employee</span> in
+              These blocking rules stop applying to <span className="text-dt-title">every Digital Employee</span> in
               this workspace:
             </p>
             {packRules(confirmDetach.pack_key).length === 0 ? (
@@ -1077,7 +1077,7 @@ function Toggle({ enabled, onChange, disabled }: { enabled: boolean; onChange: (
   return (
     <button
       onClick={() => !disabled && onChange(!enabled)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${disabled ? 'bg-dt-panel cursor-not-allowed' : enabled ? 'bg-indigo-600' : 'bg-slate-600'}`}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${disabled ? 'bg-dt-panel cursor-not-allowed' : enabled ? 'bg-indigo-600' : 'bg-dt-border-strong'}`}
       title={disabled ? 'Regulatory rule — cannot be disabled' : undefined}
     >
       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-4' : 'translate-x-1'}`} />

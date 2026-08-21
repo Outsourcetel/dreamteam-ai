@@ -39,7 +39,24 @@ const slateText = lines('text-slate-');
 // (2 status-chip fills, 1 health dot) closed for real. LiveKnowledgeLibrary's
 // bg-emerald-600/80 hover:bg-emerald-500 text-white pairing at line ~1031 is
 // left as-is (opaque hover sibling; the regex already treats it as covered).
-const BASELINE = { 'bare text-white': 438, 'bg-slate': 64, 'border-slate': 6, 'text-slate': 2 };
+//
+// RATCHETED 2026-08-21 (Task 5, Governance group). The seven
+// src/pages/tenant/governance/* pages plus GuardrailAdjudicationPanel (its
+// sole consumer is CompliancePage) moved onto dt-* tokens — 35 bare
+// text-white (headings/stat-values -> dt-title, table/list/input primary
+// text -> dt-body) and 11 bg-slate-600 (status/role/operation chip fills and
+// two toggle tracks) closed for real. GovernanceAIPanel and ScopedGuardrails
+// were left out on purpose: both are also reachable from
+// EmployeeFileSections.tsx (a different route-group), so they are shared,
+// not governance-only. Several bg-indigo-600/bg-emerald-600 solid-fill and
+// opaque-hover-sibling text-white pairings are left as-is (paints a solid
+// colored fill; the regex already treats them as covered) — CompliancePage,
+// SecurityAccessPage and GuardrailAdjudicationPanel each keep some. The two
+// border-slate-500 `focus:border-slate-500` hits in SecurityAccessPage are
+// the doc §7 sanctioned control-shade/focus-ring exception (identical to the
+// untouched instances in AISessionPanel, GovernanceAIPanel and
+// LivePlaybookBuilder) and are deliberately not converted here.
+const BASELINE = { 'bare text-white': 403, 'bg-slate': 53, 'border-slate': 6, 'text-slate': 2 };
 const NOW = {
   'bare text-white': bareWhite.length,
   'bg-slate': slateBg.length,

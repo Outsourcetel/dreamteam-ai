@@ -58,7 +58,7 @@ function actorAvatar(e: AuditEvent) {
   }
   if (e.actorType === 'human') {
     return (
-      <span className="w-6 h-6 rounded-full bg-slate-600 text-dt-support flex items-center justify-center text-[10px] flex-shrink-0">◉</span>
+      <span className="w-6 h-6 rounded-full bg-dt-neutral-soft text-dt-neutral flex items-center justify-center text-[10px] flex-shrink-0">◉</span>
     )
   }
   return (
@@ -196,7 +196,7 @@ function TeamActivityLogPanel({ days }: { days: number | null }) {
     <div className="bg-dt-card border border-dt-border rounded-xl overflow-hidden mb-6">
       <div className="px-5 py-4 border-b border-dt-border flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <p className="text-sm font-semibold text-white">Team activity log</p>
+          <p className="text-sm font-semibold text-dt-title">Team activity log</p>
           <p className="text-xs text-dt-muted mt-0.5">
             Every change your own team made across the platform — visible only to owners and admins.
           </p>
@@ -245,7 +245,7 @@ function TeamActivityLogPanel({ days }: { days: number | null }) {
                   <th className="px-3 py-2 text-xs font-medium text-dt-muted">Changed fields</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-700/50">
+              <tbody className="divide-y divide-dt-border">
                 {visibleRows.map((row) => {
                   const fields = activityChangedFields(row)
                   return (
@@ -258,14 +258,14 @@ function TeamActivityLogPanel({ days }: { days: number | null }) {
                         {new Date(row.created_at).toLocaleString()}
                       </td>
                       <td className="px-3 py-2.5 text-xs whitespace-nowrap">
-                        <span className="text-white font-medium">{row.actor_name || 'Team member'}</span>
+                        <span className="text-dt-body font-medium">{row.actor_name || 'Team member'}</span>
                         {row.actor_role && (
                           <span className="text-dt-faint ml-1.5 capitalize">({row.actor_role.replace('tenant_', '')})</span>
                         )}
                       </td>
                       <td className="px-3 py-2.5 text-xs text-dt-support font-mono">{row.table_name}</td>
                       <td className="px-3 py-2.5">
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${activityOperationBadge[row.operation] || 'bg-slate-600 text-dt-support'}`}>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${activityOperationBadge[row.operation] || 'bg-dt-neutral-soft text-dt-neutral'}`}>
                           {row.operation}
                         </span>
                       </td>
@@ -313,7 +313,7 @@ function TeamActivityLogPanel({ days }: { days: number | null }) {
                         </div>
                         <div>
                           <span className="text-dt-muted">after:</span>{' '}
-                          <span className="font-mono break-all text-white">
+                          <span className="font-mono break-all text-dt-body">
                             {detailRow.new_data ? JSON.stringify(detailRow.new_data[field]) : '—'}
                           </span>
                         </div>
@@ -465,7 +465,7 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
         <>
           <div className="grid grid-cols-4 gap-3 mb-6">
             {[
-              { label: `Events (${rangeLabel})`, value: String(events.length), color: 'text-white' },
+              { label: `Events (${rangeLabel})`, value: String(events.length), color: 'text-dt-title' },
               { label: 'Guardrail blocks', value: String(events.filter(e => e.category === 'guardrail_block').length), color: events.some(e => e.category === 'guardrail_block') ? 'text-red-300' : 'text-emerald-300' },
               { label: 'Approvals', value: String(events.filter(e => e.category === 'approval').length), color: 'text-blue-300' },
               {
@@ -541,14 +541,14 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
             </div>
           )}
 
-          <div className="rounded-2xl border border-dt-border bg-dt-card divide-y divide-slate-700/60">
+          <div className="rounded-2xl border border-dt-border bg-dt-card divide-y divide-dt-border">
             {filtered.map(e => (
               <div key={e.id} className="grid grid-cols-12 gap-3 px-5 py-3">
                 <div className="col-span-2 text-xs text-dt-muted pt-0.5 whitespace-nowrap">{new Date(e.created_at).toLocaleString()}</div>
                 <div className="col-span-2 flex items-start gap-2">
                   <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] flex-shrink-0 ${
                     e.actor_type === 'de' ? 'bg-indigo-500/20 text-indigo-300 font-bold'
-                    : e.actor_type === 'human' ? 'bg-slate-600 text-dt-support'
+                    : e.actor_type === 'human' ? 'bg-dt-neutral-soft text-dt-neutral'
                     : 'bg-dt-panel text-dt-muted'
                   }`}>{e.actor_type === 'de' ? e.actor.slice(0, 2).toUpperCase() : e.actor_type === 'human' ? '◉' : '⊟'}</span>
                   <div>

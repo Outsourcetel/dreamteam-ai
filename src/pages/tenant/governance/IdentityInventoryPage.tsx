@@ -36,7 +36,7 @@ function trustSentence(level: number | null, autonomyEnabled: boolean | null): s
 }
 
 function healthMeta(status: string, lastOkAt: string | null, lastErrorAt: string | null, failures: number) {
-  if (status === 'disconnected') return { label: 'Not connected', cls: 'bg-slate-600/40 text-dt-support border-dt-border-strong' };
+  if (status === 'disconnected') return { label: 'Not connected', cls: 'bg-dt-neutral-soft text-dt-neutral border-dt-border-strong' };
   if (failures > 0 || status === 'error') {
     return {
       label: `Failing${failures ? ` (${failures} in a row)` : ''}`,
@@ -44,7 +44,7 @@ function healthMeta(status: string, lastOkAt: string | null, lastErrorAt: string
     };
   }
   if (lastOkAt) return { label: `Healthy — last OK ${fmtDate(lastOkAt)}`, cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' };
-  return { label: 'Never checked', cls: 'bg-slate-600/40 text-dt-support border-dt-border-strong' };
+  return { label: 'Never checked', cls: 'bg-dt-neutral-soft text-dt-neutral border-dt-border-strong' };
 }
 
 function SubjectCard({ s }: { s: IdentitySubject }) {
@@ -58,7 +58,7 @@ function SubjectCard({ s }: { s: IdentitySubject }) {
         className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-dt-panel transition"
       >
         <div>
-          <p className="text-sm font-semibold text-white">{s.label}{s.label !== s.name ? <span className="text-dt-muted font-normal"> ({s.name})</span> : null}</p>
+          <p className="text-sm font-semibold text-dt-title">{s.label}{s.label !== s.name ? <span className="text-dt-muted font-normal"> ({s.name})</span> : null}</p>
           <p className="text-[11px] text-dt-muted mt-0.5">{kindLabel} · {s.role} · {s.status}</p>
         </div>
         <div className="flex items-center gap-3">
@@ -81,7 +81,7 @@ function SubjectCard({ s }: { s: IdentitySubject }) {
                   <div key={sys.connectorId} className="rounded-xl border border-dt-border bg-dt-inset p-4">
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div>
-                        <p className="text-xs font-medium text-white">
+                        <p className="text-xs font-medium text-dt-body">
                           {sys.connectorName}
                           <span className="text-dt-muted font-normal"> — {CATEGORY_SHORT[sys.category] ?? sys.category}</span>
                         </p>
@@ -95,7 +95,7 @@ function SubjectCard({ s }: { s: IdentitySubject }) {
                         <span className={`text-[10px] px-2 py-0.5 rounded-full border whitespace-nowrap ${
                           sys.hasCredential
                             ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'
-                            : 'bg-slate-600/40 text-dt-support border-dt-border-strong'
+                            : 'bg-dt-neutral-soft text-dt-neutral border-dt-border-strong'
                         }`}>
                           {sys.hasCredential ? 'Credential stored' : 'No stored credential'}
                         </span>
@@ -181,19 +181,19 @@ export default function IdentityInventoryPage() {
       {!loading && !error && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           <div className="rounded-xl border border-dt-border bg-dt-card p-4">
-            <p className="text-2xl font-bold text-white">{subjects.length}</p>
+            <p className="text-2xl font-bold text-dt-title">{subjects.length}</p>
             <p className="text-[11px] text-dt-muted mt-1">Identities (DEs + specialists)</p>
           </div>
           <div className="rounded-xl border border-dt-border bg-dt-card p-4">
-            <p className="text-2xl font-bold text-white">{totalGrants}</p>
+            <p className="text-2xl font-bold text-dt-title">{totalGrants}</p>
             <p className="text-[11px] text-dt-muted mt-1">Active grants across all systems</p>
           </div>
           <div className="rounded-xl border border-dt-border bg-dt-card p-4">
-            <p className="text-2xl font-bold text-white">{withCredentials}</p>
+            <p className="text-2xl font-bold text-dt-title">{withCredentials}</p>
             <p className="text-[11px] text-dt-muted mt-1">Systems with a stored credential</p>
           </div>
           <div className={`rounded-xl border p-4 ${failing > 0 ? 'border-rose-500/30 bg-rose-500/5' : 'border-dt-border bg-dt-card'}`}>
-            <p className={`text-2xl font-bold ${failing > 0 ? 'text-rose-300' : 'text-white'}`}>{failing}</p>
+            <p className={`text-2xl font-bold ${failing > 0 ? 'text-rose-300' : 'text-dt-title'}`}>{failing}</p>
             <p className="text-[11px] text-dt-muted mt-1">Currently failing connections</p>
           </div>
         </div>
@@ -211,7 +211,7 @@ export default function IdentityInventoryPage() {
 
       {!loading && !error && (
         <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mt-2">
-          <h3 className="text-sm font-semibold text-white mb-2">What this view covers (honest)</h3>
+          <h3 className="text-sm font-semibold text-dt-title mb-2">What this view covers (honest)</h3>
           <ul className="text-[11px] text-dt-muted space-y-1.5 list-disc pl-4">
             <li><span className="text-dt-support">Covered:</span> every grant in Data Access, cross-referenced with real connector health, earned trust level, and the actions each identity could invoke — {canWrite} grant{canWrite === 1 ? '' : 's'} currently include write-back.</li>
             <li><span className="text-dt-support">Never shown:</span> the actual credential/secret value — this page only reports whether one is stored (a boolean), matching how connector credentials are stored platform-wide (service-role-only, no client read path exists at all).</li>

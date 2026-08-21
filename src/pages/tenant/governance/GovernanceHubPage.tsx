@@ -65,7 +65,7 @@ const GovernanceHubPage = ({ tab, setPage }: { tab: Page; setPage: (p: Page) => 
   return (
   <div className="text-dt-body">
     <div className="px-6 pt-8">
-      <h1 className="text-2xl font-semibold text-white">Governance</h1>
+      <h1 className="text-2xl font-semibold text-dt-title">Governance</h1>
       <p className="text-sm text-dt-support mt-1 max-w-2xl">
         The control room — the rules your workforce can never cross, the record of everything it did, and who can reach what.
       </p>
@@ -73,7 +73,7 @@ const GovernanceHubPage = ({ tab, setPage }: { tab: Page; setPage: (p: Page) => 
         {tabs.map(t => (
           <button key={t.page} onClick={() => setPage(t.page)}
             className={`shrink-0 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === t.page ? 'border-indigo-500 text-white' : 'border-transparent text-dt-support hover:text-dt-body'}`}>
+              tab === t.page ? 'border-indigo-500 text-dt-title' : 'border-transparent text-dt-support hover:text-dt-body'}`}>
             {t.label}
           </button>
         ))}
