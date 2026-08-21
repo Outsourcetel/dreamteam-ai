@@ -40,7 +40,7 @@
 -- independently by the coordinator, below.
 --
 -- ============================================================================
--- ROUND 2 (this version) -- the coordinator's measurement, verbatim
+-- ROUND 2 -- the coordinator's measurement, verbatim
 -- ============================================================================
 --   request_trust_promotion(p_policy_id uuid)   membership guard: YES  system path: NO
 --   raise_trust_widening_proposals()             calls request_trust_promotion: NO
@@ -88,47 +88,21 @@
 -- forced a brand new SELECT that the original code never did. Two scalars
 -- move the code as it was; a row type would have improved it.
 --
--- open_trust_promotion_request is SECURITY INVOKER, not DEFINER, and this is
--- also a deliberate departure from the suggested shape, for a reason found
--- while wiring the grants: append_audit_event_internal, detect_trust_widening_
--- patterns and refresh_approval_briefs_internal are each granted individually
--- to `trust_pattern_proposer` (this project's `postgres` role is NOT
--- rolsuper, confirmed via pg_roles, so nothing here is free) -- but
--- refresh_approval_briefs_internal is granted to trust_pattern_proposer and
--- service_role and NOT to postgres. A DEFINER writer owned by postgres would
--- have silently traded "raise_trust_widening_proposals' advisory brief
--- refresh succeeds" for "it fails closed, swallowed by the existing `when
--- others then null` guard" -- legal, but not EXACT, and exactly the kind of
--- quiet regression this refactor must not introduce. INVOKER means the writer
--- runs as whichever already-privileged role called it (postgres, which
--- rolbypassrls, for request_eligible_promotions; trust_pattern_proposer,
--- unchanged, for raise_trust_widening_proposals -- both already do these
--- exact writes today, directly), so no new grant is required anywhere except
--- EXECUTE on the writer function itself, which IS explicitly granted below
--- to postgres, service_role and trust_pattern_proposer (confirmed members:
--- postgres is a member of trust_pattern_proposer via pg_auth_members).
+-- open_trust_promotion_request is SECURITY INVOKER, not DEFINER. The reason
+-- given for that HERE in round 2 was WRONG and is corrected in place in
+-- round 3 below rather than left standing -- a migration header is
+-- permanent. See ROUND 3 / IMPORTANT 2 for the correction; the short version
+-- is that `postgres` turns out to already hold every privilege either
+-- SECURITY DEFINER path needs, so INVOKER's justification is least-privilege
+-- for its own sake, not the avoided regression this paragraph used to claim.
 --
--- ── requested_by: sentinel, not NULL (coordinator instruction) ─────────────
--- raise_trust_widening_proposals previously stamped `requested_by = null`
--- with a comment reading "NULL requested_by = system-raised". That is true
--- today but fragile: apply_trust_promotion's self-approval guard is
---   if requested_by is not null and auth.uid() = requested_by then <deny>
--- and NULL makes the whole condition short-circuit false, so the guard is a
--- silent no-op for every machine-raised request -- ANY approver qualifies,
--- not because that was decided anywhere, but because NULL happens to defeat
--- an `is not null` check. Task 2 of this program ("approver who is not the
--- requester") exists to decide the real rule; this migration does not
--- change apply_trust_promotion and does not decide that rule. It only stops
--- deciding it BY ACCIDENT: open_trust_promotion_request coalesces a NULL
--- p_requested_by to the sentinel 00000000-0000-0000-0000-000000000000, a
--- uuid no real auth.users row will ever hold, so `auth.uid() = requested_by`
--- still can never be true -- TODAY's approval outcome is bit-for-bit
--- unchanged -- but the column now carries a positive, greppable marker
--- ("machine-raised") for Task 2 to key a real rule off, instead of an
--- absence that also means "old data" or "a bug". Both callers still pass
--- NULL at the call site (raise_trust_widening_proposals unchanged, in
--- keeping with "move the code, don't improve it"); the sentinel lives in
--- exactly one place, the writer, so it can't drift between callers.
+-- ── requested_by ─────────────────────────────────────────────────────────
+-- Round 2 stamped a sentinel (00000000-0000-0000-0000-000000000000) here
+-- instead of NULL. ROUND 3 / CRITICAL 1 below REVERTS that -- read that
+-- section, not this one, for the current, correct behaviour: both callers
+-- pass NULL, unchanged from before this task existed, and NULL is the
+-- system-raised marker `trust-proposer-boundary.mjs` and
+-- apply_trust_promotion both key on.
 --
 -- ── what request_eligible_promotions still does ─────────────────────────────
 -- Sweeps active trust_policies, computes trust_evidence_for per policy, skips
@@ -145,6 +119,102 @@
 -- `thin` is still counted only in the success branch, per the founder's
 -- ruling that a raised request carries its own thinness -- a request that
 -- was never opened carries nothing.
+--
+-- ============================================================================
+-- ROUND 3 (fix round 2, coordinator review: 1 Critical + 3 Important)
+-- ============================================================================
+-- CRITICAL 1 -- the requested_by sentinel from round 2 is REVERTED. Two
+-- independent, measured reasons, both the coordinator's:
+--   1. It achieved nothing. apply_trust_promotion's self-approval guard
+--      (`if requested_by is not null and auth.uid() = requested_by`) refuses
+--      exactly who NULL refused -- nobody -- because no real auth.uid() can
+--      ever equal the sentinel either. Zero behavioural difference, proven
+--      by reading apply_trust_promotion's actual guard text, not paraphrase.
+--   2. It blinded a live Ring-0 probe. scripts/trust-proposer-boundary.mjs's
+--      `open_proposals` CTE (feeding certify.mjs's trust-proposer-cannot-decide,
+--      arms 9/10/11) keys its ENTIRE evidence population on
+--      `trust_policies.requested_by IS NULL` as the system-raised marker.
+--      Measured, read-only, unaffected by this unapplied migration:
+--      1 open system proposal, 1 pending total, both before and after this
+--      fix (see task-1-report.md for the verbatim run of the probe's own
+--      SQL). With the sentinel, that population would have gone to 0 the
+--      moment this migration's sweep raised a real request, and the probe's
+--      own denominator arm rules 0 a legal state -- certify would stay green
+--      while comparing nothing.
+--
+-- open_trust_promotion_request no longer coalesces p_requested_by to
+-- anything -- `requested_by = p_requested_by` is a straight pass-through,
+-- and both current callers still pass literal `null`, exactly matching
+-- pre-828 behaviour. The parameter is KEPT rather than dropped: neither
+-- caller uses it today, but request_trust_promotion -- the human path,
+-- still not migrated to this writer -- is the plausible future third caller
+-- the coordinator named, and it would need to pass a real auth.uid() through
+-- unchanged. An unused-but-correctly-shaped parameter costs nothing today;
+-- dropping it now only to re-add it later is churn in exchange for nothing.
+--
+-- ⚠⚠ WHAT THIS REVERT RE-OPENS -- found while proving it, NOT asked for in
+-- this round, and NOT fixed here: reverting to NULL means a criteria-shaped
+-- proposal (this task's own eligibility sweep) now ALSO joins
+-- trust-proposer-boundary.mjs's open_proposals population, alongside the
+-- pattern-shaped ones it was built for. Proven with a synthetic row carrying
+-- this exact task's real trust_evidence_for() output, injected via the
+-- probe script's own `proposalExtra` test hook: arm 9
+-- (citation-below-floor) FIRES, because trust_evidence_for's evidence has no
+-- `pattern.decisions` array to cite -- it was never supposed to have one.
+-- That is a FALSE POSITIVE the moment this migration is applied and the
+-- sweep raises a real request against live data: certify would go red for a
+-- legitimate criteria-based proposal behaving exactly as designed. Fixing it
+-- means teaching trust-proposer-boundary.mjs's arm 9 about a second
+-- legitimate evidence shape, which is a change to Ring-0 governance tooling
+-- this task was not asked to make and should not make unilaterally. Full
+-- reproduction in task-1-report.md; this is an open question returned to the
+-- coordinator, not a decision this migration takes.
+--
+-- IMPORTANT 2 -- the round-2 paragraph above, claiming
+-- refresh_approval_briefs_internal is "granted to trust_pattern_proposer and
+-- service_role and NOT to postgres", was WRONG. That was read off
+-- information_schema.role_routine_grants, which lists only EXPLICIT grants --
+-- exactly the trap trust-proposer-boundary.mjs:27-29 names in its own
+-- comment: "a REVOKE is not a description of the resulting privileges -- ask
+-- the privilege question directly." Asked directly:
+--   has_function_privilege('postgres', 'public.refresh_approval_briefs_internal(uuid)', 'EXECUTE')
+--   -> true
+-- because postgres is a member of BOTH approval_brief_writer (the function's
+-- actual owner) and trust_pattern_proposer, both rolinherit=true (confirmed
+-- via pg_auth_members / pg_roles). So a DEFINER writer owned by postgres
+-- would NOT have broken that call after all -- postgres already carries
+-- everything either caller's write sequence needs, the same way each
+-- caller's own already-established role already does under INVOKER. The
+-- TRUE, remaining, and honestly narrower reason to keep INVOKER: least
+-- privilege for its own sake -- the writer has no functional NEED for an
+-- identity distinct from whichever already-privileged SECURITY DEFINER
+-- context calls it (postgres, rolbypassrls, for request_eligible_promotions;
+-- trust_pattern_proposer, unchanged, for raise_trust_widening_proposals), so
+-- it is not given one. A judgement call, not a forced one -- DEFINER would
+-- also work today, with every grant below unchanged.
+--
+-- IMPORTANT 3 -- compute_trust_proposal_brief's "no pattern -> a human
+-- requested it" else-branch was true until this task added a SECOND
+-- machine-raised evidence shape, and is false for it: the brief told an
+-- approver "Requested by a person from the employee file" for a proposal
+-- whose own audit trail says, in the same breath, "raised automatically ...
+-- no human requested it". Given a third case below, keyed on the evidence
+-- carrying `criteria` and no `pattern` -- a property of the jsonb already
+-- loaded, not a second lookup against human_tasks/audit_events. Same
+-- severity as the branch it splits from (v_caution, not v_attention, not
+-- routine) -- only the sentence about WHO asked was false; the amount of
+-- scrutiny recommended was not, and is not softened.
+--
+-- IMPORTANT 4 -- the sweep's WHERE clause gained
+-- `public.tenant_is_operational(tenant_id)`, mirroring
+-- detect_trust_widening_patterns exactly (same function, same shape of
+-- call, confirmed by reading its body). LATENT, not proven live: 0 of 6
+-- tenants are non-operational today (measured), so no data arm on this
+-- dataset can tell "filtered correctly" apart from "nothing to filter yet".
+-- The verify block's proof for this one is a MECHANISM check (the deployed
+-- function body still calls tenant_is_operational, comments stripped first,
+-- per this repo's own convention for exactly this situation) rather than a
+-- data one -- said so directly rather than implying more than that.
 -- ============================================================================
 
 begin;
@@ -168,19 +238,19 @@ set search_path = public
 as $function$
 declare
   v_task uuid := gen_random_uuid();
-  -- Never NULL for a machine-raised request -- see header. Both current
-  -- callers pass p_requested_by = null; this is the one place that becomes
-  -- the sentinel, so it cannot drift between them.
-  v_requested_by uuid := coalesce(p_requested_by, '00000000-0000-0000-0000-000000000000'::uuid);
 begin
   insert into human_tasks (id, tenant_id, type, title, detail, source, related_table, related_id, status)
   values (v_task, p_tenant_id, 'trust_promotion', p_title, p_detail,
           'system', 'trust_policies', p_policy_id, 'pending');
 
+  -- requested_by: a straight pass-through, NULL from both current callers.
+  -- See ROUND 3 / CRITICAL 1 above -- do not reintroduce a sentinel or any
+  -- other transform here; NULL is the system-raised marker
+  -- trust-proposer-boundary.mjs and apply_trust_promotion both key on.
   update trust_policies
      set pending_task_id = v_task,
          pending_evidence = p_evidence,
-         requested_by = v_requested_by,
+         requested_by = p_requested_by,
          requested_at = now()
    where id = p_policy_id;
 
@@ -228,6 +298,9 @@ begin
   for v_p in
     select * from public.trust_policies
     where status = 'active'
+      -- IMPORTANT 4 (round 3): mirrors detect_trust_widening_patterns's own
+      -- filter exactly. Latent on today's data -- see header.
+      and public.tenant_is_operational(tenant_id)
       and (p_tenant_id is null or tenant_id = p_tenant_id)
   loop
     v_examined := v_examined + 1;
@@ -355,6 +428,9 @@ begin
 
     -- mig 828: relocated to the shared writer (open_trust_promotion_request).
     -- Everything above this line, and the text passed into it, is unchanged.
+    -- The `null` here is requested_by -- unchanged since before this task
+    -- existed, and reverted to mean exactly that again after round 2's
+    -- sentinel detour (see header, CRITICAL 1).
     v_task := public.open_trust_promotion_request(
       r.tenant_id, r.policy_id, r.evidence, null,
       v_title, v_detail,
@@ -377,6 +453,100 @@ begin
                             'task_ids', to_jsonb(v_tasks));
 end $function$;
 
+-- ── compute_trust_proposal_brief: IMPORTANT 3 (round 3) ─────────────────────
+-- Adds a third branch so the approval card tells the truth about a
+-- criteria-shaped (trust_evidence_for) proposal instead of assuming "no
+-- pattern citation" means "a human requested it". Every other line is
+-- reproduced verbatim from pg_get_functiondef.
+create or replace function public.compute_trust_proposal_brief(p_task_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  t          record;
+  pol        trust_policies;
+  pat        jsonb;
+  n          integer;
+  ev         jsonb := '[]'::jsonb;
+  v_attention text[] := '{}';
+  v_caution   text[] := '{}';
+  v_risk     text;
+  v_headline text;
+begin
+  select ht.id, ht.tenant_id, ht.type, ht.status, tn.status as tenant_status
+    into t
+    from human_tasks ht
+    left join tenants tn on tn.id = ht.tenant_id
+   where ht.id = p_task_id;
+  if not found or t.type <> 'trust_promotion' then
+    return null;
+  end if;
+
+  select p.* into pol from trust_policies p where p.pending_task_id = p_task_id;
+
+  if pol.id is null then
+    ev := ev || to_jsonb('No trust policy is linked to this proposal — approving would decide the task and change NOTHING (the apply hook would no-op).'::text);
+    v_attention := array_append(v_attention, 'nothing is behind the button');
+  else
+    ev := ev || to_jsonb(format('Approving widens "%s" from level %s to level %s for one employee. Evidence is re-verified at apply time; automatic demotion can undo it.',
+            pol.action_category, pol.current_level,
+            least(pol.current_level + 1, least(3, coalesce(pol.max_level, 3))))::text);
+
+    pat := pol.pending_evidence->'pattern';
+    if pat is not null and jsonb_typeof(pat) = 'object' then
+      n := coalesce((pat->>'n_approved')::integer, 0);
+      ev := ev || to_jsonb(format('%s identical production approvals of "%s" in the last %s days — every one landed, zero rejections. Raised automatically by the pattern detector.',
+              n, pat->>'action_key', pat->>'window_days')::text);
+      if n < 3 then
+        ev := ev || to_jsonb('The citation names fewer decisions than the pattern floor (3) — this proposal should not exist in this state.'::text);
+        v_attention := array_append(v_attention, 'cites fewer decisions than the pattern floor');
+      end if;
+    elsif pol.pending_evidence ? 'criteria' then
+      -- mig 828 round 3 (IMPORTANT 3): the second machine-raised shape --
+      -- request_eligible_promotions, via trust_evidence_for. Keyed on the
+      -- evidence's own shape (criteria present, pattern absent), not a
+      -- second lookup, so this stays a pure function of what is already
+      -- loaded. Same severity as the branch it splits from -- only the
+      -- sentence about WHO asked was wrong.
+      ev := ev || to_jsonb('Raised automatically because this employee''s trust criteria are met — no human asked for it. The criteria are re-verified at apply time.'::text);
+      v_caution := array_append(v_caution, 'raised automatically from criteria — review before approving');
+    else
+      ev := ev || to_jsonb('Requested by a person from the employee file (no pattern citation) — the policy criteria were met at request time and are re-verified at apply.'::text);
+      v_caution := array_append(v_caution, 'human-requested; review the criteria evidence');
+    end if;
+  end if;
+
+  -- Workspace standing — same rule and same wording family as mig 705.
+  if t.tenant_status = 'suspended' or t.tenant_status is null then
+    ev := ev || to_jsonb(('This workspace is ' || coalesce(t.tenant_status, 'gone')
+          || ' — nothing will execute until it is reinstated.')::text);
+    v_attention := array_append(v_attention, 'workspace is ' || coalesce(t.tenant_status, 'gone'));
+  elsif t.tenant_status <> 'active' and t.tenant_status <> 'trial' then
+    ev := ev || to_jsonb(('Workspace status: ' || t.tenant_status || '.')::text);
+  end if;
+
+  if array_length(v_attention, 1) is not null then
+    v_risk := 'attention';
+    v_headline := 'Needs attention — ' || array_to_string(v_attention, '; ') || '.';
+  elsif array_length(v_caution, 1) is not null then
+    v_risk := 'caution';
+    v_headline := 'Worth a look — ' || array_to_string(v_caution, '; ') || '.';
+  else
+    v_risk := 'routine';
+    v_headline := format('Looks routine — %s identical landed approvals earned this; approving widens one dial, and demotion can undo it.', coalesce(n, 0));
+  end if;
+
+  return jsonb_build_object(
+    'risk', v_risk,
+    'headline', v_headline,
+    'evidence', ev,
+    'category', 'trust_promotion',
+    'amount_cents', null
+  );
+end $function$;
+
 -- ── verification ────────────────────────────────────────────────────────
 do $verify$
 declare
@@ -389,11 +559,22 @@ declare
   v_examined_expected  int;
   v_target_ids         uuid[];
   v_linked             int;
-  v_tasks_before        bigint;
-  v_tasks_after         bigint;
+  v_tasks_before       bigint;
+  v_tasks_after        bigint;
+  v_open_requests      int;
+  v_sentinel_count     int;
+  v_criteria_brief     jsonb;
+  v_pattern_task_id    uuid;
+  v_pattern_brief      jsonb;
+  v_src                text;
+  v_suspended_tenants  int;
 begin
+  -- IMPORTANT 4: every expected-value query below mirrors the sweep's own
+  -- tenant_is_operational filter, so the probes stay a correct description
+  -- of the function's real behaviour rather than one that only happens to
+  -- match today because nothing is suspended.
   select count(*) into v_examined_expected
-  from public.trust_policies where status = 'active';
+  from public.trust_policies where status = 'active' and public.tenant_is_operational(tenant_id);
 
   -- PROBEs 1/3's denominator: an eligible policy with no open task, captured
   -- BEFORE the sweep runs (so PROBE 3 below can prove causation, not just
@@ -403,18 +584,20 @@ begin
     into v_target_ids, v_eligible_before
   from public.trust_policies p
   where (public.trust_evidence_for(p)->>'eligible')::boolean
-    and p.pending_task_id is null;
+    and p.pending_task_id is null
+    and public.tenant_is_operational(p.tenant_id);
 
   select count(*) into v_skip_expected
   from public.trust_policies p
   where (public.trust_evidence_for(p)->>'eligible')::boolean
-    and p.pending_task_id is not null;
+    and p.pending_task_id is not null
+    and public.tenant_is_operational(p.tenant_id);
 
   select count(*) into v_tasks_before
   from public.human_tasks where type = 'trust_promotion';
 
   ----------------------------------------------------------------------
-  -- PROBE 1 -- every active policy is examined, exactly once.
+  -- PROBE 1 -- every active, operational-tenant policy is examined, once.
   ----------------------------------------------------------------------
   v_res := public.request_eligible_promotions(null);
 
@@ -437,10 +620,10 @@ begin
   ----------------------------------------------------------------------
   -- PROBE 3 -- IT RAISES ONE. Denominator stated: with v_eligible_before
   -- eligible-without-a-task policies today (measured: 1), expect exactly
-  -- that many requested, zero failed, and -- the part round 1 could not
-  -- get past -- a REAL human_tasks row for each, that did not exist before,
-  -- linked back from trust_policies.pending_task_id. Vacuously fine on an
-  -- empty database: 0 = 0 and an empty array joins to nothing.
+  -- that many requested, zero failed, and a REAL human_tasks row for each,
+  -- that did not exist before, linked back from
+  -- trust_policies.pending_task_id. Vacuously fine on an empty database:
+  -- 0 = 0 and an empty array joins to nothing.
   ----------------------------------------------------------------------
   if v_eligible_before = 0 then
     raise notice '828 PROBE 3: denominator is 0 -- the requested/linkage comparisons below are vacuous on this dataset.';
@@ -503,14 +686,94 @@ begin
   end if;
 
   ----------------------------------------------------------------------
+  -- PROBE 5 -- CRITICAL 1 (round 3): no row either writer can produce
+  -- carries the sentinel round 2 briefly stamped. Denominator: how many
+  -- trust_policies rows carry an open request at all right now
+  -- (pending_task_id is not null) -- the population that COULD carry a
+  -- wrong value if the coalesce-to-sentinel ever came back. Vacuously fine
+  -- (0 open requests => 0 with the sentinel) on an empty database.
+  ----------------------------------------------------------------------
+  select count(*) filter (where pending_task_id is not null),
+         count(*) filter (where requested_by = '00000000-0000-0000-0000-000000000000'::uuid)
+    into v_open_requests, v_sentinel_count
+    from public.trust_policies;
+
+  v_checks := v_checks + 1;
+  if v_sentinel_count <> 0 then
+    v_bad := array_append(v_bad, format(
+      '%s of %s open-request trust_policies row(s) carry the sentinel requested_by -- the CRITICAL 1 revert did not take',
+      v_sentinel_count, v_open_requests));
+  end if;
+
+  ----------------------------------------------------------------------
+  -- PROBE 6 -- IMPORTANT 3 (round 3): the approval card tells the truth
+  -- about who asked, for BOTH evidence shapes -- a one-sided check (only
+  -- the new branch, or only the old one) would not prove the split is
+  -- real. Uses two REAL pending proposals: the one request_eligible_
+  -- promotions just raised above (criteria-shaped) and whatever
+  -- pattern-shaped proposal already exists in production, if any.
+  ----------------------------------------------------------------------
+  select public.compute_trust_proposal_brief(pending_task_id)
+    into v_criteria_brief
+    from public.trust_policies where id = 'a9574721-cd41-4adb-a0f8-7836852091c7';
+
+  v_checks := v_checks + 1;
+  if v_criteria_brief is null
+     or (v_criteria_brief->'evidence')::text ilike '%no pattern citation%'
+     or (v_criteria_brief->'evidence')::text not ilike '%no human asked%' then
+    v_bad := array_append(v_bad, format(
+      'criteria-shaped brief still reads human-requested, or is null: %s', v_criteria_brief));
+  end if;
+
+  select ht.id into v_pattern_task_id
+    from public.trust_policies tp
+    join public.human_tasks ht on ht.id = tp.pending_task_id
+   where ht.type = 'trust_promotion' and ht.status = 'pending'
+     and tp.pending_evidence ? 'pattern'
+   limit 1;
+
+  if v_pattern_task_id is null then
+    raise notice '828 PROBE 6b: no pattern-shaped pending proposal exists right now -- the pattern half of the split is unexercised on this dataset.';
+  else
+    select public.compute_trust_proposal_brief(v_pattern_task_id) into v_pattern_brief;
+    v_checks := v_checks + 1;
+    if v_pattern_brief is null
+       or (v_pattern_brief->'evidence')::text not ilike '%identical production approvals%' then
+      v_bad := array_append(v_bad, format(
+        'pattern-shaped brief [task %s] lost its pattern sentence: %s', v_pattern_task_id, v_pattern_brief));
+    end if;
+  end if;
+
+  ----------------------------------------------------------------------
+  -- PROBE 7 -- IMPORTANT 4 (round 3): the dormancy filter is a MECHANISM
+  -- check, not a data one -- 0 of 6 tenants are suspended today (measured
+  -- below), so no data arm could distinguish "filtered correctly" from
+  -- "filter absent, nothing to filter yet" on this dataset. Comments
+  -- stripped before matching source, per this repo's own convention.
+  ----------------------------------------------------------------------
+  select regexp_replace(prosrc, '--[^' || chr(10) || ']*', '', 'g') into v_src
+    from pg_proc where proname = 'request_eligible_promotions' and pronamespace = 'public'::regnamespace;
+
+  v_checks := v_checks + 1;
+  if v_src !~ 'tenant_is_operational' then
+    v_bad := array_append(v_bad, 'request_eligible_promotions no longer calls tenant_is_operational -- the dormancy filter is missing');
+  end if;
+
+  select count(*) into v_suspended_tenants from public.tenants where status = 'suspended';
+  raise notice '828 PROBE 7: % of % tenant(s) suspended -- the dormancy filter''s DATA effect is %.',
+    v_suspended_tenants, (select count(*) from public.tenants),
+    case when v_suspended_tenants = 0 then 'UNEXERCISED on this dataset (mechanism-only proof above)' else 'live' end;
+
+  ----------------------------------------------------------------------
   if array_length(v_bad, 1) > 0 then
     raise exception E'828 VERIFICATION FAILED (% assertions):\n  %',
       v_checks, array_to_string(v_bad, E'\n  ');
   end if;
 
-  raise notice '828: % assertions, 0 findings. examined=%, requested=%, skipped_existing=%, thin=%, failed=%, linked=%/%, widening_examined=%.',
+  raise notice '828: % assertions, 0 findings. examined=%, requested=%, skipped_existing=%, thin=%, failed=%, linked=%/%, widening_examined=%, sentinel_count=%/%.',
     v_checks, v_res->>'examined', v_res->>'requested', v_res->>'skipped_existing', v_res->>'thin',
-    v_res->>'failed', v_linked, coalesce(array_length(v_target_ids, 1), 0), v_widen_res->>'examined';
+    v_res->>'failed', v_linked, coalesce(array_length(v_target_ids, 1), 0), v_widen_res->>'examined',
+    v_sentinel_count, v_open_requests;
 end;
 $verify$;
 
