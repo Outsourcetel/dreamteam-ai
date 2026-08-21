@@ -25,6 +25,8 @@ import { listDigitalEmployees, createDigitalEmployee } from '../../lib/digitalEm
 import type { DigitalEmployee } from '../../lib/digitalEmployeesApi';
 import { listDeHealth, DE_HEALTH_LABELS } from '../../lib/deHealthApi';
 import { listTrustReadiness } from '../../lib/trustApi';
+import { listWorkforceBlockers } from '../../lib/customerApi';
+import type { WorkforceBlocker } from '../../lib/customerApi';
 import type { TrustReadinessRow } from '../../lib/trustApi';
 import type { DEHealth } from '../../lib/deHealthApi';
 import { listAuditEvents } from '../../lib/guardrailApi';
@@ -463,6 +465,76 @@ function TeamsPanel() {
   );
 }
 
+// ── What is actually blocking the workforce (mig 826) ─────────────────────
+// 47 objectives and 129 work items are held by about a dozen causes. The queue
+// shows them as hundreds of rows, because one cause spans many escalations and
+// sometimes many employees — "ledger reconciliation sweep" is ONE problem
+// holding 19 of them.
+function WorkforceBlockersPanel() {
+  const [rows, setRows] = useState<WorkforceBlocker[] | null>(null);
+  useEffect(() => {
+    // Best-effort, like the roster's other overlays: a workspace without mig
+    // 826 loses this panel, not its page.
+    void listWorkforceBlockers().then(setRows).catch(() => setRows([]));
+  }, []);
+
+  if (rows === null || rows.length === 0) return null;
+
+  const frozen = rows.reduce((n, r) => n + Number(r.work_items_frozen || 0), 0);
+  const objectives = rows.reduce((n, r) => n + Number(r.objectives_blocked || 0), 0);
+  const unscoped = rows.find(r => !r.scoped);
+  const top = rows.filter(r => r.scoped).slice(0, 6);
+
+  return (
+    <PanelCard title="What is blocking your workforce" className="mt-6">
+      <div className="px-5 pb-5 pt-2 space-y-3">
+        <p className="text-sm text-dt-body">
+          {objectives} {objectives === 1 ? 'objective' : 'objectives'} and {frozen} steps of work
+          are held by {rows.filter(r => r.scoped).length}{' '}
+          {rows.filter(r => r.scoped).length === 1 ? 'cause' : 'causes'}.
+        </p>
+
+        <ul className="space-y-2">
+          {top.map(r => (
+            <li key={r.cause} className="rounded-xl border border-dt-border bg-dt-page p-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm text-dt-title">{r.cause}</span>
+                {r.corroborated && (
+                  // The platform confirmed this one itself — no one needs to
+                  // go and check whether the employee was right.
+                  <span className="text-xs text-dt-support">confirmed by the system</span>
+                )}
+              </div>
+              <div className="mt-1 text-xs text-dt-muted">
+                {r.work_items_frozen} steps frozen · {r.objectives_blocked}{' '}
+                {r.objectives_blocked === 1 ? 'objective' : 'objectives'} · {r.escalations}{' '}
+                {r.escalations === 1 ? 'escalation' : 'escalations'}
+                {r.employees > 1 && ` · ${r.employees} employees`}
+                {r.oldest_days > 0 && ` · oldest ${r.oldest_days}d`}
+              </div>
+              {r.classes && r.classes.length > 0 && (
+                <div className="mt-1 text-xs text-dt-faint">
+                  {r.classes.join(' · ').replace(/_/g, ' ')}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+
+        {/* ⚠ Shown, not hidden. More than half of the escalations recorded no
+            cause at all; a panel that quietly grouped only the rest would be
+            tidier and wrong. */}
+        {unscoped && (
+          <p className="text-xs text-dt-faint">
+            {unscoped.escalations} escalations recorded no cause and cannot be grouped here —
+            they are still in the queue.
+          </p>
+        )}
+      </div>
+    </PanelCard>
+  );
+}
+
 // ── How far the workforce is from earning more (mig 804) ──────────────────
 // Every trust policy in production sits at level 0 and always has. Not
 // because the ladder is broken — every piece of it works — but because 86 of
@@ -549,6 +621,7 @@ export default function LiveWorkforceDEs({ setPage }: { setPage: (p: Page) => vo
           exists. */}
       <div className="max-w-dt-content">
         <RosterPanel onSelect={de => openFile(de.id)} setPage={setPage} />
+        <WorkforceBlockersPanel />
         <TrustReadinessPanel />
         <TeamsPanel />
       </div>
