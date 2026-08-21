@@ -215,6 +215,41 @@
 -- function body still calls tenant_is_operational, comments stripped first,
 -- per this repo's own convention for exactly this situation) rather than a
 -- data one -- said so directly rather than implying more than that.
+--
+-- ============================================================================
+-- ROUND 4 (fix round 3, coordinator review: 1 hard blocker on apply)
+-- ============================================================================
+-- PROBE 6a hardcoded a production policy id (a9574721-...) behind a plain
+-- `select ... into` with no matching-row guard. On any database without
+-- that exact row -- empty, a fresh environment, a restored backup, or
+-- production itself once that policy stops being eligible, gains a
+-- pending_task_id some other way, or its tenant is suspended -- the
+-- variable stays NULL, the `is null` disjunct fires, and the migration
+-- raises VERIFICATION FAILED and never applies. This is CLAUDE.md rule 3
+-- exactly, and the same class of defect that made migrations 778, 789 and
+-- 790 permanently unreplayable (unrepairable once applied: the ledger keys
+-- on filename AND checksum, so before-it-lands is the only fixable moment).
+-- Proven live before the fix, in a rolled-back block against a
+-- non-existent id: `ERROR: P0001: PROBE6-ON-MISSING-ROW => FINDING APPENDED`.
+--
+-- Fixed by making 6a DISCOVER its subject exactly the way 6b already did --
+-- no literal id anywhere in this file -- and emit a notice, not a finding,
+-- when none exists. Proven three ways (task-1-report.md carries the
+-- verbatim output of all three): the normal run still finds one and the
+-- criteria branch still genuinely fires; forcing the discovery query to
+-- find nothing still PASSES, with the notice, not a failure; inverting the
+-- assertion with a real subject present still FAILS, with a distinct
+-- message -- so the probe is neither fragile on empty data nor vacuous on
+-- real data.
+--
+-- Also: PROBE 5's summary line read `sentinel_count=0/2` with nothing
+-- saying what "2" counts. It is trust_policies ROWS currently carrying an
+-- open request, not writers exercised this run -- on this dataset only
+-- request_eligible_promotions wrote a NEW row in this transaction;
+-- raise_trust_widening_proposals raised 0 here (detect_trust_widening_
+-- patterns found no candidates today), and the second open-request row is
+-- a pre-existing production proposal from an earlier, real run. The
+-- message now says so, so "0/2" cannot be misread as "both writers fired".
 -- ============================================================================
 
 begin;
@@ -564,6 +599,7 @@ declare
   v_open_requests      int;
   v_sentinel_count     int;
   v_criteria_brief     jsonb;
+  v_criteria_task_id   uuid;
   v_pattern_task_id    uuid;
   v_pattern_brief      jsonb;
   v_src                text;
@@ -688,10 +724,17 @@ begin
   ----------------------------------------------------------------------
   -- PROBE 5 -- CRITICAL 1 (round 3): no row either writer can produce
   -- carries the sentinel round 2 briefly stamped. Denominator: how many
-  -- trust_policies rows carry an open request at all right now
+  -- trust_policies ROWS carry an open request at all right now
   -- (pending_task_id is not null) -- the population that COULD carry a
   -- wrong value if the coalesce-to-sentinel ever came back. Vacuously fine
   -- (0 open requests => 0 with the sentinel) on an empty database.
+  --
+  -- ⚠ round 4: this is a count of POLICIES, not of writers exercised this
+  -- run. On this dataset only request_eligible_promotions wrote a NEW row
+  -- in this transaction (raise_trust_widening_proposals raised 0 here --
+  -- detect_trust_widening_patterns found no candidates today); the second
+  -- open-request row is a pre-existing production proposal from an
+  -- earlier, real invocation. "2" is not evidence both writers fired now.
   ----------------------------------------------------------------------
   select count(*) filter (where pending_task_id is not null),
          count(*) filter (where requested_by = '00000000-0000-0000-0000-000000000000'::uuid)
@@ -709,20 +752,32 @@ begin
   -- PROBE 6 -- IMPORTANT 3 (round 3): the approval card tells the truth
   -- about who asked, for BOTH evidence shapes -- a one-sided check (only
   -- the new branch, or only the old one) would not prove the split is
-  -- real. Uses two REAL pending proposals: the one request_eligible_
-  -- promotions just raised above (criteria-shaped) and whatever
-  -- pattern-shaped proposal already exists in production, if any.
+  -- real. Neither subject is assumed to exist: each is DISCOVERED by
+  -- querying for any pending proposal of that shape, exactly like PROBE
+  -- 6b -- a literal task or policy id here would hard-code a row that
+  -- need not exist on an empty database, a fresh environment, or
+  -- production itself if this exact policy's state has moved on by apply
+  -- time (round 4: this replaced a hardcoded id that failed exactly that
+  -- way -- see header). Absence of a subject is a notice, never a finding.
   ----------------------------------------------------------------------
-  select public.compute_trust_proposal_brief(pending_task_id)
-    into v_criteria_brief
-    from public.trust_policies where id = 'a9574721-cd41-4adb-a0f8-7836852091c7';
+  select ht.id into v_criteria_task_id
+    from public.trust_policies tp
+    join public.human_tasks ht on ht.id = tp.pending_task_id
+   where tp.pending_evidence ? 'criteria'
+     and ht.type = 'trust_promotion' and ht.status = 'pending'
+   limit 1;
 
-  v_checks := v_checks + 1;
-  if v_criteria_brief is null
-     or (v_criteria_brief->'evidence')::text ilike '%no pattern citation%'
-     or (v_criteria_brief->'evidence')::text not ilike '%no human asked%' then
-    v_bad := array_append(v_bad, format(
-      'criteria-shaped brief still reads human-requested, or is null: %s', v_criteria_brief));
+  if v_criteria_task_id is null then
+    raise notice '828 PROBE 6a: no criteria-shaped pending proposal exists right now -- the criteria half of the split is unexercised on this dataset.';
+  else
+    select public.compute_trust_proposal_brief(v_criteria_task_id) into v_criteria_brief;
+    v_checks := v_checks + 1;
+    if v_criteria_brief is null
+       or (v_criteria_brief->'evidence')::text ilike '%no pattern citation%'
+       or (v_criteria_brief->'evidence')::text not ilike '%no human asked%' then
+      v_bad := array_append(v_bad, format(
+        'criteria-shaped brief [task %s] still reads human-requested, or is null: %s', v_criteria_task_id, v_criteria_brief));
+    end if;
   end if;
 
   select ht.id into v_pattern_task_id
@@ -770,7 +825,7 @@ begin
       v_checks, array_to_string(v_bad, E'\n  ');
   end if;
 
-  raise notice '828: % assertions, 0 findings. examined=%, requested=%, skipped_existing=%, thin=%, failed=%, linked=%/%, widening_examined=%, sentinel_count=%/%.',
+  raise notice '828: % assertions, 0 findings. examined=%, requested=%, skipped_existing=%, thin=%, failed=%, linked=%/%, widening_examined=%, sentinel=%/% open-request policies (population, not writers exercised).',
     v_checks, v_res->>'examined', v_res->>'requested', v_res->>'skipped_existing', v_res->>'thin',
     v_res->>'failed', v_linked, coalesce(array_length(v_target_ids, 1), 0), v_widen_res->>'examined',
     v_sentinel_count, v_open_requests;
