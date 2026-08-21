@@ -398,7 +398,7 @@ const SettingsPage = ({
     <div className="p-6" ref={pageRef}>
       <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-white">Settings</h1>
+          <h1 className="text-2xl font-bold text-dt-title">Settings</h1>
           <p className="text-dt-support text-sm mt-1">
             Manage your workspace, AI engine, and client token budgets
           </p>
@@ -469,7 +469,7 @@ const SettingsPage = ({
             </div>
           )}
           <div className="bg-dt-card border border-dt-border rounded-xl p-5">
-            <h2 className="text-sm font-semibold text-white mb-4">Workspace Details</h2>
+            <h2 className="text-sm font-semibold text-dt-title mb-4">Workspace Details</h2>
             <div className="space-y-4">
               <div>
                 <label className="text-xs font-medium text-dt-support block mb-1.5">Workspace Name</label>
@@ -477,7 +477,7 @@ const SettingsPage = ({
                   value={orgName}
                   onChange={e => setOrgName(e.target.value)}
                   placeholder="Your organisation name"
-                  className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
                 />
               </div>
               <div>
@@ -485,7 +485,7 @@ const SettingsPage = ({
                 <select
                   value={industry}
                   onChange={e => setIndustry(e.target.value)}
-                  className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
                 >
                   {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
                 </select>
@@ -493,7 +493,7 @@ const SettingsPage = ({
               {/* Wave 4 — work-object vocabulary: what YOU call the people
                   you serve and your value metric. Read by every live page. */}
               <div className="md:col-span-2 rounded-xl border border-dt-border bg-dt-inset p-4">
-                <p className="text-xs font-semibold text-white mb-0.5">Your vocabulary</p>
+                <p className="text-xs font-semibold text-dt-title mb-0.5">Your vocabulary</p>
                 <p className="text-[11px] text-dt-muted mb-3">Relabels the whole workspace — Patients instead of Customers, Contract value instead of ARR. Seeded from your industry; yours to change.</p>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   {([
@@ -509,7 +509,7 @@ const SettingsPage = ({
                       <label className="text-[11px] font-medium text-dt-support block mb-1">{label}</label>
                       <input value={vocabDraft[k] ?? ''} placeholder={ph}
                         onChange={e => setVocabDraft(v => ({ ...v, [k]: e.target.value }))}
-                        className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-indigo-500" />
+                        className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-indigo-500" />
                     </div>
                   ))}
                 </div>
@@ -520,7 +520,7 @@ const SettingsPage = ({
                   value={contactEmail}
                   onChange={e => setContactEmail(e.target.value)}
                   type="email"
-                  className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
                 />
               </div>
               <div>
@@ -536,7 +536,7 @@ const SettingsPage = ({
                     value={brandColor}
                     onChange={e => setBrandColor(e.target.value)}
                     placeholder="#6366f1"
-                    className="flex-1 bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+                    className="flex-1 bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
                   />
                   <div className="w-10 h-10 rounded-lg flex-shrink-0 border border-dt-border-strong" style={{ backgroundColor: brandColor }} />
                 </div>
@@ -583,7 +583,7 @@ const SettingsPage = ({
       {activeTab === 'ai_engine' && (
         <div className="max-w-2xl space-y-4">
           <div className="bg-dt-card border border-dt-border rounded-xl p-5">
-            <h2 className="text-sm font-semibold text-white mb-1">AI Engine Keys</h2>
+            <h2 className="text-sm font-semibold text-dt-title mb-1">AI Engine Keys</h2>
             <p className="text-xs text-dt-support mb-4">
               Keys are stored encrypted and belong to <strong className="text-dt-body">this workspace only</strong>.
               Every answer tries the engines in order — Anthropic first, then the Bedrock Claude fallback,
@@ -607,7 +607,7 @@ const SettingsPage = ({
             <div className="mb-5 rounded-xl border border-dt-border-strong bg-dt-panel p-3.5">
               <div className="flex items-center justify-between gap-3 mb-1.5">
                 <p className="text-xs font-medium text-dt-support">Which account pays for this workspace's AI?</p>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-600/50 text-dt-muted whitespace-nowrap">
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-neutral-soft text-dt-muted whitespace-nowrap">
                   set by your plan
                 </span>
               </div>
@@ -650,7 +650,7 @@ const SettingsPage = ({
                 value={anthropicKey}
                 onChange={e => setAnthropicKey(e.target.value)}
                 placeholder={anthropicSet ? 'Enter new key to replace existing…' : 'sk-ant-…'}
-                className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+                className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
               />
               <p className="text-xs text-dt-faint mt-1">
                 Get your key at console.anthropic.com → API Keys. The primary engine for all Digital Employee responses.
@@ -663,7 +663,7 @@ const SettingsPage = ({
                 <label className="text-xs font-medium text-dt-support">Amazon Bedrock Key — Claude fallback <span className="text-dt-faint font-normal">(recommended)</span></label>
                 {bedrockSet
                   ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured — fallback armed</span>
-                  : <span className="text-xs text-dt-muted bg-slate-600/50 px-2 py-0.5 rounded">Not set — no fallback if Anthropic is unavailable</span>}
+                  : <span className="text-xs text-dt-muted bg-dt-neutral-soft px-2 py-0.5 rounded">Not set — no fallback if Anthropic is unavailable</span>}
               </div>
               <div className="flex gap-2">
                 <input
@@ -671,14 +671,14 @@ const SettingsPage = ({
                   value={bedrockKey}
                   onChange={e => setBedrockKey(e.target.value)}
                   placeholder={bedrockSet ? 'Enter new key to replace existing…' : 'Bedrock API key…'}
-                  className="flex-1 bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+                  className="flex-1 bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
                 />
                 <input
                   type="text"
                   value={bedrockRegion}
                   onChange={e => setBedrockRegion(e.target.value)}
                   placeholder="Region (us-east-1)"
-                  className="w-44 bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+                  className="w-44 bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
                 />
               </div>
               <p className="text-xs text-dt-faint mt-1">
@@ -694,14 +694,14 @@ const SettingsPage = ({
                 <label className="text-xs font-medium text-dt-support">OpenAI API Key <span className="text-dt-faint font-normal">(optional)</span></label>
                 {openaiSet
                   ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured — cross-vendor fallback armed</span>
-                  : <span className="text-xs text-dt-muted bg-slate-600/50 px-2 py-0.5 rounded">Not set — optional tier</span>}
+                  : <span className="text-xs text-dt-muted bg-dt-neutral-soft px-2 py-0.5 rounded">Not set — optional tier</span>}
               </div>
               <input
                 type="password"
                 value={openaiKey}
                 onChange={e => setOpenaiKey(e.target.value)}
                 placeholder={openaiSet ? 'Enter new key to replace existing…' : 'sk-…'}
-                className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+                className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
               />
               <p className="text-xs text-dt-faint mt-1">
                 Optional third tier: used only when both Claude engines are unreachable. A different brain than
@@ -716,14 +716,14 @@ const SettingsPage = ({
                 <label className="text-xs font-medium text-dt-support">Google AI Key <span className="text-dt-faint font-normal">(optional)</span></label>
                 {googleSet
                   ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured — Gemini fallback armed</span>
-                  : <span className="text-xs text-dt-muted bg-slate-600/50 px-2 py-0.5 rounded">Not set — optional tier</span>}
+                  : <span className="text-xs text-dt-muted bg-dt-neutral-soft px-2 py-0.5 rounded">Not set — optional tier</span>}
               </div>
               <input
                 type="password"
                 value={googleKey}
                 onChange={e => setGoogleKey(e.target.value)}
                 placeholder={googleSet ? 'Enter new key to replace existing…' : 'AIza…'}
-                className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+                className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
               />
               <p className="text-xs text-dt-faint mt-1">
                 Optional fourth tier (Gemini) — same continuity-only role as OpenAI. Get a key at aistudio.google.com → API Keys.
@@ -745,7 +745,7 @@ const SettingsPage = ({
           </div>
 
           <div className="bg-dt-card border border-dt-border rounded-xl p-5">
-            <h2 className="text-sm font-semibold text-white mb-1">How failover works</h2>
+            <h2 className="text-sm font-semibold text-dt-title mb-1">How failover works</h2>
             <div className="space-y-2 text-xs text-dt-support mt-3">
               <div className="flex gap-3"><span className="text-dt-faint w-4">1</span><span>Every answer tries Anthropic first. If it can't respond (key problem, rate limit, outage), the same request runs on the next configured engine — automatically, per answer.</span></div>
               <div className="flex gap-3"><span className="text-dt-faint w-4">2</span><span>Bedrock serves the identical Claude models, so answers, guardrails and certifications behave the same. OpenAI/Gemini are different brains — continuity cover only.</span></div>
@@ -765,7 +765,7 @@ const SettingsPage = ({
                 billed for MY workspace, and what happens when it runs out. It
                 follows keyMode, so it cannot drift from what the server
                 enforces. */}
-            <h2 className="text-sm font-semibold text-white mb-1">How billing works</h2>
+            <h2 className="text-sm font-semibold text-dt-title mb-1">How billing works</h2>
             {keyMode === 'byo' ? (
               <div className="space-y-2 text-xs text-dt-support mt-3">
                 <div className="flex gap-3"><span className="text-dt-faint w-4">1</span><span>This workspace uses its <strong className="text-dt-body">own provider keys</strong>, so the provider bills you directly — Anthropic, or AWS when the Bedrock fallback serves the answer.</span></div>
@@ -789,7 +789,7 @@ const SettingsPage = ({
       {activeTab === 'usage' && (
         <div className="max-w-3xl space-y-4">
           <div className="bg-dt-card border border-dt-border rounded-xl p-5">
-            <h2 className="text-sm font-semibold text-white mb-1">Monthly AI Budget</h2>
+            <h2 className="text-sm font-semibold text-dt-title mb-1">Monthly AI Budget</h2>
             {/* ⚠ THIS HEADER STILL SAID "Set a monthly AI usage limit" after the
                 editor below it became read-only for platform-mode workspaces —
                 I fixed the input and the near-limit warning and missed the
@@ -804,7 +804,7 @@ const SettingsPage = ({
                 : (isDTUser || tenants[0]?.llm_key_mode === 'byo')
                   ? 'Set a monthly AI usage limit for your workspace. Your Digital Employees pause when the limit is reached — it resets on the 1st of each month.'
                   : 'Your monthly AI usage against the limit included in your plan. Digital Employees pause when it is reached, and it resets on the 1st of each month — contact DreamTeam AI if you need more.'}
-              {' '}Current month: <span className="text-white font-mono">{new Date().toISOString().slice(0, 7)}</span>
+              {' '}Current month: <span className="text-dt-title font-mono">{new Date().toISOString().slice(0, 7)}</span>
             </p>
 
             {tenants.length === 0 ? (
@@ -820,7 +820,7 @@ const SettingsPage = ({
                     <div key={t.id} className="bg-dt-panel rounded-xl p-4">
                       <div className="flex items-start justify-between gap-4 mb-3">
                         <div>
-                          <div className="text-sm text-white font-medium">{t.name}</div>
+                          <div className="text-sm text-dt-title font-medium">{t.name}</div>
                           <div className="text-xs text-dt-muted mt-0.5">{t.plan} · {t.status}</div>
                         </div>
                         {/* ⚠ WHOSE MONEY. A workspace on OUR provider account
@@ -837,7 +837,7 @@ const SettingsPage = ({
                               type="number"
                               value={budgetEdits[t.id] ?? ''}
                               onChange={e => setBudgetEdits(prev => ({ ...prev, [t.id]: e.target.value }))}
-                              className="w-28 bg-dt-panel border border-dt-border-strong text-white text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-indigo-500 font-mono text-right"
+                              className="w-28 bg-dt-panel border border-dt-border-strong text-dt-body text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-indigo-500 font-mono text-right"
                               min={0}
                               step={10000}
                             />
@@ -853,9 +853,9 @@ const SettingsPage = ({
                           </div>
                         ) : (
                           <div className="flex items-center gap-2 flex-shrink-0 text-right">
-                            <span className="text-sm text-white font-mono">{fmt(budget)}</span>
+                            <span className="text-sm text-dt-title font-mono">{fmt(budget)}</span>
                             <span className="text-xs text-dt-muted">tokens/mo</span>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-600/50 text-dt-muted whitespace-nowrap">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-neutral-soft text-dt-muted whitespace-nowrap">
                               set by your plan
                             </span>
                           </div>
@@ -865,7 +865,7 @@ const SettingsPage = ({
                         <span>{fmt(used)} used</span>
                         <span>{pct}% of {fmt(budget)}</span>
                       </div>
-                      <div className="h-2 bg-slate-600 rounded-full overflow-hidden">
+                      <div className="h-2 bg-dt-border-strong rounded-full overflow-hidden">
                         <div
                           className="h-full rounded-full transition-all"
                           style={{ width: `${pct}%`, backgroundColor: barColor }}
@@ -898,7 +898,7 @@ const SettingsPage = ({
       {activeTab === 'widget' && (
         <div className="max-w-3xl space-y-4">
           <div className="bg-dt-card border border-dt-border rounded-xl p-5">
-            <h2 className="text-sm font-semibold text-white mb-1">Widget Keys</h2>
+            <h2 className="text-sm font-semibold text-dt-title mb-1">Widget Keys</h2>
             <p className="text-xs text-dt-support mb-4">
               Publishable keys for embedding your support chat widget in your product. Keys can only ask
               questions — they can never read or change data. We store only a hash; the key is shown once.
@@ -910,7 +910,7 @@ const SettingsPage = ({
                   New key generated — copy it now, it will not be shown again
                 </div>
                 <div className="flex items-center gap-2">
-                  <code className="flex-1 text-xs text-white font-mono bg-dt-panel rounded-lg px-3 py-2 break-all">{generatedKey}</code>
+                  <code className="flex-1 text-xs text-dt-title font-mono bg-dt-panel rounded-lg px-3 py-2 break-all">{generatedKey}</code>
                   <button
                     onClick={handleCopyKey}
                     className="px-3 py-2 text-xs text-white rounded-lg flex-shrink-0"
@@ -927,7 +927,7 @@ const SettingsPage = ({
                 value={newKeyLabel}
                 onChange={e => setNewKeyLabel(e.target.value)}
                 placeholder="Key label (e.g. Production portal)"
-                className="flex-1 bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+                className="flex-1 bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
               />
               <button
                 onClick={handleGenerateKey}
@@ -946,7 +946,7 @@ const SettingsPage = ({
                 {widgetKeys.map(k => (
                   <div key={k.id} className="flex items-center justify-between gap-3 bg-dt-panel rounded-xl px-4 py-3">
                     <div className="min-w-0">
-                      <div className="text-sm text-white font-medium truncate">
+                      <div className="text-sm text-dt-title font-medium truncate">
                         {k.label}
                         {!k.active && <span className="ml-2 text-xs text-red-400 bg-red-400/10 px-2 py-0.5 rounded">Revoked</span>}
                       </div>
@@ -970,7 +970,7 @@ const SettingsPage = ({
           </div>
 
           <div className="bg-dt-card border border-dt-border rounded-xl p-5">
-            <h2 className="text-sm font-semibold text-white mb-1">Embed Snippet</h2>
+            <h2 className="text-sm font-semibold text-dt-title mb-1">Embed Snippet</h2>
             <p className="text-xs text-dt-support mb-3">
               Paste into your product, replacing the placeholders. Full reference:{' '}
               <a href="https://github.com/Outsourcetel/dreamteam-ai/blob/main/docs/WIDGET-EMBED.md" target="_blank" rel="noreferrer" className="text-indigo-400 hover:underline">docs/WIDGET-EMBED.md</a>
@@ -981,7 +981,7 @@ const SettingsPage = ({
 
           {/* T2.3: identity verification — lets a verified caller be remembered across conversations */}
           <div className="bg-dt-card border border-dt-border rounded-xl p-5">
-            <h2 className="text-sm font-semibold text-white mb-1">Identity verification <span className="text-dt-muted font-normal">· optional</span></h2>
+            <h2 className="text-sm font-semibold text-dt-title mb-1">Identity verification <span className="text-dt-muted font-normal">· optional</span></h2>
             <p className="text-xs text-dt-support mb-3">
               Prove who’s asking so your Digital Employee can remember them across conversations (instead of starting cold each time).
               Your <strong className="text-dt-body">own server</strong> signs a short hash with a secret only it holds; anonymous visitors are unaffected.
@@ -994,7 +994,7 @@ const SettingsPage = ({
                 {widgetKeys.filter(k => k.active).map(k => (
                   <div key={k.id} className="flex items-center justify-between gap-2 bg-dt-page rounded-lg px-3 py-2 border border-dt-border">
                     <div className="min-w-0">
-                      <p className="text-xs text-white truncate">{k.label}</p>
+                      <p className="text-xs text-dt-title truncate">{k.label}</p>
                       <p className="text-[11px] mt-0.5">
                         {identityConfigured[k.id]
                           ? <span className="text-emerald-300">● Configured</span>
@@ -1014,7 +1014,7 @@ const SettingsPage = ({
             {identitySecret && (
               <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
                 <p className="text-[11px] text-amber-200 mb-1.5 font-medium">Copy this secret now — it’s shown only once. Store it in your server’s environment; never ship it to the browser.</p>
-                <code className="block text-[11px] text-white font-mono bg-dt-panel rounded-lg px-3 py-2 break-all mb-2">{identitySecret.secret}</code>
+                <code className="block text-[11px] text-dt-title font-mono bg-dt-panel rounded-lg px-3 py-2 break-all mb-2">{identitySecret.secret}</code>
                 <p className="text-[11px] text-dt-support mb-1">On your server, sign each end user’s hash and pass it to the widget as <code className="text-indigo-300">userHash</code>:</p>
                 <pre className="text-[11px] text-dt-support font-mono bg-dt-panel rounded-lg p-3 overflow-x-auto whitespace-pre">{`const crypto = require('crypto');
 const b64url = s => Buffer.from(s, 'utf8').toString('base64url');
@@ -1032,7 +1032,7 @@ const userHash = crypto
           </div>
 
           <div className="bg-dt-card border border-dt-border rounded-xl p-5">
-            <h2 className="text-sm font-semibold text-white mb-1">End-User Activity</h2>
+            <h2 className="text-sm font-semibold text-dt-title mb-1">End-User Activity</h2>
             <p className="text-xs text-dt-support mb-3">Recent end users who asked questions through the widget.</p>
             {endUserSessions.length === 0 ? (
               <LiveEmptyState icon="◎" title="No end-user activity yet" body="Recent end users who ask questions through the widget will show up here." />
@@ -1118,7 +1118,7 @@ const userHash = crypto
         <div className="max-w-2xl">
           <div className="bg-dt-card border border-dt-border rounded-xl p-8 text-center">
             <div className="text-4xl mb-3">*</div>
-            <div className="text-sm font-medium text-white mb-1 capitalize">{activeTab} Settings</div>
+            <div className="text-sm font-medium text-dt-title mb-1 capitalize">{activeTab} Settings</div>
             <div className="text-xs text-dt-support">Configuration options for {activeTab} coming soon.</div>
           </div>
         </div>

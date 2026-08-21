@@ -145,10 +145,10 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
       <div className="p-6">
         <PageHeader title="Company Setup" subtitle="Done — everything below is real and editable" />
         <div className="max-w-2xl rounded-2xl border border-emerald-800/50 bg-emerald-500/5 p-6">
-          <h3 className="text-base font-semibold text-white mb-2">✓ Setup complete</h3>
+          <h3 className="text-base font-semibold text-dt-title mb-2">✓ Setup complete</h3>
           <p className="text-sm text-dt-support mb-4">
             {done.des.length > 0
-              ? <>Hired <span className="text-white">{done.des.join(', ')}</span> — each starts at the Designed lifecycle stage and earns its way to live work through the same gates as any employee.</>
+              ? <>Hired <span className="text-dt-title">{done.des.join(', ')}</span> — each starts at the Designed lifecycle stage and earns its way to live work through the same gates as any employee.</>
               : 'No new employees were needed — your roster already covers the recommendations.'}
             {' '}{done.rules.length > 0
               ? <>Created {done.rules.length} enforceable guardrail{done.rules.length === 1 ? '' : 's'} — review or edit them any time.</>
@@ -218,7 +218,7 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
       {/* Step 1: Industry */}
       {step === 0 && (
         <div>
-          <h3 className="text-sm font-semibold text-white mb-3">Choose your industry</h3>
+          <h3 className="text-sm font-semibold text-dt-title mb-3">Choose your industry</h3>
           <p className="text-xs text-dt-muted mb-4">
             Sets the recommended first hires and the starter guardrail set. Saved to your workspace —
             everything it creates stays editable.
@@ -232,7 +232,7 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
               >
                 <div className="flex items-center gap-2 mb-1.5">
                   <span className="w-8 h-8 rounded-lg bg-dt-panel flex items-center justify-center text-dt-support">{ind.icon}</span>
-                  <span className="text-sm font-semibold text-white">{ind.name}</span>
+                  <span className="text-sm font-semibold text-dt-title">{ind.name}</span>
                   {industryName === ind.name && <span className="ml-auto text-indigo-400 text-xs">✓ selected</span>}
                 </div>
                 <p className="text-xs text-dt-support leading-relaxed">{ind.blurb}</p>
@@ -245,7 +245,7 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
       {/* Step 2: First hires */}
       {step === 1 && (
         <div>
-          <h3 className="text-sm font-semibold text-white mb-3">First hires — {template.name}</h3>
+          <h3 className="text-sm font-semibold text-dt-title mb-3">First hires — {template.name}</h3>
           <p className="text-xs text-dt-muted mb-4">
             Each becomes a real Digital Employee at the Designed stage. It earns live work through the
             lifecycle gates — knowledge, testing, your certification — like any hire. Untick any you don't want.
@@ -265,7 +265,7 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
                     {exists || picked ? '✓' : ''}
                   </span>
                   <div className="flex-1">
-                    <p className="text-sm font-semibold text-white">{h.name} <span className="text-xs text-dt-muted font-normal">· {h.department}</span></p>
+                    <p className="text-sm font-semibold text-dt-title">{h.name} <span className="text-xs text-dt-muted font-normal">· {h.department}</span></p>
                     <p className="text-xs text-dt-support">{h.description}</p>
                     <p className="text-[11px] text-dt-faint mt-0.5">{exists ? 'Already on your roster' : h.why}</p>
                   </div>
@@ -279,7 +279,7 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
       {/* Step 3: Guardrails */}
       {step === 2 && (
         <div>
-          <h3 className="text-sm font-semibold text-white mb-3">Starter guardrails — {template.name}</h3>
+          <h3 className="text-sm font-semibold text-dt-title mb-3">Starter guardrails — {template.name}</h3>
           <p className="text-xs text-dt-muted mb-4">
             Every rule here carries a real matching pattern and enforces from the moment it exists —
             these are not policy statements. All editable later under Compliance &amp; Guardrails.
@@ -317,7 +317,7 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
       {/* Step 4: Review & create */}
       {step === 3 && (
         <div className="max-w-2xl">
-          <h3 className="text-sm font-semibold text-white mb-3">Review</h3>
+          <h3 className="text-sm font-semibold text-dt-title mb-3">Review</h3>
           <div className="rounded-2xl border border-dt-border bg-dt-card p-5 space-y-3 mb-4 text-sm text-dt-support">
             <p><span className="text-dt-muted">Industry:</span> {industryName || '—'}{industryName !== (currentTenant?.industry ?? '') ? <span className="text-[11px] text-dt-muted"> (will be saved)</span> : ''}</p>
             <p><span className="text-dt-muted">New employees:</span> {template.hires.filter(h => pickedHires.has(h.name) && !existingDeNames.has(h.name.toLowerCase())).map(h => h.name).join(', ') || 'none'}</p>

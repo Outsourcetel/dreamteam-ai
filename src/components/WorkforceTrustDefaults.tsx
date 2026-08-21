@@ -82,7 +82,7 @@ export default function WorkforceTrustDefaults({ setPage }: { setPage?: (p: Page
           employee in billing-and-answering terms whatever its actual job. */}
       <div className="bg-dt-card border border-dt-border rounded-xl p-5">
         <div className="mb-1 flex items-center gap-2 flex-wrap">
-          <h2 className="text-sm font-semibold text-white">What each employee may do on its own</h2>
+          <h2 className="text-sm font-semibold text-dt-title">What each employee may do on its own</h2>
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300">per employee</span>
         </div>
         <p className="text-xs text-dt-muted mb-2">
@@ -105,7 +105,7 @@ export default function WorkforceTrustDefaults({ setPage }: { setPage?: (p: Page
       </div>
 
       <div className="bg-dt-card border border-dt-border rounded-xl p-5">
-        <h2 className="text-sm font-semibold text-white mb-1">Workspace-wide earned trust</h2>
+        <h2 className="text-sm font-semibold text-dt-title mb-1">Workspace-wide earned trust</h2>
         <p className="text-[11px] text-dt-muted mb-3">
           Ladder policies with no owning employee — their promotions move the workspace defaults above,
           not any single employee's badge. Each employee's own ladder is on their file.
@@ -136,7 +136,7 @@ export default function WorkforceTrustDefaults({ setPage }: { setPage?: (p: Page
       </div>
 
       <div className="bg-dt-card border border-dt-border rounded-xl p-5">
-        <h2 className="text-sm font-semibold text-white mb-1">Promotion history</h2>
+        <h2 className="text-sm font-semibold text-dt-title mb-1">Promotion history</h2>
         <p className="text-[11px] text-dt-muted mb-3">
           Tenant-wide promotions, demotions and manual overrides, from the immutable audit trail.
         </p>
@@ -152,7 +152,7 @@ export default function WorkforceTrustDefaults({ setPage }: { setPage?: (p: Page
                 <span className={`mt-0.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${
                   h.kind === 'trust_promoted' ? 'bg-emerald-500' :
                   h.kind === 'trust_demoted' ? 'bg-rose-500' :
-                  h.kind === 'trust_manual_override' ? 'bg-amber-500' : 'bg-slate-600'
+                  h.kind === 'trust_manual_override' ? 'bg-amber-500' : 'bg-dt-border-strong'
                 }`} />
                 <span className="flex-1">{h.action}</span>
                 <span className="flex-shrink-0 text-dt-faint">{new Date(h.created_at).toLocaleDateString()}</span>

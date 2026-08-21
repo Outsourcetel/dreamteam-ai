@@ -106,7 +106,81 @@ const slateText = lines('text-slate-');
 // this audit's metrics, per the brief's separate grep instruction) became
 // `divide-dt-border`, matching the same file's own `divide-y
 // divide-dt-border` used two sections above it.
-const BASELINE = { 'bare text-white': 366, 'bg-slate': 46, 'border-slate': 6, 'text-slate': 2 };
+//
+// RATCHETED 2026-08-21 (Task 5, Setup group). The seven SETUP-nav pages
+// (CompanySetupPage, DiscoveryInterviewPage, DiscoveryProposalsPage,
+// UserManagementPage, MyProfilePage, OrganisationPage, SettingsPage) plus
+// eleven sole-consumer components reachable ONLY from those pages
+// (DataExportPanel, BooksImportCard, ReviewMinutesCard, DeleteWorkspacePanel,
+// sso/DomainClaimPanel, sso/SsoPolicyPanel, sso/ScimTokensPanel,
+// CommsSettingsCard, WorkforceTrustDefaults, WorkforceTrustPanel,
+// EmployeeProfileDrawer — the last two consumed by both UserManagementPage
+// and MyProfilePage, both in-group) moved onto dt-* tokens. Four pages
+// (DiscoveryInterviewPage, DiscoveryProposalsPage, MyProfilePage,
+// OrganisationPage) and seven components (DataExportPanel — its one
+// text-white already sits on the COLORED_BG-exempt bg-dt-accent-strong,
+// BooksImportCard, ReviewMinutesCard, DeleteWorkspacePanel, DomainClaimPanel,
+// SsoPolicyPanel, ScimTokensPanel, EmployeeProfileDrawer, WorkforceTrustPanel)
+// were audited and found already clean — zero hits in all four metrics — so
+// they were left untouched. HireEmployeeWizard.tsx was checked and excluded:
+// its sole reachable entry is LiveWorkforceDEs.tsx's "Hire with AI" button
+// under the Workforce hub's 'workforce_hire' route (/workforce/hire), not
+// any Setup page — it belongs to a Workforce-group pass, not this one, and
+// its line-634 bg-indigo-500/10 text-white stays unconverted (not in scope).
+// OnboardingArchitectPage.tsx was checked and excluded: it has no entry in
+// the Sidebar's SETUP nav group (only discovery_interview, discovery_
+// proposals, company_setup, users, my_profile, organisation and settings do)
+// — it is reachable only via a button inside CompanySetupPage and via
+// GettingStartedGuide (shared with DashboardPage, so not sole-consumer
+// either), so it is left for a later/"remaining" pass. GettingStartedGuide
+// and SecurityAccessPage were excluded as shared (GettingStartedGuide also
+// renders on DashboardPage; SecurityAccessPage is also GovernanceHubPage's
+// gov_security tab and was already converted there — Governance group).
+// AISessionPanel and LiveDataStates stay excluded as shared across 40+ files
+// (per the Connected-systems ratchet note above).
+//
+// Converted: 59 bare text-white (headings/section-labels/stat-values/inline-
+// emphasis/row-primary-names -> dt-title; form input/select typed-value text
+// -> dt-body, per the governance-group "table/list/input primary text ->
+// dt-body" precedent for the fields where dt-body reads as the plain typed
+// value rather than an emphasized identifier) and 10 bg-slate-600 (3
+// already-translucent "Not set"/"set by your plan" info chips -> bg-dt-
+// neutral-soft, since translucent-source bg-slate is soft-exempt by tier;
+// 1 progress-bar track and 1 promotion-history fallback dot -> bg-dt-
+// border-strong, matching the doc §7 "toggle tracks etc." control-shade row
+// of the mapping table, kept opaque rather than soft because a soft tint on
+// a 1.5px dot or a 2px bar track would read as invisible, not softened; 1
+// modal permission-chip list -> bg-dt-neutral-soft, matching the Playbooks/
+// Connected-systems "neutral status chip" precedent; 1 modal Cancel button
+// and 1 default-role ROLE_COLOR badge (both UserManagementPage) kept OPAQUE
+// as bg-dt-border-strong text-dt-title rather than softened — the Cancel
+// button is a default control on every remove-confirm, not a rare state, and
+// the tenant_user badge is the platform's fallback role (useUsers.ts) that
+// renders on every non-privileged row and in the Role Permissions Reference,
+// matching the identical tenant_user precedent already recorded in
+// SecurityAccessPage above, ~10:1 contrast in light). The one `divide-slate-
+// 700/50` list divider (UserManagementPage, uncounted by this audit's
+// metrics) became `divide-y divide-dt-border`, dropping the alpha to match
+// the Connected-systems divide-dt-border precedent.
+//
+// Left AS-IS on purpose (not drift): every `text-white` paired with a
+// runtime `style={{ backgroundColor: accentColor }}` (or `accentColor +
+// '30'`) — CompanySetupPage buttons/badges (colored-bg lines, already
+// COLORED_BG-exempt), and 6 in UserManagementPage/SettingsPage/
+// CommsSettingsCard nav-tab-active and action-button fills that the
+// COLORED_BG regex cannot see (it only recognizes literal Tailwind bg-*-NNN
+// classes, not inline styles) — these are genuine solid fills using the
+// tenant's own brand color, matching the mapping table's "text-white on a
+// solid colored fill stays" rule; converting them would be the wrong call,
+// not a missed one, so they are not counted toward this ratchet even though
+// the raw audit numbers still include them. Also left as-is:
+// `placeholder-slate-500/600` and `focus:border-slate-500` on inputs across
+// this group (the doc §7 sanctioned control-shade/placeholder/focus-ring
+// exception, identical to the LoginPage/SecurityAccessPage/
+// LiveKnowledgeLibrary precedent) and `hover:ring-slate-600` on
+// UserManagementPage's role-badge button (not one of the four tracked
+// metrics, out of this sweep's scope).
+const BASELINE = { 'bare text-white': 307, 'bg-slate': 36, 'border-slate': 6, 'text-slate': 2 };
 const NOW = {
   'bare text-white': bareWhite.length,
   'bg-slate': slateBg.length,
