@@ -45,9 +45,15 @@
 --    the open request becomes approvable the moment its role declares.
 --  · REJECTING either request still works, unchanged. The guard sits after the
 --    'rejected' branch precisely so a human can always clear the queue.
---  · The nightly eligibility sweep will now examine those 2, skip them, and SAY
---    SO in its return: skipped_no_ladder. It will not file new cards nobody can
---    action.
+--  · The nightly eligibility sweep will not file NEW cards nobody can action --
+--    a policy with no effective ladder is skipped and counted in the new
+--    skipped_no_ladder key. ⚠ IT WILL NOT COUNT THESE TWO THERE, and an earlier
+--    draft of this line claimed it would. Measured with 838 applied:
+--    {examined:58, requested:0, skipped_existing:2, skipped_no_ladder:0, ...}.
+--    Both already carry a pending_task_id, and the sweep's pre-existing
+--    "a request is already open" branch continues BEFORE this file's guard is
+--    reached. The behaviour is right -- an open request is not re-filed, for the
+--    reason it always was -- only the sentence was wrong.
 --  · No existing level, dial, de_autonomy row or guardrail changes. Zero rows
 --    are written by this migration outside its own rolled-back probe fixture.
 --
@@ -98,8 +104,10 @@
 --         probably meant.
 --       · provision_starter_de_internal(tenant_id, feature_key) -- creates its
 --         digital_employees row directly with NO archetype_key at all, so it
---         has nothing to inherit FROM. (These are the 8 live policies whose
---         employee has a null archetype.)
+--         has nothing to inherit FROM. (These are the 9 live policies whose
+--         employee has a null archetype -- measured, and the same 9 counted at
+--         "THE 9 POLICIES THAT CAN NEVER INHERIT" below. An earlier draft of
+--         this line said 8.)
 --       · seed_trust_policies() -- tenant-wide rows, de_id NULL, no employee
 --         and therefore no role. 0 such rows exist today.
 --       · verify_decide_discovery_proposal() -- a self-test.
@@ -567,6 +575,180 @@ grant execute on function public.promotion_is_possible(uuid) to service_role;
 comment on function public.promotion_is_possible(uuid) is
   'A REFUSAL. Returns {"possible": bool, "why": text}. It grants nothing and is never a substitute for evidence, guardrails or the approver bar -- it only answers whether a step is defined at all. Reads effective_trust_ladder, so it agrees with the enforcement reader by construction. Called by apply_trust_promotion (enforcement: the sole writer of current_level upward) and by request_eligible_promotions (noise control). Migration 838.';
 
+-- ── the validating writer for the ROLE's declaration ────────────────────────
+-- ⚠ WHY THIS EXISTS, AND WHY IT IS PART OF THIS FILE RATHER THAN A LATER ONE.
+-- Before this migration, trust_ladder_settings could only ever see
+-- trust_policies.ladder, which is guarded twice over: by the
+-- trust_policies_ladder_is_array CHECK, and by set_trust_ladder, its SOLE
+-- writer, which runs validate_trust_ladder before storing. So the enforcement
+-- reader never needed to validate what it read.
+--
+-- This migration widens what that reader can see to
+-- role_archetypes.trust_ladder -> category -- and THAT COLUMN HAS NO WRITER AT
+-- ALL. Only the top-level object CHECK stands between it and
+-- jsonb_array_elements. Measured with a role declaring
+-- [{"level":"one","name":"bad","mode":"act"}]:
+--
+--   promotion_is_possible  -> refuses cleanly ("not a valid declaration")
+--   trust_ladder_settings  -> 22P02: invalid input syntax for type integer: "one"
+--   trust_apply_level      -> 22P02
+--   trust_demote           -> 22P02
+--
+-- No unearned authority -- the promotion is refused, which is the direction that
+-- matters. The cost is AVAILABILITY on the down and reset paths, including
+-- set_trust_ladder(..., p_clear_ladder := true), which nulls the override and
+-- then falls through to the malformed role ladder. A hand-written
+-- UPDATE role_archetypes SET trust_ladder = ... is the only way to use this
+-- feature today, so a malformed declaration is the EXPECTED first failure mode,
+-- not an exotic one.
+--
+-- ⚠ AND THE FIX IS NOT A FALLBACK. The obvious alternative -- have
+-- trust_ladder_settings catch the error and fall back to trust_level_settings --
+-- is refused on the same grounds this file already refuses it for a draft role:
+-- trust_level_settings makes levels 1, 2 and 3 identical and uncapped, so a
+-- silent fallback is a silent WIDENING, and the trigger for it would be a
+-- malformed declaration nobody noticed. Raising is the correct behaviour. The
+-- fix is to stop the bad value being stored, which is what this writer is.
+--
+-- ⚠ SECURITY INVOKER, AND THE PERIMETER IS THE TABLE GRANT. Measured, not
+-- assumed: role_archetypes grants SELECT to anon and authenticated and UPDATE to
+-- nobody but postgres and service_role, and its only RLS policy is a SELECT
+-- policy. Under INVOKER the UPDATE below therefore runs with the caller's own
+-- privileges, and a browser caller cannot reach it at all -- with or without the
+-- named-caller arm inside. PROBE 13f asserts exactly that, and is the arm that
+-- goes red if the grant ever widens.
+--
+-- ⚠ NO AUDIT EVENT, AND THAT IS A STATED GAP RATHER THAN AN OVERSIGHT.
+-- append_audit_event is tenant-scoped and extends a per-tenant tamper-evident
+-- hash chain (audit_chain_state). role_archetypes has NO tenant_id -- it is a
+-- shared catalog -- so there is no tenant this global declaration belongs to,
+-- and fanning one row out to every tenant would forge N decisions from one act.
+-- This function is still strictly better than the status quo, which is a raw
+-- UPDATE that is neither validated NOR audited. A platform-level config audit
+-- sink is a real gap this migration touches and does not create; it is named in
+-- the report rather than invented here.
+create or replace function public.set_role_trust_ladder(
+  p_archetype_key   text,
+  p_action_category text,
+  p_ladder          jsonb   default null,
+  p_clear           boolean default false
+)
+returns jsonb
+language plpgsql
+volatile
+security invoker
+as $function$
+declare
+  v_key       text := nullif(btrim(coalesce(p_archetype_key, '')), '');
+  v_cat       text := nullif(btrim(coalesce(p_action_category, '')), '');
+  v_row       public.role_archetypes;
+  v_uses_conf boolean;
+  v_uses_amt  boolean;
+  v_levels    integer;
+  v_next      jsonb;
+begin
+  if v_key is null then
+    raise exception 'cannot declare a trust ladder: no role archetype was named';
+  end if;
+  if v_cat is null then
+    raise exception 'cannot declare a trust ladder: no action category was named';
+  end if;
+
+  -- The SECOND line, for a NAMED caller. A role's ladder is a global catalog
+  -- fact: changing it changes what a step grants in EVERY workspace that hired
+  -- that role, so it is not a workspace-level setting and a tenant admin must
+  -- not reach it. Written knowing that `auth.uid() is not null and <check>`
+  -- skips the check entirely for a caller with no JWT -- the shape that makes a
+  -- guard fail open. That residue is deliberate here and is covered by the
+  -- table grant above rather than left to chance: the callers it lets past are
+  -- exactly the ones that already hold UPDATE on this table directly, and could
+  -- write the column without calling this function at all.
+  if auth.uid() is not null and not public.is_platform_admin() then
+    raise exception 'insufficient_permission: what a trust step grants for a ROLE is a platform-wide declaration -- it changes every workspace that hired that role, so it is not a workspace setting. A workspace sets its own limits per employee through set_trust_ladder.';
+  end if;
+
+  -- Mirrors trust_policies_action_category_check exactly. A category outside
+  -- that shape can never equal a trust_policies.action_category, so the
+  -- declaration would be stored, look present, and match nothing forever.
+  if v_cat !~ '^[a-z0-9_:.-]+$' or length(v_cat) > 120 then
+    raise exception 'action category "%" is not a shape trust_policies.action_category can hold, so no policy could ever match it', v_cat;
+  end if;
+
+  -- Status is deliberately NOT filtered: a role is declared before it is
+  -- activated, and refusing to declare for a draft role would invert the order
+  -- of operations. instantiate_role_archetype_internal still requires
+  -- status='active' to HIRE, which is the gate that matters.
+  select * into v_row from public.role_archetypes where key = v_key;
+  if v_row.key is null then
+    raise exception 'unknown role archetype "%"', v_key;
+  end if;
+
+  if coalesce(p_clear, false) then
+    -- Removing one category's declaration. An object left with no keys becomes
+    -- NULL, so "declares nothing" has exactly one representation and
+    -- effective_trust_ladder's jsonb_typeof guard never has to meet an empty
+    -- object.
+    v_next := nullif(coalesce(v_row.trust_ladder, '{}'::jsonb) - v_cat, '{}'::jsonb);
+  else
+    if p_ladder is null or jsonb_typeof(p_ladder) = 'null' then
+      raise exception 'no ladder was given for "%" -- pass p_clear => true to remove this role''s declaration instead', v_cat;
+    end if;
+
+    -- ⚠ THE ENTIRE POINT OF THIS FUNCTION IS THIS ONE CALL. validate_trust_ladder
+    -- is the one validator every ladder in this database passes through; it
+    -- raises on array-ness, the level range, duplicate levels, names, modes,
+    -- settings shape, and monotonicity of mode/confidence/amount.
+    --
+    -- The capability split is MIRRORED FROM set_trust_ladder, verbatim, because
+    -- this writer must accept exactly what that one accepts: a manager may later
+    -- copy a role's ladder into a per-policy override through it, and a value
+    -- this writer stored but that one refuses would be a dead end the customer
+    -- cannot act on. ⚠ It is a THIRD copy of that split -- set_trust_ladder has
+    -- it as an expression, de_trust_surface_candidates as positional literals --
+    -- and there is no single source of truth to call instead (checked:
+    -- de_trust_surface_candidates only RETURNS the booleans, keyed by an
+    -- employee it would need a de_id to resolve). PROBE 13e is a RATCHET on
+    -- set_trust_ladder's own body so the copies cannot drift silently; unifying
+    -- all three is named in the report, not attempted here.
+    v_uses_conf := v_cat in ('answer_dock', 'answer_widget');
+    v_uses_amt  := not v_uses_conf;
+
+    -- p_max_level is 3, the absolute ceiling, NOT any one policy's max_level: a
+    -- role declaration is shared by policies whose ceilings differ, so
+    -- validating against one of them would refuse a ladder that is legal for the
+    -- others. promotion_is_possible validates at 3 for the same reason and
+    -- applies the per-policy ceiling as its own separate arm.
+    v_levels := public.validate_trust_ladder(p_ladder, v_uses_conf, v_uses_amt, 3);
+
+    v_next := coalesce(v_row.trust_ladder, '{}'::jsonb)
+              || jsonb_build_object(v_cat, p_ladder);
+  end if;
+
+  update public.role_archetypes set trust_ladder = v_next where key = v_key;
+
+  return jsonb_build_object(
+    'archetype_key',   v_key,
+    'action_category', v_cat,
+    'cleared',         coalesce(p_clear, false),
+    'levels',          v_levels,
+    'declares',        coalesce(
+                         (select jsonb_agg(k order by k)
+                            from jsonb_object_keys(coalesce(v_next, '{}'::jsonb)) k),
+                         '[]'::jsonb));
+end;
+$function$;
+
+revoke all on function public.set_role_trust_ladder(text, text, jsonb, boolean) from public, anon, authenticated;
+-- service_role only. There is no UI for this: a platform operator declares a
+-- role's ladder through a script or a direct statement, and postgres retains
+-- EXECUTE as owner. Granting `authenticated` would be a grant that cannot work
+-- anyway -- validate_trust_ladder's own ACL is {postgres, service_role}, the
+-- same dead-grant trap that kept promotion_is_possible off `authenticated`.
+grant execute on function public.set_role_trust_ladder(text, text, jsonb, boolean) to service_role;
+
+comment on function public.set_role_trust_ladder(text, text, jsonb, boolean) is
+  'The ONE door for role_archetypes.trust_ladder. Validates through validate_trust_ladder before storing, so the enforcement reader (trust_ladder_settings) can never meet a malformed ladder it would raise 22P02 on. Platform-scope: a role declaration changes what a step grants in every workspace that hired that role. p_clear => true removes one category. Migration 838.';
+
 -- ── the enforcement reader: what an earned level actually GRANTS ────────────
 -- ⚠ THIS IS THE ONLY CHANGE IN THIS FILE THAT ALTERS WHAT A LEVEL PERMITS, and
 -- it is the change that gives role_archetypes.trust_ladder a reader. Exactly one
@@ -967,10 +1149,10 @@ $function$
 -- success line below is visible on a real apply -- silence IS the pass, and the
 -- only thing that speaks is a failure.
 --
--- ── EIGHTEEN INVERSIONS, EACH RUN AGAINST PRODUCTION IN AN ABORTING
+-- ── TWENTY-FOUR INVERSIONS, EACH RUN AGAINST PRODUCTION IN AN ABORTING
 --    TRANSACTION, EACH RED WITH ITS OWN MESSAGE. A gate that cannot fail is
---    theatre, and "30 checks, 0 findings" is worth nothing until every one of
---    them has been seen to fail on purpose. Clean run first: 30 checks, 0
+--    theatre, and "40 checks, 0 findings" is worth nothing until every one of
+--    them has been seen to fail on purpose. Clean run first: 40 checks, 0
 --    findings, exit 0. Then, one at a time:
 --      1  ladder-null arm flipped to POSSIBLE ......... 5a + 6a + 5g RED
 --      2  target-level arm removed ................... 5c RED
@@ -990,6 +1172,12 @@ $function$
 --     16  the new grant narrowed below its caller .... 12 RED
 --     17  the archetype join ignored ................. 7b + 7f RED
 --     18  PROBE 10a given a pattern that cannot match  10a RED
+--     19  the writer skips validate_trust_ladder ..... 13b RED
+--     20  p_clear wipes every category ............... 13d RED
+--     21  the category-shape check disabled .......... 13e RED
+--     22  role_archetypes UPDATE given to authenticated 13f RED
+--     23  the split ratchet given a dead expression .. 13g RED
+--     24  the malformed fixture quietly made valid ... 13a RED
 --    Inversions 6, 7, 10, 11, 12, 13, 14, 15 and 17 also turned PROBE 4 red --
 --    the body-hash arm noticing that the function it measured had changed.
 --    Correct, and reported alongside rather than mistaken for the target.
@@ -1004,7 +1192,14 @@ $function$
 --    development: the pattern used Postgres's \m (start-of-word) as a CLOSING
 --    anchor where \M (end-of-word) was meant, so it could never match. Verified
 --    empirically against the live body -- \M true, \m false -- rather than
---    reasoned about. Neither would have been caught by a clean run.
+--    reasoned about.
+--    INV20 found a THIRD: PROBE 13d's two arms were bare `v_ladder_after ? key`
+--    tests, and `jsonb ? key` on a NULL jsonb is SQL NULL, not false -- so an
+--    inversion that wiped the whole column left BOTH branches untaken and the
+--    probe green having compared nothing. That is the same three-valued hole
+--    trust-proposer-boundary arm 9c exists to catch, written into a new probe by
+--    somebody who had just read that arm. Both arms are coalesced now.
+--    None of the three would have been caught by a clean run.
 do $verify$
 declare
   v_checks integer := 0;
@@ -1049,6 +1244,15 @@ declare
   v_decide      public.human_tasks;
   v_actor       uuid;
   v_task_decide uuid;
+  v_p_write         uuid;
+  v_ladder_before   jsonb;
+  v_ladder_after    jsonb;
+  -- an ARRAY (so the top-level object CHECK is satisfied) whose "level" is the
+  -- string "one" -- the exact value the review used to reach 22P02 inside
+  -- trust_ladder_settings. Only storable by a raw UPDATE, which is what PROBE
+  -- 13a does and what set_role_trust_ladder exists to stop.
+  c_ladder_malformed constant jsonb :=
+    '[{"level":"one","name":"zz probe 838 malformed","mode":"act"}]'::jsonb;
   v_decide_note text;
   v_decide_skipped boolean := false;
   v_task_status text;
@@ -1244,6 +1448,37 @@ begin
     end if;
   else
     raise notice '838 VACUITY -- PROBE 12 found 0 non-system roles to compare grants across. Zero comparisons; it does not count toward the checks total.';
+  end if;
+
+  -- ══ PROBE 13f -- THE REAL PERIMETER on role_archetypes, denominator 2,
+  -- unconditional, correct on an empty database. set_role_trust_ladder is
+  -- SECURITY INVOKER, so what actually stops a browser caller writing a global
+  -- role declaration is the TABLE grant, not the named-caller arm inside the
+  -- function. has_function/has_table_privilege answer INCLUDING inheritance
+  -- through PUBLIC, so a REVOKE elsewhere cannot fake a pass here.
+  for v_row in select unnest(array['anon', 'authenticated']) as r loop
+    v_checks := v_checks + 1;
+    if has_table_privilege(v_row.r, 'public.role_archetypes', 'UPDATE') then
+      v_bad := array_append(v_bad, format(
+        'PROBE 13f: %s holds UPDATE on role_archetypes. A role ladder is a GLOBAL declaration -- it changes what a step grants in every workspace that hired that role -- and set_role_trust_ladder runs as INVOKER precisely because this grant is the perimeter. With it widened, the named-caller arm inside the function is the only thing left, and a service_role JWT skips that arm by design.',
+        v_row.r));
+    end if;
+  end loop;
+
+  -- ══ PROBE 13g -- THE SPLIT RATCHET, denominator 1. set_role_trust_ladder
+  -- mirrors set_trust_ladder's capability split verbatim, because it must accept
+  -- exactly what that writer accepts. There is no single source of truth to call
+  -- instead, so this arm makes the copies unable to drift SILENTLY: change the
+  -- split there and this goes red naming the file that has to follow.
+  -- Comment-stripped, so the prose in either body cannot satisfy it.
+  v_checks := v_checks + 1;
+  select regexp_replace(prosrc, '--[^' || chr(10) || ']*', '', 'g') into v_src
+    from pg_proc where proname = 'set_trust_ladder' and pronamespace = 'public'::regnamespace;
+  if v_src is null then
+    v_bad := array_append(v_bad, 'PROBE 13g: public.set_trust_ladder does not exist -- the writer this file mirrors its capability split from is gone');
+  elsif position('v_uses_conf := v_pol.action_category IN (''answer_dock'', ''answer_widget'')' in v_src) = 0 then
+    v_bad := array_append(v_bad,
+      'PROBE 13g: set_trust_ladder no longer derives its confidence/amount split as action_category IN (answer_dock, answer_widget). set_role_trust_ladder mirrors that expression verbatim and must be updated in the same commit, or the two writers will accept different ladders for the same category.');
   end if;
 
   -- ══ PROBE 5 -- the fixture arm. Needs one tenant to hang throwaway rows off.
@@ -1511,11 +1746,13 @@ begin
       values
         (v_tenant, v_de_role,   'zz_probe_838_role', 0, 3, 'active', null,        c_criteria_impossible),
         (v_tenant, v_de_role,   'zz_probe_838_over', 0, 3, 'active', c_ladder_l2, c_criteria_impossible),
+        (v_tenant, v_de_role,   'zz_probe_838_write', 0, 3, 'active', null,        c_criteria_impossible),
         (v_tenant, v_de_silent, 'zz_probe_838_role', 0, 3, 'active', null,        c_criteria_impossible),
         (v_tenant, v_de_noarch, 'zz_probe_838_role', 0, 3, 'active', null,        c_criteria_impossible);
 
       select id into v_p_role   from public.trust_policies where de_id = v_de_role   and action_category = 'zz_probe_838_role';
       select id into v_p_over   from public.trust_policies where de_id = v_de_role   and action_category = 'zz_probe_838_over';
+      select id into v_p_write  from public.trust_policies where de_id = v_de_role   and action_category = 'zz_probe_838_write';
       select id into v_p_silent from public.trust_policies where de_id = v_de_silent and action_category = 'zz_probe_838_role';
       select id into v_p_noarch from public.trust_policies where de_id = v_de_noarch and action_category = 'zz_probe_838_role';
 
@@ -1587,6 +1824,110 @@ begin
         v_bad := array_append(v_bad,
           'PROBE 7f: a policy whose employee has NO archetype_key was reported promotable -- effective_trust_ladder resolved a role that does not exist');
       end if;
+
+      -- ══ PROBE 13 -- THE VALIDATING WRITER. The role column is the one input
+      -- to the enforcement reader that nothing guarded, and a hand-written
+      -- UPDATE is the only way to use this feature today, so a malformed
+      -- declaration is the expected first failure mode. These arms prove the
+      -- writer closes it, and prove the hole was real in the first place.
+
+      -- (13a) ⚠ THE HOLE, DEMONSTRATED. Stored by a RAW UPDATE -- the status quo
+      -- this writer replaces -- a malformed ladder reaches jsonb_array_elements
+      -- and (entry->>'level')::integer inside trust_ladder_settings and raises
+      -- 22P02. Asserting the RAISE, not tolerating it: a silent fallback to
+      -- trust_level_settings would be a silent widening, which this file refuses
+      -- everywhere else too.
+      v_checks := v_checks + 1;
+      update public.role_archetypes
+         set trust_ladder = jsonb_build_object('zz_probe_838_role', c_ladder_malformed)
+       where key = v_role_key;
+      select * into v_pol_row from public.trust_policies where id = v_p_role;
+      begin
+        v_res := public.trust_ladder_settings(v_pol_row, 1);
+        v_bad := array_append(v_bad, format(
+          'PROBE 13a: trust_ladder_settings returned %s for a role ladder whose level is the string "one". It should have raised -- if it silently answered, it fell back to something, and the only thing to fall back to is the uncapped trust_level_settings default.',
+          v_res::text));
+      exception when others then
+        if sqlstate <> '22P02' then
+          v_bad := array_append(v_bad, format(
+            'PROBE 13a: expected 22P02 from a malformed role ladder, got %s: %s', sqlstate, sqlerrm));
+        end if;
+      end;
+      -- put the role back to a good declaration for the arms that follow
+      update public.role_archetypes
+         set trust_ladder = jsonb_build_object('zz_probe_838_role', c_ladder_l1, 'zz_probe_838_over', c_ladder_l1)
+       where key = v_role_key;
+
+      -- (13b) THE WRITER REFUSES THE SAME VALUE, and leaves the column alone.
+      v_checks := v_checks + 1;
+      select trust_ladder into v_ladder_before from public.role_archetypes where key = v_role_key;
+      begin
+        v_res := public.set_role_trust_ladder(v_role_key, 'zz_probe_838_role', c_ladder_malformed);
+        v_bad := array_append(v_bad, format(
+          'PROBE 13b: set_role_trust_ladder ACCEPTED a ladder whose level is the string "one" (returned %s) -- validate_trust_ladder is not being called, so the writer is not a writer, it is a passthrough.',
+          v_res::text));
+      exception when raise_exception then
+        null; -- expected: validate_trust_ladder refused it.
+      end;
+      select trust_ladder into v_ladder_after from public.role_archetypes where key = v_role_key;
+      v_checks := v_checks + 1;
+      if v_ladder_after is distinct from v_ladder_before then
+        v_bad := array_append(v_bad,
+          'PROBE 13b: the refused write still CHANGED role_archetypes.trust_ladder -- a validator that refuses after storing is not a validator');
+      end if;
+
+      -- (13c) ⛔ THE CONTROL. If the writer refuses everything, 13b proves
+      -- nothing. A well-formed ladder must be accepted, stored, and then be
+      -- visible through the same cascade the enforcement reader uses.
+      v_checks := v_checks + 1;
+      begin
+        v_res := public.set_role_trust_ladder(v_role_key, 'zz_probe_838_write', c_ladder_l1);
+        if coalesce((v_res->>'levels')::integer, 0) <> 1
+           or coalesce(v_res->>'action_category', '') <> 'zz_probe_838_write' then
+          v_bad := array_append(v_bad, format(
+            'PROBE 13c: CONTROL -- the writer accepted a good ladder but reported %s', v_res::text));
+        end if;
+      exception when others then
+        v_bad := array_append(v_bad, format(
+          'PROBE 13c: CONTROL FAILED -- the writer REFUSED a well-formed ladder (%s), so PROBE 13b proves nothing: it refuses everything.',
+          sqlerrm));
+      end;
+      v_checks := v_checks + 1;
+      select * into v_pol_row from public.trust_policies where id = v_p_write;
+      if public.effective_trust_ladder(v_pol_row) is distinct from c_ladder_l1 then
+        v_bad := array_append(v_bad, format(
+          'PROBE 13c: a ladder the writer accepted does not come back through effective_trust_ladder (%s) -- it stored something the readers cannot see',
+          coalesce(public.effective_trust_ladder(v_pol_row)::text, 'SQL NULL')));
+      end if;
+
+      -- (13d) p_clear removes ONE category and leaves the others standing.
+      v_checks := v_checks + 1;
+      v_res := public.set_role_trust_ladder(v_role_key, 'zz_probe_838_write', null, true);
+      select trust_ladder into v_ladder_after from public.role_archetypes where key = v_role_key;
+      -- ⚠ BOTH ARMS COALESCE, and INV20 is why. `jsonb ? key` on a NULL jsonb
+      -- is SQL NULL, not false, so an inversion that wiped the whole column left
+      -- both bare arms evaluating to NULL -- neither branch taken, probe green,
+      -- nothing compared. Same three-valued hole trust-proposer-boundary arm 9c
+      -- exists to catch, found here by inverting rather than by reading.
+      if coalesce(v_ladder_after ? 'zz_probe_838_write', false) then
+        v_bad := array_append(v_bad, format(
+          'PROBE 13d: p_clear did not remove "%s" -- trust_ladder is still %s', 'zz_probe_838_write', v_ladder_after::text));
+      elsif not coalesce(v_ladder_after ? 'zz_probe_838_role', false) then
+        v_bad := array_append(v_bad, format(
+          'PROBE 13d: p_clear removed MORE than the category asked for -- "%s" is gone too (%s)',
+          'zz_probe_838_role', coalesce(v_ladder_after::text, 'SQL NULL')));
+      end if;
+
+      -- (13e) a category shape trust_policies could never hold is refused, so a
+      -- typo cannot be stored as a declaration that matches nothing forever.
+      v_checks := v_checks + 1;
+      begin
+        v_res := public.set_role_trust_ladder(v_role_key, 'Not A Category', c_ladder_l1);
+        v_bad := array_append(v_bad,
+          'PROBE 13e: the writer stored a declaration under a category trust_policies.action_category cannot hold, so it can never match a policy');
+      exception when raise_exception then
+        null; -- expected
+      end;
 
       -- ══ PROBE 10b -- THE 836 COMPOSITION, DRIVEN END TO END ON THE REAL PATH.
       -- PROBE 5g calls the writer directly and would not notice if the
