@@ -94,7 +94,7 @@ export default function PlatformInviteRedeemPage({ code }: { code: string }) {
                 Wrong account?{' '}
                 <button
                   onClick={() => { void (async () => { await handleLogout(); })(); }}
-                  className="text-dt-accent-text hover:underline"
+                  className="text-dt-accent-text underline"
                 >
                   Sign out
                 </button>

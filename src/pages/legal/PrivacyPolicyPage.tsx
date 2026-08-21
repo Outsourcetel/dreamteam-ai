@@ -10,7 +10,7 @@ const PrivacyPolicyPage = ({ onBack }: { onBack?: () => void }) => (
   <div className="min-h-screen bg-dt-page text-dt-support overflow-y-auto">
     <div className="max-w-3xl mx-auto px-6 py-12">
       {onBack && (
-        <button onClick={onBack} className="text-sm text-dt-accent-text hover:underline mb-6">← Back</button>
+        <button onClick={onBack} className="text-sm text-dt-accent-text mb-6">← Back</button>
       )}
 
       <Banner tone="warn" className="mb-8">

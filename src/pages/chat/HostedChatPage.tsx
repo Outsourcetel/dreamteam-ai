@@ -13,7 +13,7 @@ export default function HostedChatPage() {
   const brand = params.get('brand') || 'Support';
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#070816] text-dt-title flex flex-col items-center justify-center p-0 sm:p-6">
+    <div className="dt-force-dark relative min-h-screen overflow-hidden bg-[#070816] text-dt-title flex flex-col items-center justify-center p-0 sm:p-6">
       <PortalStyles />
       {/* Aurora field */}
       <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">

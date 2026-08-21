@@ -217,7 +217,7 @@ const LoginPage = ({
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="text-xs font-medium text-dt-support">Password</label>
                     <button type="button" onClick={() => { setShowForgot(true); setForgotEmail(email); setForgotSent(false); setForgotError(''); }}
-                      className="text-xs text-dt-accent-text hover:underline">
+                      className="text-xs text-dt-accent-text underline">
                       Forgot password?
                     </button>
                   </div>
@@ -233,7 +233,7 @@ const LoginPage = ({
               <div className="border-t border-dt-border pt-5 text-center">
                 <p className="text-xs text-dt-faint">
                   Don't have an account?{' '}
-                  <button onClick={() => setTab('signup')} className="text-dt-accent-text hover:underline">
+                  <button onClick={() => setTab('signup')} className="text-dt-accent-text underline">
                     Create your organization
                   </button>
                 </p>
