@@ -73,7 +73,7 @@ const BASELINE = {
   'bg-slate variants': 7, 'border-slate variants': 2, 'radius variants': 13,
   'card padding variants': 9, 'local StatCard-likes (files)': 6,
   'hand-rolled dialogs': 0, 'hand-rolled toasts': 0,
-  'inline style objects': 45, 'raw hex colors': 18,
+  'inline style objects': 42, 'raw hex colors': 18,
 };
 const NOW = {
   'bg-slate variants': uniq('bg-slate-[0-9/]*'),
