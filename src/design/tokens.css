@@ -143,18 +143,29 @@
 
 /* Theme-independent dark surfaces (customer-facing embeds — EmbedWidget
    precedent, doc §7): a page that must stay dark regardless of the
-   operator's theme wraps its root in this class. Re-declares only the COLOR
+   operator's theme wraps its root in this class. Re-declares the COLOR
    custom properties of the dark :root block above (surfaces, borders, all
-   five text levels, the accent set, all five semantic triples) — verbatim,
-   not layout or font tokens, which aren't theme-dependent in the first
-   place. CSS custom properties cascade normally, so any descendant's
-   var(--dt-*) resolves to these values regardless of whether :root or
-   :root.light is active above it. */
+   five text levels, the accent set, all five semantic triples) verbatim,
+   plus the two other theme-dependent declarations that go with a forced
+   dark ground: color-scheme (so native controls/scrollbars/pickers stay
+   dark even when :root.light is active above this) and --dt-font-sans
+   (the sans stack DOES flip between :root and :root.light — pinned here so
+   the customer-facing surface doesn't change typeface when the operator
+   switches theme). Layout tokens are the only things NOT re-declared here,
+   since those are founder-locked and never theme-dependent. CSS custom
+   properties cascade normally, so any descendant's var(--dt-*) resolves to
+   these values regardless of whether :root or :root.light is active above
+   it. */
 .dt-force-dark {
+  color-scheme: dark;
+
   --dt-page:    #0c1123;
   --dt-panel:   #171e3966;
   --dt-card:    #171e3966;
   --dt-inset:   #0c112399;
+
+  --dt-font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+                  "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 
   --dt-border:        #2d355499;
   --dt-border-strong: #414b6e;

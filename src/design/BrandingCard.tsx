@@ -36,9 +36,18 @@ export default function BrandingCard() {
   const save = async () => {
     setBusy(true); setMsg(null);
     const r = await saveBranding(accent, surface);
-    setBusy(false); setDirty(false);
-    setMsg(r.ok ? { tone: 'ok', text: 'Saved — this workspace now wears your brand.' }
-                : { tone: 'danger', text: r.error ?? 'Could not save.' });
+    setBusy(false);
+    if (r.ok) {
+      setDirty(false);
+      setMsg({ tone: 'ok', text: 'Saved — this workspace now wears your brand.' });
+    } else {
+      // dirty stays true on failure — the preview is still applied and unsaved,
+      // so the Save button must stay reachable rather than stranding it.
+      const text = r.error?.includes('unknown_surface')
+        ? "This look isn't enabled for your workspace yet — the platform update that adds it hasn't been applied."
+        : (r.error ?? 'Could not save.');
+      setMsg({ tone: 'danger', text });
+    }
   };
 
   return (

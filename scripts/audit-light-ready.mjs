@@ -18,7 +18,7 @@ const NO_COMMENTS = `| grep -v '^[[:space:]]*\\(//\\|\\*\\)'`;
 // so it belongs beside dt-accent-strong/-hover for the same reason they're
 // here — WorkforceEconomicsPanel.tsx's "Save baseline" button was the one
 // real case this closed.
-const COLORED_BG = 'bg-((?:indigo|rose|emerald|sky|amber|violet|purple|blue|green|red|teal|cyan|orange|fuchsia|pink)-\\d+(?![\\d/])|dt-accent(?:-strong|-hover)?|gradient)';
+const COLORED_BG = 'bg-((?:indigo|rose|emerald|sky|amber|violet|purple|blue|green|red|teal|cyan|orange|fuchsia|pink)-\\d+(?![\\d/])|dt-accent(?:-strong|-hover)?(?!-)|gradient)';
 
 // ── Sanctioned survivors (doc §7) — excluded by NAME, not by softening the
 // baseline. Both lists are grep-blind spots: COLORED_BG only recognizes a
