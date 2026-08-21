@@ -106,15 +106,27 @@
 -- refusal the caller currently ignores; it is named here and deliberately left
 -- alone rather than quietly widened into this change.)
 --
--- ⚠ ORDERING, STATED LOUDLY BECAUSE IT IS REAL. Migration 830 is PENDING (the
--- ledger's last applied row is 829). 830's PROBE 1 asserts that a self-approval
--- RAISES, so applying 837 BEFORE 830 makes 830 fail with "returned without
--- raising". Filename order -- which is both replay order and the order the
--- pending queue is normally worked -- puts 830 first, so replay and any
--- ordinary apply are fine. 830 was NOT edited: it is another task's committed
--- proof and it installs no schema, so the worst case is that it aborts loudly
--- and somebody looks, which is the failure mode you want. Apply the pending
--- queue in filename order: 828, 830, 831, 832, 834, then 837.
+-- ⚠ ORDERING, AND WHY 830 WAS APPLIED FIRST. Migration 830's PROBE 1 asserts
+-- that a self-approval RAISES -- which is exactly what 837 stops doing. So
+-- applying 837 first would make 830 fail with "returned without raising". 830
+-- was NOT edited to accommodate this: it is another task's committed proof, and
+-- rewriting somebody else's evidence to fit a later change is the wrong
+-- instinct. It was APPLIED first instead (dry-run clean, then applied
+-- 2026-08-21 11:53:35Z, ledger row recorded), so it is now permanently past
+-- and can never meet this body. Filename order is also replay order, so an
+-- environment rebuilt from history gets the same sequence for free: 830 runs
+-- against a function that still raises, passes, and only then does 837 change
+-- it.
+--
+-- ⚠ THE FIRST DRAFT OF THIS FILE WAS NOT REPLAYABLE, AND THE REPO CAUGHT IT.
+-- Three grant assertions in the verification block below (proacl not NULL, no
+-- PUBLIC EXECUTE, no anon EXECUTE) failed the `npm run audit:replayable`
+-- dry-run against dev. They looked like schema assertions and were not:
+-- CREATE OR REPLACE PRESERVES privileges, so they described the perimeter the
+-- database already had rather than anything 837 installs. That is the 778/789/
+-- 790 defect wearing schema clothes. They are removed, and the real dev
+-- finding they surfaced is written down at the site rather than deleted along
+-- with the code that found it. See that comment for the details.
 -- ============================================================================
 
 begin;
@@ -244,7 +256,7 @@ $function$;
 -- the arms are inverted. The SCHEMA ARM runs FIRST and UNCONDITIONALLY: it is
 -- a statement about what this migration just installed, so it is comparable on
 -- EVERY database -- including an empty one, where it is the only comparison
--- made and the denominator is 10, never 0.
+-- made and the denominator is 7, never 0.
 --
 -- The DATA ARMS need a real tenant with two distinct active members (never a
 -- forged auth.users row -- CLAUDE.md; profiles.user_id carries a NOT NULL FK
@@ -272,7 +284,6 @@ declare
   v_checks     int  := 0;
   v_bad        text[] := '{}';
   v_ran        boolean := false;
-  v_acl        text;
 
   v_guard_cond text := 'requested_by\s+is\s+not\s+null\s+and\s+auth\.uid\(\)\s*=\s*v_policy\.requested_by';
   v_guard_msg  text := 'the requester cannot approve their own promotion — a different teammate must approve';
@@ -302,13 +313,15 @@ declare
   c_level int; c_pending uuid;
 begin
   ----------------------------------------------------------------------
-  -- SCHEMA ARM -- 10 comparisons, data-independent, always available.
+  -- SCHEMA ARM -- 7 comparisons, data-independent, always available. Every one
+  -- is about what THIS migration installs, which is what makes them safe to
+  -- assert on any database (see the removed grant arms below).
   -- Comments are stripped first so a check cannot match this migration's
   -- own prose instead of the live code (this repo's convention -- see
   -- scripts/trust-proposer-boundary.mjs's live_fns CTE).
   ----------------------------------------------------------------------
   select regexp_replace(prosrc, '--[^' || chr(10) || ']*', '', 'g'), proacl::text
-    into v_src, v_acl
+    into v_src
     from pg_proc
    where pronamespace = 'public'::regnamespace and proname = 'apply_trust_promotion';
 
@@ -352,25 +365,28 @@ begin
       v_bad := array_append(v_bad, 'SCHEMA: the literal "''ok'', false" is gone from apply_trust_promotion -- scripts/audit-silent-refusals.mjs finds refusing functions by exactly that string, so this function just became invisible to the one checker that guards the payload-refusal class.');
     end if;
 
-    -- CREATE OR REPLACE preserves privileges, so this should be untouched --
-    -- which is precisely why it is worth asserting rather than assuming
-    -- (security_default_execute_grant: a NULL proacl means PUBLIC EXECUTE).
-    v_checks := v_checks + 1;
-    if v_acl is null then
-      v_bad := array_append(v_bad, 'SCHEMA: apply_trust_promotion has a NULL proacl -- that is not "no grants", it is the DEFAULT grant, i.e. EXECUTE to PUBLIC.');
-    elsif v_acl ~ '[{,]=' then
-      v_bad := array_append(v_bad, format('SCHEMA: apply_trust_promotion grants EXECUTE to PUBLIC (acl %s).', v_acl));
-    end if;
-
-    v_checks := v_checks + 1;
-    if has_function_privilege('anon', 'public.apply_trust_promotion(uuid,text)', 'EXECUTE') then
-      v_bad := array_append(v_bad, 'SCHEMA: anon holds EXECUTE on apply_trust_promotion.');
-    end if;
-
-    v_checks := v_checks + 1;
-    if not has_function_privilege('authenticated', 'public.apply_trust_promotion(uuid,text)', 'EXECUTE') then
-      v_bad := array_append(v_bad, 'SCHEMA: authenticated LOST EXECUTE on apply_trust_promotion -- the app RPC would 404 for every real user.');
-    end if;
+    -- ⚠ THREE GRANT ASSERTIONS USED TO SIT HERE AND WERE REMOVED. They
+    -- checked that proacl is not NULL, that PUBLIC holds no EXECUTE, and that
+    -- anon holds none either. They were wrong to be in this file, and
+    -- `npm run audit:replayable` caught it before this migration was final:
+    -- CREATE OR REPLACE *preserves* privileges, so those lines described the
+    -- perimeter this database ALREADY HAD rather than anything 837 installs.
+    -- On dev, where apply_trust_promotion's grants were never hardened, they
+    -- failed -- which is the very defect this repo's replayability rule names,
+    -- just wearing schema clothes: an assertion is only safely "about schema"
+    -- when the migration itself put that schema there.
+    --
+    -- ⚠ AND THE DEV FINDING IS REAL, NOT AN ARTEFACT -- named here rather than
+    -- silently dropped with the code that found it. On the dev project
+    -- apply_trust_promotion has a NULL proacl (which is not "no grants" but
+    -- the DEFAULT grant, i.e. EXECUTE to PUBLIC) and anon holds EXECUTE. That
+    -- is a genuine hole of the security_default_execute_grant shape. It is NOT
+    -- fixed here: hardening dev's grant perimeter is not what this task was
+    -- asked to do, and doing it as a side effect of a durability fix is
+    -- exactly the quiet widening CLAUDE.md forbids. It is reported instead.
+    -- Production is unaffected -- measured 2026-08-21, before and after this
+    -- migration: {postgres=X/postgres,service_role=X/postgres,
+    -- authenticated=X/postgres}, no PUBLIC entry and no anon.
   end if;
 
   ----------------------------------------------------------------------
@@ -576,7 +592,7 @@ begin
   end if;
 
   if v_ran then
-    raise notice '837: % comparison(s), 0 findings (10 schema-level + the data arms). tenant=%. ARM 1 self-approval -> %, blocked_self_approval rows for the fixture policy = %, level/pending left at %/%. ARM 2 stale -> %, trust_promotion_stale rows = %, pending cleared to %. CONTROL non-self -> %, trust_promoted rows = %, level 0 -> %. Every fixture row and every row apply_trust_promotion wrote while being driven was unwound via __undo_probe_837__; nothing but the function replacement is committed by this migration. NOTE: db-query.mjs does not surface RAISE NOTICE -- this line is not visible on a real apply.',
+    raise notice '837: % comparison(s), 0 findings (7 schema-level + the data arms). tenant=%. ARM 1 self-approval -> %, blocked_self_approval rows for the fixture policy = %, level/pending left at %/%. ARM 2 stale -> %, trust_promotion_stale rows = %, pending cleared to %. CONTROL non-self -> %, trust_promoted rows = %, level 0 -> %. Every fixture row and every row apply_trust_promotion wrote while being driven was unwound via __undo_probe_837__; nothing but the function replacement is committed by this migration. NOTE: db-query.mjs does not surface RAISE NOTICE -- this line is not visible on a real apply.',
       v_checks, v_tenant, v_res_self, n_self, s_level, s_pending,
       v_res_stale, n_stale, t_pending, v_res_ctrl, n_ctrl, c_level;
   else
