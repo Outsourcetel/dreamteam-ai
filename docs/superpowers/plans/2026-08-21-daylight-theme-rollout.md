@@ -240,7 +240,11 @@ const NO_COMMENTS = `| grep -v '^[[:space:]]*\\(//\\|\\*\\)'`;
 
 // text-white beside a solid colored fill is CORRECT in both themes; the
 // defect is text-white carrying content color on a token surface.
-const COLORED_BG = 'bg-(indigo|rose|emerald|sky|amber|violet|purple|blue|green|red|teal|cyan|orange|fuchsia|pink|dt-accent-strong|dt-accent-hover|gradient)';
+// Only an OPAQUE colored fill legitimizes text-white. A translucent tint
+// (bg-indigo-500/10) is effectively the surface underneath — white text on it
+// is a real light-theme hazard, so the shade must NOT carry a /NN opacity
+// suffix. (?![\d/]) also stops bg-indigo-500/10 half-matching as bg-indigo-50.
+const COLORED_BG = 'bg-((?:indigo|rose|emerald|sky|amber|violet|purple|blue|green|red|teal|cyan|orange|fuchsia|pink)-\\d+(?![\\d/])|dt-accent-strong|dt-accent-hover|gradient)';
 
 const lines = (pat) => sh(`grep -rn "${pat}" ${G} ${NO_COMMENTS}`).split('\n').filter(Boolean);
 const bareWhite = lines('text-white').filter(l => !new RegExp(COLORED_BG).test(l));
