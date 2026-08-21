@@ -59,10 +59,42 @@ This design **extends** machinery rather than replacing it. Do not rebuild:
 
 Found while measuring, not inferred. Each must be fixed for any of this to function.
 
-1. **One open request freezes a whole group.** Of the three eligible policies, one has an
-   open task and **two have never raised a request at all**. `detect_trust_widening_patterns`
-   excludes a group when any proposal in it is open, so a single unanswered promotion
-   suppresses every other promotion in that group indefinitely.
+1. **Eligibility never becomes a request, because the proposal path asks for something
+   stronger than the eligibility bar.** ⚠ **CORRECTED 2026-08-21, after this spec was
+   first written and before any code was planned against it. The original claim here —
+   "one open request freezes a whole group" — was WRONG, and the correction matters
+   because it changes what gets built.**
+
+   What I asserted: `detect_trust_widening_patterns` excludes a group when any proposal in
+   it is open, so one unanswered promotion suppresses the rest.
+
+   What is true: that clause is scoped `tenant_id + de_id + action_category`, and the
+   eligible policies are on **different employees** — so it cannot be what silences them.
+   Verified by reading the clause and comparing `de_id`s.
+
+   The real cause. Eligibility and proposability are two different tests and nothing
+   bridges them:
+
+   - `trust_evidence_for` says eligible when the **criteria** are met. Two policies
+     qualify today precisely because their criteria need `min_human_samples: 0`.
+   - `detect_trust_widening_patterns` proposes only where there is a **pattern of approved,
+     landed, un-rolled-back actions** to point at — it groups by
+     `(tenant, de, action_definition)` over that history.
+
+   With 2 actions executed in the last 7 days and 208 reviews undecided, no such history
+   exists. Measured: `detect_trust_widening_patterns('5bb802e1-…')` returns **0
+   candidates** while 2 policies report `eligible: true`.
+
+   So a policy can be eligible forever and never be asked about. The detector is not
+   broken — it answers "has this employee repeatedly done this and been approved?", which
+   is a fine question and a *different* one from "does this employee meet its bar?".
+   `request_trust_promotion` exists and takes the direct path, but nothing calls it on
+   eligibility.
+
+   **What this changes in the build:** the task is not to relax a blocking clause. It is
+   to give eligibility its own route to a request — and to decide deliberately whether an
+   eligible-but-patternless policy should raise one, which is a founder question the
+   original framing hid.
 2. **The not-your-own-request safeguard is vacuous on the automatic path.**
    `apply_trust_promotion` guards with `if v_policy.requested_by is not null and
    auth.uid() = v_policy.requested_by`. `raise_trust_widening_proposals` sets
