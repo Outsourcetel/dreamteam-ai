@@ -21,7 +21,7 @@ export default function DeliverablesPanel({ deId }: { deId: string }) {
   return (
     <div>
       <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-2">Deliverables — documents produced for review</p>
-      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      {error && <p className="text-xs text-dt-danger mb-2">{error}</p>}
       {items === null ? (
         <p className="text-xs text-dt-muted">Loading…</p>
       ) : (
@@ -33,7 +33,7 @@ export default function DeliverablesPanel({ deId }: { deId: string }) {
                 <span className="text-sm text-dt-body flex-1">{d.title}</span>
                 <span className="text-[11px] text-dt-faint">{new Date(d.created_at).toLocaleDateString()}</span>
                 <button onClick={() => setOpen(open === d.id ? null : d.id)}
-                  className="text-[10px] text-indigo-400 hover:text-indigo-300 shrink-0">{open === d.id ? 'hide' : 'read'}</button>
+                  className="text-[10px] text-dt-accent-text hover:underline shrink-0">{open === d.id ? 'hide' : 'read'}</button>
               </div>
               {open === d.id && (
                 <pre className="mt-2 text-xs text-dt-support whitespace-pre-wrap font-sans bg-dt-inset rounded-lg p-3 max-h-80 overflow-y-auto">{d.content}</pre>

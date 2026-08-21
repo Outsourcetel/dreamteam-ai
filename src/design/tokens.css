@@ -23,6 +23,10 @@
   --dt-card:    #171e3966; /* card on page; on a panel use --dt-inset       */
   --dt-inset:   #0c112399; /* wells inside cards (code, previews, forms)    */
 
+  /* ── Typography ────────────────────────────────────────────────────── */
+  --dt-font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+                  "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
   /* ── Borders (exactly two + focus) ───────────────────────────────────── */
   --dt-border:        #2d355499; /* navy-700/60 — default hairline          */
   --dt-border-strong: #414b6e;   /* navy-600 — hover / emphasis             */
@@ -41,6 +45,7 @@
   --dt-accent-hover:  #6366f1; /* indigo-500 — primary button hover        */
   --dt-accent-soft:   #6366f11a; /* indigo-500/10 — selected row wash      */
   --dt-accent-text:   #a5b4fc; /* indigo-300 — accent-colored text         */
+  --dt-accent-border: #6366f14d; /* indigo-500/30 — chip/selected/ai borders */
 
   /* ── Semantics (each = text + soft bg + border recipe) ───────────────── */
   --dt-ok:        #34d399; --dt-ok-soft:     #10b9811a; --dt-ok-border:     #10b9814d;
@@ -88,11 +93,99 @@
   --dt-field-max:    420px; /* a form field wider than this is harder to read */
 }
 
-/* Light theme lands here later — semantic names stay identical. */
+/* ═══ DAYLIGHT — the light theme (founder-approved 2026-08-21). Same token
+   names, second value set. Activated by class `light` on <html>; per-tenant
+   branding still overrides accent vars on top via inline style. ═══ */
 :root.light {
-  /* Reserved for the light ramp. The one line that must live here from the
-     start: whenever this class is used, the browser-painted surfaces have to
-     flip back with it, or a light theme inherits dark scrollbars and pickers —
-     the same defect as D-13, mirrored. */
+  /* Browser-painted surfaces flip with the theme (mirror of D-13). */
   color-scheme: light;
+
+  /* ── Surfaces ── */
+  --dt-page:    #f4f5f7;
+  --dt-panel:   #ffffff;
+  --dt-card:    #ffffff;
+  --dt-inset:   #f2f4f7;
+
+  /* ── Typography ── */
+  --dt-font-sans: "Instrument Sans Variable", ui-sans-serif, system-ui, -apple-system,
+                  BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* ── Borders ── */
+  --dt-border:        #e4e7ec;
+  --dt-border-strong: #d0d5dd;
+
+  /* ── Text (same five levels; dt-muted stays the floor for copy) ── */
+  --dt-text-title:   #101828;
+  --dt-text-body:    #1d2939;
+  --dt-text-support: #475467;
+  --dt-text-muted:   #667085;
+  --dt-text-faint:   #98a2b3;
+
+  /* ── Accent (Daylight cobalt; tenant-brandable at runtime) ── */
+  --dt-accent:        #155eef;
+  --dt-accent-strong: #1146d4;
+  --dt-accent-hover:  #155eef;
+  --dt-accent-soft:   #155eef14;
+  --dt-accent-text:   #1146d4;
+  --dt-accent-border: #155eef4d;
+
+  /* ── Semantics (solid pastels — alpha washes vanish on white) ── */
+  --dt-ok:        #067647; --dt-ok-soft:     #e8f5ee; --dt-ok-border:     #b7dfc8;
+  --dt-warn:      #b54708; --dt-warn-soft:   #fdf3e0; --dt-warn-border:   #f5d698;
+  /* ⚠ #d92d20 measured 4.22:1 on --dt-danger-soft — just under the 4.5 AA
+     floor every sibling tone clears (ok 5.07, warn 4.93, info 5.02, neutral
+     6.98). Darkened 2026-08-21 (Task 4 review) to clear AA on BOTH white and
+     --dt-danger-soft; soft/border stay, only the text/icon value moves. */
+  --dt-danger:    #b42318; --dt-danger-soft: #fdecea; --dt-danger-border: #f4b3ae;
+  --dt-info:      #0b6bab; --dt-info-soft:   #e7f3fb; --dt-info-border:   #b3d9f0;
+  --dt-neutral:   #475467; --dt-neutral-soft:#f2f4f7; --dt-neutral-border:#e0e3e9;
+}
+
+/* Theme-independent dark surfaces (customer-facing embeds — EmbedWidget
+   precedent, doc §7): a page that must stay dark regardless of the
+   operator's theme wraps its root in this class. Re-declares the COLOR
+   custom properties of the dark :root block above (surfaces, borders, all
+   five text levels, the accent set, all five semantic triples) verbatim,
+   plus the two other theme-dependent declarations that go with a forced
+   dark ground: color-scheme (so native controls/scrollbars/pickers stay
+   dark even when :root.light is active above this) and --dt-font-sans
+   (the sans stack DOES flip between :root and :root.light — pinned here so
+   the customer-facing surface doesn't change typeface when the operator
+   switches theme). Layout tokens are the only things NOT re-declared here,
+   since those are founder-locked and never theme-dependent. CSS custom
+   properties cascade normally, so any descendant's var(--dt-*) resolves to
+   these values regardless of whether :root or :root.light is active above
+   it. */
+.dt-force-dark {
+  color-scheme: dark;
+
+  --dt-page:    #0c1123;
+  --dt-panel:   #171e3966;
+  --dt-card:    #171e3966;
+  --dt-inset:   #0c112399;
+
+  --dt-font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+                  "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  --dt-border:        #2d355499;
+  --dt-border-strong: #414b6e;
+
+  --dt-text-title:   #ffffff;
+  --dt-text-body:    #e4e9f6;
+  --dt-text-support: #a6b4d8;
+  --dt-text-muted:   #7b8ab3;
+  --dt-text-faint:   #5b678d;
+
+  --dt-accent:        #6366f1;
+  --dt-accent-strong: #4f46e5;
+  --dt-accent-hover:  #6366f1;
+  --dt-accent-soft:   #6366f11a;
+  --dt-accent-text:   #a5b4fc;
+  --dt-accent-border: #6366f14d;
+
+  --dt-ok:        #34d399; --dt-ok-soft:     #10b9811a; --dt-ok-border:     #10b9814d;
+  --dt-warn:      #fbbf24; --dt-warn-soft:   #f59e0b1a; --dt-warn-border:   #f59e0b4d;
+  --dt-danger:    #fb7185; --dt-danger-soft: #f43f5e1a; --dt-danger-border: #f43f5e4d;
+  --dt-info:      #38bdf8; --dt-info-soft:   #0ea5e91a; --dt-info-border:   #0ea5e94d;
+  --dt-neutral:   #a6b4d8; --dt-neutral-soft:#2d35541a; --dt-neutral-border:#414b6e4d;
 }

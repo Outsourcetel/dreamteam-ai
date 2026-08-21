@@ -98,7 +98,7 @@ const SupportTriageRulesPage = ({ setPage, embedded }: { setPage: (p: Page) => v
     <div className="p-6">
       <div className={`flex items-start justify-between flex-wrap gap-2 ${embedded ? 'mb-4' : 'mb-6'}`}>
         {!embedded ? <div>
-          <h1 className="text-2xl font-bold text-white">Support triage rules</h1>
+          <h1 className="text-2xl font-bold text-dt-title">Support triage rules</h1>
           <p className="text-dt-support text-sm mt-1">
             Deterministic classification applied at intake. Rules run in order (lower number wins) — keep safety, security and outage rules at the top so they win over emotional phrasing.
           </p>
@@ -113,12 +113,12 @@ const SupportTriageRulesPage = ({ setPage, embedded }: { setPage: (p: Page) => v
         </div>
       </div>
 
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {error && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {/* Editor */}
       {draft && (
         <div className="mb-5 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 p-5 space-y-3">
-          <p className="text-sm font-semibold text-white">{draft.id ? 'Edit rule' : 'New rule'}</p>
+          <p className="text-sm font-semibold text-dt-title">{draft.id ? 'Edit rule' : 'New rule'}</p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <label className="block">
               <span className="text-[11px] text-dt-support">Order (lower wins)</span>
@@ -213,14 +213,14 @@ const SupportTriageRulesPage = ({ setPage, embedded }: { setPage: (p: Page) => v
               ) : rules.map((r) => (
                 <tr key={r.id} className={`border-b border-dt-border hover:bg-dt-panel transition-colors ${!r.active ? 'opacity-50' : ''}`}>
                   <td className="py-3 px-4 text-dt-support">{r.rule_order}</td>
-                  <td className="py-3 px-4 font-medium text-white">{r.name}</td>
+                  <td className="py-3 px-4 font-medium text-dt-title">{r.name}</td>
                   <td className="py-3 px-4 text-dt-support text-xs max-w-xs truncate">{r.match_pattern || <span className="italic">catch-all</span>}</td>
                   <td className="py-3 px-4 text-dt-support">{r.set_category}</td>
                   <td className="py-3 px-4 text-dt-support text-xs">{ownerLabel(r.owner_de_id)}</td>
-                  <td className="py-3 px-4"><span className={`text-xs ${r.set_priority === 'urgent' ? 'text-rose-400' : r.set_priority === 'high' ? 'text-amber-300' : 'text-dt-support'}`}>{r.set_priority}</span></td>
-                  <td className="py-3 px-4"><span className={`text-xs ${r.set_severity === 'sev1' ? 'text-rose-400' : r.set_severity === 'sev2' ? 'text-amber-300' : 'text-dt-support'}`}>{r.set_severity}</span></td>
-                  <td className="py-3 px-4"><button onClick={() => setDraft({ ...r })} className="text-xs text-indigo-400 hover:text-indigo-300">Edit</button></td>
-                  <td className="py-3 px-4"><button onClick={() => void remove(r)} className="text-xs text-rose-400 hover:text-rose-300">Delete</button></td>
+                  <td className="py-3 px-4"><span className={`text-xs ${r.set_priority === 'urgent' ? 'text-rose-400' : r.set_priority === 'high' ? 'text-dt-warn' : 'text-dt-support'}`}>{r.set_priority}</span></td>
+                  <td className="py-3 px-4"><span className={`text-xs ${r.set_severity === 'sev1' ? 'text-rose-400' : r.set_severity === 'sev2' ? 'text-dt-warn' : 'text-dt-support'}`}>{r.set_severity}</span></td>
+                  <td className="py-3 px-4"><button onClick={() => setDraft({ ...r })} className="text-xs text-dt-accent-text hover:underline">Edit</button></td>
+                  <td className="py-3 px-4"><button onClick={() => void remove(r)} className="text-xs text-rose-400 hover:text-dt-danger">Delete</button></td>
                 </tr>
               ))}
             </tbody>

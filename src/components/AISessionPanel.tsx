@@ -140,17 +140,17 @@ export default function AISessionPanel({
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-dt-border bg-dt-card">
         <div className="min-w-0">
-          <div className="text-sm font-semibold text-white">Edit with AI</div>
+          <div className="text-sm font-semibold text-dt-title">Edit with AI</div>
           <div className="text-xs text-dt-support truncate">{subjectLabel}</div>
         </div>
         {onClose && (
           <button onClick={onClose} aria-label="Close"
-            className="text-dt-support hover:text-white text-lg leading-none px-2">×</button>
+            className="text-dt-support hover:text-dt-body text-lg leading-none px-2">×</button>
         )}
       </div>
 
       {readOnly && (
-        <div className="px-4 py-2 text-xs text-amber-200 bg-amber-900/30 border-b border-amber-800/50">
+        <div className="px-4 py-2 text-xs text-dt-warn bg-dt-warn-soft border-b border-dt-warn-border">
           This is a remote support session, so changes can be suggested but not applied. Apply them from your own login.
         </div>
       )}
@@ -177,7 +177,7 @@ export default function AISessionPanel({
           turns.map((t, i) => (
             <div key={i} className={t.role === 'user' ? 'flex justify-end' : ''}>
               <div className={t.role === 'user'
-                ? 'bg-dt-panel text-white rounded-lg px-3 py-2 max-w-[85%] whitespace-pre-wrap'
+                ? 'bg-dt-panel text-dt-body rounded-lg px-3 py-2 max-w-[85%] whitespace-pre-wrap'
                 : 'text-dt-body whitespace-pre-wrap max-w-[95%]'}>
                 {t.role === 'assistant' ? renderLite(t.content) : t.content}
 
@@ -189,19 +189,19 @@ export default function AISessionPanel({
                     <div key={c.change_id}
                       className={`mt-2 flex items-start gap-2 text-xs rounded border px-3 py-2 ${
                         isUndone ? 'bg-dt-card border-dt-border text-dt-muted'
-                                 : 'bg-teal-900/25 border-teal-800/60 text-teal-100'}`}>
+                                 : 'bg-dt-ok-soft border-dt-ok-border text-dt-ok'}`}>
                       <span className="mt-0.5">{isUndone ? '↩' : '✓'}</span>
                       <span className="flex-1">
                         {c.summary}
                         {!isUndone && (
-                          <span className="block text-teal-300/60 mt-0.5">
+                          <span className="block text-dt-ok mt-0.5">
                             Undo available for {hrs} more hour{hrs === 1 ? '' : 's'}
                           </span>
                         )}
                       </span>
                       {!isUndone && (
                         <button onClick={() => handleUndo(c.change_id)} disabled={undoing === c.change_id}
-                          className="text-teal-300 hover:text-white underline disabled:opacity-50 shrink-0">
+                          className="text-dt-ok underline hover:brightness-110 disabled:opacity-50 shrink-0">
                           {undoing === c.change_id ? 'Undoing…' : 'Undo'}
                         </button>
                       )}
@@ -211,10 +211,10 @@ export default function AISessionPanel({
 
                 {/* What it deliberately would not do on its own */}
                 {t.proposed.map((p, j) => (
-                  <div key={j} className="mt-2 text-xs rounded border border-amber-800/60 bg-amber-900/20 px-3 py-2 text-amber-100">
+                  <div key={j} className="mt-2 text-xs rounded border border-dt-warn-border bg-dt-warn-soft px-3 py-2 text-dt-warn">
                     <div className="font-medium">Needs a person to approve</div>
                     <div className="mt-1">{p.what}</div>
-                    <div className="mt-1 text-amber-200/60">{p.why}</div>
+                    <div className="mt-1 text-dt-warn">{p.why}</div>
                   </div>
                 ))}
               </div>
@@ -223,7 +223,7 @@ export default function AISessionPanel({
         )}
         {busy && <div className="text-dt-muted text-xs">Working on it…</div>}
         {error && (
-          <div className="text-xs rounded border border-red-800/60 bg-red-900/25 px-3 py-2 text-red-200">{error}</div>
+          <div className="text-xs rounded border border-dt-danger-border bg-dt-danger-soft px-3 py-2 text-dt-danger">{error}</div>
         )}
         <div ref={endRef} />
       </div>
@@ -239,7 +239,7 @@ export default function AISessionPanel({
             }}
             rows={2}
             placeholder="Describe what you want changed…"
-            className="flex-1 resize-none bg-dt-card border border-dt-border rounded px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-slate-500"
+            className="flex-1 resize-none bg-dt-card border border-dt-border rounded px-3 py-2 text-sm text-dt-body placeholder-slate-500 focus:outline-none focus:border-slate-500"
           />
           <button
             onClick={() => void send(input)}

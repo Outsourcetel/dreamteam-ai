@@ -218,7 +218,7 @@ export default function KnowledgeTreePanel({ selectedId, onSelect, refreshKey }:
                 aria-pressed={selectedId === UNFILED_ID}
                 className={`w-full text-left rounded-lg px-3 py-1.5 mt-1 transition-colors ${
                   selectedId === UNFILED_ID
-                    ? 'bg-amber-500/15 text-amber-300 font-medium'
+                    ? 'bg-dt-warn-soft text-dt-warn font-medium'
                     : 'text-dt-support hover:bg-dt-panel'}`}
                 title="These documents are searchable, but they are not in any space"
               >

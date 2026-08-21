@@ -92,7 +92,7 @@ const MfaEnrollmentPanel = () => {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Two-Factor Authentication</h1>
+        <h1 className="text-2xl font-bold text-dt-title">Two-Factor Authentication</h1>
         <p className="text-dt-support text-sm mt-1">
           An extra code from your phone, required before you can open Remote Access into any tenant's workspace.
         </p>
@@ -104,7 +104,7 @@ const MfaEnrollmentPanel = () => {
         <div className="bg-dt-card border border-dt-border rounded-xl p-5 max-w-lg">
           <div className="flex items-center gap-3 mb-3">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-            <span className="text-sm font-medium text-white">Two-factor authentication is on</span>
+            <span className="text-sm font-medium text-dt-title">Two-factor authentication is on</span>
           </div>
           <p className="text-xs text-dt-muted mb-4">
             Remote Access now requires a verified code from your authenticator app before it will let you
@@ -113,7 +113,7 @@ const MfaEnrollmentPanel = () => {
           <button
             onClick={() => removeFactor(verifiedFactor.id)}
             disabled={removingId === verifiedFactor.id}
-            className="text-xs font-medium text-red-400 hover:text-red-300 disabled:opacity-50"
+            className="text-xs font-medium text-red-400 hover:text-dt-danger disabled:opacity-50"
           >
             {removingId === verifiedFactor.id ? 'Removing…' : 'Turn off two-factor authentication'}
           </button>
@@ -121,7 +121,7 @@ const MfaEnrollmentPanel = () => {
       ) : pendingFactorId ? (
         <div className="bg-dt-card border border-dt-border rounded-xl p-5 max-w-lg space-y-4">
           <div>
-            <p className="text-sm font-medium text-white mb-2">1. Scan this with your authenticator app</p>
+            <p className="text-sm font-medium text-dt-title mb-2">1. Scan this with your authenticator app</p>
             <p className="text-xs text-dt-muted mb-3">Google Authenticator, Authy, 1Password, or any TOTP app.</p>
             {qrCode && (
               <div
@@ -134,13 +134,13 @@ const MfaEnrollmentPanel = () => {
             </p>
           </div>
           <div>
-            <p className="text-sm font-medium text-white mb-2">2. Enter the 6-digit code it shows you</p>
+            <p className="text-sm font-medium text-dt-title mb-2">2. Enter the 6-digit code it shows you</p>
             <div className="flex items-center gap-2">
               <input
                 value={code}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 placeholder="000000"
-                className="bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-sm text-white font-mono tracking-widest w-32 text-center"
+                className="bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-sm text-dt-body font-mono tracking-widest w-32 text-center"
               />
               <button
                 onClick={verifyCode}
@@ -160,7 +160,7 @@ const MfaEnrollmentPanel = () => {
         </div>
       ) : (
         <div className="bg-dt-card border border-dt-border rounded-xl p-5 max-w-lg">
-          <p className="text-sm text-white mb-1">Two-factor authentication is off</p>
+          <p className="text-sm text-dt-title mb-1">Two-factor authentication is off</p>
           <p className="text-xs text-dt-muted mb-4">
             Remote Access works without it today, but adding a second factor closes the one real gap
             left on this account.

@@ -1,4 +1,5 @@
 import React from 'react';
+import { Banner } from '../../design/primitives';
 
 // Starter draft, not a finished legal document — see the banner below.
 // Added during the pre-launch readiness review (2026-07-08): the signup
@@ -9,24 +10,24 @@ const TermsOfServicePage = ({ onBack }: { onBack?: () => void }) => (
   <div className="min-h-screen bg-dt-page text-dt-support overflow-y-auto">
     <div className="max-w-3xl mx-auto px-6 py-12">
       {onBack && (
-        <button onClick={onBack} className="text-sm text-indigo-400 hover:text-indigo-300 mb-6">← Back</button>
+        <button onClick={onBack} className="text-sm text-dt-accent-text mb-6">← Back</button>
       )}
 
-      <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-8">
-        <p className="text-sm font-medium text-amber-300 mb-1">Draft — not yet reviewed by a lawyer</p>
-        <p className="text-xs text-amber-400/80">
+      <Banner tone="warn" className="mb-8">
+        <p className="font-medium mb-1">Draft — not yet reviewed by a lawyer</p>
+        <p className="text-xs">
           This is a starting-point draft written to reflect what DreamTeam AI actually does today. It is not final
           and should not be relied on as a binding legal agreement until reviewed by qualified legal counsel and the
           bracketed placeholders below are filled in.
         </p>
-      </div>
+      </Banner>
 
-      <h1 className="text-2xl font-bold text-white mb-2">Terms of Service</h1>
+      <h1 className="text-2xl font-bold text-dt-title mb-2">Terms of Service</h1>
       <p className="text-sm text-dt-muted mb-8">Last updated: 22 July 2026 · Effective: 22 July 2026</p>
 
       <div className="space-y-8 text-sm leading-relaxed">
         <section>
-          <h2 className="text-lg font-semibold text-white mb-2">1. Who this agreement is between</h2>
+          <h2 className="text-lg font-semibold text-dt-title mb-2">1. Who this agreement is between</h2>
           <p>
             These Terms of Service ("Terms") govern access to and use of DreamTeam AI (the "Service"), operated by
             [Legal Entity Name] ("DreamTeam AI," "we," "us," or "our"). By creating an account or otherwise using the
@@ -36,7 +37,7 @@ const TermsOfServicePage = ({ onBack }: { onBack?: () => void }) => (
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-white mb-2">2. What the Service is</h2>
+          <h2 className="text-lg font-semibold text-dt-title mb-2">2. What the Service is</h2>
           <p>
             DreamTeam AI provides software that deploys AI-driven "Digital Employees" to help run parts of your
             business — including customer support, sales, onboarding, customer success, and related workflows. The
@@ -47,7 +48,7 @@ const TermsOfServicePage = ({ onBack }: { onBack?: () => void }) => (
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-white mb-2">3. Accounts and eligibility</h2>
+          <h2 className="text-lg font-semibold text-dt-title mb-2">3. Accounts and eligibility</h2>
           <p>
             You must provide accurate information when creating an account and keep your login credentials secure.
             You're responsible for all activity that happens under your organization's account, including actions
@@ -56,7 +57,7 @@ const TermsOfServicePage = ({ onBack }: { onBack?: () => void }) => (
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-white mb-2">4. Acceptable use</h2>
+          <h2 className="text-lg font-semibold text-dt-title mb-2">4. Acceptable use</h2>
           <p>You agree not to use the Service to:</p>
           <ul className="list-disc list-inside mt-2 space-y-1 text-dt-support">
             <li>Violate any law or the rights of any third party</li>
@@ -68,7 +69,7 @@ const TermsOfServicePage = ({ onBack }: { onBack?: () => void }) => (
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-white mb-2">5. Trials, plans, and billing</h2>
+          <h2 className="text-lg font-semibold text-dt-title mb-2">5. Trials, plans, and billing</h2>
           <p>
             New accounts may start with a free trial period. [Placeholder: describe trial length, what happens at
             trial's end, plan tiers, and billing/payment terms once a real billing system is in place. Today,
@@ -78,7 +79,7 @@ const TermsOfServicePage = ({ onBack }: { onBack?: () => void }) => (
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-white mb-2">6. Your data</h2>
+          <h2 className="text-lg font-semibold text-dt-title mb-2">6. Your data</h2>
           <p>
             You retain ownership of the data you upload or connect to the Service ("Customer Data"). We use Customer
             Data only to provide and improve the Service on your behalf, as described in our Privacy Policy. You can
@@ -87,7 +88,7 @@ const TermsOfServicePage = ({ onBack }: { onBack?: () => void }) => (
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-white mb-2">7. AI-generated output</h2>
+          <h2 className="text-lg font-semibold text-dt-title mb-2">7. AI-generated output</h2>
           <p>
             The Service uses AI models to generate responses, recommendations, and automated actions. AI output can
             be incorrect or incomplete. You're responsible for reviewing AI-driven actions before relying on them,
@@ -98,7 +99,7 @@ const TermsOfServicePage = ({ onBack }: { onBack?: () => void }) => (
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-white mb-2">8. Termination</h2>
+          <h2 className="text-lg font-semibold text-dt-title mb-2">8. Termination</h2>
           <p>
             Either party may terminate this agreement at any time. We may suspend or terminate your access if you
             violate these Terms, if your account is inactive past a trial period without upgrading, or for
@@ -108,7 +109,7 @@ const TermsOfServicePage = ({ onBack }: { onBack?: () => void }) => (
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-white mb-2">9. Disclaimers and limitation of liability</h2>
+          <h2 className="text-lg font-semibold text-dt-title mb-2">9. Disclaimers and limitation of liability</h2>
           <p>
             [Placeholder: standard "as-is" disclaimer, limitation of liability cap, and indemnification language —
             this section in particular should be drafted by legal counsel, not left as a template.]
@@ -116,15 +117,15 @@ const TermsOfServicePage = ({ onBack }: { onBack?: () => void }) => (
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-white mb-2">10. Contact</h2>
+          <h2 className="text-lg font-semibold text-dt-title mb-2">10. Contact</h2>
           <p>
             Questions about these Terms can be sent to{' '}
-            <a href="mailto:bkhan@outsourcetel.com" className="text-indigo-400 hover:underline">bkhan@outsourcetel.com</a>.
+            <a href="mailto:bkhan@outsourcetel.com" className="text-dt-accent-text hover:underline">bkhan@outsourcetel.com</a>.
           </p>
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-white mb-2">11. Governing law</h2>
+          <h2 className="text-lg font-semibold text-dt-title mb-2">11. Governing law</h2>
           <p>[Placeholder: governing jurisdiction, to be set by legal counsel.]</p>
         </section>
       </div>

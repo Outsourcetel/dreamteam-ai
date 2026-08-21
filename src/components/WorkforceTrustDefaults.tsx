@@ -82,8 +82,11 @@ export default function WorkforceTrustDefaults({ setPage }: { setPage?: (p: Page
           employee in billing-and-answering terms whatever its actual job. */}
       <div className="bg-dt-card border border-dt-border rounded-xl p-5">
         <div className="mb-1 flex items-center gap-2 flex-wrap">
-          <h2 className="text-sm font-semibold text-white">What each employee may do on its own</h2>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300">per employee</span>
+          <h2 className="text-sm font-semibold text-dt-title">What each employee may do on its own</h2>
+          {/* violet: non-core hue, kept as the same "AI-written/provenance"
+              scope-identity marker already sanctioned in doc §7
+              (EmployeeFileSections.tsx) — made opaque. */}
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-600 text-violet-100">per employee</span>
         </div>
         <p className="text-xs text-dt-muted mb-2">
           There are no workspace-wide dials any more. Every rule names the employee it governs,
@@ -105,12 +108,12 @@ export default function WorkforceTrustDefaults({ setPage }: { setPage?: (p: Page
       </div>
 
       <div className="bg-dt-card border border-dt-border rounded-xl p-5">
-        <h2 className="text-sm font-semibold text-white mb-1">Workspace-wide earned trust</h2>
+        <h2 className="text-sm font-semibold text-dt-title mb-1">Workspace-wide earned trust</h2>
         <p className="text-[11px] text-dt-muted mb-3">
           Ladder policies with no owning employee — their promotions move the workspace defaults above,
           not any single employee's badge. Each employee's own ladder is on their file.
         </p>
-        {policyError && <div className="mb-3 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{policyError}</div>}
+        {policyError && <div className="mb-3 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{policyError}</div>}
         {policies === null ? (
           !policyError && <p className="text-xs text-dt-muted">Loading policies…</p>
         ) : policies.length === 0 ? (
@@ -136,11 +139,11 @@ export default function WorkforceTrustDefaults({ setPage }: { setPage?: (p: Page
       </div>
 
       <div className="bg-dt-card border border-dt-border rounded-xl p-5">
-        <h2 className="text-sm font-semibold text-white mb-1">Promotion history</h2>
+        <h2 className="text-sm font-semibold text-dt-title mb-1">Promotion history</h2>
         <p className="text-[11px] text-dt-muted mb-3">
           Tenant-wide promotions, demotions and manual overrides, from the immutable audit trail.
         </p>
-        {historyError && <div className="mb-3 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{historyError}</div>}
+        {historyError && <div className="mb-3 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{historyError}</div>}
         {history === null ? (
           !historyError && <p className="text-xs text-dt-muted">Loading history…</p>
         ) : history.length === 0 ? (
@@ -152,7 +155,7 @@ export default function WorkforceTrustDefaults({ setPage }: { setPage?: (p: Page
                 <span className={`mt-0.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${
                   h.kind === 'trust_promoted' ? 'bg-emerald-500' :
                   h.kind === 'trust_demoted' ? 'bg-rose-500' :
-                  h.kind === 'trust_manual_override' ? 'bg-amber-500' : 'bg-slate-600'
+                  h.kind === 'trust_manual_override' ? 'bg-amber-500' : 'bg-dt-border-strong'
                 }`} />
                 <span className="flex-1">{h.action}</span>
                 <span className="flex-shrink-0 text-dt-faint">{new Date(h.created_at).toLocaleDateString()}</span>

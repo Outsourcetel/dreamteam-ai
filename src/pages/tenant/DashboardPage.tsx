@@ -112,7 +112,7 @@ function healthDot(health: EntityHealth): string {
   if (health === 'active') return 'bg-emerald-400';
   if (health === 'degraded') return 'bg-amber-400';
   if (health === 'at_risk') return 'bg-red-400';
-  return 'bg-slate-600';
+  return 'bg-dt-border-strong';
 }
 
 function healthLabel(health: EntityHealth): string {
@@ -151,14 +151,17 @@ function trendColor(trend: OutcomeTrend): string {
 }
 
 function taskBadgeStyle(type: TaskType): string {
-  if (type === 'approval_gate') return 'bg-indigo-500/20 text-indigo-300';
-  if (type === 'review_gate') return 'bg-blue-500/20 text-blue-300';
-  if (type === 'escalation') return 'bg-red-500/20 text-red-300';
-  if (type === 'override') return 'bg-amber-500/20 text-amber-300';
-  if (type === 'knowledge_revision') return 'bg-amber-500/20 text-amber-300';
-  if (type === 'inquiry_review') return 'bg-sky-500/20 text-sky-300';
-  if (type === 'action_approval') return 'bg-fuchsia-500/20 text-fuchsia-300';
-  return 'bg-slate-600 text-dt-support';
+  if (type === 'approval_gate') return 'bg-dt-accent-soft text-dt-accent-text';
+  if (type === 'review_gate') return 'bg-dt-info-soft text-dt-info';
+  if (type === 'escalation') return 'bg-dt-danger-soft text-dt-danger';
+  if (type === 'override') return 'bg-dt-warn-soft text-dt-warn';
+  if (type === 'knowledge_revision') return 'bg-dt-warn-soft text-dt-warn';
+  if (type === 'inquiry_review') return 'bg-dt-info-soft text-dt-info';
+  // fuchsia: non-core hue, same task-type identity already sanctioned in doc
+  // §7 for the identical 'action_approval' badge in HumanTasksPage.tsx —
+  // reused here for consistency, made opaque.
+  if (type === 'action_approval') return 'bg-fuchsia-600 text-fuchsia-100';
+  return 'bg-dt-border-strong text-dt-title';
 }
 
 function taskBadgeLabel(type: TaskType): string {

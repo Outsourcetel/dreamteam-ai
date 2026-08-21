@@ -99,7 +99,7 @@ function ResponseWindowFields({
         </select>
       </div>
       {stale ? (
-        <p className="text-[11px] text-amber-300">
+        <p className="text-[11px] text-dt-warn">
           That date has already passed — every new case would open overdue.
         </p>
       ) : (
@@ -226,16 +226,16 @@ export default function BookOfWorkPanel({ deId }: { deId: string }) {
         <p className="text-[11px] uppercase tracking-wide text-dt-muted">Book of Work — how it finds its own work</p>
         {!adding && (
           <button disabled={!canEditWatchers} onClick={() => { setAdding(true); setError(null); }}
-            className="ml-auto text-[11px] text-indigo-400 hover:text-indigo-300">+ Add a way to find work</button>
+            className="ml-auto text-[11px] text-dt-accent-text hover:underline">+ Add a way to find work</button>
         )}
       </div>
       <p className="text-[11px] text-dt-faint mb-2">
         Brief this employee the way you'd brief a new hire: what to watch for so it pulls its own work, instead of waiting to be handed a task.
       </p>
-      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      {error && <p className="text-xs text-dt-danger mb-2">{error}</p>}
 
       {adding && (
-        <div className="mb-3 rounded-lg border border-dt-border-strong bg-dt-page/70 p-3 space-y-2">
+        <div className="mb-3 rounded-lg border border-dt-border-strong bg-dt-inset p-3 space-y-2">
           <select value={kind} onChange={e => setKind(e.target.value as WatcherKind)}
             className="w-full bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
             {CONFIGURABLE.map(k => <option key={k} value={k}>{WATCHER_KIND_META[k].label} — {WATCHER_KIND_META[k].hint}</option>)}
@@ -338,29 +338,29 @@ export default function BookOfWorkPanel({ deId }: { deId: string }) {
           {(watchers ?? []).map(w => (
             <div key={w.id} className={`bg-dt-inset rounded-lg px-4 py-2.5 ${w.active ? '' : 'opacity-55'}`}>
               <div className="flex items-center gap-2">
-                <span className={`text-[10px] px-1.5 py-0.5 rounded ${w.active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-dt-panel text-dt-support'}`}>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded ${w.active ? 'bg-dt-ok-soft text-dt-ok' : 'bg-dt-panel text-dt-support'}`}>
                   {w.active ? 'watching' : 'paused'}
                 </span>
                 <span className="text-sm text-dt-body">{w.label}</span>
                 <div className="ml-auto flex items-center gap-2 shrink-0">
                   {KIND_TAKES_RESPONSE_WINDOW(w.kind) && editing !== w.id && (
                     <button onClick={() => beginEdit(w)} disabled={busy || !canEditWatchers}
-                      className="text-[10px] text-dt-muted hover:text-indigo-300">response time</button>
+                      className="text-[10px] text-dt-muted hover:text-dt-accent-text">response time</button>
                   )}
                   <button onClick={() => void run(() => setWatcherActive(w.id, !w.active))} disabled={busy || !canEditWatchers}
-                    className="text-[10px] text-dt-muted hover:text-amber-300">{w.active ? 'pause' : 'resume'}</button>
+                    className="text-[10px] text-dt-muted hover:text-dt-warn">{w.active ? 'pause' : 'resume'}</button>
                   <button onClick={() => void run(() => deleteWatcher(w.id))} disabled={busy || !canEditWatchers}
-                    className="text-[10px] text-dt-faint hover:text-rose-300">remove</button>
+                    className="text-[10px] text-dt-faint hover:text-dt-danger">remove</button>
                 </div>
               </div>
               <p className="text-xs text-dt-support mt-1">{describeWatcher(w)}</p>
               {responseWindowHasPassed(readResponseWindow(w.config)) && editing !== w.id && (
-                <p className="text-[11px] text-amber-300 mt-0.5">
+                <p className="text-[11px] text-dt-warn mt-0.5">
                   Its deadline has passed — every new case opens overdue until this is changed.
                 </p>
               )}
               {editing === w.id && (
-                <div className="mt-2 rounded-lg border border-dt-border-strong bg-dt-page/70 p-2.5 space-y-2">
+                <div className="mt-2 rounded-lg border border-dt-border-strong bg-dt-inset p-2.5 space-y-2">
                   <ResponseWindowFields
                     unit={edUnit} amount={edAmount} date={edDate}
                     onUnit={setEdUnit} onAmount={setEdAmount} onDate={setEdDate} />

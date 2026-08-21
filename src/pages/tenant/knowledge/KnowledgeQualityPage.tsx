@@ -20,10 +20,10 @@ import type { KnowledgeDoc, KnowledgeDocCitationStats, ScopeSubject, CoverageDem
 // ============================================================
 
 const heatClsLive = (v: number) =>
-  v >= 90 ? 'bg-emerald-500/25 text-emerald-300'
+  v >= 90 ? 'bg-dt-ok-soft text-dt-ok'
   : v >= 80 ? 'bg-emerald-500/10 text-emerald-400'
-  : v >= 70 ? 'bg-amber-500/15 text-amber-300'
-  : 'bg-red-500/15 text-red-300';
+  : v >= 70 ? 'bg-dt-warn-soft text-dt-warn'
+  : 'bg-dt-danger-soft text-dt-danger';
 
 function freshnessDays(doc: KnowledgeDoc): number {
   const anchor = doc.last_verified_at ?? doc.created_at;
@@ -39,9 +39,9 @@ const fmtAgo = (iso: string) => {
   return `${Math.floor(days / 365)}y`;
 };
 const COVERAGE_BADGE: Record<string, { cls: string; label: string }> = {
-  covered: { cls: 'bg-emerald-500/20 text-emerald-300', label: 'Covered' },
-  weak: { cls: 'bg-amber-500/20 text-amber-300', label: 'Thin' },
-  none: { cls: 'bg-red-500/20 text-red-300', label: 'No coverage' },
+  covered: { cls: 'bg-dt-ok-soft text-dt-ok', label: 'Covered' },
+  weak: { cls: 'bg-dt-warn-soft text-dt-warn', label: 'Thin' },
+  none: { cls: 'bg-dt-danger-soft text-dt-danger', label: 'No coverage' },
   unknown: { cls: 'bg-dt-page text-dt-faint border border-dt-border', label: '—' },
 };
 const CoverageBadge = ({ state }: { state: CoverageDemand['top_gaps'][number]['coverage_state'] }) => {
@@ -201,7 +201,7 @@ function LiveKnowledgeQuality() {
     <div className="p-6 relative">
       <PageHeader title="Quality & Coverage" subtitle="Real coverage per Digital Employee, real document freshness, and real confidence calibration against human feedback." />
 
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {error && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {loading ? (
         <LiveLoadingSkeleton rows={4} />
@@ -236,7 +236,7 @@ function LiveKnowledgeQuality() {
                 <tbody>
                   {tags.map(tag => (
                     <tr key={tag} className="border-b border-dt-border">
-                      <td className={`${td} text-white`}>{tag}</td>
+                      <td className={`${td} text-dt-body`}>{tag}</td>
                       {deDes.map(d => {
                         const val = coverageFor(tag, d.id);
                         return (
@@ -283,7 +283,7 @@ function LiveKnowledgeQuality() {
                       {coverage.top_gaps.slice(0, 8).map(g => (
                         <div key={g.id} className="flex items-start justify-between gap-2 bg-dt-page rounded-lg p-2.5 border border-dt-border">
                           <div className="min-w-0">
-                            <p className="text-xs font-medium text-white truncate">{g.category || g.reviewer_summary || 'Unlabeled gap'}</p>
+                            <p className="text-xs font-medium text-dt-body truncate">{g.category || g.reviewer_summary || 'Unlabeled gap'}</p>
                             <p className="text-[11px] text-dt-muted mt-0.5">
                               {g.member_count ?? 0} occurrence{g.member_count === 1 ? '' : 's'}{g.severity_score != null ? ` · severity ${Math.round(g.severity_score)}` : ''}
                             </p>
@@ -305,7 +305,7 @@ function LiveKnowledgeQuality() {
                         {coverage.most_cited.slice(0, 5).map(d => (
                           <div key={d.id} className="flex items-center justify-between gap-2">
                             <span className="text-xs text-dt-body truncate">{d.title}</span>
-                            <span className="text-[11px] text-emerald-300 flex-shrink-0">{d.citation_count}×</span>
+                            <span className="text-[11px] text-dt-ok flex-shrink-0">{d.citation_count}×</span>
                           </div>
                         ))}
                       </div>
@@ -352,7 +352,7 @@ function LiveKnowledgeQuality() {
                     return (
                       <div key={c.id} className="p-4">
                         <div className="flex items-center gap-2 mb-2">
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${isConflict ? 'bg-red-500/20 text-red-300' : 'bg-amber-500/20 text-amber-300'}`}>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${isConflict ? 'bg-dt-danger-soft text-dt-danger' : 'bg-dt-warn-soft text-dt-warn'}`}>
                             {isConflict ? 'Potential conflict' : 'Near-duplicate'}
                           </span>
                           {c.confidence != null && <span className="text-[10px] text-dt-faint">{Math.round(c.confidence * 100)}% confidence</span>}
@@ -364,18 +364,18 @@ function LiveKnowledgeQuality() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
                           <div className="bg-dt-page rounded-lg p-2.5 border border-dt-border min-w-0">
                             <p className="text-[10px] text-dt-faint uppercase tracking-wide mb-0.5">Document A</p>
-                            <p className="text-xs text-white truncate">{c.doc_a_title}</p>
+                            <p className="text-xs text-dt-body truncate">{c.doc_a_title}</p>
                           </div>
                           <div className="bg-dt-page rounded-lg p-2.5 border border-dt-border min-w-0">
                             <p className="text-[10px] text-dt-faint uppercase tracking-wide mb-0.5">Document B</p>
-                            <p className="text-xs text-white truncate">{c.doc_b_title}</p>
+                            <p className="text-xs text-dt-body truncate">{c.doc_b_title}</p>
                           </div>
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          <button disabled={busy || !canResolve} title={canResolve ? undefined : 'Resolving a conflict is done by a workspace owner, admin or knowledge manager.'} onClick={() => void resolveConflict(c, 'resolved_pick_a')} className="text-xs px-2.5 py-1 rounded-lg border border-emerald-500/40 text-emerald-300 hover:border-emerald-400 disabled:opacity-50">Keep A as source</button>
-                          <button disabled={busy || !canResolve} title={canResolve ? undefined : 'Resolving a conflict is done by a workspace owner, admin or knowledge manager.'} onClick={() => void resolveConflict(c, 'resolved_pick_b')} className="text-xs px-2.5 py-1 rounded-lg border border-emerald-500/40 text-emerald-300 hover:border-emerald-400 disabled:opacity-50">Keep B as source</button>
+                          <button disabled={busy || !canResolve} title={canResolve ? undefined : 'Resolving a conflict is done by a workspace owner, admin or knowledge manager.'} onClick={() => void resolveConflict(c, 'resolved_pick_a')} className="text-xs px-2.5 py-1 rounded-lg border border-dt-ok-border text-dt-ok hover:border-dt-ok disabled:opacity-50">Keep A as source</button>
+                          <button disabled={busy || !canResolve} title={canResolve ? undefined : 'Resolving a conflict is done by a workspace owner, admin or knowledge manager.'} onClick={() => void resolveConflict(c, 'resolved_pick_b')} className="text-xs px-2.5 py-1 rounded-lg border border-dt-ok-border text-dt-ok hover:border-dt-ok disabled:opacity-50">Keep B as source</button>
                           <button disabled={busy || !canResolve} title={canResolve ? undefined : 'Resolving a conflict is done by a workspace owner, admin or knowledge manager.'} onClick={() => void resolveConflict(c, 'dismissed')} className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-muted disabled:opacity-50">Dismiss</button>
-                          {busy && <span className="text-xs text-indigo-300 self-center">Saving…</span>}
+                          {busy && <span className="text-xs text-dt-accent-text self-center">Saving…</span>}
                         </div>
                       </div>
                     );
@@ -393,7 +393,7 @@ function LiveKnowledgeQuality() {
               <div className="flex items-end gap-4 h-36">
                 {buckets.map(b => (
                   <div key={b.label} className="flex-1 flex flex-col items-center justify-end h-full">
-                    <span className="text-xs font-bold text-white mb-1">{b.count}</span>
+                    <span className="text-xs font-bold text-dt-title mb-1">{b.count}</span>
                     <div className={`w-full rounded-t-lg ${b.cls}`} style={{ height: `${Math.max((b.count / maxBucket) * 100, 4)}%` }} />
                     <span className={`text-[10px] mt-2 ${b.label.includes('stale') ? 'text-red-400' : 'text-dt-muted'}`}>{b.label}</span>
                   </div>
@@ -413,7 +413,7 @@ function LiveKnowledgeQuality() {
                     <div key={doc.id} className="bg-dt-page rounded-xl p-3 border border-dt-border">
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <p className="text-xs font-medium text-white">{doc.title}</p>
+                          <p className="text-xs font-medium text-dt-body">{doc.title}</p>
                           <p className="text-[11px] text-dt-support mt-1">
                             Cited {stats.citation_count} time{stats.citation_count === 1 ? '' : 's'} · {stats.accurate_count} rated accurate, {stats.needs_improvement_count} rated needs-improvement
                           </p>
@@ -461,7 +461,7 @@ function LiveKnowledgeQuality() {
                     const stats = citationStats[d.id];
                     return (
                       <tr key={d.id} className="border-b border-dt-border">
-                        <td className={`${td} text-white font-medium`}>{d.title}</td>
+                        <td className={`${td} text-dt-body font-medium`}>{d.title}</td>
                         <td className={`${td} text-xs text-dt-support`}>{(d.tags ?? []).join(', ') || '—'}</td>
                         <td className={`${td} text-xs text-red-400`}>
                           {d.last_verified_at ? new Date(d.last_verified_at).toLocaleDateString() : 'never'} ({freshnessDays(d)}d)

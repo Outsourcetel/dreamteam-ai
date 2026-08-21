@@ -24,7 +24,7 @@ const HEALTH_META: Record<string, { label: string; dot: string; text: string }> 
   healthy: { label: 'Healthy', dot: 'bg-emerald-400', text: 'text-emerald-400' },
   degraded: { label: 'Degraded', dot: 'bg-amber-400', text: 'text-amber-400' },
   down: { label: 'Down', dot: 'bg-red-400', text: 'text-red-400' },
-  never_connected: { label: 'Never connected', dot: 'bg-slate-600', text: 'text-dt-muted' },
+  never_connected: { label: 'Never connected', dot: 'bg-dt-border-strong', text: 'text-dt-muted' },
 };
 
 function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
@@ -174,7 +174,7 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
     <div className="p-6 relative">
       <PageHeader title="Ingestion & Sources" subtitle="Real connector syncs pull external content into the knowledge base — chunked and indexed automatically." />
 
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {error && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {/* Deliberately ABOVE the connector gate below: importing pages from the
           web needs no connector, so a workspace with none must still be able to
@@ -200,13 +200,13 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
         <>
           {/* Pipeline */}
           <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-6">
-            <h3 className="text-sm font-semibold text-white mb-4">Processing pipeline</h3>
+            <h3 className="text-sm font-semibold text-dt-title mb-4">Processing pipeline</h3>
             <div className="flex items-stretch gap-2 overflow-x-auto pb-1">
               {pipeline.map((s, i) => (
                 <React.Fragment key={s.stage}>
                   <div className="flex-1 min-w-[110px] rounded-xl border border-dt-border bg-dt-page p-3">
                     <p className="text-xs font-semibold text-dt-support">{s.stage}</p>
-                    <p className="text-xl font-bold text-white mt-1">{s.count}{s.total !== undefined ? <span className="text-sm text-dt-muted"> / {s.total}</span> : null}</p>
+                    <p className="text-xl font-bold text-dt-title mt-1">{s.count}{s.total !== undefined ? <span className="text-sm text-dt-muted"> / {s.total}</span> : null}</p>
                     <p className="text-[10px] text-dt-muted mt-0.5 leading-tight">{s.desc}</p>
                   </div>
                   {i < pipeline.length - 1 && <span className="self-center text-dt-faint flex-shrink-0">→</span>}
@@ -222,7 +222,7 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
             {/* Connected sources */}
             <div className="xl:col-span-2 rounded-2xl border border-dt-border bg-dt-card overflow-hidden">
               <div className="px-4 py-3 border-b border-dt-border flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-white">Connected sources</h3>
+                <h3 className="text-sm font-semibold text-dt-title">Connected sources</h3>
                 <span className="text-xs text-dt-muted">{healthyCount} of {connectors.length} healthy</span>
               </div>
               <table className="w-full text-sm text-dt-support">
@@ -244,7 +244,7 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
                     const docsForThisConnector = connectorDocs.filter(d => (d.tags ?? []).includes(`connector:${c.provider}`)).length;
                     return (
                       <tr key={c.id} className="border-b border-dt-border">
-                        <td className={`${td} text-white font-medium`}>
+                        <td className={`${td} text-dt-body font-medium`}>
                           {c.display_name || meta?.label || c.provider}
                           <p className="text-[11px] text-dt-muted font-normal">{meta?.label ?? c.provider}</p>
                         </td>
@@ -271,7 +271,7 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
                                 title={!canSchedule
                                   ? 'Turning auto-sync on or off is done by a workspace owner, admin, manager or knowledge manager.'
                                   : c.scheduled_sync_enabled ? 'Auto-sync is on (daily). Click to turn off.' : 'Turn on daily auto-sync for this source.'}
-                                className={`text-[11px] px-2 py-1 rounded-lg border transition-colors disabled:opacity-50 disabled:hover:border-dt-border-strong ${c.scheduled_sync_enabled ? 'border-emerald-500/50 text-emerald-300' : 'border-dt-border-strong text-dt-muted hover:border-indigo-500'}`}>
+                                className={`text-[11px] px-2 py-1 rounded-lg border transition-colors disabled:opacity-50 disabled:hover:border-dt-border-strong ${c.scheduled_sync_enabled ? 'border-dt-ok-border text-dt-ok' : 'border-dt-border-strong text-dt-muted hover:border-dt-accent'}`}>
                                 {c.scheduled_sync_enabled ? 'Auto-sync ✓' : 'Auto-sync'}
                               </button>
                             </div>
@@ -311,7 +311,7 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
                       className="flex-1 bg-dt-page border border-dt-border rounded-lg px-3 py-1.5 text-xs text-dt-body focus:outline-none focus:border-indigo-500" />
                     <button onClick={() => void importUrl()} disabled={!urlInput.trim() || !!busyMsg} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white">Import</button>
                   </div>
-                  {busyMsg && <p className="text-xs text-indigo-300 mt-2">{busyMsg}</p>}
+                  {busyMsg && <p className="text-xs text-dt-accent-text mt-2">{busyMsg}</p>}
                 </div>
               ) : (
                 <div className="rounded-2xl border border-dt-border bg-dt-card p-4 space-y-2">
@@ -321,7 +321,7 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
                       placeholder="…or import a URL" className="flex-1 bg-dt-page border border-dt-border rounded-lg px-2 py-1 text-xs text-dt-body focus:outline-none focus:border-indigo-500" />
                     <button onClick={() => void importUrl()} disabled={!urlInput.trim() || !!busyMsg} className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-indigo-500 disabled:opacity-50">Import</button>
                   </div>
-                  {busyMsg && <p className="text-xs text-indigo-300">{busyMsg}</p>}
+                  {busyMsg && <p className="text-xs text-dt-accent-text">{busyMsg}</p>}
                   <input
                     value={addTitle}
                     onChange={e => setAddTitle(e.target.value)}
@@ -346,7 +346,7 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
                   </div>
                 </div>
               )}
-              {canOpenConnectors && <button onClick={() => setPage('systems_connectors')} className="w-full text-xs text-indigo-400 hover:text-indigo-300 transition-colors text-center">
+              {canOpenConnectors && <button onClick={() => setPage('systems_connectors')} className="w-full text-xs text-dt-accent-text hover:underline transition-colors text-center">
                 Manage connectors →
               </button>}
             </div>

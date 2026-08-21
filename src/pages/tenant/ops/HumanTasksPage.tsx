@@ -171,17 +171,17 @@ const SEED_TASKS: Record<CompanyId, OpsTask[]> = { tcp: TCP_TASKS, pwc: PWC_TASK
 // ── Badges — same palette as DashboardPage ────────────────────────
 
 function taskBadgeStyle(type: TaskType): string {
-  if (type === 'approval_gate') return 'bg-indigo-500/20 text-indigo-300';
-  if (type === 'review_gate') return 'bg-blue-500/20 text-blue-300';
-  if (type === 'escalation') return 'bg-red-500/20 text-red-300';
-  if (type === 'override') return 'bg-amber-500/20 text-amber-300';
-  if (type === 'trust_promotion') return 'bg-emerald-500/20 text-emerald-300';
-  if (type === 'trust_demotion_notice') return 'bg-rose-500/20 text-rose-300';
-  if (type === 'checklist') return 'bg-teal-500/20 text-teal-300';
-  if (type === 'knowledge_revision') return 'bg-amber-500/20 text-amber-300';
-  if (type === 'inquiry_review') return 'bg-sky-500/20 text-sky-300';
-  if (type === 'action_approval') return 'bg-fuchsia-500/20 text-fuchsia-300';
-  return 'bg-slate-600 text-dt-support';
+  if (type === 'approval_gate') return 'bg-dt-accent-soft text-dt-accent-text';
+  if (type === 'review_gate') return 'bg-dt-info-soft text-dt-info';
+  if (type === 'escalation') return 'bg-dt-danger-soft text-dt-danger';
+  if (type === 'override') return 'bg-dt-warn-soft text-dt-warn';
+  if (type === 'trust_promotion') return 'bg-dt-ok-soft text-dt-ok';
+  if (type === 'trust_demotion_notice') return 'bg-dt-danger-soft text-dt-danger';
+  if (type === 'checklist') return 'bg-teal-600 text-teal-100';
+  if (type === 'knowledge_revision') return 'bg-dt-warn-soft text-dt-warn';
+  if (type === 'inquiry_review') return 'bg-dt-info-soft text-dt-info';
+  if (type === 'action_approval') return 'bg-fuchsia-600 text-fuchsia-100';
+  return 'bg-dt-border-strong text-dt-support';
 }
 
 function taskBadgeLabel(type: TaskType): string {
@@ -203,10 +203,10 @@ function statusBadge(status: TaskStatus) {
     pending: 'bg-amber-500/15 text-amber-400',
     approved: 'bg-emerald-500/15 text-emerald-400',
     rejected: 'bg-red-500/15 text-red-400',
-    completed: 'bg-slate-600 text-dt-support',
+    completed: 'bg-dt-border-strong text-dt-support',
     // Approved, but never carried out, and now voided (migration 642). Not a
     // rejection — nobody said no — so it must not wear the rejection colour.
-    expired: 'bg-slate-600 text-dt-support',
+    expired: 'bg-dt-border-strong text-dt-support',
   };
   const labels: Record<TaskStatus, string> = {
     pending: 'Pending', approved: 'Approved', rejected: 'Rejected',
@@ -879,7 +879,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
         subtitle="Your employees have stopped on each of these and can't continue until you decide."
       />
 
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {/* What the last decision actually caused, read back out of the database.
           Amber whenever the consequence did not land — a send that silently
@@ -887,8 +887,8 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
       {outcome && (
         <div className={`mb-4 rounded-xl border px-4 py-3 text-xs ${
           outcome.ok
-            ? 'border-emerald-800/50 bg-emerald-500/10 text-emerald-300'
-            : 'border-amber-700/50 bg-amber-500/10 text-amber-200'}`}>
+            ? 'border-emerald-800/50 bg-emerald-500/10 text-dt-ok'
+            : 'border-amber-700/50 bg-amber-500/10 text-dt-warn'}`}>
           {outcome.text}
         </div>
       )}
@@ -910,10 +910,10 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
           {/* Stats strip */}
           <div className="grid grid-cols-4 gap-3 mb-6">
             {[
-              { label: 'Pending', value: String(pending.length), color: pending.length > 0 ? 'text-amber-300' : 'text-emerald-300' },
-              { label: 'Stalled work', value: String(stalledCount), color: stalledCount > 0 ? 'text-orange-300' : 'text-emerald-300' },
-              { label: 'Decided', value: String(decidedCount), color: 'text-white' },
-              { label: 'Approval rate', value: `${approvalRate}%`, color: 'text-white' },
+              { label: 'Pending', value: String(pending.length), color: pending.length > 0 ? 'text-dt-warn' : 'text-dt-ok' },
+              { label: 'Stalled work', value: String(stalledCount), color: stalledCount > 0 ? 'text-dt-warn' : 'text-dt-ok' },
+              { label: 'Decided', value: String(decidedCount), color: 'text-dt-title' },
+              { label: 'Approval rate', value: `${approvalRate}%`, color: 'text-dt-title' },
             ].map(s => (
               <div key={s.label} className="bg-dt-card border border-dt-border rounded-xl p-4">
                 <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{s.label}</p>
@@ -982,7 +982,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                 className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors ${
                   decision === d.id
                     ? (d.id === 'needs_you'
-                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                        ? 'bg-dt-warn-soft text-dt-warn border border-dt-warn-border'
                         : 'bg-indigo-600 text-white border border-indigo-600')
                     : 'bg-dt-card border border-dt-border text-dt-support hover:text-dt-body'}`}
               >
@@ -1160,7 +1160,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
               Withdrawal is for the residue: dead approvals, testing artefacts,
               asks whose underlying record is gone. */}
           {picked.size > 0 && visible.some(t => picked.has(t.id) && t.type === 'escalation') && (
-            <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+            <div className="mb-3 rounded-lg border border-dt-warn-border bg-dt-warn-soft px-3 py-2 text-xs text-dt-warn">
               {visible.filter(t => picked.has(t.id) && t.type === 'escalation').length} of these are escalations.
               Withdrawing one does not unblock the work behind it, and the next sweep will raise it again
               within 30 minutes. To clear them for good, decide what the work is waiting on.
@@ -1176,14 +1176,14 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
             {filter !== 'all' && (
               <button
                 onClick={() => setFilter('all')}
-                className="px-3 py-1.5 rounded-full text-xs bg-dt-accent-soft border border-dt-accent/30 text-dt-accent-text hover:brightness-110 transition-colors">
+                className="px-3 py-1.5 rounded-full text-xs bg-dt-accent-soft border border-dt-accent-border text-dt-accent-text hover:brightness-110 transition-colors">
                 {FILTERS.find(f => f.id === filter)?.label ?? filter} · clear ✕
               </button>
             )}
             <div className="flex-1" />
             <button
               onClick={() => setStalledOnly(v => !v)}
-              className={`px-3 py-1.5 rounded-full text-xs transition-colors ${stalledOnly ? 'bg-orange-500/20 text-orange-300 border border-orange-500/40' : 'bg-dt-card border border-dt-border text-dt-support hover:text-dt-body'}`}
+              className={`px-3 py-1.5 rounded-full text-xs transition-colors ${stalledOnly ? 'bg-dt-warn-soft text-dt-warn border border-dt-warn-border' : 'bg-dt-card border border-dt-border text-dt-support hover:text-dt-body'}`}
             >
               Gone quiet only{stalledCount > 0 ? ` (${stalledCount})` : ''}
             </button>
@@ -1212,7 +1212,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                   {decision === 'needs_you' && decidedInScope > 0 && (
                     <button
                       onClick={() => setDecision('decided')}
-                      className="mt-2 text-xs text-indigo-400 hover:text-indigo-300"
+                      className="mt-2 text-xs text-dt-accent-text hover:underline"
                     >
                       See the {decidedInScope} already decided
                     </button>
@@ -1335,10 +1335,10 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
               <div className="col-span-2 bg-dt-card border border-dt-border rounded-2xl p-5 sticky top-0 max-h-[calc(100vh-3rem)] overflow-y-auto">
                 <div className="flex items-center justify-between mb-3">
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${taskBadgeStyle(selected.type)}`}>{taskBadgeLabel(selected.type)}</span>
-                  <button onClick={() => setSelectedId(null)} className="w-6 h-6 rounded bg-dt-panel text-dt-muted hover:text-white flex items-center justify-center text-xs">×</button>
+                  <button onClick={() => setSelectedId(null)} className="w-6 h-6 rounded bg-dt-panel text-dt-muted hover:text-dt-body flex items-center justify-center text-xs">×</button>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap mb-1">
-                  <h3 className="text-sm font-semibold text-white">{selected.title}</h3>
+                  <h3 className="text-sm font-semibold text-dt-title">{selected.title}</h3>
                   {selectedStale && stalledBadge(selectedStale.tier)}
                 </div>
                 {/* ⚠ whitespace-pre-wrap is LOAD-BEARING, not styling. An
@@ -1361,7 +1361,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                     </p>
                     <p className="text-xs text-dt-body whitespace-pre-wrap">{replyDraft.content}</p>
                     {!replyDraft.deliverable && (
-                      <p className="mt-2 text-[11px] text-amber-300">
+                      <p className="mt-2 text-[11px] text-dt-warn">
                         This {replyDraft.channel} conversation is delivered by the outbound
                         queue. Send it from the Support inbox.
                       </p>
@@ -1369,7 +1369,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                   </div>
                 )}
                 {selectedStale && (
-                  <div className={`mb-3 rounded-lg px-3 py-2 text-[11px] ${selectedStale.tier === 'breach' ? 'bg-red-500/10 border border-red-500/30 text-red-200' : 'bg-orange-500/10 border border-orange-500/30 text-orange-200'}`}>
+                  <div className={`mb-3 rounded-lg px-3 py-2 text-[11px] ${selectedStale.tier === 'breach' ? 'bg-dt-danger-soft border border-dt-danger-border text-dt-danger' : 'bg-dt-warn-soft border border-dt-warn-border text-dt-warn'}`}>
                     Raised automatically by the staleness watchdog — nothing happened on this for too long, so a human is being asked to look at it.
                     {selectedStale.tier === 'breach' && ' This is now past the breach threshold.'}
                   </div>
@@ -1387,13 +1387,13 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                   {selected.related_table === 'renewal_invoices' && (
                     <div className="flex items-center justify-between bg-dt-page rounded-lg px-3 py-2">
                       <span className="text-dt-muted">Related</span>
-                      <button onClick={() => setPage('entity_customer_renewal')} className="text-indigo-400 hover:text-indigo-300 transition-colors">Renewal &amp; Expansion →</button>
+                      <button onClick={() => setPage('entity_customer_renewal')} className="text-dt-accent-text hover:underline transition-colors">Renewal &amp; Expansion →</button>
                     </div>
                   )}
                   {selected.related_table === 'knowledge_revision_requests' && (
                     <div className="flex items-center justify-between bg-dt-page rounded-lg px-3 py-2">
                       <span className="text-dt-muted">Related</span>
-                      <button onClick={() => setPage('knowledge_library')} className="text-indigo-400 hover:text-indigo-300 transition-colors">Knowledge Library → Revisions →</button>
+                      <button onClick={() => setPage('knowledge_library')} className="text-dt-accent-text hover:underline transition-colors">Knowledge Library → Revisions →</button>
                     </div>
                   )}
                   {selected.status !== 'pending' && (
@@ -1451,7 +1451,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                             {selected.status === 'pending' && !draftEditing && (
                               <button
                                 onClick={() => { setDraftEditing(true); setDraftEditText(gatedDraft); setRejecting(false); setReasonCode(''); setReasonNote(''); }}
-                                className="text-[10px] text-indigo-400 hover:text-indigo-300 transition-colors">
+                                className="text-[10px] text-dt-accent-text hover:underline transition-colors">
                                 ✎ Edit before approving
                               </button>
                             )}
@@ -1460,7 +1460,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                             <textarea
                               value={draftEditText} onChange={e => setDraftEditText(e.target.value)}
                               rows={Math.min(12, Math.max(4, gatedDraft.split('\n').length + 1))}
-                              className="w-full rounded-md border border-dt-border bg-dt-bg px-2 py-1.5 text-xs text-dt-text focus:outline-none focus:border-indigo-500"
+                              className="w-full rounded-md border border-dt-border bg-dt-inset px-2 py-1.5 text-xs text-dt-body focus:outline-none focus:border-indigo-500"
                             />
                           ) : (
                             <p className="whitespace-pre-wrap text-dt-support">{gatedDraft}</p>
@@ -1477,7 +1477,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                         decision_edit — never one without the other. */}
                     {draftEditing && selected.status === 'pending' && (
                       <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-950/20 p-3">
-                        <p className="text-xs font-medium text-dt-text mb-2">
+                        <p className="text-xs font-medium text-dt-body mb-2">
                           What was wrong with it? <span className="text-dt-muted font-normal">(optional — it&apos;s what the employee learns from)</span>
                         </p>
                         <div className="flex flex-wrap gap-1.5">
@@ -1485,8 +1485,8 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                             <button key={rc.code} onClick={() => setDraftReasonCode(c => c === rc.code ? '' : rc.code)}
                               className={`rounded-md border px-2 py-1 text-[11px] transition-colors ${
                                 draftReasonCode === rc.code
-                                  ? 'border-emerald-400 bg-emerald-500/20 text-emerald-200'
-                                  : 'border-dt-border text-dt-muted hover:text-dt-text'}`}>
+                                  ? 'border-dt-ok bg-dt-ok-soft text-dt-ok'
+                                  : 'border-dt-border text-dt-muted hover:text-dt-body'}`}>
                               {rc.label}
                             </button>
                           ))}
@@ -1497,7 +1497,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                           placeholder={draftReasonCode === 'other'
                             ? 'Required — what was wrong?'
                             : 'Optional: anything that would help this employee next time'}
-                          className="mt-2 w-full rounded-md border border-dt-border bg-dt-bg px-2 py-1.5 text-xs text-dt-text placeholder:text-dt-muted"
+                          className="mt-2 w-full rounded-md border border-dt-border bg-dt-inset px-2 py-1.5 text-xs text-dt-body placeholder:text-dt-muted"
                         />
                         <div className="mt-2 flex gap-2">
                           <button
@@ -1512,7 +1512,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                           </button>
                           <button onClick={() => { setDraftEditing(false); setDraftEditText(''); setDraftReasonCode(''); setDraftNote(''); }}
                             disabled={deciding}
-                            className="rounded-md border border-dt-border text-dt-muted hover:text-dt-text text-xs px-3 py-1.5 transition-colors">
+                            className="rounded-md border border-dt-border text-dt-muted hover:text-dt-body text-xs px-3 py-1.5 transition-colors">
                             Cancel
                           </button>
                         </div>
@@ -1540,7 +1540,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                     {trustLoading ? (
                       <p className="text-xs text-dt-support">Loading the evidence behind this request…</p>
                     ) : trustLoadError ? (
-                      <p className="text-xs text-amber-300">{trustLoadError}</p>
+                      <p className="text-xs text-dt-warn">{trustLoadError}</p>
                     ) : !trustPolicy ? (
                       <p className="text-xs text-dt-support">No trust policy is linked to this request — approving would change nothing.</p>
                     ) : !trustCopy ? (
@@ -1603,8 +1603,8 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                     premise may be broken, not the answer. */}
                 {selected.related_table === 'de_improvements' && impSignals?.entityMatch && (
                   <div className="mt-4 rounded-lg border-2 border-amber-500/60 bg-amber-500/10 px-3 py-2.5">
-                    <p className="text-xs font-bold text-amber-300 mb-1">⚠ Check the premise before the answer</p>
-                    <p className="text-[11px] text-amber-200/90">
+                    <p className="text-xs font-bold text-dt-warn mb-1">⚠ Check the premise before the answer</p>
+                    <p className="text-[11px] text-dt-warn">
                       This proposes rules about &lsquo;{impSignals.entityMatch.name}&rsquo; — an active {impSignals.entityMatch.kind === 'digital_employee' ? 'digital employee' : impSignals.entityMatch.kind} in this workspace.
                       The knowledge base may be MISSING documentation rather than the answer being wrong.
                       If this article teaches an employee to deny something that actually exists, reject it and add the missing documentation instead.
@@ -1630,7 +1630,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                       All {impRole.peers + 1} {impRole.archetype} employees
                     </label>
                     {impScope === 'role' && (
-                      <p className="mt-1.5 text-[11px] text-amber-300">Shared with the whole role — confirm this fix contains no customer-specific detail.</p>
+                      <p className="mt-1.5 text-[11px] text-dt-warn">Shared with the whole role — confirm this fix contains no customer-specific detail.</p>
                     )}
                   </div>
                 )}
@@ -1652,7 +1652,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                     {editing ? (
                       <>
                         <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={10}
-                          className="mt-2 w-full rounded-md bg-dt-card border border-dt-border px-2 py-1.5 text-xs text-dt-text" />
+                          className="mt-2 w-full rounded-md bg-dt-card border border-dt-border px-2 py-1.5 text-xs text-dt-body" />
                         <p className="mt-1 text-[11px] text-dt-muted">
                           {editText.trim() === proposal.content.trim()
                             ? 'Unchanged — approving publishes the original.'
@@ -1703,7 +1703,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                     disclosure. */}
                 {selected.status === 'pending' && !draftEditing && !rejecting && blocked && (
                   <div className="mt-3">
-                    <label htmlFor="dt-instruction" className="block text-xs font-medium text-dt-text mb-1.5">
+                    <label htmlFor="dt-instruction" className="block text-xs font-medium text-dt-body mb-1.5">
                       Your answer to the employee <span className="text-dt-faint font-normal">— optional, but it is what tells them how to proceed</span>
                     </label>
                     <textarea
@@ -1755,12 +1755,12 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                   <div className="mt-2">
                     {!rerouting ? (
                       <button onClick={() => setRerouting(true)} disabled={deciding}
-                        className="text-[11px] text-dt-faint hover:text-indigo-300">
+                        className="text-[11px] text-dt-faint hover:text-dt-accent-text">
                         …or hand this to a different employee
                       </button>
                     ) : (
                       <div className="rounded-lg border border-dt-border bg-dt-inset p-3">
-                        <p className="text-xs font-medium text-dt-text mb-2">Who should own this instead?</p>
+                        <p className="text-xs font-medium text-dt-body mb-2">Who should own this instead?</p>
                         <select value={rerouteTo} onChange={(e) => setRerouteTo(e.target.value)} className={INPUT_CLS}>
                           <option value="">Choose an employee…</option>
                           {colleagues.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -1794,14 +1794,14 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                     commits, because asking afterwards is how you get noise. */}
                 {selected.status === 'pending' && rejecting && (
                   <div className="mt-3 rounded-lg border border-red-500/30 bg-red-950/20 p-3">
-                    <p className="text-xs font-medium text-dt-text mb-2">Why is this being rejected?</p>
+                    <p className="text-xs font-medium text-dt-body mb-2">Why is this being rejected?</p>
                     <div className="flex flex-wrap gap-1.5">
                       {DECISION_REASON_CODES.map(rc => (
                         <button key={rc.code} onClick={() => setReasonCode(rc.code)}
                           className={`rounded-md border px-2 py-1 text-[11px] transition-colors ${
                             reasonCode === rc.code
-                              ? 'border-red-400 bg-red-500/20 text-red-200'
-                              : 'border-dt-border text-dt-muted hover:text-dt-text'}`}>
+                              ? 'border-dt-danger bg-dt-danger-soft text-dt-danger'
+                              : 'border-dt-border text-dt-muted hover:text-dt-body'}`}>
                           {rc.label}
                         </button>
                       ))}
@@ -1812,7 +1812,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                       placeholder={reasonCode === 'other'
                         ? 'Required — what was wrong?'
                         : 'Optional: anything that would help this employee next time'}
-                      className="mt-2 w-full rounded-md border border-dt-border bg-dt-bg px-2 py-1.5 text-xs text-dt-text placeholder:text-dt-muted"
+                      className="mt-2 w-full rounded-md border border-dt-border bg-dt-inset px-2 py-1.5 text-xs text-dt-body placeholder:text-dt-muted"
                     />
                     <div className="mt-2 flex gap-2">
                       <button
@@ -1825,7 +1825,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                       </button>
                       <button onClick={() => { setRejecting(false); setReasonCode(''); setReasonNote(''); }}
                         disabled={deciding}
-                        className="rounded-md border border-dt-border text-dt-muted hover:text-dt-text text-xs px-3 py-1.5 transition-colors">
+                        className="rounded-md border border-dt-border text-dt-muted hover:text-dt-body text-xs px-3 py-1.5 transition-colors">
                         Cancel
                       </button>
                     </div>

@@ -131,7 +131,7 @@ function dotColor(type: ActivityType): string {
   if (type === 'resolved') return 'bg-emerald-400';
   if (type === 'escalated') return 'bg-amber-400';
   if (type === 'kb_gap') return 'bg-blue-400';
-  if (type === 'config_change') return 'bg-slate-500';
+  if (type === 'config_change') return 'bg-dt-border-strong';
   if (type === 'guardrail_block') return 'bg-red-500';
   return 'bg-red-400';
 }
@@ -140,7 +140,7 @@ function borderColor(type: ActivityType): string {
   if (type === 'resolved') return 'border-l-emerald-500';
   if (type === 'escalated') return 'border-l-amber-500';
   if (type === 'kb_gap') return 'border-l-blue-500';
-  if (type === 'config_change') return 'border-l-slate-500';
+  if (type === 'config_change') return 'border-l-dt-border-strong';
   if (type === 'guardrail_block') return 'border-l-red-600';
   return 'border-l-red-500';
 }
@@ -198,7 +198,7 @@ export default function ActivityPage({ setPage }: { setPage: (p: Page) => void }
       />
       <p className="-mt-3 mb-5 text-xs text-dt-muted">
         Operational stream: what your workforce is doing right now. For the immutable compliance record, see the{' '}
-        <button onClick={() => setPage('gov_audit')} className="text-indigo-400 hover:text-indigo-300 transition-colors">
+        <button onClick={() => setPage('gov_audit')} className="text-dt-accent-text hover:underline transition-colors">
           Audit Trail →
         </button>
       </p>
@@ -258,7 +258,7 @@ export default function ActivityPage({ setPage }: { setPage: (p: Page) => void }
                         <span>{r.de}</span>
                         <span>· {r.entity}</span>
                         {link && (
-                          <button onClick={() => setPage(link.page)} className="text-indigo-400 hover:text-indigo-300 transition-colors ml-1">
+                          <button onClick={() => setPage(link.page)} className="text-dt-accent-text hover:underline transition-colors ml-1">
                             {link.label}
                           </button>
                         )}

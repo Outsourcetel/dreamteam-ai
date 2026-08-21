@@ -468,7 +468,7 @@ function OperateConfigDrawer({ onClose }: { onClose: () => void }) {
 
           {adding
             ? <AddBindingForm deId={deId} connectors={cfg.connectors} onCancel={() => setAdding(false)} onDone={() => { setAdding(false); loadCfg(deId); }} />
-            : <button onClick={() => setAdding(true)} className="w-full rounded-xl border border-dashed border-dt-border hover:border-dt-accent/60 text-sm text-dt-support hover:text-dt-accent-text py-3 transition-colors">+ Add an app to operate</button>}
+            : <button onClick={() => setAdding(true)} className="w-full rounded-xl border border-dashed border-dt-border hover:border-dt-accent text-sm text-dt-support hover:text-dt-accent-text py-3 transition-colors">+ Add an app to operate</button>}
         </div>
       )}
     </Drawer>
@@ -596,7 +596,7 @@ function AddBindingForm({ deId, connectors, onCancel, onDone }: { deId: string; 
     } catch (e) { setErr(e instanceof Error ? e.message : 'Could not add.'); setBusy(false); }
   };
   return (
-    <div className="rounded-xl border border-dt-accent/40 bg-dt-accent-soft p-4">
+    <div className="rounded-xl border border-dt-accent-border bg-dt-accent-soft p-4">
       <div className="text-sm font-medium text-dt-title mb-3">Add an app to operate</div>
       <div className="space-y-2">
         <div className="grid grid-cols-2 gap-2">

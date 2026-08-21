@@ -236,7 +236,7 @@ function DemandRowBlock({ row, open, onToggle }: {
                 {row.evidence.map((e, i) => (
                   <blockquote
                     key={`${e.surfaced_at}-${i}`}
-                    className="border-l-2 border-dt-accent/40 pl-3 py-1"
+                    className="border-l-2 border-dt-accent-border pl-3 py-1"
                   >
                     <p className="text-sm text-dt-body">“{e.evidence}”</p>
                     <p className="text-xs text-dt-muted mt-0.5">

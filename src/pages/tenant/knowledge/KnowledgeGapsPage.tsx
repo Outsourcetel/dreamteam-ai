@@ -61,7 +61,7 @@ interface Gap {
 }
 
 const STATUS_META: Record<GapStatus, { label: string; cls: string }> = {
-  detected: { label: 'Detected', cls: 'bg-slate-600/50 text-dt-support' },
+  detected: { label: 'Detected', cls: 'bg-dt-neutral-soft text-dt-neutral' },
   investigating: { label: 'Investigating', cls: 'bg-sky-500/20 text-sky-400' },
   draft_ready: { label: 'Draft ready', cls: 'bg-amber-500/20 text-amber-400' },
   approved: { label: 'Approved', cls: 'bg-emerald-500/20 text-emerald-400' },
@@ -104,7 +104,7 @@ function severityTier(c: KnowledgeGapCluster, policy: KnowledgeGapPolicy | null)
 }
 
 const LIVE_STATUS_META: Record<KnowledgeGapCluster['status'], { label: string; cls: string }> = {
-  open: { label: 'Open', cls: 'bg-slate-600/50 text-dt-support' },
+  open: { label: 'Open', cls: 'bg-dt-neutral-soft text-dt-neutral' },
   revision_requested: { label: 'Draft pending review', cls: 'bg-amber-500/20 text-amber-400' },
   resolved: { label: 'Resolved', cls: 'bg-emerald-500/20 text-emerald-400' },
 };
@@ -144,13 +144,13 @@ function GapPolicyPanel({ policies, onSaved }: { policies: KnowledgeGapPolicy[];
   };
   return (
     <div className="mb-5 rounded-xl border border-dt-border bg-dt-card p-4">
-      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-2 text-sm font-semibold text-white w-full text-left">
+      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-2 text-sm font-semibold text-dt-title w-full text-left">
         <span>{open ? '▾' : '▸'}</span> Detection policy
         <span className="text-[11px] font-normal text-dt-muted">— when similar misses become a gap</span>
       </button>
       {open && (
         <div className="mt-3 space-y-3">
-          {err && <p className="text-xs text-rose-300">{err}</p>}
+          {err && <p className="text-xs text-dt-danger">{err}</p>}
           {policies.map(p => {
             const d = draftFor(p);
             const set = (k: keyof typeof d, v: string) => setDrafts(prev => ({ ...prev, [p.id]: { ...draftFor(p), [k]: v } }));
@@ -326,7 +326,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
         </div>
       )}
 
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {error && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {/* Ledger-3 (docs/16): the detection thresholds were only tunable via
           raw SQL — now a product control. */}
@@ -356,7 +356,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
                   <div className="flex-1 min-w-[100px] rounded-xl border border-dt-border bg-dt-page p-3 text-center">
                     <p className="text-indigo-400 text-sm">{n.icon}</p>
                     <p className="text-xs font-semibold text-dt-support mt-1">{n.label}</p>
-                    <p className="text-lg font-bold text-white mt-0.5">{n.count}</p>
+                    <p className="text-lg font-bold text-dt-title mt-0.5">{n.count}</p>
                   </div>
                   {i < loopNodes.length - 1 && <span className="self-center text-dt-faint flex-shrink-0">→</span>}
                 </React.Fragment>
@@ -391,7 +391,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
                   return (
                     <tr key={c.id} onClick={() => setSelectedId(c.id)} className="border-b border-dt-border hover:bg-dt-panel cursor-pointer transition-colors">
                       <td className={td}>
-                        <p className="text-white font-medium max-w-md truncate">{title}</p>
+                        <p className="text-dt-body font-medium max-w-md truncate">{title}</p>
                         <p className="text-xs text-dt-muted mt-0.5">first seen {new Date(c.first_seen_at).toLocaleDateString()}</p>
                       </td>
                       <td className={`${td} text-xs text-dt-support`}>{c.category ?? 'any'}</td>
@@ -423,7 +423,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
 
                 {typeof selected.pre_fix_avg_confidence === 'number' && (
                   <div className="mb-5 bg-dt-page rounded-lg px-3 py-2">
-                    <p className="text-xs text-dt-support">Average confidence when this pattern was detected: <span className="text-white font-medium">{selected.pre_fix_avg_confidence}%</span></p>
+                    <p className="text-xs text-dt-support">Average confidence when this pattern was detected: <span className="text-dt-body font-medium">{selected.pre_fix_avg_confidence}%</span></p>
                   </div>
                 )}
 
@@ -456,7 +456,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
                   <>
                     <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">2 · Proposed knowledge update</p>
                     <div className="rounded-xl border border-dt-border bg-dt-page p-4 mb-6">
-                      <p className="text-sm font-semibold text-white mb-2">{selectedRevision.proposed_title}</p>
+                      <p className="text-sm font-semibold text-dt-title mb-2">{selectedRevision.proposed_title}</p>
                       <pre className="text-xs text-dt-support leading-relaxed whitespace-pre-wrap font-sans">{selectedRevision.proposed_body_md}</pre>
                     </div>
                   </>
@@ -484,9 +484,9 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
                 )}
                 {selected.status === 'resolved' && (
                   <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 mb-6">
-                    <p className="text-xs text-emerald-300">Resolved — a knowledge update was published{selected.fix_applied_at ? ` on ${new Date(selected.fix_applied_at).toLocaleDateString()}` : ''}.</p>
+                    <p className="text-xs text-dt-ok">Resolved — a knowledge update was published{selected.fix_applied_at ? ` on ${new Date(selected.fix_applied_at).toLocaleDateString()}` : ''}.</p>
                     {selected.recurred_after_fix && (
-                      <p className="text-xs text-red-300 mt-1">This gap has since recurred {selected.recurrence_count} time{selected.recurrence_count === 1 ? '' : 's'} after that fix — the underlying question may not have been fully resolved.</p>
+                      <p className="text-xs text-dt-danger mt-1">This gap has since recurred {selected.recurrence_count} time{selected.recurrence_count === 1 ? '' : 's'} after that fix — the underlying question may not have been fully resolved.</p>
                     )}
                   </div>
                 )}

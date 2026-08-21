@@ -49,10 +49,10 @@ function Assessment({ a, wouldClear, reason }: { a: Adjudication['assessment']; 
     )
   }
   const map: Record<string, string> = {
-    describes: 'bg-amber-500/20 text-amber-200',
-    enacts: 'bg-emerald-500/15 text-emerald-300',
+    describes: 'bg-dt-warn-soft text-dt-warn',
+    enacts: 'bg-dt-ok-soft text-dt-ok',
     unclear: 'bg-dt-page text-dt-muted',
-    error: 'bg-red-500/15 text-red-300',
+    error: 'bg-dt-danger-soft text-dt-danger',
   }
   const label = a === 'describes' ? (wouldClear ? 'describes → clear' : 'describes (below bar)')
     : a === 'enacts' ? 'enacts → upheld'
@@ -111,8 +111,8 @@ export default function GuardrailAdjudicationPanel({ rules }: { rules: Guardrail
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6 mb-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
-        <h3 className="text-base font-semibold text-white">When a guardrail matches the wrong thing</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">can un-block content</span>
+        <h3 className="text-base font-semibold text-dt-title">When a guardrail matches the wrong thing</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-warn-soft text-dt-warn">can un-block content</span>
       </div>
       <p className="text-[11px] text-dt-muted mb-4 max-w-3xl">
         Blocking rules match text, so they cannot tell an employee <em>doing</em> the forbidden thing from one
@@ -132,15 +132,15 @@ export default function GuardrailAdjudicationPanel({ rules }: { rules: Guardrail
           {log.length > 0 && (
             <div className="grid grid-cols-3 gap-3 mb-4">
               <div className="rounded-xl border border-dt-border bg-dt-page p-3">
-                <div className="text-lg font-semibold text-amber-300">{cleared}</div>
+                <div className="text-lg font-semibold text-dt-warn">{cleared}</div>
                 <div className="text-[10px] text-dt-muted">blocks released by AI</div>
               </div>
               <div className="rounded-xl border border-dt-border bg-dt-page p-3">
-                <div className="text-lg font-semibold text-white">{wouldHave}</div>
+                <div className="text-lg font-semibold text-dt-title">{wouldHave}</div>
                 <div className="text-[10px] text-dt-muted">would have been released (observing)</div>
               </div>
               <div className="rounded-xl border border-dt-border bg-dt-page p-3">
-                <div className="text-lg font-semibold text-white">{upheld}</div>
+                <div className="text-lg font-semibold text-dt-title">{upheld}</div>
                 <div className="text-[10px] text-dt-muted">block kept{notJudged>0?` · ${notJudged} not judged`:''}</div>
               </div>
             </div>
@@ -161,7 +161,7 @@ export default function GuardrailAdjudicationPanel({ rules }: { rules: Guardrail
                       <div className="text-xs text-dt-body">{r.rule}</div>
                       <div className="text-[10px] text-dt-muted font-mono truncate">{r.pattern}</div>
                       {pack && (
-                        <div className="text-[10px] text-amber-300 mt-1">
+                        <div className="text-[10px] text-dt-warn mt-1">
                           From the {pack} compliance pack — making it machine-clearable is an explicit
                           compliance decision and needs the workspace owner override.
                         </div>
@@ -210,9 +210,9 @@ export default function GuardrailAdjudicationPanel({ rules }: { rules: Guardrail
             })}
           </div>
 
-          {error && <p className="text-xs text-rose-300 mb-3">{error}</p>}
+          {error && <p className="text-xs text-dt-danger mb-3">{error}</p>}
 
-          <h4 className="text-xs font-semibold text-white mb-2">Every decision, kept</h4>
+          <h4 className="text-xs font-semibold text-dt-title mb-2">Every decision, kept</h4>
           {log.length === 0 ? (
             <p className="text-[11px] text-dt-muted">
               Nothing adjudicated yet. Decisions appear here the moment a rule above is switched on and one of
@@ -224,14 +224,14 @@ export default function GuardrailAdjudicationPanel({ rules }: { rules: Guardrail
                 <div key={a.id} className="rounded-lg border border-dt-border bg-dt-page p-2.5">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <Assessment a={a.assessment} wouldClear={a.would_clear} reason={a.reason} />
-                    {a.applied && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-200">RELEASED</span>}
+                    {a.applied && <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-warn-soft text-dt-warn">RELEASED</span>}
                     {a.mode === 'shadow' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-card text-dt-muted">observing only</span>}
                     {a.confidence != null && <span className="text-[10px] text-dt-muted">{a.confidence}% sure</span>}
                     <span className="text-[10px] text-dt-muted ml-auto">{new Date(a.created_at).toLocaleString()}</span>
                   </div>
                   <div className="text-[11px] text-dt-body">
                     {a.rule_text}
-                    {a.matched_text && <> — matched <span className="font-mono text-amber-300">"{a.matched_text}"</span></>}
+                    {a.matched_text && <> — matched <span className="font-mono text-dt-warn">"{a.matched_text}"</span></>}
                   </div>
                   {a.rationale && <div className="text-[10px] text-dt-muted mt-0.5 italic">{a.rationale}</div>}
                   {!a.would_clear && a.reason && a.assessment === 'error' && (

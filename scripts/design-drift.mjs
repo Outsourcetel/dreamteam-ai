@@ -69,8 +69,37 @@ const files = (pat) => Number(sh(`grep -rlE "${pat}" ${G} | wc -l`));
 // Every one of those was a real improvement someone made that was not
 // protected, so it could have silently drifted back to 65 and the checker
 // would have called it green the whole way.
+//
+// RATCHETED 2026-08-21 (Task 5, Playbooks group). LivePlaybookBuilder's
+// three-way step-tone badge (Rail/Judgment/Guide) carried the estate's only
+// `bg-slate-600/20` — converting its "Guide" fill to bg-dt-neutral-soft
+// removed that distinct variant string entirely (bg-slate-600 with no
+// opacity suffix still exists elsewhere, untouched, so this is a real drop,
+// not a fluke of the pattern).
+//
+// RATCHETED 2026-08-21 (Task 5, Connected systems group).
+// LiveConnectorsPage's rejected-candidate chip carried the estate's only
+// `bg-slate-500/10` — converting it to bg-dt-neutral-soft removed that
+// distinct variant string entirely (bg-slate-500 and bg-slate-500/20 still
+// exist elsewhere, untouched, so this is a real drop). The three converted
+// `bg-slate-600` action buttons did NOT move this metric: bg-slate-600
+// (bare) and its /40, /50 opacity siblings are still present elsewhere in
+// the estate, unconverted.
+//
+// RATCHETED 2026-08-21 (Task 5, group 8 — closing the estate sweep).
+// `bg-slate variants` hits zero: every remaining bg-slate-* class in the
+// estate (toggle tracks, status chips, Badge.tsx's default variant,
+// DraftApprovalCard's Reject button, ActivityPage's config_change dot — see
+// audit-light-ready.mjs's own ratchet note for the full file list) converted
+// to dt-* tokens. `border-slate variants` drops to exactly 1: the five
+// `focus:border-slate-500` control-shade focus rings (doc §7,
+// CONTROL_SHADE_FOCUS_RING in audit-light-ready.mjs) all share the identical
+// literal `border-slate-500` — one distinct variant string, deliberately kept
+// (converting to dt-border-strong would trade a visible focus ring for a
+// ~1.4:1-contrast one in light theme; see doc §7 for the math). Badge.tsx's
+// `border-slate-500/30` variant is gone along with its bg-slate sibling.
 const BASELINE = {
-  'bg-slate variants': 7, 'border-slate variants': 2, 'radius variants': 13,
+  'bg-slate variants': 0, 'border-slate variants': 1, 'radius variants': 13,
   'card padding variants': 9, 'local StatCard-likes (files)': 6,
   'hand-rolled dialogs': 0, 'hand-rolled toasts': 0,
   'inline style objects': 42, 'raw hex colors': 18,

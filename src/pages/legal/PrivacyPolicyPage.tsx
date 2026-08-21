@@ -1,4 +1,5 @@
 import React from 'react';
+import { Banner } from '../../design/primitives';
 // Section 4 is GENERATED, not written. See src/lib/subprocessors.ts for why:
 // a provider joins the model failover chain the moment its key resolves, so a
 // hand-maintained list of "who receives your data" is accurate only by
@@ -19,15 +20,15 @@ const PrivacyPolicyPage = ({ onBack }: { onBack?: () => void }) => (
         <button onClick={onBack} className="text-sm text-dt-accent-text hover:text-dt-title mb-6">← Back</button>
       )}
 
-      <div className="bg-dt-warn-soft border border-dt-warn-border rounded-xl p-4 mb-8">
-        <p className="text-sm font-medium text-dt-warn mb-1">Draft — not yet reviewed by a lawyer</p>
-        <p className="text-xs text-dt-warn/80">
+      <Banner tone="warn" className="mb-8">
+        <p className="font-medium mb-1">Draft — not yet reviewed by a lawyer</p>
+        <p className="text-xs">
           This is a starting-point draft written to reflect what DreamTeam AI actually does today. It is not final
           and should not be relied on as your real privacy policy until reviewed by qualified legal counsel,
           especially if you plan to serve customers in the EU (GDPR), California (CCPA/CPRA), or other regions with
           specific data-protection requirements — the placeholders below need real answers first.
         </p>
-      </div>
+      </Banner>
 
       <h1 className="text-2xl font-bold text-dt-title mb-2">Privacy Policy</h1>
       <p className="text-sm text-dt-muted mb-8">Last updated: 22 July 2026 · Effective: 22 July 2026</p>
@@ -77,7 +78,10 @@ const PrivacyPolicyPage = ({ onBack }: { onBack?: () => void }) => (
           </p>
 
           <div className="bg-dt-warn-soft border border-dt-warn-border rounded-lg p-3 mt-4">
-            <p className="text-xs text-dt-warn/90">{COUNSEL_PLACEHOLDER}</p>
+            {/* Full-strength warn text: dt tokens are plain var() colors, so a Tailwind
+                alpha suffix on them emits NO css rule (proven in the theme branch's 4b
+                work) — the suffixed form silently rendered as inherited color. */}
+            <p className="text-xs text-dt-warn">{COUNSEL_PLACEHOLDER}</p>
           </div>
 
           {ARMING_GROUPS.map((group) => {

@@ -64,12 +64,12 @@ export default function PlatformEmailKeyPanel() {
     // with its own top padding. Adding one here doubles it.
     <div className="bg-dt-card border border-dt-border rounded-xl p-5">
       <div className="flex items-center justify-between mb-1">
-        <h2 className="text-sm font-semibold text-white">Outbound email — Resend API key</h2>
+        <h2 className="text-sm font-semibold text-dt-title">Outbound email — Resend API key</h2>
         {isSet === null
           ? <span className="text-xs text-dt-muted">checking…</span>
           : isSet
             ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured</span>
-            : <span className="text-xs text-dt-muted bg-slate-600/50 px-2 py-0.5 rounded">Not set — email sending is dormant</span>}
+            : <span className="text-xs text-dt-muted bg-dt-neutral-soft px-2 py-0.5 rounded">Not set — email sending is dormant</span>}
       </div>
 
       <p className="text-xs text-dt-support mb-3">
@@ -84,7 +84,7 @@ export default function PlatformEmailKeyPanel() {
           value={value}
           onChange={(e) => { setValue(e.target.value); setStatus('idle'); setError(null); }}
           placeholder={isSet ? 'Enter new key to replace existing…' : 're_…'}
-          className="flex-1 bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+          className="flex-1 bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
         />
         <button
           onClick={() => void save()}
@@ -106,7 +106,7 @@ export default function PlatformEmailKeyPanel() {
           you do, the old one still works.
         </p>
       )}
-      {status === 'error' && error && <p className="text-xs text-rose-300 mt-2">{error}</p>}
+      {status === 'error' && error && <p className="text-xs text-dt-danger mt-2">{error}</p>}
 
       <InboundSecretField />
     </div>
@@ -148,12 +148,12 @@ function InboundSecretField() {
   return (
     <div className="mt-5 pt-5 border-t border-dt-border">
       <div className="flex items-center justify-between mb-1">
-        <h2 className="text-sm font-semibold text-white">Inbound email — webhook signing secret</h2>
+        <h2 className="text-sm font-semibold text-dt-title">Inbound email — webhook signing secret</h2>
         {isSet === null
           ? <span className="text-xs text-dt-muted">checking…</span>
           : isSet
             ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured</span>
-            : <span className="text-xs text-dt-muted bg-slate-600/50 px-2 py-0.5 rounded">Not set — inbound email is dormant</span>}
+            : <span className="text-xs text-dt-muted bg-dt-neutral-soft px-2 py-0.5 rounded">Not set — inbound email is dormant</span>}
       </div>
 
       <p className="text-xs text-dt-support mb-2">
@@ -177,7 +177,7 @@ function InboundSecretField() {
           value={value}
           onChange={(e) => { setValue(e.target.value); setStatus('idle'); setError(null); }}
           placeholder={isSet ? 'Enter new secret to replace existing…' : 'whsec_…'}
-          className="flex-1 bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+          className="flex-1 bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
         />
         <button
           onClick={() => void save()}
@@ -194,7 +194,7 @@ function InboundSecretField() {
           email to your receiving address and watch it arrive in the Support inbox.
         </p>
       )}
-      {status === 'error' && error && <p className="text-xs text-rose-300 mt-2">{error}</p>}
+      {status === 'error' && error && <p className="text-xs text-dt-danger mt-2">{error}</p>}
     </div>
   );
 }

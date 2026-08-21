@@ -110,7 +110,7 @@ function Toggle({ enabled, onChange, disabled }: { enabled: boolean; onChange?: 
   return (
     <button
       onClick={() => !disabled && onChange && onChange(!enabled)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? 'bg-indigo-600' : 'bg-slate-600'} ${disabled ? 'opacity-70 cursor-not-allowed' : ''}`}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? 'bg-indigo-600' : 'bg-dt-border-strong'} ${disabled ? 'opacity-70 cursor-not-allowed' : ''}`}
     >
       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-4' : 'translate-x-1'}`} />
     </button>
@@ -127,7 +127,7 @@ const VERDICT_META: Record<LearnedBehaviorCluster['verdict_type'], { label: stri
 };
 
 const LIVE_STATUS_META: Record<LearnedBehaviorCluster['status'], { label: string; cls: string }> = {
-  open: { label: 'Open', cls: 'bg-slate-600/50 text-dt-support' },
+  open: { label: 'Open', cls: 'bg-dt-neutral-soft text-dt-support' },
   proposed: { label: 'Proposed — awaiting review', cls: 'bg-amber-500/20 text-amber-400' },
   resolved: { label: 'Resolved', cls: 'bg-emerald-500/20 text-emerald-400' },
 };
@@ -190,7 +190,7 @@ function LearningDigestPanel() {
         <div className="flex gap-1">
           {[7, 30].map(d => (
             <button key={d} onClick={() => setDays(d)}
-              className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${days === d ? 'border-indigo-500 text-white' : 'border-dt-border text-dt-muted hover:text-dt-body'}`}>
+              className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${days === d ? 'border-indigo-500 text-dt-title' : 'border-dt-border text-dt-muted hover:text-dt-body'}`}>
               {d}d
             </button>
           ))}
@@ -207,7 +207,7 @@ function LearningDigestPanel() {
       </p>
 
       {quality.drift && (
-        <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-300">
+        <div className="mt-3 rounded-xl border border-dt-warn-border bg-dt-warn-soft px-4 py-2.5 text-xs text-dt-warn">
           Drift watch: judged answer quality dropped {Math.abs(quality.delta ?? 0)} points vs the prior period
           (avg {quality.prev_avg_score} → {quality.avg_score}). Review recent knowledge and amendment changes before promoting anyone's trust.
         </div>
@@ -366,7 +366,7 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
 
       <LearningDigestPanel />
 
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {error && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {loading ? (
         <LiveLoadingSkeleton rows={4} />
@@ -389,7 +389,7 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
                   <div className="flex-1 min-w-[100px] rounded-xl border border-dt-border bg-dt-page p-3 text-center">
                     <p className="text-indigo-400 text-sm">{n.icon}</p>
                     <p className="text-xs font-semibold text-dt-support mt-1">{n.label}</p>
-                    <p className="text-lg font-bold text-white mt-0.5">{n.count}</p>
+                    <p className="text-lg font-bold text-dt-title mt-0.5">{n.count}</p>
                   </div>
                   {i < loopNodes.length - 1 && <span className="self-center text-dt-faint flex-shrink-0">→</span>}
                 </React.Fragment>
@@ -421,7 +421,7 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
                   return (
                     <tr key={c.id} onClick={() => setSelectedId(c.id)} className="border-b border-dt-border hover:bg-dt-panel cursor-pointer transition-colors">
                       <td className={td}>
-                        <p className="text-white font-medium max-w-md truncate">{rep?.inquiry ?? '(loading…)'}</p>
+                        <p className="text-dt-title font-medium max-w-md truncate">{rep?.inquiry ?? '(loading…)'}</p>
                         <p className="text-xs text-dt-muted mt-0.5">first seen {new Date(c.first_seen_at).toLocaleDateString()}</p>
                       </td>
                       <td className={td}>
@@ -453,7 +453,7 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
 
                 {typeof selected.pre_fix_avg_confidence === 'number' && (
                   <div className="mb-5 bg-dt-page rounded-lg px-3 py-2">
-                    <p className="text-xs text-dt-support">Average confidence when this pattern was detected: <span className="text-white font-medium">{selected.pre_fix_avg_confidence}%</span></p>
+                    <p className="text-xs text-dt-support">Average confidence when this pattern was detected: <span className="text-dt-title font-medium">{selected.pre_fix_avg_confidence}%</span></p>
                   </div>
                 )}
 
@@ -486,12 +486,12 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
                     <div className="rounded-xl border border-dt-border bg-dt-page p-4 mb-6">
                       {selected.proposed_rule.action === 'insert_guardrail_rule' ? (
                         <>
-                          <p className="text-sm font-semibold text-white mb-1">New guardrail rule</p>
+                          <p className="text-sm font-semibold text-dt-title mb-1">New guardrail rule</p>
                           <p className="text-xs text-dt-support mb-2">Pattern: <span className="font-mono text-dt-support">{selected.proposed_rule.suggested_pattern}</span></p>
                         </>
                       ) : (
                         <>
-                          <p className="text-sm font-semibold text-white mb-1">Loosen existing rule: {selected.proposed_rule.current_rule_label}</p>
+                          <p className="text-sm font-semibold text-dt-title mb-1">Loosen existing rule: {selected.proposed_rule.current_rule_label}</p>
                           <p className="text-xs text-dt-support mb-2">Current pattern: <span className="font-mono text-dt-support">{selected.proposed_rule.current_pattern}</span></p>
                         </>
                       )}
@@ -549,9 +549,9 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
                 )}
                 {selected.status === 'resolved' && (
                   <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 mb-6">
-                    <p className="text-xs text-emerald-300">Resolved{selected.fix_applied_at ? ` on ${new Date(selected.fix_applied_at).toLocaleDateString()}` : ''} — the guardrail change is live.</p>
+                    <p className="text-xs text-dt-ok">Resolved{selected.fix_applied_at ? ` on ${new Date(selected.fix_applied_at).toLocaleDateString()}` : ''} — the guardrail change is live.</p>
                     {selected.recurred_after_fix && (
-                      <p className="text-xs text-red-300 mt-1">This pattern has since recurred {selected.recurrence_count} time{selected.recurrence_count === 1 ? '' : 's'} after that fix — the underlying issue may not have been fully resolved.</p>
+                      <p className="text-xs text-dt-danger mt-1">This pattern has since recurred {selected.recurrence_count} time{selected.recurrence_count === 1 ? '' : 's'} after that fix — the underlying issue may not have been fully resolved.</p>
                     )}
                   </div>
                 )}

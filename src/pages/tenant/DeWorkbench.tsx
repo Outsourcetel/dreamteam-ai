@@ -75,14 +75,14 @@ const Empty = ({ children }: { children: React.ReactNode }) => (
 const Loading = () => <div className="text-center text-dt-muted text-sm py-10">Loading…</div>;
 
 const statusPill: Record<string, string> = {
-  queued: 'bg-slate-600 text-dt-body', running: 'bg-blue-500/20 text-blue-300', done: 'bg-emerald-500/20 text-emerald-300',
-  failed: 'bg-rose-500/20 text-rose-300', waiting_human: 'bg-amber-500/20 text-amber-300', cancelled: 'bg-dt-panel text-dt-support',
-  open: 'bg-blue-500/20 text-blue-300', in_progress: 'bg-blue-500/20 text-blue-300', achieved: 'bg-emerald-500/20 text-emerald-300',
-  blocked: 'bg-amber-500/20 text-amber-300', abandoned: 'bg-dt-panel text-dt-support',
-  passed: 'bg-emerald-500/20 text-emerald-300', proposed: 'bg-amber-500/20 text-amber-300',
-  approved: 'bg-emerald-500/20 text-emerald-300', denied: 'bg-rose-500/20 text-rose-300',
-  completed: 'bg-emerald-500/20 text-emerald-300', assigned: 'bg-slate-600 text-dt-body',
-  auto_resolved: 'bg-emerald-500/20 text-emerald-300',
+  queued: 'bg-dt-border-strong text-dt-body', running: 'bg-dt-info-soft text-dt-info', done: 'bg-dt-ok-soft text-dt-ok',
+  failed: 'bg-dt-danger-soft text-dt-danger', waiting_human: 'bg-dt-warn-soft text-dt-warn', cancelled: 'bg-dt-panel text-dt-support',
+  open: 'bg-dt-info-soft text-dt-info', in_progress: 'bg-dt-info-soft text-dt-info', achieved: 'bg-dt-ok-soft text-dt-ok',
+  blocked: 'bg-dt-warn-soft text-dt-warn', abandoned: 'bg-dt-panel text-dt-support',
+  passed: 'bg-dt-ok-soft text-dt-ok', proposed: 'bg-dt-warn-soft text-dt-warn',
+  approved: 'bg-dt-ok-soft text-dt-ok', denied: 'bg-dt-danger-soft text-dt-danger',
+  completed: 'bg-dt-ok-soft text-dt-ok', assigned: 'bg-dt-border-strong text-dt-body',
+  auto_resolved: 'bg-dt-ok-soft text-dt-ok',
 };
 const Pill = ({ s }: { s: string }) => (
   <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusPill[s] ?? 'bg-dt-panel text-dt-support'}`}>{s.replace(/_/g, ' ')}</span>
@@ -121,8 +121,8 @@ export function DeCertificationPanel({ deId }: { deId: string }) {
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
-        <h3 className="text-base font-semibold text-white">Certification</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">gates autonomy</span>
+        <h3 className="text-base font-semibold text-dt-title">Certification</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-accent-soft text-dt-accent-text">gates autonomy</span>
       </div>
       <p className="text-[11px] text-dt-muted mb-3">
         A failed or stale certification clamps this employee's autonomy through the records gate —
@@ -143,19 +143,19 @@ export function DeCertificationPanel({ deId }: { deId: string }) {
       ) : (
         <div className="space-y-2">
           {certStatus?.state === 'stale' && (
-            <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3">
-              <div className="flex items-center gap-2 text-amber-300 text-sm font-semibold">⚠ Certification is stale</div>
-              <p className="text-[12px] text-amber-200/80 mt-1">This employee's configuration changed since it last passed. The certification below no longer vouches for its current setup — re-run its evaluation or simulation and re-certify before promoting it. Its go-live gate will block promotion until then.</p>
+            <div className="bg-dt-warn-soft border border-dt-warn-border rounded-lg px-4 py-3">
+              <div className="flex items-center gap-2 text-dt-warn text-sm font-semibold">⚠ Certification is stale</div>
+              <p className="text-[12px] text-dt-warn mt-1">This employee's configuration changed since it last passed. The certification below no longer vouches for its current setup — re-run its evaluation or simulation and re-certify before promoting it. Its go-live gate will block promotion until then.</p>
             </div>
           )}
           {certStatus?.state === 'certified' && (
-            <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-lg px-4 py-2.5 text-[12px] text-emerald-300">✓ Certified for its current configuration — the passing evaluation below still applies.</div>
+            <div className="bg-dt-ok-soft border border-dt-ok-border rounded-lg px-4 py-2.5 text-[12px] text-dt-ok">✓ Certified for its current configuration — the passing evaluation below still applies.</div>
           )}
           {certs.map(c => (
             <div key={c.id} className="bg-dt-inset rounded-lg px-4 py-3 flex items-center gap-3">
               <Pill s={c.status} />
               <span className="text-sm text-dt-body flex-1">{c.archetype_key ?? 'Role'} certification</span>
-              <span className={`text-sm font-semibold ${c.status === 'passed' ? 'text-emerald-300' : 'text-rose-300'}`}>{Math.round(c.score_pct)}%</span>
+              <span className={`text-sm font-semibold ${c.status === 'passed' ? 'text-dt-ok' : 'text-dt-danger'}`}>{Math.round(c.score_pct)}%</span>
               <span className="text-[11px] text-dt-faint">need {c.threshold_pct}% · {fmt(c.evaluated_at ?? c.created_at)}</span>
             </div>
           ))}
@@ -195,8 +195,8 @@ export function DeCompliancePanel() {
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
-        <h3 className="text-base font-semibold text-white">Compliance packs</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300">workspace-wide · un-toggleable</span>
+        <h3 className="text-base font-semibold text-dt-title">Compliance packs</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-danger-soft text-dt-danger">workspace-wide · un-toggleable</span>
       </div>
       <p className="text-[11px] text-dt-muted mb-3">
         A pack enforces un-toggleable guardrails on every employee in this workspace — attaching one
@@ -215,14 +215,14 @@ export function DeCompliancePanel() {
           {packBusy ? 'Attaching…' : 'Attach'}
         </button>
       </div>
-      {packError && <p className="text-xs text-rose-300 mb-3">{packError}</p>}
+      {packError && <p className="text-xs text-dt-danger mb-3">{packError}</p>}
       {packs === null ? <Loading /> : packs.length === 0 ? (
         <LiveEmptyState icon="◎" title="No compliance packs attached" body="Packs (HIPAA, TCPA, financial controls) enforce un-toggleable guardrails on every DE — attach one above; it applies workspace-wide and cannot be switched off." />
       ) : (
         <div className="space-y-2">{packs.map(p => (
           <div key={p.pack_key} className="bg-dt-inset rounded-lg px-4 py-3">
             <div className="flex items-center gap-3">
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30">un-toggleable</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-dt-danger-soft text-dt-danger border border-dt-danger-border">un-toggleable</span>
               <span className="text-sm text-dt-body flex-1">{p.name ?? p.pack_key}{p.domain ? ` · ${p.domain}` : ''}</span>
               <span className="text-[11px] text-dt-faint">attached {fmt(p.attached_at)}</span>
             </div>
@@ -366,13 +366,13 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
   return (
     <div className={`${card} overflow-hidden`}>
       <div className="px-5 py-4 border-b border-dt-border">
-        <p className="text-sm font-semibold text-white">Workbench</p>
+        <p className="text-sm font-semibold text-dt-title">Workbench</p>
         <p className="text-xs text-dt-muted mt-0.5">The inspection lab — what this employee remembers, how it reasons, the exceptions it raises, and the replay bench. All live.</p>
       </div>
       <div className="flex flex-wrap gap-1 px-3 pt-3">
         {SECTIONS.map(s => (
           <button key={s.key} onClick={() => setSection(s.key)}
-            className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${section === s.key ? 'bg-indigo-500/20 text-indigo-200' : 'text-dt-support hover:text-dt-body hover:bg-dt-panel'}`}>
+            className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${section === s.key ? 'bg-dt-accent-soft text-dt-accent-text' : 'text-dt-support hover:text-dt-body hover:bg-dt-panel'}`}>
             {s.label}
           </button>
         ))}
@@ -380,13 +380,13 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
       <div className="p-5">
         {loading ? <LiveLoadingSkeleton rows={4} /> : loadError ? (
           <div className="text-center py-10">
-            <p className="text-sm text-rose-300">Couldn't load this employee's workbench.</p>
+            <p className="text-sm text-dt-danger">Couldn't load this employee's workbench.</p>
             <p className="text-xs text-dt-muted mt-1">Check your connection and reopen this tab to retry.</p>
           </div>
         ) : (
           <>
             {writeError && (
-              <div className="mb-3 rounded-lg border border-rose-800/60 bg-rose-900/25 px-3 py-2 text-xs text-rose-200">{writeError}</div>
+              <div className="mb-3 rounded-lg border border-dt-danger-border bg-dt-danger-soft px-3 py-2 text-xs text-dt-danger">{writeError}</div>
             )}
             {section === 'memory' && (memoryGroups.length === 0 ? (
               <LiveEmptyState icon="◎" title="No memories yet" body="This employee records what it learns as it works and answers." />
@@ -427,7 +427,7 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
                                 onClick={() => void handleForget(it.id)}
                                 disabled={forgetting === it.id || !isTenantAdmin}
                                 title="Remove this memory"
-                                className="text-[10px] text-dt-faint hover:text-rose-300 flex-shrink-0 disabled:opacity-40">
+                                className="text-[10px] text-dt-faint hover:text-dt-danger flex-shrink-0 disabled:opacity-40">
                                 {forgetting === it.id ? '…' : 'Forget'}
                               </button>
                             </div>
@@ -452,7 +452,7 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
                         <li key={r.id} className="flex items-start gap-2 text-xs">
                           <span className="text-dt-faint font-mono flex-shrink-0">{r.seq}.</span>
                           <div className="min-w-0">
-                            {r.tool && <span className="text-indigo-300 font-medium">{humanTool(r.tool)}</span>}
+                            {r.tool && <span className="text-dt-accent-text font-medium">{humanTool(r.tool)}</span>}
                             {r.thought && <span className="text-dt-support">{r.tool ? ' — ' : ''}{r.thought}</span>}
                             {r.outputs ? <span className="text-dt-faint"> → {humanOutcome(r.outputs)}</span> : null}
                           </div>
@@ -516,10 +516,10 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
                       {replaySources.map((s, i) => (
                         <button key={i}
                           onClick={() => { setReplaySel(s); setReplayQ(s.question); setReplayResult(null); setReplayError(null); }}
-                          className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors ${replaySel === s ? 'bg-indigo-500/15 text-indigo-200' : 'bg-dt-inset text-dt-support hover:bg-dt-panel'}`}>
+                          className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors ${replaySel === s ? 'bg-dt-accent-soft text-dt-accent-text' : 'bg-dt-inset text-dt-support hover:bg-dt-panel'}`}>
                           <span className="flex items-center gap-2">
                             {s.kind === 'failed_judgment' && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 flex-shrink-0">failed {s.original_score != null ? Math.round(s.original_score) : ''}</span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-dt-danger-soft text-dt-danger flex-shrink-0">failed {s.original_score != null ? Math.round(s.original_score) : ''}</span>
                             )}
                             <span className="truncate">{s.question}</span>
                           </span>
@@ -534,7 +534,7 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
                     <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1.5">Question</p>
                     <textarea value={replayQ} onChange={e => setReplayQ(e.target.value)} rows={2}
                       placeholder="Type any question, or pick one above and edit it…"
-                      className="w-full bg-dt-page/70 border border-dt-border rounded-lg px-3 py-2 text-sm text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500/50 resize-y" />
+                      className="w-full bg-dt-inset border border-dt-border rounded-lg px-3 py-2 text-sm text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500/50 resize-y" />
                   </div>
                   <div>
                     <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1.5">Counterfactual knowledge <span className="normal-case text-dt-faint">(optional — "what if it knew this?")</span></p>
@@ -543,24 +543,24 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
                         document instead of only hand-typed text. */}
                     <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                       <label className={`text-[11px] px-2 py-1 rounded-md border cursor-pointer transition-colors ${
-                        ckLoading ? 'border-dt-border text-dt-faint' : 'border-dt-border text-dt-support hover:text-indigo-200 hover:border-indigo-500/50'}`}>
+                        ckLoading ? 'border-dt-border text-dt-faint' : 'border-dt-border text-dt-support hover:text-dt-accent-text hover:border-dt-accent-border'}`}>
                         {ckLoading === 'file' ? 'Reading…' : '↑ Upload a document'}
                         <input type="file" accept=".pdf,.txt,.md,.markdown" className="hidden" disabled={!!ckLoading}
                           onChange={e => { const f = e.target.files?.[0]; if (f) void handleCkFile(f); e.target.value = ''; }} />
                       </label>
                       <input value={ckUrl} onChange={e => setCkUrl(e.target.value)} placeholder="…or paste a link"
                         onKeyDown={e => { if (e.key === 'Enter') void handleCkUrl(); }}
-                        className="flex-1 min-w-[160px] bg-dt-page/70 border border-dt-border rounded-md px-2 py-1 text-[11px] text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500/50" />
+                        className="flex-1 min-w-[160px] bg-dt-inset border border-dt-border rounded-md px-2 py-1 text-[11px] text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500/50" />
                       <button onClick={() => void handleCkUrl()} disabled={!!ckLoading || !ckUrl.trim()}
-                        className="text-[11px] px-2 py-1 rounded-md border border-dt-border text-dt-support hover:text-indigo-200 hover:border-indigo-500/50 disabled:opacity-40">
+                        className="text-[11px] px-2 py-1 rounded-md border border-dt-border text-dt-support hover:text-dt-accent-text hover:border-dt-accent-border disabled:opacity-40">
                         {ckLoading === 'url' ? 'Fetching…' : 'Fetch'}
                       </button>
                     </div>
                     {ckNote && <p className="text-[11px] text-dt-muted mb-1.5">{ckNote}</p>}
-                    {ckError && <p className="text-[11px] text-rose-300 mb-1.5">{ckError}</p>}
+                    {ckError && <p className="text-[11px] text-dt-danger mb-1.5">{ckError}</p>}
                     <textarea value={replayCk} onChange={e => setReplayCk(e.target.value)} rows={3}
                       placeholder="Paste a policy, fact, or article the employee doesn't have yet — the replay answers as if it did."
-                      className="w-full bg-dt-page/70 border border-dt-border rounded-lg px-3 py-2 text-sm text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500/50 resize-y" />
+                      className="w-full bg-dt-inset border border-dt-border rounded-lg px-3 py-2 text-sm text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500/50 resize-y" />
                   </div>
                   <button disabled={replayRunning || replayQ.trim().length < 4}
                     onClick={async () => {
@@ -569,24 +569,24 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
                       catch (err) { setReplayError(err instanceof Error ? err.message : 'Replay failed — try again.'); }
                       finally { setReplayRunning(false); }
                     }}
-                    className="px-4 py-2 bg-indigo-500/20 text-indigo-200 text-sm rounded-lg hover:bg-indigo-500/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                    className="px-4 py-2 bg-dt-accent-soft text-dt-accent-text text-sm rounded-lg hover:brightness-110 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                     {replayRunning ? 'Replaying…' : 'Run replay'}
                   </button>
-                  {replayError && <p className="text-xs text-rose-300">{replayError}</p>}
+                  {replayError && <p className="text-xs text-dt-danger">{replayError}</p>}
                 </div>
 
                 {(replayResult || (replaySel && replaySel.original_answer)) && (
                   <div className={`grid gap-3 ${replaySel?.original_answer && replayResult ? 'md:grid-cols-2' : 'grid-cols-1'}`}>
                     {replaySel?.original_answer && replayResult && (
-                      <div className="bg-dt-inset border border-rose-500/20 rounded-lg p-4">
-                        <p className="text-[11px] uppercase tracking-wide text-rose-300/80 mb-2">Original answer{replaySel.original_score != null ? ` · scored ${Math.round(replaySel.original_score)}/100` : ''}</p>
+                      <div className="bg-dt-inset border border-dt-danger-border rounded-lg p-4">
+                        <p className="text-[11px] uppercase tracking-wide text-dt-danger mb-2">Original answer{replaySel.original_score != null ? ` · scored ${Math.round(replaySel.original_score)}/100` : ''}</p>
                         <p className="text-sm text-dt-support whitespace-pre-wrap">{replaySel.original_answer}</p>
                         {replaySel.rationale && <p className="text-[11px] text-dt-muted mt-2">Why it failed: {replaySel.rationale}</p>}
                       </div>
                     )}
                     {replayResult && (
-                      <div className="bg-dt-inset border border-indigo-500/25 rounded-lg p-4">
-                        <p className="text-[11px] uppercase tracking-wide text-indigo-300/90 mb-2">Replay answer · confidence {Math.round(replayResult.confidence)}%{replayResult.needs_escalation ? ' · would escalate' : ''}</p>
+                      <div className="bg-dt-inset border border-dt-accent-border rounded-lg p-4">
+                        <p className="text-[11px] uppercase tracking-wide text-dt-accent-text mb-2">Replay answer · confidence {Math.round(replayResult.confidence)}%{replayResult.needs_escalation ? ' · would escalate' : ''}</p>
                         <p className="text-sm text-dt-body whitespace-pre-wrap">{replayResult.answer}</p>
                         {replayResult.sources.length > 0 && <p className="text-[11px] text-dt-muted mt-2">Sources: {replayResult.sources.join(', ')}</p>}
                       </div>

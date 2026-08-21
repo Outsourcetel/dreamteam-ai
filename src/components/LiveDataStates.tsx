@@ -17,7 +17,7 @@ export function LiveLoadingSkeleton({ rows = 4 }: { rows?: number }) {
 
 export function MissingTablesNotice() {
   return (
-    <div className="rounded-xl border border-dt-border-strong bg-dt-card/80 p-5 flex items-start gap-3">
+    <div className="rounded-xl border border-dt-border-strong bg-dt-card p-5 flex items-start gap-3">
       <span className="text-dt-support text-lg flex-shrink-0">◇</span>
       <div>
         <p className="text-sm font-medium text-dt-body mb-1">Live data tables not yet provisioned</p>
@@ -37,7 +37,7 @@ export function LiveErrorNotice({ message, onRetry }: { message?: string; onRetr
     <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-5 flex items-start gap-3">
       <span className="text-red-400 text-lg flex-shrink-0">!</span>
       <div className="flex-1">
-        <p className="text-sm font-medium text-red-300 mb-1">Couldn't load this page</p>
+        <p className="text-sm font-medium text-dt-danger mb-1">Couldn't load this page</p>
         <p className="text-xs text-red-400/80 leading-relaxed">
           {message || 'Something went wrong loading your data. Try again, and contact support if it keeps happening.'}
         </p>
@@ -45,7 +45,7 @@ export function LiveErrorNotice({ message, onRetry }: { message?: string; onRetr
       {onRetry && (
         <button
           onClick={onRetry}
-          className="text-xs px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 transition-colors flex-shrink-0"
+          className="text-xs px-3 py-1.5 rounded-lg bg-dt-danger-soft hover:brightness-110 text-dt-danger transition-colors flex-shrink-0"
         >
           Retry
         </button>
@@ -88,7 +88,7 @@ export function LiveEmptyState({
         {secondaryLabel && onSecondary && (
           <button
             onClick={onSecondary}
-            className="px-4 py-2 rounded-lg text-sm text-dt-support border border-dt-border-strong hover:border-dt-border-strong hover:text-white transition-colors"
+            className="px-4 py-2 rounded-lg text-sm text-dt-support border border-dt-border-strong hover:border-dt-border-strong hover:text-dt-body transition-colors"
           >
             {secondaryLabel}
           </button>

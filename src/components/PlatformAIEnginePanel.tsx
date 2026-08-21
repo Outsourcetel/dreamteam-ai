@@ -84,15 +84,15 @@ export default function PlatformAIEnginePanel() {
   return (
     <div className="bg-dt-card border border-dt-border rounded-xl p-5">
       <div className="flex items-center justify-between mb-1">
-        <h2 className="text-sm font-semibold text-white">AI engine — providers & failover</h2>
-        <button onClick={() => void load()} className="text-xs text-indigo-400 hover:text-indigo-300">Refresh</button>
+        <h2 className="text-sm font-semibold text-dt-title">AI engine — providers & failover</h2>
+        <button onClick={() => void load()} className="text-xs text-dt-accent-text hover:underline">Refresh</button>
       </div>
       <p className="text-xs text-dt-muted mb-4 max-w-2xl">
         The four-tier failover spine as the edge runtime actually sees it — including keys that live
         only as edge secrets. Key values never reach the browser.
       </p>
 
-      {problem && <p className="text-xs text-red-300 mb-3">{problem}</p>}
+      {problem && <p className="text-xs text-dt-danger mb-3">{problem}</p>}
 
       {status && (
         <>
@@ -101,8 +101,8 @@ export default function PlatformAIEnginePanel() {
               <div key={t.provider} className="flex items-center justify-between rounded-lg border border-dt-border bg-dt-inset px-3 py-2">
                 <span className="text-xs text-dt-body">{PROVIDER_LABEL[t.provider] ?? t.provider}</span>
                 {t.armed
-                  ? <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300">armed · {t.source}</span>
-                  : <span className="text-[11px] px-2 py-0.5 rounded bg-slate-600/50 text-dt-support">no key</span>}
+                  ? <span className="text-[11px] px-2 py-0.5 rounded bg-dt-ok-soft text-dt-ok">armed · {t.source}</span>
+                  : <span className="text-[11px] px-2 py-0.5 rounded bg-dt-neutral-soft text-dt-support">no key</span>}
               </div>
             ))}
           </div>
@@ -121,7 +121,7 @@ export default function PlatformAIEnginePanel() {
             </p>
             {status.marker_note && <p className="text-[11px] text-dt-faint">{status.marker_note}</p>}
             {(status.effective_chain ?? []).filter(p => p === 'openai' || p === 'google').length === 0 && (
-              <p className="text-[11px] text-amber-300">
+              <p className="text-[11px] text-dt-warn">
                 Every armed tier is the same model family — a family-wide outage has no cover. Arming
                 OpenAI or Google below adds true cross-family continuity (different brain: answers are
                 continuity cover until re-certified).

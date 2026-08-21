@@ -47,7 +47,7 @@ function Transcript({ text }: { text: string }) {
         const isAI = who === 'ai' || who === 'assistant' || who === 'bot';
         return (
           <div key={i} className="flex gap-2 text-sm">
-            <span className={`shrink-0 text-[10px] uppercase tracking-wide pt-0.5 w-12 ${isAI ? 'text-indigo-300' : 'text-dt-muted'}`}>
+            <span className={`shrink-0 text-[10px] uppercase tracking-wide pt-0.5 w-12 ${isAI ? 'text-dt-accent-text' : 'text-dt-muted'}`}>
               {who ? (isAI ? 'DE' : 'Caller') : ''}
             </span>
             <span className={isAI ? 'text-dt-body' : 'text-dt-support'}>{body}</span>

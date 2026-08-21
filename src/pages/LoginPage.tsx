@@ -182,17 +182,17 @@ const LoginPage = ({
         <div className="max-w-sm mx-auto w-full">
           <div className="lg:hidden flex items-center gap-2 mb-8">
             <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white text-xs font-bold">DT</div>
-            <span className="text-white font-bold">DreamTeam AI</span>
+            <span className="text-dt-title font-bold">DreamTeam AI</span>
           </div>
 
           {/* Tab switcher */}
           <div className="flex gap-1 bg-dt-panel rounded-xl p-1 mb-6">
             <button onClick={() => setTab('signin')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'signin' ? 'bg-indigo-600 text-white' : 'text-dt-support hover:text-white'}`}>
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'signin' ? 'bg-indigo-600 text-white' : 'text-dt-support hover:text-dt-title'}`}>
               Sign In
             </button>
             <button onClick={() => setTab('signup')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'signup' ? 'bg-indigo-600 text-white' : 'text-dt-support hover:text-white'}`}>
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'signup' ? 'bg-indigo-600 text-white' : 'text-dt-support hover:text-dt-title'}`}>
               Create Account
             </button>
           </div>
@@ -200,29 +200,29 @@ const LoginPage = ({
           {/* ── SIGN IN ── */}
           {tab === 'signin' && !showForgot && (
             <>
-              <h2 className="text-2xl font-bold text-white mb-1">Welcome back</h2>
+              <h2 className="text-2xl font-bold text-dt-title mb-1">Welcome back</h2>
               <p className="text-dt-support text-sm mb-6">Sign in to your workspace</p>
               {deactivatedMessage && (
-                <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30">
-                  <p className="text-xs text-red-300">{deactivatedMessage}</p>
+                <div className="mb-4">
+                  <Banner tone="danger" className="text-xs">{deactivatedMessage}</Banner>
                 </div>
               )}
               <form onSubmit={handleLogin} className="space-y-4 mb-6">
                 <div>
                   <label className="text-xs font-medium text-dt-support block mb-1.5">Email</label>
                   <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="you@company.com"
-                    className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="text-xs font-medium text-dt-support">Password</label>
                     <button type="button" onClick={() => { setShowForgot(true); setForgotEmail(email); setForgotSent(false); setForgotError(''); }}
-                      className="text-xs text-indigo-400 hover:text-indigo-300 underline">
+                      className="text-xs text-dt-accent-text underline">
                       Forgot password?
                     </button>
                   </div>
                   <input value={password} onChange={e => setPassword(e.target.value)} type="password" placeholder="..."
-                    className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                 </div>
                 {error && <Banner tone="danger">{error}</Banner>}
                 <button type="submit" disabled={loading}
@@ -233,7 +233,7 @@ const LoginPage = ({
               <div className="border-t border-dt-border pt-5 text-center">
                 <p className="text-xs text-dt-faint">
                   Don't have an account?{' '}
-                  <button onClick={() => setTab('signup')} className="text-indigo-400 hover:text-indigo-300 underline">
+                  <button onClick={() => setTab('signup')} className="text-dt-accent-text underline">
                     Create your organization
                   </button>
                 </p>
@@ -247,7 +247,7 @@ const LoginPage = ({
               {forgotSent ? (
                 <div className="text-center py-4">
                   <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 flex items-center justify-center text-3xl mx-auto mb-4">✓</div>
-                  <h2 className="text-xl font-bold text-white mb-2">Check your email</h2>
+                  <h2 className="text-xl font-bold text-dt-title mb-2">Check your email</h2>
                   <p className="text-dt-support text-sm mb-6 leading-relaxed">
                     If an account exists for {forgotEmail}, a password reset link is on its way.
                   </p>
@@ -258,15 +258,15 @@ const LoginPage = ({
                 </div>
               ) : (
                 <>
-                  <h2 className="text-2xl font-bold text-white mb-1">Reset your password</h2>
+                  <h2 className="text-2xl font-bold text-dt-title mb-1">Reset your password</h2>
                   <p className="text-dt-support text-sm mb-6">We'll email you a link to set a new one.</p>
                   <form onSubmit={handleForgotPassword} className="space-y-4">
                     <div>
                       <label className="text-xs font-medium text-dt-support block mb-1.5">Email</label>
                       <input value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} type="email" placeholder="you@company.com" autoFocus
-                        className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                        className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                     </div>
-                    {forgotError && <p className="text-xs text-red-400">{forgotError}</p>}
+                    {forgotError && <Banner tone="danger" className="text-xs">{forgotError}</Banner>}
                     <button type="submit" disabled={forgotLoading}
                       className="w-full py-3 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 transition-all flex items-center justify-center gap-2">
                       {forgotLoading ? <><Spinner /> Sending...</> : 'Send reset link'}
@@ -284,23 +284,23 @@ const LoginPage = ({
           {/* ── SIGN UP ── */}
           {tab === 'signup' && !suSuccess && (
             <>
-              <h2 className="text-2xl font-bold text-white mb-1">Set up your company</h2>
+              <h2 className="text-2xl font-bold text-dt-title mb-1">Set up your company</h2>
               <p className="text-dt-support text-sm mb-6">Three things now. We'll ask about your company after you confirm your email.</p>
               <form onSubmit={handleSignUp} className="space-y-4">
                 <div>
                   <label className="text-xs font-medium text-dt-support block mb-1.5">Full Name</label>
                   <input value={suFullName} onChange={e => setSuFullName(e.target.value)} type="text" placeholder="Sarah Mitchell"
-                    className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-dt-support block mb-1.5">Work Email</label>
                   <input value={suEmail} onChange={e => setSuEmail(e.target.value)} type="email" placeholder="you@company.com"
-                    className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-dt-support block mb-1.5">Password</label>
                   <input value={suPassword} onChange={e => setSuPassword(e.target.value)} type="password" placeholder="8+ characters"
-                    className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
                 </div>
                 {suError && <Banner tone="danger">{suError}</Banner>}
                 <button type="submit" disabled={suLoading}
@@ -309,9 +309,9 @@ const LoginPage = ({
                 </button>
                 <p className="text-xs text-dt-faint text-center">
                   By signing up you agree to DreamTeam's{' '}
-                  <a href="/terms" className="text-indigo-400 hover:underline">terms of service</a>{' '}
+                  <a href="/terms" className="text-dt-accent-text hover:underline">terms of service</a>{' '}
                   and{' '}
-                  <a href="/privacy" className="text-indigo-400 hover:underline">privacy policy</a>
+                  <a href="/privacy" className="text-dt-accent-text hover:underline">privacy policy</a>
                 </p>
               </form>
             </>
@@ -321,7 +321,7 @@ const LoginPage = ({
           {tab === 'signup' && suSuccess && (
             <div className="text-center py-8">
               <div className="w-16 h-16 rounded-2xl bg-dt-ok-soft flex items-center justify-center text-3xl mx-auto mb-4">✓</div>
-              <h2 className="text-xl font-bold text-white mb-2">Check your email</h2>
+              <h2 className="text-xl font-bold text-dt-title mb-2">Check your email</h2>
               <p className="text-dt-support text-sm mb-6 leading-relaxed">
                 We sent a confirmation link to {suEmail || 'your inbox'}. Click it and you'll come
                 straight back here to finish setting up your workspace.
@@ -339,7 +339,7 @@ const LoginPage = ({
                   const { error } = await supabase.auth.resend({ type: 'signup', email: suEmail });
                   setResendState(error ? 'error' : 'sent');
                 }}
-                className="w-full mt-3 py-2 text-xs text-dt-support hover:text-white transition-colors">
+                className="w-full mt-3 py-2 text-xs text-dt-support hover:text-dt-title transition-colors">
                 {resendState === 'sent' ? 'Confirmation email re-sent ✓'
                   : resendState === 'sending' ? 'Sending…'
                   : resendState === 'error' ? "Couldn't resend — try again in a minute"

@@ -2,21 +2,39 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './style.css';
+import '@fontsource-variable/instrument-sans';
 import { initSentry, SentryErrorBoundary } from './lib/sentry';
 
 initSentry();
+
+// Theme bootstrapping. The class must be on <html> BEFORE first paint or the
+// app flashes the wrong theme. Order of authority: dev URL override → the
+// last surface family branding applied (cached by applyBranding in
+// src/design/branding.ts) → dark default (flips to light in the
+// default-flip task, after the estate is verified).
+const LIGHT_SURFACES = new Set(['daylight']);
+{
+  const urlTheme = new URLSearchParams(window.location.search).get('theme');
+  // Guarded like every other storage call in this codebase: a throw here
+  // (sandboxed embed, storage disabled) runs before the error boundary
+  // exists and would blank the whole app.
+  let cached: string | null = null;
+  try { cached = localStorage.getItem('dt.surface'); } catch { /* boot on the default */ }
+  const light = urlTheme ? urlTheme === 'light' : (cached ? LIGHT_SURFACES.has(cached) : false);
+  document.documentElement.classList.toggle('light', light);
+}
 
 function CrashFallback() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-dt-page p-6">
       <div className="max-w-sm text-center">
-        <p className="text-lg font-semibold text-white mb-2">Something went wrong</p>
-        <p className="text-sm text-slate-400 mb-4">
+        <p className="text-lg font-semibold text-dt-title mb-2">Something went wrong</p>
+        <p className="text-sm text-dt-support mb-4">
           This error has been reported. Try reloading the page — if it keeps happening, contact support.
         </p>
         <button
           onClick={() => window.location.reload()}
-          className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 transition-colors"
+          className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-dt-accent-strong hover:bg-dt-accent-hover transition-colors"
         >
           Reload
         </button>

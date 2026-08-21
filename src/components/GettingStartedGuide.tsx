@@ -85,7 +85,7 @@ export default function GettingStartedGuide({
   if (hidden) {
     return (
       <button onClick={reopen}
-        className="self-start inline-flex items-center gap-2 rounded-lg border border-dt-border bg-dt-card px-3 py-1.5 text-xs font-medium text-dt-support hover:text-white hover:border-indigo-500/50 transition-colors">
+        className="self-start inline-flex items-center gap-2 rounded-lg border border-dt-border bg-dt-card px-3 py-1.5 text-xs font-medium text-dt-support hover:text-dt-body hover:border-indigo-500/50 transition-colors">
         <span className="text-indigo-400">✦</span> Setup guide
       </button>
     );
@@ -150,13 +150,13 @@ export default function GettingStartedGuide({
     return (
       <div className="rounded-2xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/10 to-slate-800/40 px-5 py-4 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300">✓</span>
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-dt-ok-soft text-dt-ok">✓</span>
           <div>
-            <p className="text-white font-semibold text-[14px]">Your AI workforce is live</p>
+            <p className="text-dt-title font-semibold text-[14px]">Your AI workforce is live</p>
             <p className="text-dt-support text-xs mt-0.5">Hired, taught, tested and on your website. Watch it work in Performance, or hire for another role anytime.</p>
           </div>
         </div>
-        <button onClick={hide} className="flex-none text-xs text-dt-muted hover:text-white transition-colors">Hide ✕</button>
+        <button onClick={hide} className="flex-none text-xs text-dt-muted hover:text-dt-body transition-colors">Hide ✕</button>
       </div>
     );
   }
@@ -165,20 +165,20 @@ export default function GettingStartedGuide({
     <div className="rounded-2xl border border-indigo-500/25 bg-gradient-to-br from-indigo-500/10 to-slate-800/40 p-5">
       <div className="flex items-start justify-between gap-4 mb-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-300 text-lg">✦</div>
+          <div className="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-dt-accent-soft text-dt-accent-text text-lg">✦</div>
           <div>
-            <h2 className="text-white font-semibold text-[15px]">Set up your AI workforce</h2>
+            <h2 className="text-dt-title font-semibold text-[15px]">Set up your AI workforce</h2>
             <p className="text-dt-support text-xs mt-0.5">
               {state == null ? 'Checking your progress…' : `${doneCount} of ${steps.length} steps done — about 10 minutes total.`}
             </p>
           </div>
         </div>
         <button onClick={hide} title="Hide (reopen anytime from the Setup guide button)"
-          className="flex-none text-xs text-dt-muted hover:text-white transition-colors">Hide ✕</button>
+          className="flex-none text-xs text-dt-muted hover:text-dt-body transition-colors">Hide ✕</button>
       </div>
 
       {/* Progress bar */}
-      <div className="h-1.5 rounded-full bg-dt-panel/60 mb-4 overflow-hidden">
+      <div className="h-1.5 rounded-full bg-dt-panel mb-4 overflow-hidden">
         <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all duration-500"
           style={{ width: state == null ? '4%' : `${Math.max(4, (doneCount / steps.length) * 100)}%` }} />
       </div>
@@ -188,13 +188,20 @@ export default function GettingStartedGuide({
           const isCurrent = i === currentIdx;
           return (
             <li key={s.title}
-              className={`rounded-xl px-4 py-3 transition-colors ${isCurrent ? 'bg-dt-card/80 border border-indigo-500/40' : 'bg-dt-panel border border-transparent'}`}>
+              className={`rounded-xl px-4 py-3 transition-colors ${isCurrent ? 'bg-dt-card border border-indigo-500/40' : 'bg-dt-panel border border-transparent'}`}>
               <div className="flex items-start gap-3">
+                {/* KNOWN HAZARD (Task 5T, group C): this three-branch ternary
+                    put a translucent bg-emerald-500/20 (done) beside an
+                    opaque bg-indigo-500 (isCurrent) on the SAME line — the
+                    audit's line-based COLORED_BG check saw the opaque indigo
+                    branch and false-exempted the whole line, so the emerald
+                    branch's near-white wash in light theme was never counted
+                    by the metric. Converted to the ok chip recipe anyway. */}
                 <span className={`mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full text-[11px] font-bold ${
-                  s.done ? 'bg-emerald-500/20 text-emerald-300' : isCurrent ? 'bg-indigo-500 text-white' : 'bg-dt-panel text-dt-support'
+                  s.done ? 'bg-dt-ok-soft text-dt-ok' : isCurrent ? 'bg-indigo-500 text-white' : 'bg-dt-panel text-dt-support'
                 }`}>{s.done ? '✓' : i + 1}</span>
                 <div className="min-w-0 flex-1">
-                  <p className={`text-[13.5px] font-medium ${s.done ? 'text-dt-support line-through decoration-slate-600' : 'text-white'}`}>{s.title}</p>
+                  <p className={`text-[13.5px] font-medium ${s.done ? 'text-dt-support line-through decoration-slate-600' : 'text-dt-title'}`}>{s.title}</p>
                   {isCurrent && (
                     <>
                       <p className="text-dt-support text-[13px] mt-1 leading-relaxed">{s.body}</p>
@@ -205,7 +212,7 @@ export default function GettingStartedGuide({
                         </button>
                         {s.secondary && (
                           <button onClick={s.secondary.run}
-                            className="rounded-lg border border-dt-border-strong px-3 py-1.5 text-xs text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
+                            className="rounded-lg border border-dt-border-strong px-3 py-1.5 text-xs text-dt-support hover:text-dt-body hover:border-dt-border-strong transition-colors">
                             {s.secondary.label}
                           </button>
                         )}
@@ -215,7 +222,7 @@ export default function GettingStartedGuide({
                 </div>
                 {!s.done && !isCurrent && (
                   <button onClick={s.primary.run}
-                    className="flex-none text-[11px] text-dt-muted hover:text-indigo-300 transition-colors mt-1">
+                    className="flex-none text-[11px] text-dt-muted hover:text-dt-accent-text transition-colors mt-1">
                     Jump ahead →
                   </button>
                 )}

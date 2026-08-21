@@ -173,7 +173,7 @@ export function TemplateBuilderModal({ onClose, onDone }: {
                   {CATEGORIES.map(cat => (
                     <button key={cat} onClick={() => { setCategory(cat); setOps({}); setTestOpName(''); }}
                       className={`text-left rounded-xl border p-2.5 transition-colors ${category === cat ? 'border-indigo-500/60 bg-indigo-500/10' : 'bg-dt-page border-dt-border hover:border-indigo-500/40'}`}>
-                      <p className="text-xs font-semibold text-white">{CATEGORY_SHORT[cat]}</p>
+                      <p className="text-xs font-semibold text-dt-title">{CATEGORY_SHORT[cat]}</p>
                       <p className="text-[10px] text-dt-muted mt-0.5">{CATEGORY_LABELS[cat]}</p>
                     </button>
                   ))}
@@ -224,7 +224,7 @@ export function TemplateBuilderModal({ onClose, onDone }: {
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs text-dt-support">Variables people fill in when connecting</label>
-                  <button onClick={() => setVars(v => [...v, { key: '', label: '', help: '' }])} className="text-xs text-indigo-400 hover:text-indigo-300">+ Add variable</button>
+                  <button onClick={() => setVars(v => [...v, { key: '', label: '', help: '' }])} className="text-xs text-dt-accent-text hover:underline">+ Add variable</button>
                 </div>
                 {vars.length === 0 && <p className="text-[11px] text-dt-faint">None yet — only needed when the base URL (or a path) contains {'{placeholders}'}.</p>}
                 {vars.map((v, i) => (
@@ -313,7 +313,7 @@ export function TemplateBuilderModal({ onClose, onDone }: {
                                   {testResult.r.items.length === 0 && <p className="text-[10px] text-amber-400">The call worked but extracted nothing — check "where results live".</p>}
                                 </>
                               ) : (
-                                <p className="text-[10px] text-red-300">{testResult.r.error}{testResult.r.detail ? ` — ${testResult.r.detail}` : ''}{(testResult.r.errors ?? []).join(' ')}</p>
+                                <p className="text-[10px] text-dt-danger">{testResult.r.error}{testResult.r.detail ? ` — ${testResult.r.detail}` : ''}{(testResult.r.errors ?? []).join(' ')}</p>
                               )}
                             </div>
                           </div>
@@ -343,7 +343,7 @@ export function TemplateBuilderModal({ onClose, onDone }: {
             </div>
           )}
 
-          {err && <p className="text-xs text-red-300 mt-3 whitespace-pre-wrap">{err}</p>}
+          {err && <p className="text-xs text-dt-danger mt-3 whitespace-pre-wrap">{err}</p>}
           <div className="flex gap-3 mt-5">
             {step > 1 && <button disabled={busy} onClick={() => setStep(s => s - 1)} className="px-3 py-2 rounded-lg bg-dt-panel text-dt-support hover:bg-dt-panel text-xs disabled:opacity-50">← Back</button>}
             <div className="flex-1" />
@@ -440,7 +440,7 @@ export function ConnectFromTemplateModal({ template, onClose, onDone }: {
               <input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder={`${template.name} — production`} className={inputCls} />
             </div>
           </div>
-          {err && <p className="text-xs text-red-300 mt-3">{err}</p>}
+          {err && <p className="text-xs text-dt-danger mt-3">{err}</p>}
           <div className="flex gap-3 mt-5">
             <button disabled={busy} onClick={onClose} className="flex-1 px-3 py-2 rounded-lg bg-dt-panel text-dt-support hover:bg-dt-panel text-xs disabled:opacity-50">Cancel</button>
             <button disabled={busy || !canManageConnectors} onClick={() => void submit()} className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs disabled:opacity-50">{busy ? 'Testing…' : 'Test & Save'}</button>
@@ -460,7 +460,7 @@ export function TemplateLibrary({ templates, onUse, onBuild }: {
     <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-6">
       <div className="flex items-start justify-between flex-wrap gap-2 mb-3">
         <div>
-          <h2 className="text-sm font-semibold text-white">Template library — connect anything with a REST API</h2>
+          <h2 className="text-sm font-semibold text-dt-title">Template library — connect anything with a REST API</h2>
           <p className="text-xs text-dt-muted mt-0.5">A template turns a system's API into configuration: pick one, enter your credentials, done. Or build your own in five guided steps — no code.</p>
         </div>
         <button onClick={onBuild} className="px-3 py-1.5 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500 text-white">+ Build a custom template</button>
@@ -472,14 +472,14 @@ export function TemplateLibrary({ templates, onUse, onBuild }: {
           {templates.map(t => (
             <div key={t.id} className="rounded-xl border border-dt-border bg-dt-page p-3 flex flex-col">
               <div className="flex items-center gap-2 flex-wrap">
-                <p className="text-xs font-semibold text-white">{t.name}</p>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">{CATEGORY_SHORT[t.category]}</span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded ${t.scope === 'platform' ? 'bg-dt-panel text-dt-support' : 'bg-teal-500/15 text-teal-300'}`}>{t.scope === 'platform' ? 'community' : 'yours'}</span>
-                {t.status === 'draft' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">draft</span>}
+                <p className="text-xs font-semibold text-dt-title">{t.name}</p>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-accent-soft text-dt-accent-text">{CATEGORY_SHORT[t.category]}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded ${t.scope === 'platform' ? 'bg-dt-panel text-dt-support' : 'bg-teal-600 text-teal-100'}`}>{t.scope === 'platform' ? 'community' : 'yours'}</span>
+                {t.status === 'draft' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-warn-soft text-dt-warn">draft</span>}
               </div>
               <p className="text-[10px] text-dt-muted mt-1 flex-1">{t.scope === 'platform' ? 'Community template — verify against your account.' : (t.description || 'Custom template built in this workspace.')} {Object.keys(t.definition.ops ?? {}).length} operation(s).</p>
               {t.status === 'published' && (
-                <button onClick={() => onUse(t)} className="mt-2 self-start px-2.5 py-1 rounded-lg text-[11px] text-indigo-300 border border-indigo-500/40 hover:bg-indigo-500/10">Use this template →</button>
+                <button onClick={() => onUse(t)} className="mt-2 self-start px-2.5 py-1 rounded-lg text-[11px] text-dt-accent-text border border-dt-accent-border hover:bg-dt-accent-soft">Use this template →</button>
               )}
             </div>
           ))}

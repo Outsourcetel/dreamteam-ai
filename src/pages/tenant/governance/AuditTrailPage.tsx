@@ -34,11 +34,11 @@ interface AuditEvent {
 }
 
 const ACTION_TYPE_META: Record<ActionType, { label: string; style: string }> = {
-  resolved: { label: 'Resolved', style: 'bg-emerald-500/15 text-emerald-300' },
-  escalated: { label: 'Escalated', style: 'bg-amber-500/15 text-amber-300' },
-  config_change: { label: 'Config change', style: 'bg-indigo-500/15 text-indigo-300' },
-  approval: { label: 'Approval', style: 'bg-blue-500/15 text-blue-300' },
-  guardrail_violation: { label: 'Guardrail block', style: 'bg-red-500/15 text-red-300' },
+  resolved: { label: 'Resolved', style: 'bg-dt-ok-soft text-dt-ok' },
+  escalated: { label: 'Escalated', style: 'bg-dt-warn-soft text-dt-warn' },
+  config_change: { label: 'Config change', style: 'bg-dt-accent-soft text-dt-accent-text' },
+  approval: { label: 'Approval', style: 'bg-dt-info-soft text-dt-info' },
+  guardrail_violation: { label: 'Guardrail block', style: 'bg-dt-danger-soft text-dt-danger' },
 }
 
 const DE_NAMES: Record<CompanyId, string[]> = {
@@ -51,14 +51,14 @@ const RETENTION: Record<CompanyId, string> = { tcp: '2 years', pwc: '7 years' }
 function actorAvatar(e: AuditEvent) {
   if (e.actorType === 'de') {
     return (
-      <span className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+      <span className="w-6 h-6 rounded-full bg-dt-accent-soft text-dt-accent-text flex items-center justify-center text-[10px] font-bold flex-shrink-0">
         {e.actor.slice(0, 2).toUpperCase()}
       </span>
     )
   }
   if (e.actorType === 'human') {
     return (
-      <span className="w-6 h-6 rounded-full bg-slate-600 text-dt-support flex items-center justify-center text-[10px] flex-shrink-0">◉</span>
+      <span className="w-6 h-6 rounded-full bg-dt-neutral-soft text-dt-neutral flex items-center justify-center text-[10px] flex-shrink-0">◉</span>
     )
   }
   return (
@@ -86,22 +86,28 @@ const exportCsv = (events: AuditEvent[]) => {
 // ═══════════════════════════════════════════════════════════════
 
 const LIVE_CATEGORY_META: Record<AuditCategory, { label: string; style: string }> = {
-  resolved: { label: 'Resolved', style: 'bg-emerald-500/15 text-emerald-300' },
-  escalated: { label: 'Escalated', style: 'bg-amber-500/15 text-amber-300' },
-  approval: { label: 'Approval', style: 'bg-blue-500/15 text-blue-300' },
-  guardrail_check: { label: 'Guardrail check', style: 'bg-indigo-500/15 text-indigo-300' },
-  guardrail_block: { label: 'Guardrail block', style: 'bg-red-500/15 text-red-300' },
-  config_change: { label: 'Config change', style: 'bg-indigo-500/15 text-indigo-300' },
-  playbook_step: { label: 'Playbook step', style: 'bg-violet-500/15 text-violet-300' },
-  invoice: { label: 'Invoice', style: 'bg-teal-500/15 text-teal-300' },
-  connector_sync: { label: 'Connector sync', style: 'bg-cyan-500/15 text-cyan-300' },
-  connector_action: { label: 'Connector action', style: 'bg-cyan-500/15 text-cyan-300' },
-  evidence_step: { label: 'Evidence step', style: 'bg-teal-500/15 text-teal-300' },
-  access_control: { label: 'Data access', style: 'bg-rose-500/15 text-rose-300' },
+  resolved: { label: 'Resolved', style: 'bg-dt-ok-soft text-dt-ok' },
+  escalated: { label: 'Escalated', style: 'bg-dt-warn-soft text-dt-warn' },
+  approval: { label: 'Approval', style: 'bg-dt-info-soft text-dt-info' },
+  guardrail_check: { label: 'Guardrail check', style: 'bg-dt-accent-soft text-dt-accent-text' },
+  guardrail_block: { label: 'Guardrail block', style: 'bg-dt-danger-soft text-dt-danger' },
+  config_change: { label: 'Config change', style: 'bg-dt-accent-soft text-dt-accent-text' },
+  // playbook_step/invoice/connector_sync/connector_action/evidence_step: non-core
+  // hues (violet/teal/cyan), kept as a category-identity badge per the mapping
+  // table's "non-semantic identity hues keep their hue" rule — none of these is
+  // an ok/warn/danger/info/accent status, each is a fixed EVENT-TYPE marker in
+  // an 11-member vocabulary. Made opaque (was translucent /15) so the badge
+  // reads correctly in both themes; doc §7 kept-hue row added.
+  playbook_step: { label: 'Playbook step', style: 'bg-violet-600 text-violet-100' },
+  invoice: { label: 'Invoice', style: 'bg-teal-600 text-teal-100' },
+  connector_sync: { label: 'Connector sync', style: 'bg-cyan-600 text-cyan-100' },
+  connector_action: { label: 'Connector action', style: 'bg-cyan-600 text-cyan-100' },
+  evidence_step: { label: 'Evidence step', style: 'bg-teal-600 text-teal-100' },
+  access_control: { label: 'Data access', style: 'bg-dt-danger-soft text-dt-danger' },
   // GI-10. Deliberately its own label and colour: an overturn is NOT a block,
   // and counting it as one would hide the single event type a regulator most
   // needs to find — a machine releasing content a control had stopped.
-  guardrail_adjudication: { label: 'Guardrail OVERTURNED', style: 'bg-amber-500/20 text-amber-200 font-semibold' },
+  guardrail_adjudication: { label: 'Guardrail OVERTURNED', style: 'bg-dt-warn-soft text-dt-warn font-semibold' },
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -146,9 +152,9 @@ const activityChangedFields = (row: TenantActivityLogRow): string[] => {
 }
 
 const activityOperationBadge: Record<string, string> = {
-  INSERT: 'bg-emerald-500/15 text-emerald-300',
-  UPDATE: 'bg-blue-500/15 text-blue-300',
-  DELETE: 'bg-red-500/15 text-red-300',
+  INSERT: 'bg-dt-ok-soft text-dt-ok',
+  UPDATE: 'bg-dt-info-soft text-dt-info',
+  DELETE: 'bg-dt-danger-soft text-dt-danger',
 }
 
 function TeamActivityLogPanel({ days }: { days: number | null }) {
@@ -196,7 +202,7 @@ function TeamActivityLogPanel({ days }: { days: number | null }) {
     <div className="bg-dt-card border border-dt-border rounded-xl overflow-hidden mb-6">
       <div className="px-5 py-4 border-b border-dt-border flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <p className="text-sm font-semibold text-white">Team activity log</p>
+          <p className="text-sm font-semibold text-dt-title">Team activity log</p>
           <p className="text-xs text-dt-muted mt-0.5">
             Every change your own team made across the platform — visible only to owners and admins.
           </p>
@@ -245,27 +251,27 @@ function TeamActivityLogPanel({ days }: { days: number | null }) {
                   <th className="px-3 py-2 text-xs font-medium text-dt-muted">Changed fields</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-700/50">
+              <tbody className="divide-y divide-dt-border">
                 {visibleRows.map((row) => {
                   const fields = activityChangedFields(row)
                   return (
                     <tr
                       key={row.id}
                       onClick={() => setDetailRow(row)}
-                      className="cursor-pointer hover:bg-dt-panel/30 transition-colors"
+                      className="cursor-pointer hover:bg-dt-panel transition-colors"
                     >
                       <td className="px-3 py-2.5 text-xs text-dt-support whitespace-nowrap">
                         {new Date(row.created_at).toLocaleString()}
                       </td>
                       <td className="px-3 py-2.5 text-xs whitespace-nowrap">
-                        <span className="text-white font-medium">{row.actor_name || 'Team member'}</span>
+                        <span className="text-dt-body font-medium">{row.actor_name || 'Team member'}</span>
                         {row.actor_role && (
                           <span className="text-dt-faint ml-1.5 capitalize">({row.actor_role.replace('tenant_', '')})</span>
                         )}
                       </td>
                       <td className="px-3 py-2.5 text-xs text-dt-support font-mono">{row.table_name}</td>
                       <td className="px-3 py-2.5">
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${activityOperationBadge[row.operation] || 'bg-slate-600 text-dt-support'}`}>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${activityOperationBadge[row.operation] || 'bg-dt-neutral-soft text-dt-neutral'}`}>
                           {row.operation}
                         </span>
                       </td>
@@ -303,7 +309,7 @@ function TeamActivityLogPanel({ days }: { days: number | null }) {
                 <div className="space-y-2">
                   {activityChangedFields(detailRow).map((field) => (
                     <div key={field} className="bg-dt-panel rounded-xl p-3">
-                      <div className="text-xs font-mono text-indigo-300 mb-1">{field}</div>
+                      <div className="text-xs font-mono text-dt-accent-text mb-1">{field}</div>
                       <div className="text-xs text-dt-support space-y-1">
                         <div>
                           <span className="text-dt-muted">before:</span>{' '}
@@ -313,7 +319,7 @@ function TeamActivityLogPanel({ days }: { days: number | null }) {
                         </div>
                         <div>
                           <span className="text-dt-muted">after:</span>{' '}
-                          <span className="font-mono break-all text-white">
+                          <span className="font-mono break-all text-dt-body">
                             {detailRow.new_data ? JSON.stringify(detailRow.new_data[field]) : '—'}
                           </span>
                         </div>
@@ -432,7 +438,7 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
         title="The record"
         subtitle="Every DE action, guardrail check, human approval and playbook step, hash-chained in order. The database refuses to edit or truncate a record once written — nothing in this product can alter or remove one. Deleting your workspace takes its record with it."
       />
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {error && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {/* Date window — tenant-wide, defaults to the last 7 days */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
@@ -440,7 +446,7 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
         <div className="inline-flex rounded-lg border border-dt-border bg-dt-card p-0.5">
           {RANGE_OPTIONS.map(r => (
             <button key={r.label} onClick={() => setDays(r.days)}
-              className={`text-xs px-3 py-1 rounded-md transition-colors ${days === r.days ? 'bg-indigo-500/20 text-indigo-200' : 'text-dt-support hover:text-dt-body'}`}>
+              className={`text-xs px-3 py-1 rounded-md transition-colors ${days === r.days ? 'bg-dt-accent-soft text-dt-accent-text' : 'text-dt-support hover:text-dt-body'}`}>
               {r.label}
             </button>
           ))}
@@ -465,13 +471,13 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
         <>
           <div className="grid grid-cols-4 gap-3 mb-6">
             {[
-              { label: `Events (${rangeLabel})`, value: String(events.length), color: 'text-white' },
-              { label: 'Guardrail blocks', value: String(events.filter(e => e.category === 'guardrail_block').length), color: events.some(e => e.category === 'guardrail_block') ? 'text-red-300' : 'text-emerald-300' },
-              { label: 'Approvals', value: String(events.filter(e => e.category === 'approval').length), color: 'text-blue-300' },
+              { label: `Events (${rangeLabel})`, value: String(events.length), color: 'text-dt-title' },
+              { label: 'Guardrail blocks', value: String(events.filter(e => e.category === 'guardrail_block').length), color: events.some(e => e.category === 'guardrail_block') ? 'text-dt-danger' : 'text-dt-ok' },
+              { label: 'Approvals', value: String(events.filter(e => e.category === 'approval').length), color: 'text-dt-info' },
               {
                 label: 'Chain integrity',
                 value: verification ? (verification.intact ? `Intact (${verification.checked})` : 'BROKEN') : 'Not verified',
-                color: verification ? (verification.intact ? 'text-emerald-300' : 'text-red-300') : 'text-dt-support',
+                color: verification ? (verification.intact ? 'text-dt-ok' : 'text-dt-danger') : 'text-dt-support',
               },
             ].map(s => (
               <div key={s.label} className="bg-dt-card border border-dt-border rounded-xl p-4">
@@ -522,8 +528,8 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
 
           {verification && (
             <div className={`mb-4 rounded-xl border px-4 py-3 text-xs ${verification.intact
-              ? 'border-emerald-800/50 bg-emerald-500/10 text-emerald-300'
-              : 'border-red-800/50 bg-red-500/10 text-red-300'}`}>
+              ? 'border-dt-ok-border bg-dt-ok-soft text-dt-ok'
+              : 'border-dt-danger-border bg-dt-danger-soft text-dt-danger'}`}>
               {verification.intact
                 ? `Chain intact — all ${verification.checked} events recomputed and verified server-side: every record matches its own hash, and every record is reachable from the first one.`
                 : `Chain BROKEN after ${verification.checked} verified events${verification.reason ? ` — ${verification.reason}` : ''} (record ${verification.broken_at ?? 'unknown'}). This should be impossible unless the database was tampered with directly.`}
@@ -541,14 +547,14 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
             </div>
           )}
 
-          <div className="rounded-2xl border border-dt-border bg-dt-card divide-y divide-slate-700/60">
+          <div className="rounded-2xl border border-dt-border bg-dt-card divide-y divide-dt-border">
             {filtered.map(e => (
               <div key={e.id} className="grid grid-cols-12 gap-3 px-5 py-3">
                 <div className="col-span-2 text-xs text-dt-muted pt-0.5 whitespace-nowrap">{new Date(e.created_at).toLocaleString()}</div>
                 <div className="col-span-2 flex items-start gap-2">
                   <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] flex-shrink-0 ${
-                    e.actor_type === 'de' ? 'bg-indigo-500/20 text-indigo-300 font-bold'
-                    : e.actor_type === 'human' ? 'bg-slate-600 text-dt-support'
+                    e.actor_type === 'de' ? 'bg-dt-accent-soft text-dt-accent-text font-bold'
+                    : e.actor_type === 'human' ? 'bg-dt-neutral-soft text-dt-neutral'
                     : 'bg-dt-panel text-dt-muted'
                   }`}>{e.actor_type === 'de' ? e.actor.slice(0, 2).toUpperCase() : e.actor_type === 'human' ? '◉' : '⊟'}</span>
                   <div>
@@ -557,7 +563,7 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
                   </div>
                 </div>
                 <div className="col-span-6">
-                  <p className={`text-xs leading-snug ${e.category === 'guardrail_block' ? 'text-red-300' : 'text-dt-support'}`}>{e.action}</p>
+                  <p className={`text-xs leading-snug ${e.category === 'guardrail_block' ? 'text-dt-danger' : 'text-dt-support'}`}>{e.action}</p>
                   <span className={`inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded ${LIVE_CATEGORY_META[e.category]?.style ?? 'bg-dt-panel text-dt-support'}`}>
                     {LIVE_CATEGORY_META[e.category]?.label ?? e.category}
                   </span>

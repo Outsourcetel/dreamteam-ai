@@ -102,7 +102,7 @@ export default function WorkforceBoard({ setPage }: { setPage: (p: Page) => void
       </p>
       {unassigned.length > 0 && (
         <button onClick={() => openFile(unassigned[0].de_id, 'governance')}
-          className="w-full text-left rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 mb-3 text-xs text-amber-200 hover:border-amber-400 transition-colors">
+          className="w-full text-left rounded-lg border border-dt-warn-border bg-dt-warn-soft px-3 py-2 mb-3 text-xs text-dt-warn hover:border-dt-warn transition-colors">
           {unassigned.length} employee{unassigned.length === 1 ? ' has' : 's have'} nobody responsible — assign people →
         </button>
       )}
@@ -123,7 +123,7 @@ export default function WorkforceBoard({ setPage }: { setPage: (p: Page) => void
               const paused = r.lifecycle_status !== 'active';
               return (
                 <tr key={r.de_id} onClick={() => openFile(r.de_id)}
-                  className="cursor-pointer hover:bg-dt-panel/60 transition-colors">
+                  className="cursor-pointer hover:bg-dt-panel transition-colors">
                   <td className="py-2.5 pr-3">
                     <span className={`font-medium ${paused ? 'text-dt-muted' : 'text-dt-body'}`}>{r.persona_name ?? r.name}</span>
                     {r.department && <span className="text-xs text-dt-muted ml-2">{r.department}</span>}

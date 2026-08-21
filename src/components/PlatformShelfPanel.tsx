@@ -89,11 +89,11 @@ export default function PlatformShelfPanel({ tenantQuery }: { tenantQuery?: stri
         </button>
       )}
 
-      <div className="rounded-2xl border border-dt-border bg-dt-page/40 overflow-hidden mt-6">
+      <div className="rounded-2xl border border-dt-border bg-dt-inset overflow-hidden mt-6">
         {/* One quiet row. Not a tab, not a section header. */}
         <button
           onClick={() => setOpen(v => !v)}
-          className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-dt-card/40 transition-colors">
+          className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-dt-card transition-colors">
           <span className={`text-dt-muted text-[10px] transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
           <span className="text-xs text-dt-body">DreamTeam product guide</span>
           <span className="text-[11px] text-dt-muted">· {status.docs_published} articles</span>
@@ -104,7 +104,7 @@ export default function PlatformShelfPanel({ tenantQuery }: { tenantQuery?: stri
         {open && (
           <div className="border-t border-dt-border p-4">
             <div className="mb-3">
-              <h4 className="text-sm font-semibold text-white">What your Workspace Assistant knows</h4>
+              <h4 className="text-sm font-semibold text-dt-title">What your Workspace Assistant knows</h4>
               <p className="text-[11px] text-dt-muted mt-0.5 max-w-2xl">
                 Your Workspace Assistant is taught from these {status.docs_published} articles about how
                 DreamTeam works. They are not part of your knowledge base — they do not appear in your
@@ -130,7 +130,7 @@ export default function PlatformShelfPanel({ tenantQuery }: { tenantQuery?: stri
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs text-dt-body">{d.title}</span>
                     {/* Every row says whose it is. */}
-                    <span className="text-[10px] px-1 py-0.5 rounded bg-indigo-500/10 text-indigo-300">provided</span>
+                    <span className="text-[10px] px-1 py-0.5 rounded bg-dt-accent-soft text-dt-accent-text">provided</span>
                     {d.cited_30d > 0 && (
                       <span className="text-[10px] text-dt-muted ml-auto">
                         used {d.cited_30d}× in 30d

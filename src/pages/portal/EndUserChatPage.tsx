@@ -323,7 +323,7 @@ const EndUserChatPage = ({
                     {tenantName[0]}
                   </div>
                 )}
-                <h2 className="text-lg font-bold text-white text-center">{headline}</h2>
+                <h2 className="text-lg font-bold text-dt-title text-center">{headline}</h2>
                 <p className="text-xs text-dt-support mt-1 text-center">Please fill in your details to start chatting</p>
               </div>
 
@@ -337,7 +337,7 @@ const EndUserChatPage = ({
                       <select
                         value={prechatValues[field.id] || ''}
                         onChange={e => { setPrechatValues(prev => ({ ...prev, [field.id]: e.target.value })); setPrechatErrors(prev => ({ ...prev, [field.id]: false })); }}
-                        className={`w-full bg-dt-panel border rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none ${prechatErrors[field.id] ? 'border-red-500' : 'border-dt-border-strong focus:border-indigo-500'}`}>
+                        className={`w-full bg-dt-panel border rounded-xl px-3 py-2.5 text-sm text-dt-body focus:outline-none ${prechatErrors[field.id] ? 'border-red-500' : 'border-dt-border-strong focus:border-indigo-500'}`}>
                         <option value="">Select…</option>
                         <option>Billing question</option>
                         <option>Technical issue</option>
@@ -350,7 +350,7 @@ const EndUserChatPage = ({
                         value={prechatValues[field.id] || ''}
                         onChange={e => { setPrechatValues(prev => ({ ...prev, [field.id]: e.target.value })); setPrechatErrors(prev => ({ ...prev, [field.id]: false })); }}
                         placeholder={field.label}
-                        className={`w-full bg-dt-panel border rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none ${prechatErrors[field.id] ? 'border-red-500' : 'border-dt-border-strong focus:border-indigo-500'}`}
+                        className={`w-full bg-dt-panel border rounded-xl px-3 py-2.5 text-sm text-dt-body placeholder-slate-600 focus:outline-none ${prechatErrors[field.id] ? 'border-red-500' : 'border-dt-border-strong focus:border-indigo-500'}`}
                       />
                     )}
                     {prechatErrors[field.id] && <p className="text-xs text-red-400 mt-1">{field.label} is required</p>}
@@ -387,7 +387,7 @@ const EndUserChatPage = ({
             {tenantName[0]}
           </div>
           <div>
-            <div className="text-sm font-semibold text-white">{tenantName}</div>
+            <div className="text-sm font-semibold text-dt-title">{tenantName}</div>
             <div className="flex items-center gap-1.5 mt-0.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
               <span className="text-xs text-dt-support">AI Assistant · Online</span>
@@ -449,7 +449,7 @@ const EndUserChatPage = ({
                   <div className="bg-dt-panel rounded-lg px-3 py-2 flex items-center gap-2">
                     <span className="text-lg">📄</span>
                     <div>
-                      <div className="text-xs text-white font-medium">
+                      <div className="text-xs text-dt-title font-medium">
                         {m.text.replace(/^\[Attachment: (.+) \(.+\)\]$/, '$1')}
                       </div>
                     </div>
@@ -459,7 +459,7 @@ const EndUserChatPage = ({
                     m.role === 'user'
                       ? 'text-white rounded-br-sm'
                       : m.role === 'system'
-                      ? 'bg-amber-500/10 border border-amber-500/30 text-amber-200 rounded-bl-sm'
+                      ? 'bg-dt-warn-soft border border-dt-warn-border text-dt-warn rounded-bl-sm'
                       : 'bg-dt-panel text-dt-title rounded-bl-sm'
                   }`}
                     style={m.role === 'user' ? { backgroundColor: accentColor } : {}}>
@@ -473,7 +473,7 @@ const EndUserChatPage = ({
                     <span className={`text-xs px-2 py-0.5 rounded font-mono ${
                       m.confidence >= 80 ? 'text-emerald-400 bg-emerald-400/10'
                       : m.confidence >= 60 ? 'text-amber-400 bg-amber-400/10'
-                      : 'text-dt-muted bg-slate-600/50'
+                      : 'text-dt-muted bg-dt-neutral-soft'
                     }`}>
                       {m.confidence}% confident
                     </span>
@@ -537,7 +537,7 @@ const EndUserChatPage = ({
             <div className="bg-dt-panel rounded-2xl rounded-bl-sm px-4 py-3">
               <div className="flex gap-1">
                 {[0, 1, 2].map(i => (
-                  <span key={i} className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-bounce"
+                  <span key={i} className="w-1.5 h-1.5 rounded-full bg-dt-border-strong animate-bounce"
                     style={{ animationDelay: `${i * 0.15}s` }} />
                 ))}
               </div>
@@ -548,10 +548,10 @@ const EndUserChatPage = ({
         {escalated && (
           <div className="flex justify-center">
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-5 py-3 text-center max-w-sm">
-              <div className="text-xs font-medium text-amber-300 mb-1">Handed to our team</div>
+              <div className="text-xs font-medium text-dt-warn mb-1">Handed to our team</div>
               <div className="text-xs text-dt-support">A human agent will review your conversation and respond shortly.</div>
               <button onClick={startNew}
-                className="mt-3 text-xs text-dt-support hover:text-white underline transition-all">
+                className="mt-3 text-xs text-dt-support hover:text-dt-body underline transition-all">
                 Start a new conversation
               </button>
             </div>
@@ -566,7 +566,7 @@ const EndUserChatPage = ({
         {escalated ? (
           <div className="text-center text-xs text-dt-faint">
             This conversation has been escalated to our team.{' '}
-            <button onClick={startNew} className="text-indigo-400 hover:text-indigo-300 underline">Start new</button>
+            <button onClick={startNew} className="text-dt-accent-text underline hover:brightness-110">Start new</button>
           </div>
         ) : (
           <>
@@ -580,7 +580,7 @@ const EndUserChatPage = ({
                         <img src={att.dataUrl} alt={att.name}
                           className="w-10 h-10 rounded-lg object-cover border border-dt-border-strong" />
                         <button onClick={() => removeAttachment(idx)}
-                          className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-slate-600 hover:bg-red-600 text-white text-[10px] flex items-center justify-center transition-colors">
+                          className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-dt-border-strong hover:bg-red-600 text-white text-[10px] flex items-center justify-center transition-colors">
                           ✕
                         </button>
                       </div>
@@ -588,7 +588,7 @@ const EndUserChatPage = ({
                       <div className="flex items-center gap-1.5 bg-dt-panel border border-dt-border-strong rounded-lg px-2 py-1.5 pr-6 relative">
                         <span className="text-sm">📄</span>
                         <div className="min-w-0">
-                          <div className="text-xs text-white truncate max-w-24">{att.name}</div>
+                          <div className="text-xs text-dt-title truncate max-w-24">{att.name}</div>
                           <div className="text-[10px] text-dt-muted">{formatBytes(att.size)}</div>
                         </div>
                         <button onClick={() => removeAttachment(idx)}
@@ -615,7 +615,7 @@ const EndUserChatPage = ({
               {/* Paperclip button */}
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="flex-shrink-0 w-10 h-10 rounded-xl border border-dt-border-strong hover:border-dt-border-strong bg-dt-panel hover:bg-dt-panel flex items-center justify-center text-dt-support hover:text-white transition-all"
+                className="flex-shrink-0 w-10 h-10 rounded-xl border border-dt-border-strong hover:border-dt-border-strong bg-dt-panel hover:bg-dt-panel flex items-center justify-center text-dt-support hover:text-dt-body transition-all"
                 title="Attach file"
               >
                 📎
@@ -627,7 +627,7 @@ const EndUserChatPage = ({
                 onKeyDown={handleKey}
                 placeholder="Type your message…"
                 rows={2}
-                className="flex-1 bg-dt-panel border border-dt-border-strong rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-none transition-all"
+                className="flex-1 bg-dt-panel border border-dt-border-strong rounded-xl px-4 py-3 text-sm text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-none transition-all"
               />
               <button
                 onClick={send}

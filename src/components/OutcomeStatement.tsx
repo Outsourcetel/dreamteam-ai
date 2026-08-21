@@ -117,7 +117,7 @@ export default function OutcomeStatement({ setPage }: { setPage: (p: Page) => vo
       <PanelCard title="This month, in one sentence">
         <p className="text-base text-dt-title leading-relaxed">{headline}</p>
         {econ && !econ.configured && (
-          <p className="text-xs text-amber-300 mt-2">
+          <p className="text-xs text-dt-warn mt-2">
             Savings are partial — {econ.unconfigured.length > 0 ? `${econ.unconfigured.join(', ')} have` : 'some work types have'} no human baseline configured yet (set them on any employee's Development tab → Economics).
           </p>
         )}
@@ -147,20 +147,20 @@ export default function OutcomeStatement({ setPage }: { setPage: (p: Page) => vo
                     className="border-b border-dt-border last:border-b-0 cursor-pointer hover:bg-dt-panel transition-colors">
                     <td className={`${TD} font-medium text-dt-title`}>{r.de.persona_name ?? r.de.name}</td>
                     <td className={`${TD} font-mono`}>{r.work}</td>
-                    <td className={`${TD} font-mono ${r.resolutions > 0 ? 'text-emerald-300' : ''}`}>{r.resolutions || '—'}</td>
+                    <td className={`${TD} font-mono ${r.resolutions > 0 ? 'text-dt-ok' : ''}`}>{r.resolutions || '—'}</td>
                     <td className={`${TD} font-mono`}>{r.handedOff || '—'}</td>
                     <td className={`${TD} font-mono`}>{r.deliverables || '—'}</td>
-                    <td className={`${TD} font-mono ${r.metered > 0 ? 'text-emerald-300' : ''}`}>{r.metered > 0 ? usd(r.metered) : '—'}</td>
+                    <td className={`${TD} font-mono ${r.metered > 0 ? 'text-dt-ok' : ''}`}>{r.metered > 0 ? usd(r.metered) : '—'}</td>
                     <td className={`${TD} font-mono`}>{r.cost > 0 ? usd(Number(r.cost.toFixed(2))) : '—'}</td>
                   </tr>
                 ))}
                 <tr className="bg-dt-inset">
                   <td className={`${TD} font-semibold text-dt-title`}>Workforce total</td>
                   <td className={`${TD} font-mono font-semibold`}>{tot.work}</td>
-                  <td className={`${TD} font-mono font-semibold text-emerald-300`}>{tot.resolutions}</td>
+                  <td className={`${TD} font-mono font-semibold text-dt-ok`}>{tot.resolutions}</td>
                   <td className={`${TD} font-mono font-semibold`}>{tot.handedOff}</td>
                   <td className={`${TD} font-mono font-semibold`}>{rows.reduce((s, r) => s + r.deliverables, 0)}</td>
-                  <td className={`${TD} font-mono font-semibold text-emerald-300`}>{usd(tot.metered)}</td>
+                  <td className={`${TD} font-mono font-semibold text-dt-ok`}>{usd(tot.metered)}</td>
                   <td className={`${TD} font-mono font-semibold`}>{usd(Number(tot.cost.toFixed(2)))}</td>
                 </tr>
               </tbody>

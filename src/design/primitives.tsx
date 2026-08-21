@@ -30,7 +30,7 @@ const BTN_KIND = {
   ghost: 'text-dt-support hover:text-dt-body hover:bg-dt-panel',
   danger: 'bg-rose-600 hover:bg-rose-500 text-white',
   success: 'bg-emerald-600 hover:bg-emerald-500 text-white',
-  ai: 'border border-dt-accent/40 bg-dt-accent-soft text-dt-accent-text hover:border-dt-accent',
+  ai: 'border border-dt-accent-border bg-dt-accent-soft text-dt-accent-text hover:border-dt-accent',
 } as const;
 
 export function Button({ kind = 'secondary', size = 'md', className = '', ...rest }:
@@ -45,7 +45,7 @@ const CHIP_TONE: Record<Tone, string> = {
   danger: 'bg-dt-danger-soft text-dt-danger border-dt-danger-border',
   info: 'bg-dt-info-soft text-dt-info border-dt-info-border',
   neutral: 'bg-dt-neutral-soft text-dt-neutral border-dt-neutral-border',
-  accent: 'bg-dt-accent-soft text-dt-accent-text border-dt-accent/30',
+  accent: 'bg-dt-accent-soft text-dt-accent-text border-dt-accent-border',
 };
 export function Chip({ tone = 'neutral', dot, pulse, children, className = '', title }:
   // `title` because a status word often needs one clause of explanation and
@@ -121,7 +121,7 @@ export function EntityRow({ avatar, title, titleExtra, chips, meta, actions, onO
     meta?: React.ReactNode; actions?: React.ReactNode; onOpen?: () => void; selected?: boolean }) {
   return (
     <div className={`group flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors ${
-      selected ? 'border-dt-accent/40 bg-dt-accent-soft' : 'border-dt-border bg-dt-card hover:bg-dt-panel hover:border-dt-border-strong'}`}>
+      selected ? 'border-dt-accent-border bg-dt-accent-soft' : 'border-dt-border bg-dt-card hover:bg-dt-panel hover:border-dt-border-strong'}`}>
       {avatar}
       <button onClick={onOpen} className="flex-1 min-w-0 text-left" disabled={!onOpen}>
         <div className="flex items-center gap-2 flex-wrap">

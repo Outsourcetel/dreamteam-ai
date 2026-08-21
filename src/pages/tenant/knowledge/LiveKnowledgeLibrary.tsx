@@ -412,9 +412,9 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
         ? 'Only the selected team members use this document when answering — click to change'
         : 'All digital employees and specialists use this document — click to limit it';
     const tone = roleShared
-      ? 'bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25'
+      ? 'bg-dt-accent-soft text-dt-accent-text hover:brightness-110'
       : scoped
-        ? 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25'
+        ? 'bg-dt-warn-soft text-dt-warn hover:brightness-110'
         : 'bg-dt-panel text-dt-support hover:bg-dt-panel';
     return (
       <button
@@ -514,7 +514,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
       <div className="p-6">
         <PageHeader title="Knowledge Library" subtitle="The documents your digital employees answer from." />
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-5 max-w-xl">
-          <p className="text-sm text-amber-300 font-medium mb-1">Workspace still provisioning</p>
+          <p className="text-sm text-dt-warn font-medium mb-1">Workspace still provisioning</p>
           <p className="text-xs text-dt-support">
             The knowledge tables haven't been created yet (migration 012). Apply
             <code className="mx-1 text-dt-support">supabase/migrations/012_knowledge_docs.sql</code>
@@ -530,7 +530,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
       <PageHeader title="Knowledge Library" subtitle="These documents are the only thing your digital employees answer from — keep them current." />
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 mb-4 text-xs text-red-300">{error}</div>
+        <div className="bg-dt-danger-soft border border-dt-danger-border rounded-xl px-4 py-3 mb-4 text-xs text-dt-danger">{error}</div>
       )}
 
       {/* ── The gate, said BEFORE the work rather than after ────────────────
@@ -623,12 +623,12 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
         </button>
         <button
           onClick={() => setShowAi(v => !v)}
-          className="text-sm px-4 py-2 rounded-lg border border-indigo-500/40 text-indigo-300 hover:border-indigo-400 transition-colors"
+          className="text-sm px-4 py-2 rounded-lg border border-dt-accent-border text-dt-accent-text hover:border-dt-accent transition-colors"
         >
           ✨ Edit with AI
         </button>
         <input ref={fileRef} type="file" accept=".txt,.md,.markdown,.pdf,text/plain,text/markdown,application/pdf" className="hidden" onChange={onFile} />
-        {busyMsg && <span className="text-xs text-indigo-300">{busyMsg}</span>}
+        {busyMsg && <span className="text-xs text-dt-accent-text">{busyMsg}</span>}
         <span className="text-xs text-dt-muted ml-auto">{total} document{total === 1 ? '' : 's'}</span>
       </div>
 
@@ -659,7 +659,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
         }
         views={reembed.enabled && reembed.pending > 0 ? (
           <span title="Search embeddings are being recomputed in the background. Search keeps working the whole time."
-            className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border border-dt-accent/40 bg-dt-accent-soft text-dt-accent-text">
+            className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border border-dt-accent-border bg-dt-accent-soft text-dt-accent-text">
             <span className="w-1.5 h-1.5 rounded-full bg-dt-accent animate-pulse" />
             {reembed.pending.toLocaleString()} re-indexing
           </span>
@@ -708,9 +708,9 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
           {reembed.enabled && (
             <button disabled={bulkBusy} onClick={() => void bulkReembed()} title="Recompute the search embeddings for these documents in the background" className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-indigo-500 disabled:opacity-50">Re-index</button>
           )}
-          <button disabled={bulkBusy} onClick={() => void bulkDelete()} className="text-xs px-2.5 py-1 rounded-lg border border-red-500/40 text-red-300 hover:border-red-400 disabled:opacity-50">Delete</button>
+          <button disabled={bulkBusy} onClick={() => void bulkDelete()} className="text-xs px-2.5 py-1 rounded-lg border border-dt-danger-border text-dt-danger hover:border-dt-danger disabled:opacity-50">Delete</button>
           <button disabled={bulkBusy} onClick={() => setSelected(new Set())} className="text-xs px-2 py-1 text-dt-muted hover:text-dt-support ml-auto">Clear</button>
-          {bulkBusy && <span className="text-xs text-indigo-300">Working…</span>}
+          {bulkBusy && <span className="text-xs text-dt-accent-text">Working…</span>}
         </div>
       )}
 
@@ -777,7 +777,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                   <td className={td}>
                     <input type="checkbox" checked={selected.has(d.id)} onChange={() => toggleSel(d.id)} />
                   </td>
-                  <td className={`${td} text-white font-medium`}>
+                  <td className={`${td} text-dt-body font-medium`}>
                     <div className="flex items-center gap-2">
                       <span className="truncate">{d.title}</span>
                       {(d.lifecycle_status !== 'published' || d.verification_state === 'needs_verification') && (
@@ -810,7 +810,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                           const full = await getKnowledgeDoc(d.id);
                           if (full) setEditor({ id: full.id, title: full.title, content: full.content, tags: (full.tags ?? []).join(', ') });
                         }}
-                        className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                        className="text-xs text-dt-accent-text hover:underline transition-colors"
                       >
                         Edit
                       </button>
@@ -835,7 +835,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                       <button
                         onClick={() => setRemoveTarget(d)}
                         disabled={deletingId === d.id}
-                        className="text-xs text-red-400/80 hover:text-red-300 disabled:opacity-40 transition-colors"
+                        className="text-xs text-red-400/80 hover:text-dt-danger disabled:opacity-40 transition-colors"
                       >
                         {deletingId === d.id ? 'Deleting…' : 'Delete'}
                       </button>
@@ -873,7 +873,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
           run + reviewer note that triggered the draft. */}
       {(revisions.length > 0 || revisionsLoading) && (
         <div className="mt-6 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
-          <h3 className="text-sm font-semibold text-white mb-1">Knowledge Revisions — pending your approval</h3>
+          <h3 className="text-sm font-semibold text-dt-title mb-1">Knowledge Revisions — pending your approval</h3>
           <p className="text-[11px] text-dt-muted mb-3">
             Drafted automatically when a reviewer marked resolved-inquiry evidence "needs improvement" or "inaccurate."
             Nothing changes in the knowledge base until you approve here.
@@ -895,8 +895,11 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                         if (next && r.source_doc_id) void getKnowledgeDoc(r.source_doc_id).then(d => setExpandedRevisionDoc(d?.content ?? ''));
                       }}
                     >
-                      <span className="text-xs text-white font-medium flex-1 truncate">{r.proposed_title}</span>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full ${r.source_doc_id ? 'bg-indigo-500/20 text-indigo-300' : 'bg-teal-500/20 text-teal-300'}`}>
+                      <span className="text-xs text-dt-body font-medium flex-1 truncate">{r.proposed_title}</span>
+                      {/* teal: non-core hue, kept as a "new doc" identity marker
+                          per the mapping table's "non-semantic identity hues
+                          keep their hue" rule (made opaque; doc §7 row added) */}
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full ${r.source_doc_id ? 'bg-dt-accent-soft text-dt-accent-text' : 'bg-teal-600 text-teal-100'}`}>
                         {r.source_doc_id ? 'Edit to existing doc' : 'New doc proposed'}
                       </span>
                       <span className="text-[10px] text-dt-muted whitespace-nowrap">{fmtDate(r.created_at)}</span>
@@ -904,7 +907,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                     {expanded && (
                       <div className="px-3 pb-3 space-y-3">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div className="rounded-lg border border-dt-border bg-dt-card/60 p-3">
+                          <div className="rounded-lg border border-dt-border bg-dt-card p-3">
                             <p className="text-[10px] font-medium text-dt-muted uppercase tracking-wider mb-1">Current</p>
                             <p className="text-xs text-dt-support whitespace-pre-wrap max-h-48 overflow-y-auto">
                               {r.source_doc_id ? (expandedRevisionDoc ?? 'Loading…') : '(no existing document — this proposes a brand-new one)'}
@@ -922,7 +925,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                           <button
                             onClick={() => void decideRevision(r, 'rejected')}
                             disabled={decidingRevisionId === r.id}
-                            className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:border-red-500/60 hover:text-red-300 disabled:opacity-40 transition-colors"
+                            className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-danger-border hover:text-dt-danger disabled:opacity-40 transition-colors"
                           >
                             {decidingRevisionId === r.id ? 'Working…' : 'Reject'}
                           </button>
@@ -981,7 +984,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               value={editor.title}
               onChange={e => setEditor({ ...editor, title: e.target.value })}
               placeholder="e.g. Refund policy"
-              className="w-full mb-3 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              className="w-full mb-3 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500"
             />
             <label className="block text-xs text-dt-muted mb-1">Content (plain text or Markdown)</label>
             <textarea
@@ -989,14 +992,14 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               onChange={e => setEditor({ ...editor, content: e.target.value })}
               rows={10}
               placeholder="Paste the document content your employees should answer from…"
-              className="w-full mb-3 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-y"
+              className="w-full mb-3 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-y"
             />
             <label className="block text-xs text-dt-muted mb-1">Tags (comma-separated, optional)</label>
             <input
               value={editor.tags}
               onChange={e => setEditor({ ...editor, tags: e.target.value })}
               placeholder="billing, refunds"
-              className="w-full mb-5 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              className="w-full mb-5 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500"
             />
             <div className="flex justify-end gap-2">
               <button
@@ -1026,7 +1029,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               <div className="text-xs text-dt-support">
                 {governDoc.last_verified_at
                   ? <>Last confirmed accurate <span className="text-dt-body">{fmtDate(governDoc.last_verified_at)}</span></>
-                  : <span className="text-amber-300">Never confirmed accurate</span>}
+                  : <span className="text-dt-warn">Never confirmed accurate</span>}
               </div>
               <button onClick={() => void verifyDoc()} className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600/80 hover:bg-emerald-500 text-white shrink-0">Mark verified now</button>
             </div>
@@ -1112,7 +1115,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                   const k = skey(s);
                   const checked = scopeSel.has(k);
                   return (
-                    <label key={k} className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-dt-panel/60 cursor-pointer">
+                    <label key={k} className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-dt-panel cursor-pointer">
                       <input
                         type="checkbox"
                         checked={checked}
@@ -1124,7 +1127,9 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                         className="accent-indigo-500"
                       />
                       <span className="text-sm text-dt-body">{s.name}</span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded ml-auto ${s.kind === 'de' ? 'bg-indigo-500/15 text-indigo-300' : 'bg-teal-500/15 text-teal-300'}`}>
+                      {/* teal: non-core hue, same "Specialist" identity marker
+                          kept elsewhere on this file (doc §7 row) */}
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded ml-auto ${s.kind === 'de' ? 'bg-dt-accent-soft text-dt-accent-text' : 'bg-teal-600 text-teal-100'}`}>
                         {s.kind === 'de' ? 'Digital Employee' : 'Specialist'}
                       </span>
                     </label>
@@ -1178,7 +1183,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                 {versions.map((v, i) => (
                   <div key={v.id} className="rounded-xl border border-dt-border bg-dt-card p-4">
                     <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${i === 0 ? 'bg-emerald-500/15 text-emerald-300' : 'bg-dt-panel text-dt-muted'}`}>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${i === 0 ? 'bg-dt-ok-soft text-dt-ok' : 'bg-dt-panel text-dt-muted'}`}>
                         {i === 0 ? 'current' : `v-${i}`}
                       </span>
                       <span className="text-sm font-medium text-dt-title">{v.title}</span>

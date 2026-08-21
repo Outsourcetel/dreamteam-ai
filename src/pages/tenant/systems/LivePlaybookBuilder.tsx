@@ -50,15 +50,15 @@ import AISessionPanel from '../../../components/AISessionPanel';
 
 const statusChip = (status: string) => {
   const map: Record<string, string> = {
-    draft: 'bg-amber-500/15 text-amber-300',
-    published: 'bg-emerald-500/15 text-emerald-300',
-    archived: 'bg-slate-600 text-dt-support',
-    completed: 'bg-emerald-500/15 text-emerald-300',
-    waiting_approval: 'bg-amber-500/15 text-amber-300',
-    resume_pending: 'bg-indigo-500/15 text-indigo-300',
-    running: 'bg-indigo-500/15 text-indigo-300',
-    cancelled: 'bg-red-500/15 text-red-300',
-    failed: 'bg-red-500/15 text-red-300',
+    draft: 'bg-dt-warn-soft text-dt-warn',
+    published: 'bg-dt-ok-soft text-dt-ok',
+    archived: 'bg-dt-neutral-soft text-dt-neutral',
+    completed: 'bg-dt-ok-soft text-dt-ok',
+    waiting_approval: 'bg-dt-warn-soft text-dt-warn',
+    resume_pending: 'bg-dt-accent-soft text-dt-accent-text',
+    running: 'bg-dt-accent-soft text-dt-accent-text',
+    cancelled: 'bg-dt-danger-soft text-dt-danger',
+    failed: 'bg-dt-danger-soft text-dt-danger',
   };
   const label = status === 'waiting_approval' ? 'waiting on human' : status === 'resume_pending' ? 'resuming' : status;
   return <span className={`text-[10px] px-1.5 py-0.5 rounded ${map[status] ?? 'bg-dt-panel text-dt-support'}`}>{label}</span>;
@@ -419,8 +419,8 @@ function StepRuleRow({ step, onChange }: { step: DefinitionStep; onChange: (para
     return <button onClick={() => setOpen(true)} className="mt-1.5 text-[10px] text-dt-muted hover:text-dt-support">+ Add a rule to this step</button>;
   }
   return (
-    <div className="mt-1.5 flex gap-2 flex-wrap items-center bg-rose-500/5 border border-rose-500/15 rounded-lg px-2 py-1.5">
-      <span className="text-[10px] text-rose-300/80">⚑ Rule:</span>
+    <div className="mt-1.5 flex gap-2 flex-wrap items-center bg-dt-danger-soft border border-dt-danger-border rounded-lg px-2 py-1.5">
+      <span className="text-[10px] text-dt-danger">⚑ Rule:</span>
       <input className={inputCls + ' !w-52'} placeholder="pattern (separate alternatives with |)"
         value={String(rule?.pattern ?? '')} onChange={e => setRule({ pattern: e.target.value, on_violation: rule?.on_violation ?? 'escalate' })} />
       <select className={selectCls + ' !w-40'} value={String(rule?.on_violation ?? 'escalate')}
@@ -534,7 +534,7 @@ function ChecklistEditor({ step, onChange }: { step: DefinitionStep; onChange: (
             className="text-xs text-dt-faint hover:text-rose-400 disabled:opacity-30">✕</button>
         </div>
       ))}
-      <button onClick={() => set([...items, ''])} className="text-[11px] text-indigo-400 hover:text-indigo-300">+ Add item</button>
+      <button onClick={() => set([...items, ''])} className="text-[11px] text-dt-accent-text hover:underline">+ Add item</button>
       <p className="text-[10px] text-dt-faint">Creates a Human Task — the run pauses until every item is ticked.</p>
     </div>
   );
@@ -651,7 +651,7 @@ function TemplateHelp() {
   const [open, setOpen] = useState(false);
   return (
     <span className="relative">
-      <button onClick={() => setOpen(o => !o)} className="text-[11px] text-indigo-400 hover:text-indigo-300">
+      <button onClick={() => setOpen(o => !o)} className="text-[11px] text-dt-accent-text hover:underline">
         {'{{ templates }}'} ▾
       </button>
       {open && (
@@ -659,7 +659,7 @@ function TemplateHelp() {
           <p className="text-[11px] font-medium text-dt-support mb-2">Available template variables</p>
           {TEMPLATE_VARS.map(v => (
             <div key={v.token} className="flex gap-2 text-[11px] mb-1">
-              <code className="text-indigo-300 whitespace-nowrap">{v.token}</code>
+              <code className="text-dt-accent-text whitespace-nowrap">{v.token}</code>
               <span className="text-dt-muted">{v.meaning}</span>
             </div>
           ))}
@@ -723,10 +723,10 @@ function DocStepRow({ s, index, publishedDefs, depth = 0 }: {
   if (s.key === 'instruction') {
     const media = Array.isArray(p.media) ? (p.media as StepMedia[]) : [];
     return (
-      <div style={{ marginLeft: depth * 20 }} className="rounded-xl border border-sky-800/30 bg-sky-500/5 p-3 mb-1.5">
+      <div style={{ marginLeft: depth * 20 }} className="rounded-xl border border-dt-info-border bg-dt-info-soft p-3 mb-1.5">
         <div className="flex items-center gap-2 mb-1">
-          {index !== null && <span className="w-6 h-6 rounded-lg bg-sky-500/20 text-sky-300 flex items-center justify-center text-[11px] font-bold flex-shrink-0">{index + 1}</span>}
-          <span className="text-sm font-medium text-white">{String(p.title ?? 'Instruction')}</span>
+          {index !== null && <span className="w-6 h-6 rounded-lg bg-dt-info-soft text-dt-info flex items-center justify-center text-[11px] font-bold flex-shrink-0">{index + 1}</span>}
+          <span className="text-sm font-medium text-dt-title">{String(p.title ?? 'Instruction')}</span>
         </div>
         {p.body_md ? <p className="text-xs text-dt-support whitespace-pre-wrap ml-8">{String(p.body_md)}</p> : null}
         {media.length > 0 && <div className="ml-8 mt-2 flex flex-wrap gap-2">{media.map((m, i) => <MediaThumb key={i} m={m} />)}</div>}
@@ -739,9 +739,9 @@ function DocStepRow({ s, index, publishedDefs, depth = 0 }: {
     const els = s.else_steps ?? [];
     return (
       <div style={{ marginLeft: depth * 20 }} className="mb-1.5">
-        <div className="flex items-center gap-2 rounded-xl border border-violet-800/30 bg-violet-500/5 px-3 py-2">
-          {index !== null && <span className="w-6 h-6 rounded-lg bg-violet-500/20 text-violet-300 flex items-center justify-center text-[11px] font-bold flex-shrink-0">{index + 1}</span>}
-          <span className="text-sm text-white">If <code className="text-violet-300">{String(p.on ?? '?')}</code> {DECISION_OPERATORS.find(o => o.value === p.operator)?.label ?? String(p.operator ?? '')} {p.operator !== 'exists' ? <code className="text-violet-300">{String(p.value ?? '')}</code> : null}</span>
+        <div className="flex items-center gap-2 rounded-xl border border-dt-accent-border bg-dt-accent-soft px-3 py-2">
+          {index !== null && <span className="w-6 h-6 rounded-lg bg-dt-accent-soft text-dt-accent-text flex items-center justify-center text-[11px] font-bold flex-shrink-0">{index + 1}</span>}
+          <span className="text-sm text-dt-title">If <code className="text-dt-accent-text">{String(p.on ?? '?')}</code> {DECISION_OPERATORS.find(o => o.value === p.operator)?.label ?? String(p.operator ?? '')} {p.operator !== 'exists' ? <code className="text-dt-accent-text">{String(p.value ?? '')}</code> : null}</span>
         </div>
         <div className="ml-8 mt-1">
           <p className="text-[10px] uppercase tracking-wider text-dt-faint mt-1">Then</p>
@@ -868,7 +868,7 @@ function Builder({ initial, onDone, onCancel, publishedDefs, accounts }: {
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
       <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
-        <h3 className="text-sm font-semibold text-white">{st.id ? `Edit — ${st.name}` : 'New playbook'}</h3>
+        <h3 className="text-sm font-semibold text-dt-title">{st.id ? `Edit — ${st.name}` : 'New playbook'}</h3>
         <TemplateHelp />
       </div>
 
@@ -892,7 +892,7 @@ function Builder({ initial, onDone, onCancel, publishedDefs, accounts }: {
                 <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 ${isGate ? 'bg-amber-500/20 text-amber-400' : 'bg-dt-panel text-dt-support'}`}>{i + 1}</span>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
-                    <span className="text-sm font-medium text-white">{meta?.label ?? s.key}</span>
+                    <span className="text-sm font-medium text-dt-title">{meta?.label ?? s.key}</span>
                     {isGate && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-700/30">Human Gate</span>}
                   </div>
                   <p className="text-[11px] text-dt-muted mb-2">{meta?.description}</p>
@@ -957,7 +957,7 @@ function Builder({ initial, onDone, onCancel, publishedDefs, accounts }: {
 
       <div className="flex items-center gap-2 flex-wrap mb-4">
         <button onClick={saveDraft} disabled={busy !== null}
-          className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong disabled:opacity-40 transition-colors">
+          className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body hover:border-dt-border-strong disabled:opacity-40 transition-colors">
           {busy === 'save' ? 'Saving…' : 'Save draft'}
         </button>
         <button onClick={publish} disabled={busy !== null || clientErrors.length > 0}
@@ -1014,14 +1014,14 @@ function DryRunPreview({ steps, definitionId, accounts, disabled }: {
   };
 
   return (
-    <div className="rounded-xl border border-indigo-800/40 bg-indigo-500/5 p-3">
+    <div className="rounded-xl border border-dt-accent-border bg-dt-accent-soft p-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
-          <p className="text-xs font-medium text-indigo-300">Dry-run preview</p>
+          <p className="text-xs font-medium text-dt-accent-text">Dry-run preview</p>
           <p className="text-[10px] text-dt-muted">Simulates connector calls and writes — nothing is called externally, nothing is persisted, human gates never pause.</p>
         </div>
         <button onClick={() => setOpen(o => !o)} disabled={disabled}
-          className="text-xs px-3 py-1.5 rounded-lg border border-indigo-700/50 text-indigo-300 hover:border-indigo-500 disabled:opacity-40 transition-colors">
+          className="text-xs px-3 py-1.5 rounded-lg border border-dt-accent-border text-dt-accent-text hover:border-dt-accent disabled:opacity-40 transition-colors">
           {open ? 'Hide' : 'Try it'}
         </button>
       </div>
@@ -1056,10 +1056,10 @@ function DryRunPreview({ steps, definitionId, accounts, disabled }: {
 
 function fireChip(status: PlaybookTriggerFire['status']) {
   const map: Record<string, string> = {
-    started: 'bg-emerald-500/15 text-emerald-300',
-    pending_start: 'bg-indigo-500/15 text-indigo-300',
-    skipped_dedup: 'bg-slate-600 text-dt-support',
-    error: 'bg-red-500/15 text-red-300',
+    started: 'bg-dt-ok-soft text-dt-ok',
+    pending_start: 'bg-dt-accent-soft text-dt-accent-text',
+    skipped_dedup: 'bg-dt-neutral-soft text-dt-neutral',
+    error: 'bg-dt-danger-soft text-dt-danger',
   };
   const label = status === 'skipped_dedup' ? 'deduped' : status === 'pending_start' ? 'pending' : status;
   return <span className={`text-[10px] px-1.5 py-0.5 rounded ${map[status]}`}>{label}</span>;
@@ -1154,18 +1154,18 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-5">
       <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
-        <h3 className="text-sm font-semibold text-white">Triggers</h3>
+        <h3 className="text-sm font-semibold text-dt-title">Triggers</h3>
         <div className="flex gap-2">
           <button onClick={() => setAdding(adding === 'schedule' ? null : 'schedule')}
-            className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
+            className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body hover:border-dt-border-strong transition-colors">
             ⏰ Add schedule
           </button>
           <button onClick={() => setAdding(adding === 'event' ? null : 'event')}
-            className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
+            className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body hover:border-dt-border-strong transition-colors">
             ⚡ Add event rule
           </button>
           <button onClick={() => setShowEvents(v => !v)}
-            className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
+            className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body hover:border-dt-border-strong transition-colors">
             ◆ Manage events
           </button>
         </div>
@@ -1279,7 +1279,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
       {showEvents && (
         <div className="rounded-xl border border-dt-border-strong bg-dt-inset p-3 mb-3 space-y-3">
           <div>
-            <p className="text-xs font-semibold text-white mb-1">Your events</p>
+            <p className="text-xs font-semibold text-dt-title mb-1">Your events</p>
             <p className="text-[11px] text-dt-muted mb-2">
               Define an event your business can fire — from an Emit-event step in a playbook, the Fire button here, or the webhook below. Any playbook with a matching event rule runs when it fires.
             </p>
@@ -1301,7 +1301,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
                 <div key={d.id} className="flex items-center justify-between gap-2 bg-dt-card rounded-lg px-3 py-1.5">
                   <span className="text-[11px] text-dt-support">{d.label} <span className="text-dt-faint font-mono">· {d.event_key}</span></span>
                   <button onClick={() => void fireEvent(d.event_key)} disabled={!isTenantAdmin}
-                    className="text-[10px] px-2 py-1 rounded border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
+                    className="text-[10px] px-2 py-1 rounded border border-dt-border-strong text-dt-support hover:text-dt-body hover:border-dt-border-strong transition-colors">
                     Fire now
                   </button>
                 </div>
@@ -1334,7 +1334,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
                 {s.account_selector.mode === 'single' ? 'single account' : `renewals within ${s.account_selector.renewal_within_days ?? 60}d`}
               </span>
               {s.active && s.next_fire_at && (
-                <span className="text-[10px] text-indigo-300">next fire {new Date(s.next_fire_at).toLocaleString()}</span>
+                <span className="text-[10px] text-dt-accent-text">next fire {new Date(s.next_fire_at).toLocaleString()}</span>
               )}
               {!s.active && <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted">paused</span>}
               <span className="ml-auto flex gap-2">
@@ -1373,7 +1373,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
                 {fireChip(f.status)}
                 <span className="text-dt-muted truncate max-w-[24rem]">{f.detail}</span>
                 {f.run_id && (
-                  <button onClick={() => onOpenRun(f.run_id!)} className="ml-auto text-indigo-400 hover:text-indigo-300 whitespace-nowrap">view run →</button>
+                  <button onClick={() => onOpenRun(f.run_id!)} className="ml-auto text-dt-accent-text hover:underline whitespace-nowrap">view run →</button>
                 )}
               </div>
             ))}
@@ -1434,15 +1434,15 @@ function DraftWithAiModal({ onClose, onDrafted }: { onClose: () => void; onDraft
 // ============================================================
 
 const GAP_KIND_META: Record<string, { label: string; icon: string; cls: string }> = {
-  missing_knowledge: { label: 'Missing knowledge', icon: '📄', cls: 'bg-sky-500/10 text-sky-300 border-sky-700/40' },
-  missing_authority: { label: 'Needs a decision', icon: '⚖️', cls: 'bg-amber-500/10 text-amber-300 border-amber-700/40' },
-  missing_data: { label: 'Missing data', icon: '🔢', cls: 'bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-700/40' },
-  fixable_by_structure: { label: 'Structural fix', icon: '🔧', cls: 'bg-indigo-500/10 text-indigo-300 border-indigo-700/40' },
+  missing_knowledge: { label: 'Missing knowledge', icon: '📄', cls: 'bg-dt-info-soft text-dt-info border-dt-info-border' },
+  missing_authority: { label: 'Needs a decision', icon: '⚖️', cls: 'bg-dt-warn-soft text-dt-warn border-dt-warn-border' },
+  missing_data: { label: 'Missing data', icon: '🔢', cls: 'bg-fuchsia-600 text-fuchsia-100 border-fuchsia-500' },
+  fixable_by_structure: { label: 'Structural fix', icon: '🔧', cls: 'bg-dt-accent-soft text-dt-accent-text border-dt-accent-border' },
 };
 const GAP_STATUS_CHIP: Record<string, string> = {
-  open: 'bg-amber-500/15 text-amber-300',
-  answered: 'bg-sky-500/15 text-sky-300',
-  resolved: 'bg-emerald-500/15 text-emerald-300',
+  open: 'bg-dt-warn-soft text-dt-warn',
+  answered: 'bg-dt-info-soft text-dt-info',
+  resolved: 'bg-dt-ok-soft text-dt-ok',
   dismissed: 'bg-dt-panel text-dt-muted',
 };
 
@@ -1506,7 +1506,7 @@ function KnowledgeGapAnswer({ gap, isAdmin, onAnswered, onError }: {
       <div className="flex gap-1.5 flex-wrap">
         {(['upload', 'link', 'pick'] as const).map(m => (
           <button key={m} onClick={() => setMode(mode === m ? null : m)}
-            className={`text-[11px] px-2 py-1 rounded-lg border transition-colors ${mode === m ? 'border-indigo-500/60 bg-indigo-500/10 text-indigo-200' : 'border-dt-border text-dt-support hover:text-dt-body'}`}>
+            className={`text-[11px] px-2 py-1 rounded-lg border transition-colors ${mode === m ? 'border-dt-accent bg-dt-accent-soft text-dt-accent-text' : 'border-dt-border text-dt-support hover:text-dt-body'}`}>
             {m === 'upload' ? '⬆ Upload a document' : m === 'link' ? '🔗 Link a page' : '📚 Pick an existing doc'}
           </button>
         ))}
@@ -1709,16 +1709,16 @@ function GapPanel({ def, isAdmin, canManage, onChanged, onToast }: {
   };
 
   return (
-    <div className="rounded-2xl border border-indigo-800/40 bg-indigo-500/5 p-4 mb-4">
+    <div className="rounded-2xl border border-dt-accent-border bg-dt-accent-soft p-4 mb-4">
       <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
-        <h3 className="text-xs font-semibold text-indigo-300">🔎 Deep Study — gaps to close before this runs whole</h3>
+        <h3 className="text-xs font-semibold text-dt-accent-text">🔎 Deep Study — gaps to close before this runs whole</h3>
         {live.length > 0 && (
           <span className="text-[11px] text-dt-support">
             {resolvedCount} of {live.length} resolved · {answeredCount} answered awaiting verification · {openCount} open
           </span>
         )}
       </div>
-      {err && <div className="mb-2 rounded-lg border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-300">{err}</div>}
+      {err && <div className="mb-2 rounded-lg border border-dt-danger-border bg-dt-danger-soft px-3 py-2 text-[11px] text-dt-danger">{err}</div>}
 
       {/* The typed gaps — each an answerable card */}
       {live.length > 0 && (
@@ -1733,13 +1733,13 @@ function GapPanel({ def, isAdmin, canManage, onChanged, onToast }: {
                   {g.step_index !== null && <span className="text-[10px] text-dt-muted">step {g.step_index + 1}</span>}
                   {canManage && isAdmin && g.status !== 'resolved' && (
                     <button onClick={() => { void dismissPlaybookGap(g.id, 'Dismissed from the gap panel').then(() => void reload()).catch(e => setErr((e as Error).message)); }}
-                      className="ml-auto text-[10px] text-dt-muted hover:text-rose-300" title="Dismiss (owner/admin; audited)">dismiss</button>
+                      className="ml-auto text-[10px] text-dt-muted hover:text-dt-danger" title="Dismiss (owner/admin; audited)">dismiss</button>
                   )}
                 </div>
                 <p className="text-[12px] text-dt-body mt-1">{g.title}</p>
                 {g.detail && g.detail !== g.title && <p className="text-[11px] text-dt-support mt-0.5">{g.detail}</p>}
                 {g.status === 'answered' && (
-                  <p className="text-[10px] text-sky-300/80 mt-1">Answered — recompile to verify the evidence and close it.</p>
+                  <p className="text-[10px] text-dt-info mt-1">Answered — recompile to verify the evidence and close it.</p>
                 )}
                 {g.status === 'open' && canManage && (
                   g.kind === 'missing_knowledge' ? <KnowledgeGapAnswer gap={g} isAdmin={isAdmin} onAnswered={answered} onError={setErr} />
@@ -1757,7 +1757,7 @@ function GapPanel({ def, isAdmin, canManage, onChanged, onToast }: {
           steps they index instead of being dropped (spec §1.2b) */}
       {valErrors.length > 0 && (
         <div className="mb-3">
-          <div className="text-[11px] font-semibold text-rose-300 mb-1">Engine validation ({valErrors.length})</div>
+          <div className="text-[11px] font-semibold text-dt-danger mb-1">Engine validation ({valErrors.length})</div>
           <ul className="space-y-0.5 text-[11px] text-dt-support">
             {valErrors.map((e, i) => (
               <li key={i}>{e.index >= 0 ? `Step ${e.index + 1}: ` : ''}{e.message}</li>
@@ -1769,7 +1769,7 @@ function GapPanel({ def, isAdmin, canManage, onChanged, onToast }: {
       <div className="grid md:grid-cols-2 gap-3">
         {contra.length > 0 && (
           <div>
-            <div className="text-[11px] font-semibold text-rose-300 mb-1">⚠ Conflicts with your knowledge ({contra.length})</div>
+            <div className="text-[11px] font-semibold text-dt-danger mb-1">⚠ Conflicts with your knowledge ({contra.length})</div>
             <ul className="space-y-1.5">
               {contra.map((c, i) => (
                 <li key={i} className="text-[11px] text-dt-support leading-snug">
@@ -1782,7 +1782,7 @@ function GapPanel({ def, isAdmin, canManage, onChanged, onToast }: {
         )}
         {scenarios.length > 0 && (
           <div>
-            <div className="text-[11px] font-semibold text-emerald-300 mb-1">🧪 Test scenarios it will certify against ({scenarios.length})</div>
+            <div className="text-[11px] font-semibold text-dt-ok mb-1">🧪 Test scenarios it will certify against ({scenarios.length})</div>
             <ul className="space-y-1 text-[11px] text-dt-support leading-snug">
               {scenarios.map((s, i) => <li key={i}>“{s.question}” <span className="text-dt-muted">({s.category})</span></li>)}
             </ul>
@@ -1790,7 +1790,7 @@ function GapPanel({ def, isAdmin, canManage, onChanged, onToast }: {
         )}
         {bindings.length > 0 && (
           <div>
-            <div className="text-[11px] font-semibold text-sky-300 mb-1">🔗 Knowledge this playbook depends on ({new Set(bindings.map(b => b.title)).size})</div>
+            <div className="text-[11px] font-semibold text-dt-info mb-1">🔗 Knowledge this playbook depends on ({new Set(bindings.map(b => b.title)).size})</div>
             <ul className="space-y-0.5 text-[11px] text-dt-support leading-snug">
               {[...new Map(bindings.map(b => [b.title, b])).values()].map((b, i) => <li key={i}>{b.title ?? b.doc_id}</li>)}
             </ul>
@@ -1839,9 +1839,9 @@ function GapPanel({ def, isAdmin, canManage, onChanged, onToast }: {
 const JUDGMENT_KEYS = new Set(['custom_step', 'agentic_step', 'consult_specialist']);
 const GUIDE_KEYS = new Set(['instruction', 'checklist', 'decision']);
 function stepGrade(key: string): { label: string; cls: string; icon: string } {
-  if (JUDGMENT_KEYS.has(key)) return { label: 'Judgment', cls: 'bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-700/40', icon: '✨' };
-  if (GUIDE_KEYS.has(key)) return { label: 'Guide', cls: 'bg-slate-600/20 text-dt-support border-dt-border-strong', icon: '📋' };
-  return { label: 'Rail', cls: 'bg-cyan-500/10 text-cyan-300 border-cyan-700/40', icon: '⚙️' };
+  if (JUDGMENT_KEYS.has(key)) return { label: 'Judgment', cls: 'bg-fuchsia-600 text-fuchsia-100 border-fuchsia-500', icon: '✨' };
+  if (GUIDE_KEYS.has(key)) return { label: 'Guide', cls: 'bg-dt-neutral-soft text-dt-support border-dt-border-strong', icon: '📋' };
+  return { label: 'Rail', cls: 'bg-cyan-600 text-cyan-100 border-cyan-500', icon: '⚙️' };
 }
 
 interface StepHealth { runs: number; clean: number; failed: number; lastException: string | null }
@@ -1906,16 +1906,16 @@ function LivingDocument({ definitionId, steps, runs, publishedDefs, onDecided }:
         </div>
       )}
       {amendments.map(am => (
-        <div key={am.id} className="rounded-xl border border-amber-700/50 bg-amber-500/5 p-3">
+        <div key={am.id} className="rounded-xl border border-dt-warn-border bg-dt-warn-soft p-3">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-[11px] font-semibold text-amber-300">✎ The Practice Engine proposes an improvement</span>
-            {am.replay_result?.would_complete && <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-700/40">replay verified</span>}
+            <span className="text-[11px] font-semibold text-dt-warn">✎ The Practice Engine proposes an improvement</span>
+            {am.replay_result?.would_complete && <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-ok-soft text-dt-ok border border-dt-ok-border">replay verified</span>}
           </div>
           <p className="text-[11px] text-dt-support mb-1.5">{am.rationale}</p>
           {am.redline?.length > 0 && (
             <ul className="text-[11px] space-y-0.5 mb-2">
               {am.redline.map((r, i) => (
-                <li key={i} className={r.change === 'remove' ? 'text-rose-300' : r.change === 'add' ? 'text-emerald-300' : 'text-sky-300'}>
+                <li key={i} className={r.change === 'remove' ? 'text-dt-danger' : r.change === 'add' ? 'text-dt-ok' : 'text-dt-info'}>
                   {r.change === 'add' ? '＋' : r.change === 'remove' ? '－' : '±'} {r.label}{r.note ? ` — ${r.note}` : ''}
                 </li>
               ))}
@@ -1926,7 +1926,7 @@ function LivingDocument({ definitionId, steps, runs, publishedDefs, onDecided }:
             <button disabled={busyId === am.id} onClick={() => void decide(am.id, true)}
               className="text-[11px] px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50">Approve → draft</button>
             <button disabled={busyId === am.id} onClick={() => void decide(am.id, false)}
-              className="text-[11px] px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:text-rose-300 disabled:opacity-50">Dismiss</button>
+              className="text-[11px] px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-danger disabled:opacity-50">Dismiss</button>
           </div>
         </div>
       ))}
@@ -1952,7 +1952,7 @@ function LivingDocument({ definitionId, steps, runs, publishedDefs, onDecided }:
               </div>
               {h?.lastException && <p className="text-[10px] text-rose-400/80 mt-1 ml-6">last exception: {h.lastException}</p>}
               {stepGaps.filter(g => g.step_index === i).map(g => (
-                <p key={g.id} className="text-[10px] text-amber-300/90 mt-1 ml-6">
+                <p key={g.id} className="text-[10px] text-dt-warn mt-1 ml-6">
                   ⛔ blocked by a gap — {g.title}{g.status === 'answered' ? ' (answered; recompile to verify)' : ''}. A partial publish pauses here; it never executes.
                 </p>
               ))}
@@ -2086,7 +2086,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
         title="Playbooks"
         subtitle="Build playbooks from typed step primitives — validated, versioned, executed server-side with guardrails and human gates"
       />
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {error && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {loading ? <LiveLoadingSkeleton rows={3} /> : missingTables ? <MissingTablesNotice /> : builder ? (
         <Builder
@@ -2107,7 +2107,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
           <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-5">
             <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
               <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-base font-semibold text-white">{selectedDef.name}</h2>
+                <h2 className="text-base font-semibold text-dt-title">{selectedDef.name}</h2>
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support font-mono">{selectedDef.key}</span>
                 {statusChip(selectedDef.status)}
                 {selectedDef.status === 'published' && <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400">v{selectedDef.version}</span>}
@@ -2115,14 +2115,14 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
               <div className="flex gap-2">
                 <button onClick={() => setAiEditing(true)}
                   title="Describe what is wrong with this playbook, in plain language"
-                  className="text-xs px-3 py-1.5 rounded-lg bg-dt-card hover:bg-indigo-600/30 border border-dt-border hover:border-indigo-500/50 text-dt-support hover:text-indigo-200 transition-colors">
+                  className="text-xs px-3 py-1.5 rounded-lg bg-dt-card hover:bg-dt-accent-soft border border-dt-border hover:border-dt-accent-border text-dt-support hover:text-dt-accent-text transition-colors">
                   ✨ Edit with AI
                 </button>
                 <button onClick={() => setBuilder({ id: selectedDef.id, name: selectedDef.name, key: selectedDef.key, description: selectedDef.description, steps: selectedDef.steps, status: selectedDef.status, de_id: selectedDef.de_id ?? null })}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
+                  className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body hover:border-dt-border-strong transition-colors">
                   {selectedDef.status === 'published' ? `Edit (next publish → v${selectedDef.version + 1})` : 'Edit draft'}
                 </button>
-                <button onClick={() => void archive(selectedDef)} disabled={!canEditPlaybooks} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border text-dt-muted hover:text-rose-300 hover:border-rose-800 transition-colors disabled:opacity-50">Archive</button>
+                <button onClick={() => void archive(selectedDef)} disabled={!canEditPlaybooks} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border text-dt-muted hover:text-dt-danger hover:border-dt-danger-border transition-colors disabled:opacity-50">Archive</button>
               </div>
             </div>
             {selectedDef.description && <p className="text-sm text-dt-support mb-3">{selectedDef.description}</p>}
@@ -2209,7 +2209,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
 
           {/* Run history for this definition */}
           <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
-            <h3 className="text-sm font-semibold text-white mb-3">Runs</h3>
+            <h3 className="text-sm font-semibold text-dt-title mb-3">Runs</h3>
             {defRuns.length === 0 ? <p className="text-xs text-dt-muted">No runs yet.</p> : (
               <div className="space-y-2">
                 {defRuns.map(r => (
@@ -2302,7 +2302,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
                             </span>
                             {d.status === 'published' && !isSop && <span className="text-xs font-mono text-dt-muted">v{d.version}</span>}
                             {(gapCounts[d.id] ?? 0) > 0 && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300"
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-warn-soft text-dt-warn"
                                 title="Open the playbook to answer them — blocked steps never execute">
                                 ⛔ {gapCounts[d.id]} gap{gapCounts[d.id] === 1 ? '' : 's'} to answer
                               </span>
@@ -2380,8 +2380,8 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="text-base font-semibold text-white">Renewal Lifecycle</h3>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">BUILT-IN</span>
+                  <h3 className="text-base font-semibold text-dt-title">Renewal Lifecycle</h3>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-ok-soft text-dt-ok">BUILT-IN</span>
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support font-mono">renewal_v1</span>
                 </div>
                 <p className="text-xs text-dt-muted mt-1">
@@ -2389,7 +2389,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
                 </p>
               </div>
               <button onClick={() => setPage('entity_customer_renewal')}
-                className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong transition-colors">
+                className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body hover:border-dt-border-strong transition-colors">
                 Run from Renewal &amp; Expansion →
               </button>
             </div>
@@ -2404,7 +2404,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
 
           {/* All-runs history */}
           <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
-            <h3 className="text-sm font-semibold text-white mb-3">Run history</h3>
+            <h3 className="text-sm font-semibold text-dt-title mb-3">Run history</h3>
             {runs.length === 0 ? <p className="text-xs text-dt-muted">No runs yet.</p> : (
               <div className="space-y-2">
                 {runs.map(r => (

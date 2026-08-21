@@ -222,7 +222,7 @@ function RosterPanel({ onSelect, setPage }: { onSelect: (de: DigitalEmployee) =>
               key={de.id}
               onOpen={() => onSelect(de)}
               avatar={
-                <div className="w-10 h-10 rounded-lg bg-dt-accent-soft border border-dt-accent/30 flex items-center justify-center text-dt-accent-text font-semibold flex-shrink-0">
+                <div className="w-10 h-10 rounded-lg bg-dt-accent-soft border border-dt-accent-border flex items-center justify-center text-dt-accent-text font-semibold flex-shrink-0">
                   {(de.persona_name || de.name).charAt(0).toUpperCase()}
                 </div>
               }
@@ -362,8 +362,8 @@ function TeamsPanel() {
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6 mt-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
-        <h3 className="text-base font-semibold text-white">Backup &amp; coverage — Workforce Teams</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">fallback chains</span>
+        <h3 className="text-base font-semibold text-dt-title">Backup &amp; coverage — Workforce Teams</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-accent-soft text-dt-accent-text">fallback chains</span>
         <button onClick={() => setShowCreate(s => !s)}
           className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body">
           {showCreate ? 'Cancel' : '+ New team'}
@@ -376,7 +376,7 @@ function TeamsPanel() {
         covers after that. Teams never grant access — a backup still needs its own grant on the
         system it covers. Optional: with one employee per function, you can ignore this entirely.
       </p>
-      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      {error && <p className="text-xs text-dt-danger mb-2">{error}</p>}
 
       {showCreate && (
         <div className="mb-4 rounded-xl border border-dt-border bg-dt-page p-3 space-y-2">
@@ -403,7 +403,7 @@ function TeamsPanel() {
             return (
               <div key={team.id} className="rounded-xl border border-dt-border bg-dt-page p-3">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm text-white font-medium">{team.name}</span>
+                  <span className="text-sm text-dt-title font-medium">{team.name}</span>
                   <button onClick={async () => {
                     if (!await confirm({
                       title: `Archive the "${team.name}" team?`,
@@ -413,7 +413,7 @@ function TeamsPanel() {
                     void run(() => supabase.rpc('archive_workforce_team', { p_team_id: team.id }));
                   }}
                     disabled={busy || !canManage}
-                    className="ml-auto text-xs text-dt-muted hover:text-rose-300">
+                    className="ml-auto text-xs text-dt-muted hover:text-dt-danger">
                     Archive
                   </button>
                 </div>
@@ -425,7 +425,7 @@ function TeamsPanel() {
                     const eligible = de && ['assigned', 'active', 'improving'].includes(de.lifecycle_status) && de.status === 'active';
                     return (
                       <div key={m.id} className="flex items-center gap-2 text-xs">
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${m.fallback_rank === 1 ? 'bg-indigo-500/15 text-indigo-300' : 'bg-dt-panel text-dt-support'}`}>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${m.fallback_rank === 1 ? 'bg-dt-accent-soft text-dt-accent-text' : 'bg-dt-panel text-dt-support'}`}>
                           {m.fallback_rank === 1 ? 'Primary' : `Backup #${m.fallback_rank - 1}`}
                         </span>
                         <span className="text-dt-support">{de?.persona_name || de?.name || 'Unknown'}</span>
@@ -434,7 +434,7 @@ function TeamsPanel() {
                         </span>
                         <button onClick={() => void run(() => supabase.rpc('set_workforce_team_member', { p_team_id: team.id, p_de_id: m.de_id, p_fallback_rank: null }))}
                           disabled={busy || !canManage}
-                          className="ml-auto text-[10px] text-dt-faint hover:text-rose-300">
+                          className="ml-auto text-[10px] text-dt-faint hover:text-dt-danger">
                           Remove
                         </button>
                       </div>

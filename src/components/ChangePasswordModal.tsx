@@ -54,7 +54,7 @@ const ChangePasswordModal = ({ onClose }: { onClose: () => void }) => {
         {done ? (
           <div className="text-center py-2">
             <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center text-2xl mx-auto mb-3">✓</div>
-            <p className="text-sm text-white mb-4">Password updated.</p>
+            <p className="text-sm text-dt-title mb-4">Password updated.</p>
             <button onClick={onClose} className="w-full py-2.5 text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all">Done</button>
           </div>
         ) : (
@@ -62,17 +62,17 @@ const ChangePasswordModal = ({ onClose }: { onClose: () => void }) => {
             <div>
               <label className="text-xs font-medium text-dt-support block mb-1.5">Current password</label>
               <input value={current} onChange={(e) => setCurrent(e.target.value)} type="password" placeholder="Your current password" autoComplete="current-password" autoFocus
-                className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-3 py-2.5 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-3 py-2.5 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
             </div>
             <div>
               <label className="text-xs font-medium text-dt-support block mb-1.5">New password</label>
               <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="8+ characters" autoComplete="new-password"
-                className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-3 py-2.5 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-3 py-2.5 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
             </div>
             <div>
               <label className="text-xs font-medium text-dt-support block mb-1.5">Confirm password</label>
               <input value={confirm} onChange={(e) => setConfirm(e.target.value)} type="password" placeholder="Retype the password"
-                className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-3 py-2.5 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-3 py-2.5 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
             </div>
             {error && <p className="text-xs text-rose-400">{error}</p>}
             <button type="submit" disabled={loading}

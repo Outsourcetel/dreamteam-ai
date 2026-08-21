@@ -8,6 +8,7 @@ import { applyBranding, saveBranding, type TenantBranding } from './branding';
 // Guardrailed: one accent color + a curated surface family. Live-previews
 // instantly; Save persists for everyone in the workspace.
 const SURFACES: { key: TenantBranding['surface_key']; label: string; swatch: string }[] = [
+  { key: 'daylight', label: 'Daylight', swatch: '#f4f5f7' },
   { key: 'midnight', label: 'Midnight Navy', swatch: '#0c1123' },
   { key: 'graphite', label: 'Graphite', swatch: '#0a0a0c' },
 ];
@@ -35,9 +36,18 @@ export default function BrandingCard() {
   const save = async () => {
     setBusy(true); setMsg(null);
     const r = await saveBranding(accent, surface);
-    setBusy(false); setDirty(false);
-    setMsg(r.ok ? { tone: 'ok', text: 'Saved — this workspace now wears your brand.' }
-                : { tone: 'danger', text: r.error ?? 'Could not save.' });
+    setBusy(false);
+    if (r.ok) {
+      setDirty(false);
+      setMsg({ tone: 'ok', text: 'Saved — this workspace now wears your brand.' });
+    } else {
+      // dirty stays true on failure — the preview is still applied and unsaved,
+      // so the Save button must stay reachable rather than stranding it.
+      const text = r.error?.includes('unknown_surface')
+        ? "This look isn't enabled for your workspace yet — the platform update that adds it hasn't been applied."
+        : (r.error ?? 'Could not save.');
+      setMsg({ tone: 'danger', text });
+    }
   };
 
   return (

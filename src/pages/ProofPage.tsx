@@ -58,14 +58,14 @@ export default function ProofPage() {
         <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(circle_at_50%_-20%,rgba(99,102,241,0.25),transparent_65%)]" />
 
         <header className="relative max-w-4xl mx-auto px-6 pt-8 flex items-center justify-between">
-          <span className="text-sm font-semibold text-white tracking-tight">DreamTeam <span className="text-indigo-400">AI</span></span>
-          <a href="/" className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-indigo-500 transition-colors">Sign in</a>
+          <span className="text-sm font-semibold text-dt-title tracking-tight">DreamTeam <span className="text-dt-accent-text">AI</span></span>
+          <a href="/" className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-title hover:border-dt-accent transition-colors">Sign in</a>
         </header>
 
         {/* ── Hero ── */}
         <section className="relative max-w-4xl mx-auto px-6 pt-16 pb-10">
-          <p className="text-[11px] uppercase tracking-[0.22em] text-indigo-300 mb-3">The proof page</p>
-          <h1 className="text-3xl sm:text-4xl font-semibold text-white leading-tight max-w-2xl">
+          <p className="text-[11px] uppercase tracking-[0.22em] text-dt-accent-text mb-3">The proof page</p>
+          <h1 className="text-3xl sm:text-4xl font-semibold text-dt-title leading-tight max-w-2xl">
             Toolkits build agents.<br />DreamTeam employs them.
           </h1>
           <p className="text-sm text-dt-support mt-4 max-w-2xl leading-relaxed">
@@ -119,7 +119,7 @@ export default function ProofPage() {
               and resumed work the same day: same employees, same guardrails, same calibrated trust levels,
               different brain vendor. This is the production log line from the first request served after the switch:
             </p>
-            <pre className="mt-3 text-[11px] text-emerald-300 bg-black/40 border border-dt-border rounded-xl px-4 py-3 overflow-x-auto">
+            <pre className="mt-3 text-[11px] text-dt-ok bg-dt-inset border border-dt-border rounded-xl px-4 py-3 overflow-x-auto">
               [llm] de-answer: FAILOVER — anthropic failed (401), served by bedrock
             </pre>
             <p className="text-xs text-dt-muted mt-3">
@@ -157,17 +157,17 @@ export default function ProofPage() {
             <div className="rounded-2xl border border-dt-border bg-dt-card p-4">
               <p className="text-xl font-semibold text-dt-title">&gt;40%</p>
               <p className="text-xs text-dt-support mt-1 leading-relaxed">of agentic-AI projects predicted to be canceled by end-2027 — driven by cost, unclear value, and inadequate risk controls.</p>
-              <a href={SOURCES.gartner} target="_blank" rel="noreferrer" className="text-[10px] text-indigo-300 hover:underline mt-1.5 inline-block">Gartner press release, Jun 2025 ↗</a>
+              <a href={SOURCES.gartner} target="_blank" rel="noreferrer" className="text-[10px] text-dt-accent-text hover:underline mt-1.5 inline-block">Gartner press release, Jun 2025 ↗</a>
             </div>
             <div className="rounded-2xl border border-dt-border bg-dt-card p-4">
               <p className="text-xl font-semibold text-dt-title">95%</p>
               <p className="text-xs text-dt-support mt-1 leading-relaxed">of enterprise GenAI pilots produced zero P&L impact; external partnerships succeeded about twice as often as internal builds.</p>
-              <a href={SOURCES.mit} target="_blank" rel="noreferrer" className="text-[10px] text-indigo-300 hover:underline mt-1.5 inline-block">MIT NANDA, State of AI in Business 2025 (PDF) ↗</a>
+              <a href={SOURCES.mit} target="_blank" rel="noreferrer" className="text-[10px] text-dt-accent-text hover:underline mt-1.5 inline-block">MIT NANDA, State of AI in Business 2025 (PDF) ↗</a>
             </div>
             <div className="rounded-2xl border border-dt-border bg-dt-card p-4">
               <p className="text-xl font-semibold text-dt-title">~130</p>
               <p className="text-xs text-dt-support mt-1 leading-relaxed">of the thousands of "agentic AI" vendors judged real by Gartner — the rest re-labeled chatbots and RPA. Hence this page.</p>
-              <a href={SOURCES.gartner} target="_blank" rel="noreferrer" className="text-[10px] text-indigo-300 hover:underline mt-1.5 inline-block">Gartner, on agent washing ↗</a>
+              <a href={SOURCES.gartner} target="_blank" rel="noreferrer" className="text-[10px] text-dt-accent-text hover:underline mt-1.5 inline-block">Gartner, on agent washing ↗</a>
             </div>
           </div>
           <p className="text-[10px] text-dt-muted mt-2">Third-party figures, cited as published by their authors — not our measurements.</p>
@@ -175,8 +175,8 @@ export default function ProofPage() {
 
         {/* ── CTA ── */}
         <section className="relative max-w-4xl mx-auto px-6 pb-16">
-          <div className="rounded-2xl border border-indigo-500/30 bg-indigo-500/10 p-6">
-            <h2 className="text-base font-semibold text-white">See it live, not on slides</h2>
+          <div className="rounded-2xl border border-dt-accent-border bg-dt-accent-soft p-6">
+            <h2 className="text-base font-semibold text-dt-title">See it live, not on slides</h2>
             <p className="text-sm text-dt-support mt-1.5 max-w-xl leading-relaxed">
               A 30-minute walkthrough covers the board, a live guardrail refusal, an employee's file, and
               the meter — on production, with the same honesty as this page.

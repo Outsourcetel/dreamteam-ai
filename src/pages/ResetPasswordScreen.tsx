@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Spinner } from '../components';
+import { Banner } from '../design/primitives';
 
 // ─────────────────────────────────────────────────────────────────
 // Shown instead of the normal app whenever Supabase's client detects a
@@ -35,31 +36,31 @@ const ResetPasswordScreen = ({ onComplete }: {
       <div className="max-w-sm w-full">
         <div className="flex items-center gap-2 mb-8 justify-center">
           <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white text-xs font-bold">DT</div>
-          <span className="text-white font-bold">DreamTeam AI</span>
+          <span className="text-dt-title font-bold">DreamTeam AI</span>
         </div>
 
         {done ? (
           <div className="text-center py-4">
             <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 flex items-center justify-center text-3xl mx-auto mb-4">✓</div>
-            <h2 className="text-xl font-bold text-white mb-2">Password updated</h2>
+            <h2 className="text-xl font-bold text-dt-title mb-2">Password updated</h2>
             <p className="text-dt-support text-sm leading-relaxed">You're signed in with your new password.</p>
           </div>
         ) : (
           <>
-            <h2 className="text-2xl font-bold text-white mb-1">Set a new password</h2>
+            <h2 className="text-2xl font-bold text-dt-title mb-1">Set a new password</h2>
             <p className="text-dt-support text-sm mb-6">Choose a new password for your account.</p>
             <form onSubmit={submit} className="space-y-4">
               <div>
                 <label className="text-xs font-medium text-dt-support block mb-1.5">New password</label>
                 <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="8+ characters" autoFocus
-                  className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                  className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
               </div>
               <div>
                 <label className="text-xs font-medium text-dt-support block mb-1.5">Confirm password</label>
                 <input value={confirm} onChange={(e) => setConfirm(e.target.value)} type="password" placeholder="Retype the password"
-                  className="w-full bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                  className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
               </div>
-              {error && <p className="text-xs text-red-400">{error}</p>}
+              {error && <Banner tone="danger" className="text-xs">{error}</Banner>}
               <button type="submit" disabled={loading}
                 className="w-full py-3 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 transition-all flex items-center justify-center gap-2">
                 {loading ? <><Spinner /> Saving...</> : 'Set new password'}

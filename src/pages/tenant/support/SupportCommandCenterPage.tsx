@@ -14,10 +14,10 @@ import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDat
 // ============================================================
 
 const SEVERITY_LABEL: Record<string, string> = { sev1: 'Critical (sev1)', sev2: 'High (sev2)', sev3: 'Medium (sev3)', sev4: 'Low (sev4)' };
-const SEVERITY_CLS: Record<string, string> = { sev1: 'text-rose-400', sev2: 'text-amber-300', sev3: 'text-indigo-300', sev4: 'text-dt-support' };
+const SEVERITY_CLS: Record<string, string> = { sev1: 'text-rose-400', sev2: 'text-dt-warn', sev3: 'text-dt-accent-text', sev4: 'text-dt-support' };
 const STATUS_LABEL: Record<string, string> = { ai_handling: 'AI handling', needs_human: 'Needs human', human_owned: 'Human owned', resolved: 'Resolved' };
 
-function StatCard({ label, value, sub, color = 'text-white' }: { label: string; value: string | number; sub?: string; color?: string }) {
+function StatCard({ label, value, sub, color = 'text-dt-title' }: { label: string; value: string | number; sub?: string; color?: string }) {
   return (
     <div className="bg-dt-card border border-dt-border rounded-xl p-4">
       <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{label}</p>
@@ -37,7 +37,7 @@ function Breakdown({ title, data, labelOf, clsOf }: {
   const max = entries.reduce((m, [, n]) => Math.max(m, n), 0) || 1;
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
-      <h3 className="text-sm font-semibold text-white mb-3">{title}</h3>
+      <h3 className="text-sm font-semibold text-dt-title mb-3">{title}</h3>
       {entries.length === 0 ? (
         <p className="text-xs text-dt-muted">No data yet.</p>
       ) : (
@@ -48,7 +48,7 @@ function Breakdown({ title, data, labelOf, clsOf }: {
                 <span className={clsOf ? clsOf(k) : 'text-dt-support'}>{labelOf ? labelOf(k) : k.replace(/_/g, ' ')}</span>
                 <span className="text-dt-support font-medium">{n}</span>
               </div>
-              <div className="h-1.5 rounded-full bg-dt-panel/60 overflow-hidden">
+              <div className="h-1.5 rounded-full bg-dt-panel overflow-hidden">
                 <div className="h-full rounded-full bg-indigo-500/60" style={{ width: `${Math.round((n / max) * 100)}%` }} />
               </div>
             </div>
@@ -81,7 +81,7 @@ const SupportCommandCenterPage = ({ setPage, embedded }: { setPage: (p: Page) =>
     <div className="p-6">
       {!embedded && <div className="mb-6 flex items-start justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-2xl font-bold text-white">Support Command Center</h1>
+          <h1 className="text-2xl font-bold text-dt-title">Support Command Center</h1>
           <p className="text-dt-support text-sm mt-1">
             {liveTenantName || 'Your company'} · One-glance view of the support operation — volume, status, severity and what needs a human.
           </p>
@@ -98,7 +98,7 @@ const SupportCommandCenterPage = ({ setPage, embedded }: { setPage: (p: Page) =>
         </div>
       </div>}
 
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {error && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {loading ? (
         <LiveLoadingSkeleton rows={4} />
@@ -115,10 +115,10 @@ const SupportCommandCenterPage = ({ setPage, embedded }: { setPage: (p: Page) =>
           {/* Stat cards */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <StatCard label="Conversations" value={ov.total} sub="widget / email / portal / chat" />
-            <StatCard label="Needs a human" value={ov.needsHuman} color={ov.needsHuman ? 'text-amber-300' : 'text-emerald-300'} />
-            <StatCard label="Open escalations" value={ov.openEscalations} color={ov.openEscalations ? 'text-rose-400' : 'text-emerald-300'} sub="in Human Tasks" />
-            <StatCard label="Drafts pending" value={ov.draftsPending} color={ov.draftsPending ? 'text-indigo-300' : 'text-dt-support'} sub="awaiting approval" />
-            <StatCard label="Resolved" value={resolved} color="text-emerald-300" />
+            <StatCard label="Needs a human" value={ov.needsHuman} color={ov.needsHuman ? 'text-dt-warn' : 'text-dt-ok'} />
+            <StatCard label="Open escalations" value={ov.openEscalations} color={ov.openEscalations ? 'text-rose-400' : 'text-dt-ok'} sub="in Human Tasks" />
+            <StatCard label="Drafts pending" value={ov.draftsPending} color={ov.draftsPending ? 'text-dt-accent-text' : 'text-dt-support'} sub="awaiting approval" />
+            <StatCard label="Resolved" value={resolved} color="text-dt-ok" />
           </div>
 
           {/* Breakdowns */}
@@ -129,7 +129,7 @@ const SupportCommandCenterPage = ({ setPage, embedded }: { setPage: (p: Page) =>
                 labelOf={(k) => SEVERITY_LABEL[k] ?? k} clsOf={(k) => SEVERITY_CLS[k] ?? 'text-dt-support'} />
             ) : (
               <div className="rounded-2xl border border-dashed border-dt-border bg-dt-panel p-5">
-                <h3 className="text-sm font-semibold text-white mb-1">By severity</h3>
+                <h3 className="text-sm font-semibold text-dt-title mb-1">By severity</h3>
                 <p className="text-xs text-dt-muted">Deterministic triage isn't active yet. Once it's applied, conversations are auto-classified by severity and category at intake.</p>
               </div>
             )}
@@ -138,7 +138,7 @@ const SupportCommandCenterPage = ({ setPage, embedded }: { setPage: (p: Page) =>
             )}
             <Breakdown title="By channel" data={ov.byChannel} />
             <Breakdown title="By priority" data={ov.byPriority}
-              clsOf={(k) => k === 'urgent' ? 'text-rose-400' : k === 'high' ? 'text-amber-300' : 'text-dt-support'} />
+              clsOf={(k) => k === 'urgent' ? 'text-rose-400' : k === 'high' ? 'text-dt-warn' : 'text-dt-support'} />
           </div>
         </div>
       )}

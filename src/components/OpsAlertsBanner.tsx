@@ -134,11 +134,11 @@ export default function OpsAlertsBanner() {
       aria-label="Operational alerts"
       className={`mb-4 rounded-xl border ${
         tone
-          ? 'border-dt-danger/40 bg-dt-danger/10'
-          : 'border-dt-warn/40 bg-dt-warn/10'
+          ? 'border-dt-danger-border bg-dt-danger-soft'
+          : 'border-dt-warn-border bg-dt-warn-soft'
       }`}
     >
-      <div className="flex items-center justify-between px-4 py-2 border-b border-dt-border/40">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-dt-border">
         <span className="text-sm font-semibold text-dt-body">
           {alerts.length} unresolved {alerts.length === 1 ? 'alert' : 'alerts'}
           {critical.length > 0 && (
@@ -149,7 +149,7 @@ export default function OpsAlertsBanner() {
         </span>
       </div>
 
-      <ul className="divide-y divide-dt-border/30">
+      <ul className="divide-y divide-dt-border">
         {shown.map((a) => (
           <li key={a.id} className="flex items-start gap-3 px-4 py-3">
             <span

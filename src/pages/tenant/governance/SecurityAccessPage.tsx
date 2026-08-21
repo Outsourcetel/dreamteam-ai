@@ -25,12 +25,24 @@ import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDat
 // ═══════════════════════════════════════════════════════════════
 
 const ROLE_COLORS: Record<TenantRole, string> = {
-  tenant_owner: 'bg-red-500/15 text-red-300',
-  tenant_admin: 'bg-amber-500/15 text-amber-300',
-  tenant_manager: 'bg-blue-500/15 text-blue-300',
-  knowledge_manager: 'bg-purple-500/15 text-purple-300',
-  approver: 'bg-cyan-500/15 text-cyan-300',
-  tenant_user: 'bg-slate-600 text-dt-support',
+  tenant_owner: 'bg-dt-danger-soft text-dt-danger',
+  tenant_admin: 'bg-dt-warn-soft text-dt-warn',
+  tenant_manager: 'bg-dt-info-soft text-dt-info',
+  // knowledge_manager/approver: non-core hues (purple/cyan), kept as a
+  // role-identity marker per the mapping table's "non-semantic identity
+  // hues keep their hue" rule — a distinct fixed color per role is the
+  // point of this vocabulary. Made opaque (was translucent /15) so the
+  // badge reads correctly in both themes; doc §7 kept-hue rows added.
+  knowledge_manager: 'bg-purple-600 text-purple-100',
+  approver: 'bg-cyan-600 text-cyan-100',
+  // Opaque, not the neutral-soft tint the other fallback chips use — this is
+  // the platform default role (useUsers.ts falls back to it) and renders on
+  // every non-privileged team member, both in the permission-matrix header
+  // and every regular row of the team table. A ~10%-alpha fill on the most
+  // common badge on the page is a legibility risk nobody can eyeball without
+  // a dark walk, so it keeps the original's opaque solidity: dark #414b6e
+  // with white text is ~7:1; light #d0d5dd with #101828 title text is ~10:1.
+  tenant_user: 'bg-dt-border-strong text-dt-title',
   read_only: 'bg-dt-panel text-dt-support',
 }
 
@@ -53,7 +65,7 @@ const API_KEY_SCOPES = ['a2a.message', 'a2a.*'] as const
 function Toggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean) => void }) {
   return (
     <button onClick={() => onChange(!enabled)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? 'bg-indigo-600' : 'bg-slate-600'}`}>
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? 'bg-indigo-600' : 'bg-dt-border-strong'}`}>
       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-4' : 'translate-x-1'}`} />
     </button>
   )
@@ -129,13 +141,13 @@ function ManageSubAccountsPanel({ tenantId }: { tenantId: string }) {
             value={name}
             onChange={e => setName(e.target.value)}
             placeholder="Sub-account name (e.g. Acme Customer Portal)"
-            className="bg-dt-page border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+            className="bg-dt-page border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
           />
           <input
             value={industry}
             onChange={e => setIndustry(e.target.value)}
             placeholder="Industry (optional)"
-            className="bg-dt-page border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+            className="bg-dt-page border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
           />
         </div>
 
@@ -149,9 +161,9 @@ function ManageSubAccountsPanel({ tenantId }: { tenantId: string }) {
 
         {result && (
           <div className={`text-xs rounded-lg p-3 ${
-            result.kind === 'created' ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-300'
-            : result.kind === 'submitted' ? 'bg-amber-500/10 border border-amber-500/30 text-amber-300'
-            : 'bg-red-500/10 border border-red-500/30 text-red-300'
+            result.kind === 'created' ? 'bg-dt-ok-soft border border-dt-ok-border text-dt-ok'
+            : result.kind === 'submitted' ? 'bg-dt-warn-soft border border-dt-warn-border text-dt-warn'
+            : 'bg-dt-danger-soft border border-dt-danger-border text-dt-danger'
           }`}>
             {result.message}
           </div>
@@ -225,12 +237,12 @@ function ApiKeysPanel({ tenantId }: { tenantId: string }) {
             <th className={th}></th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-700/50">
+        <tbody className="divide-y divide-dt-border">
           {!loading && keys.length === 0 && (
             <tr><td colSpan={6} className={`${td} text-dt-muted text-xs text-center py-6`}>No API keys yet.</td></tr>
           )}
           {keys.map(k => (
-            <tr key={k.id} className="hover:bg-dt-panel/20 transition-colors">
+            <tr key={k.id} className="hover:bg-dt-panel transition-colors">
               <td className={`${td} text-dt-body text-xs font-medium`}>{k.name}</td>
               <td className={`${td} text-dt-support text-xs font-mono`}>{k.display_hint}</td>
               <td className={`${td} text-dt-support text-xs`}>{k.scopes.length > 0 ? k.scopes.join(', ') : '—'}</td>
@@ -240,7 +252,7 @@ function ApiKeysPanel({ tenantId }: { tenantId: string }) {
                 {k.revoked_at
                   ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted">Revoked</span>
                   : (
-                    <button onClick={() => setRevokeTarget(k)} className="text-xs text-red-400 hover:text-red-300 transition-colors">
+                    <button onClick={() => setRevokeTarget(k)} className="text-xs text-red-400 hover:text-dt-danger transition-colors">
                       Revoke
                     </button>
                   )}
@@ -259,7 +271,7 @@ function ApiKeysPanel({ tenantId }: { tenantId: string }) {
                 value={newName}
                 onChange={e => setNewName(e.target.value)}
                 placeholder="e.g. Analytics export"
-                className="w-full bg-dt-page border border-dt-border-strong text-white text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+                className="w-full bg-dt-page border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
               />
             </div>
             <div>
@@ -295,10 +307,10 @@ function ApiKeysPanel({ tenantId }: { tenantId: string }) {
       {justCreated && (
         <Modal title="API key created" onClose={() => setJustCreated(null)}>
           <div className="space-y-4">
-            <div className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
+            <div className="text-xs text-dt-warn bg-dt-warn-soft border border-dt-warn-border rounded-lg p-3">
               Copy this key now — for security, it's shown only once and can't be retrieved again.
             </div>
-            <div className="bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2.5 font-mono text-xs text-emerald-300 break-all">
+            <div className="bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2.5 font-mono text-xs text-dt-ok break-all">
               {justCreated.rawKey}
             </div>
             <button
@@ -382,7 +394,7 @@ function IpAllowlistPanel({ tenantId }: { tenantId: string }) {
       {enabled && (
         <div className="space-y-2">
           {entries.length === 0 && (
-            <div className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg p-2.5">
+            <div className="text-xs text-dt-warn bg-dt-warn-soft border border-dt-warn-border rounded-lg p-2.5">
               No ranges added — add at least one before this can stay enabled.
             </div>
           )}
@@ -480,9 +492,9 @@ const SEC_RANGE_OPTIONS: { label: string; days: number | null }[] = [
 
 const secOperationVerb: Record<string, string> = { INSERT: 'Added', UPDATE: 'Changed', DELETE: 'Removed' }
 const secOperationBadge: Record<string, string> = {
-  INSERT: 'bg-emerald-500/15 text-emerald-300',
-  UPDATE: 'bg-blue-500/15 text-blue-300',
-  DELETE: 'bg-red-500/15 text-red-300',
+  INSERT: 'bg-dt-ok-soft text-dt-ok',
+  UPDATE: 'bg-dt-info-soft text-dt-info',
+  DELETE: 'bg-dt-danger-soft text-dt-danger',
 }
 
 function securityChangedFields(row: SecurityActivityRow): string[] {
@@ -561,7 +573,7 @@ function SecurityActivityLogPanel({ canView }: { canView: boolean }) {
         <div className="inline-flex rounded-lg border border-dt-border bg-dt-page p-0.5">
           {SEC_RANGE_OPTIONS.map(r => (
             <button key={r.label} onClick={() => setDays(r.days)}
-              className={`text-xs px-3 py-1 rounded-md transition-colors ${days === r.days ? 'bg-indigo-500/20 text-indigo-200' : 'text-dt-support hover:text-dt-body'}`}>
+              className={`text-xs px-3 py-1 rounded-md transition-colors ${days === r.days ? 'bg-dt-accent-soft text-dt-accent-text' : 'text-dt-support hover:text-dt-body'}`}>
               {r.label}
             </button>
           ))}
@@ -605,19 +617,19 @@ function SecurityActivityLogPanel({ canView }: { canView: boolean }) {
                   <th className="px-3 py-2 text-xs font-medium text-dt-muted">Details</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-700/50">
+              <tbody className="divide-y divide-dt-border">
                 {visible.map(row => {
                   const fields = securityChangedFields(row)
                   return (
-                    <tr key={row.id} className="hover:bg-dt-panel/20 transition-colors">
+                    <tr key={row.id} className="hover:bg-dt-panel transition-colors">
                       <td className="px-3 py-2.5 text-xs text-dt-support whitespace-nowrap">{new Date(row.created_at).toLocaleString()}</td>
                       <td className="px-3 py-2.5 text-xs whitespace-nowrap">
-                        <span className="text-white font-medium">{row.actor_name || 'Team member'}</span>
+                        <span className="text-dt-body font-medium">{row.actor_name || 'Team member'}</span>
                         {row.actor_role && <span className="text-dt-faint ml-1.5 capitalize">({row.actor_role.replace('tenant_', '')})</span>}
                       </td>
                       <td className="px-3 py-2.5 text-xs text-dt-support">{SECURITY_TABLE_LABELS[row.table_name] || row.table_name}</td>
                       <td className="px-3 py-2.5">
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${secOperationBadge[row.operation] || 'bg-slate-600 text-dt-support'}`}>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${secOperationBadge[row.operation] || 'bg-dt-neutral-soft text-dt-neutral'}`}>
                           {secOperationVerb[row.operation] || row.operation}
                         </span>
                       </td>
@@ -729,9 +741,9 @@ export default function SecurityAccessPage() {
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-700/50">
+              <tbody className="divide-y divide-dt-border">
                 {PERMISSION_AREAS.map(area => (
-                  <tr key={area} className="hover:bg-dt-panel/20 transition-colors">
+                  <tr key={area} className="hover:bg-dt-panel transition-colors">
                     <td className={`${td} text-dt-body text-xs`}>{area}</td>
                     {ALL_ROLES.map(r => {
                       const grants = ROLE_PERMISSIONS[r]
@@ -769,15 +781,15 @@ export default function SecurityAccessPage() {
                 <th className={th}>Last active</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-700/50">
+            <tbody className="divide-y divide-dt-border">
               {!membersLoading && members.length === 0 && (
                 <tr><td colSpan={5} className={`${td} text-dt-muted text-xs text-center py-6`}>No team members yet.</td></tr>
               )}
               {members.map(u => (
-                <tr key={u.userId} className="hover:bg-dt-panel/20 transition-colors">
+                <tr key={u.userId} className="hover:bg-dt-panel transition-colors">
                   <td className={td}>
                     <div className="flex items-center gap-2.5">
-                      <span className="w-7 h-7 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center text-[10px] font-bold">
+                      <span className="w-7 h-7 rounded-full bg-dt-accent-soft text-dt-accent-text flex items-center justify-center text-[10px] font-bold">
                         {u.avatar}
                       </span>
                       <span className="text-dt-body text-xs font-medium">{u.fullName}</span>
@@ -791,8 +803,8 @@ export default function SecurityAccessPage() {
                     {!canManageSecurity
                       ? <span className="text-[10px] text-dt-faint">Owner/admin only</span>
                       : mfaStatus[u.userId]
-                        ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">Enabled</span>
-                        : <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">Missing</span>}
+                        ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-ok-soft text-dt-ok">Enabled</span>
+                        : <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-warn-soft text-dt-warn">Missing</span>}
                   </td>
                   <td className={`${td} text-dt-muted text-xs`}>{u.lastSeen}</td>
                 </tr>
@@ -835,7 +847,7 @@ export default function SecurityAccessPage() {
           <div className="bg-dt-card border border-dt-border rounded-xl p-5">
             <div className="flex items-center justify-between mb-4">
               <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">Session Policy</p>
-              {policySaved && <span className="text-[10px] text-emerald-300">Saved ✓</span>}
+              {policySaved && <span className="text-[10px] text-dt-ok">Saved ✓</span>}
             </div>
             <div className="space-y-3">
               <div className="flex items-center justify-between bg-dt-page rounded-lg px-3 py-2.5">

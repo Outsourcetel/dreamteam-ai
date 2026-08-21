@@ -24,7 +24,7 @@ const PageTabs = ({
         key={t.id}
         onClick={() => setPage && setPage(t.id)}
         className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
-          page === t.id ? 'text-white' : 'text-dt-support hover:text-white'
+          page === t.id ? 'text-white' : 'text-dt-support hover:text-dt-body'
         }`}
         style={page === t.id ? { backgroundColor: accentColor || DEFAULT_ACCENT } : {}}
       >

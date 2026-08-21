@@ -12,7 +12,7 @@ import PlatformInvitesPanel from './PlatformInvitesPanel';
 
 const ROLE_OPTIONS: PlatformInviteRole[] = ['platform_support', 'platform_billing', 'platform_super_admin'];
 
-const inputCls = 'bg-dt-panel border border-dt-border-strong text-white text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500';
+const inputCls = 'bg-dt-panel border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500';
 
 // ─────────────────────────────────────────────────────────────────
 // The real team roster (active accounts, not just pending invites),
@@ -75,20 +75,20 @@ const PlatformTeamPage = () => {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Team & Permissions</h1>
+        <h1 className="text-2xl font-bold text-dt-title">Team & Permissions</h1>
         <p className="text-dt-support text-sm mt-1">
           Who has access to this platform, and exactly what each person can do.
         </p>
       </div>
 
-      {toast && <div className="mb-4 rounded-xl border border-emerald-800/50 bg-emerald-500/10 px-4 py-2.5 text-xs text-emerald-300">✓ {toast}</div>}
-      {err && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-2.5 text-xs text-rose-300">{err}</div>}
+      {toast && <div className="mb-4 rounded-xl border border-dt-ok-border bg-dt-ok-soft px-4 py-2.5 text-xs text-dt-ok">✓ {toast}</div>}
+      {err && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-2.5 text-xs text-dt-danger">{err}</div>}
 
       <PlatformInvitesPanel />
 
       <div className="bg-dt-card border border-dt-border rounded-xl overflow-hidden">
         <div className="px-5 py-3 border-b border-dt-border">
-          <h2 className="text-sm font-semibold text-white">Platform team</h2>
+          <h2 className="text-sm font-semibold text-dt-title">Platform team</h2>
           <p className="text-xs text-dt-muted mt-0.5">Everyone with platform-level access today — not just pending invites.</p>
         </div>
         {loading ? (
@@ -96,7 +96,7 @@ const PlatformTeamPage = () => {
         ) : members.length === 0 ? (
           <p className="text-xs text-dt-muted text-center py-6">No platform team members found.</p>
         ) : (
-          <div className="divide-y divide-slate-700/50">
+          <div className="divide-y divide-dt-border">
             {members.map((m) => {
               const isSelf = authedUser?.id === m.user_id;
               const busy = busyId === m.user_id;
@@ -106,7 +106,7 @@ const PlatformTeamPage = () => {
                     {(m.full_name || m.email || '?')[0].toUpperCase()}
                   </div>
                   <div className="min-w-[160px] flex-1">
-                    <p className="text-sm text-white truncate">{m.full_name || m.email}{isSelf && <span className="text-[10px] text-dt-muted ml-1.5">(you)</span>}</p>
+                    <p className="text-sm text-dt-title truncate">{m.full_name || m.email}{isSelf && <span className="text-[10px] text-dt-muted ml-1.5">(you)</span>}</p>
                     <p className="text-[11px] text-dt-muted truncate">{m.email}</p>
                   </div>
 
@@ -130,7 +130,7 @@ const PlatformTeamPage = () => {
                     </button>
                   )}
 
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap ${m.is_active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-600 text-dt-support'}`}>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap ${m.is_active ? 'bg-dt-ok-soft text-dt-ok' : 'bg-dt-border-strong text-dt-support'}`}>
                     {m.is_active ? 'active' : 'inactive'}
                   </span>
 
@@ -251,7 +251,7 @@ function PermissionsModal({ member, onClose, onChanged }: {
                 >
                   <span className="text-xs text-dt-body">{PLATFORM_CAPABILITY_LABELS[cap]}</span>
                   <span className="flex items-center gap-2 flex-shrink-0">
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full ${effective ? 'bg-emerald-500/15 text-emerald-300' : 'bg-dt-panel text-dt-muted'}`}>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full ${effective ? 'bg-dt-ok-soft text-dt-ok' : 'bg-dt-panel text-dt-muted'}`}>
                       {effective ? 'allowed' : 'not allowed'}
                     </span>
                     <span className="text-[10px] text-dt-faint w-24 text-right">

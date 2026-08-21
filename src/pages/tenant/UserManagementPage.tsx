@@ -20,7 +20,13 @@ const ROLE_COLOR: Record<TenantRole, string> = {
   tenant_manager: 'text-blue-400 bg-blue-400/10',
   knowledge_manager: 'text-emerald-400 bg-emerald-400/10',
   approver: 'text-purple-400 bg-purple-400/10',
-  tenant_user: 'text-dt-support bg-slate-600',
+  // Default role (useUsers.ts falls back to it), renders on every
+  // non-privileged member row and in the Role Permissions Reference — the
+  // highest-traffic badge on the page, so it keeps an opaque fill rather
+  // than the neutral-soft tint the true fallback (read_only) can afford.
+  // Matches the identical tenant_user precedent in SecurityAccessPage
+  // (bg-dt-border-strong text-dt-title, ~10:1 contrast in light).
+  tenant_user: 'text-dt-title bg-dt-border-strong',
   read_only: 'text-dt-muted bg-dt-panel',
 };
 
@@ -97,18 +103,18 @@ const InviteModal = ({
           <div>
             <label className="text-xs text-dt-support mb-1.5 block">Full Name *</label>
             <input value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Sarah Mitchell"
-              className="w-full bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+              className="w-full bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2.5 text-sm text-dt-body focus:outline-none focus:border-indigo-500" />
           </div>
           <div>
             <label className="text-xs text-dt-support mb-1.5 block">Work Email *</label>
             <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="sarah@company.com"
-              className="w-full bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+              className="w-full bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2.5 text-sm text-dt-body focus:outline-none focus:border-indigo-500" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-dt-support mb-1.5 block">Role</label>
               <select value={role} onChange={e => setRole(e.target.value as TenantRole)}
-                className="w-full bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                className="w-full bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2.5 text-sm text-dt-body focus:outline-none focus:border-indigo-500">
                 {(Object.entries(ROLE_LABELS) as [TenantRole, string][])
                   .filter(([r]) => r !== 'tenant_owner') // can't invite another owner
                   .map(([r, label]) => <option key={r} value={r}>{label}</option>)}
@@ -117,7 +123,7 @@ const InviteModal = ({
             <div>
               <label className="text-xs text-dt-support mb-1.5 block">Department</label>
               <select value={department} onChange={e => setDepartment(e.target.value)}
-                className="w-full bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                className="w-full bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2.5 text-sm text-dt-body focus:outline-none focus:border-indigo-500">
                 <option value="">No department</option>
                 {units.filter(u => u.kind === 'department' || u.kind === 'team').map(u => (
                   <option key={u.id} value={u.name}>{u.path}</option>
@@ -136,7 +142,7 @@ const InviteModal = ({
             <div className="text-xs text-dt-muted mb-2 font-medium">This role can:</div>
             <div className="flex flex-wrap gap-1.5">
               {ROLE_PERMISSIONS[role].map(p => (
-                <span key={p} className="text-xs px-2 py-0.5 rounded-full bg-slate-600 text-dt-support">{p}</span>
+                <span key={p} className="text-xs px-2 py-0.5 rounded-full bg-dt-neutral-soft text-dt-support">{p}</span>
               ))}
             </div>
             {roleCannot(role).length > 0 && (
@@ -226,7 +232,7 @@ const UserManagementPage = ({ user, tenant, setPage }: { user?: AuthUser; tenant
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">Team Members</h1>
+          <h1 className="text-2xl font-bold text-dt-title">Team Members</h1>
           <p className="text-dt-support text-sm mt-1">Invite, manage roles, and control access across your organization</p>
         </div>
         {isAdmin && (
@@ -241,11 +247,11 @@ const UserManagementPage = ({ user, tenant, setPage }: { user?: AuthUser; tenant
       {actionError && (
         <div className="mb-4 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-xs text-red-400 flex items-center justify-between gap-3">
           <span>{actionError}</span>
-          <button onClick={() => setActionError('')} className="text-red-400 hover:text-red-300">×</button>
+          <button onClick={() => setActionError('')} className="text-red-400 hover:text-dt-danger">×</button>
         </div>
       )}
       {resetMsg && (
-        <div className="mb-4 px-4 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300">
+        <div className="mb-4 px-4 py-2.5 rounded-xl bg-dt-ok-soft border border-dt-ok-border text-xs text-dt-ok">
           ✓ {resetMsg}
         </div>
       )}
@@ -263,7 +269,7 @@ const UserManagementPage = ({ user, tenant, setPage }: { user?: AuthUser; tenant
               <span className={`text-sm ${k.color || 'text-dt-support'}`}>{k.icon}</span>
               <span className="text-xs text-dt-muted">{k.label}</span>
             </div>
-            <div className={`text-2xl font-bold mb-1 ${k.color || 'text-white'}`}>{k.value}</div>
+            <div className={`text-2xl font-bold mb-1 ${k.color || 'text-dt-title'}`}>{k.value}</div>
             <div className="text-xs text-dt-faint">{k.sub}</div>
           </div>
         ))}
@@ -273,18 +279,18 @@ const UserManagementPage = ({ user, tenant, setPage }: { user?: AuthUser; tenant
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <input value={search} onChange={e => setSearch(e.target.value)}
           placeholder="Search name, email, department..."
-          className="flex-1 min-w-48 max-w-xs bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+          className="flex-1 min-w-48 max-w-xs bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2 text-sm text-dt-body placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
         <div className="flex gap-1 bg-dt-panel rounded-lg p-1">
           {(['all', 'active', 'pending', 'deactivated'] as const).map(s => (
             <button key={s} onClick={() => setStatusFilter(s)}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium capitalize transition-all ${statusFilter === s ? 'text-white' : 'text-dt-support hover:text-white'}`}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium capitalize transition-all ${statusFilter === s ? 'text-white' : 'text-dt-support hover:text-dt-body'}`}
               style={statusFilter === s ? { backgroundColor: accentColor } : {}}>
               {s}
             </button>
           ))}
         </div>
         <select value={roleFilter} onChange={e => setRoleFilter(e.target.value as any)}
-          className="bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+          className="bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2 text-sm text-dt-body focus:outline-none focus:border-indigo-500">
           <option value="all">All roles</option>
           {(Object.entries(ROLE_LABELS) as [TenantRole, string][]).map(([r, l]) => (
             <option key={r} value={r}>{l}</option>
@@ -304,7 +310,7 @@ const UserManagementPage = ({ user, tenant, setPage }: { user?: AuthUser; tenant
           <div className="col-span-1 text-right">Actions</div>
         </div>
 
-        <div className="divide-y divide-slate-700/50">
+        <div className="divide-y divide-dt-border">
           {filtered.map(m => (
             <div key={m.id} className={`px-5 py-4 hover:bg-dt-panel transition-all ${m.status === 'deactivated' ? 'opacity-50' : ''}`}>
               <div className="lg:grid lg:grid-cols-12 lg:gap-4 lg:items-center flex flex-col gap-3">
@@ -317,7 +323,7 @@ const UserManagementPage = ({ user, tenant, setPage }: { user?: AuthUser; tenant
                   <div className="min-w-0">
                     <button
                       onClick={() => setOpenRecordFor(m.userId)}
-                      className="text-sm font-medium text-white truncate hover:text-dt-accent-text text-left"
+                      className="text-sm font-medium text-dt-title truncate hover:text-dt-accent-text text-left"
                       title="Open employee record"
                     >{m.fullName}</button>
                     <div className="text-xs text-dt-muted truncate">{m.email}</div>
@@ -332,7 +338,7 @@ const UserManagementPage = ({ user, tenant, setPage }: { user?: AuthUser; tenant
                   {editingId === m.id && isAdmin && m.role !== 'tenant_owner' ? (
                     <select value={m.role} onChange={e => { runAction(() => updateRole(m.id, e.target.value as TenantRole)); setEditingId(null); }}
                       onBlur={() => setEditingId(null)} autoFocus
-                      className="w-full bg-dt-panel border border-indigo-500 rounded-lg px-2 py-1 text-xs text-white focus:outline-none">
+                      className="w-full bg-dt-panel border border-indigo-500 rounded-lg px-2 py-1 text-xs text-dt-body focus:outline-none">
                       {(Object.entries(ROLE_LABELS) as [TenantRole, string][])
                         .filter(([r]) => r !== 'tenant_owner')
                         .map(([r, l]) => <option key={r} value={r}>{l}</option>)}
@@ -349,7 +355,7 @@ const UserManagementPage = ({ user, tenant, setPage }: { user?: AuthUser; tenant
                 <div className="col-span-2">
                   {editingId === m.id && isAdmin ? (
                     <select value={m.orgUnitId ?? ''} onChange={e => { runAction(() => updateDepartment(m.id, e.target.value || null)); }}
-                      className="w-full bg-dt-panel border border-indigo-500 rounded-lg px-2 py-1 text-xs text-white focus:outline-none">
+                      className="w-full bg-dt-panel border border-indigo-500 rounded-lg px-2 py-1 text-xs text-dt-body focus:outline-none">
                       <option value="">No department</option>
                       {units.filter(u => u.kind === 'department' || u.kind === 'team').map(u => (
                         <option key={u.id} value={u.id}>{u.path}</option>
@@ -384,7 +390,7 @@ const UserManagementPage = ({ user, tenant, setPage }: { user?: AuthUser; tenant
                       control, on every row, for everyone. */}
                   <button
                     onClick={() => setOpenRecordFor(m.userId)}
-                    className="text-xs px-2 py-1 rounded bg-dt-panel text-dt-support hover:text-white transition-all"
+                    className="text-xs px-2 py-1 rounded bg-dt-panel text-dt-support hover:text-dt-body transition-all"
                     title={m.userId === user?.id ? 'Open your record' : `Open ${m.fullName}'s record`}
                   >
                     {m.userId === user?.id ? 'My record' : 'Record'}
@@ -396,7 +402,7 @@ const UserManagementPage = ({ user, tenant, setPage }: { user?: AuthUser; tenant
                           <button onClick={() => { runAction(() => remove(m.id)); setConfirmRemove(null); }}
                             className="text-xs px-2 py-1 rounded bg-red-500/20 text-red-400 hover:bg-red-500/30">Remove</button>
                           <button onClick={() => setConfirmRemove(null)}
-                            className="text-xs px-2 py-1 rounded bg-slate-600 text-dt-support">Cancel</button>
+                            className="text-xs px-2 py-1 rounded bg-dt-border-strong text-dt-title">Cancel</button>
                         </div>
                       ) : (
                         <>
@@ -435,7 +441,7 @@ const UserManagementPage = ({ user, tenant, setPage }: { user?: AuthUser; tenant
 
       {/* Role reference */}
       <div className="mt-6 bg-dt-card border border-dt-border rounded-xl p-5">
-        <h2 className="text-sm font-semibold text-white mb-4">Role Permissions Reference</h2>
+        <h2 className="text-sm font-semibold text-dt-title mb-4">Role Permissions Reference</h2>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {(Object.entries(ROLE_LABELS) as [TenantRole, string][]).map(([role, label]) => (
             <div key={role} className="p-3 rounded-lg bg-dt-panel">
@@ -470,7 +476,7 @@ const UserManagementPage = ({ user, tenant, setPage }: { user?: AuthUser; tenant
       <div className="mt-6 bg-dt-card border border-dt-border rounded-xl p-5">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <h2 className="text-sm font-semibold text-white">Departments and teams</h2>
+            <h2 className="text-sm font-semibold text-dt-title">Departments and teams</h2>
             <p className="text-xs text-dt-muted mt-0.5">
               Locations, departments and teams are managed on the Organisation page, together with who works in each one.
             </p>

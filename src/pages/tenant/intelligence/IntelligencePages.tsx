@@ -134,7 +134,7 @@ function RangeSelector({ value, onChange }: { value: number | null; onChange: (d
 function StatTile({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
   return (
     <div className="bg-dt-card border border-dt-border rounded-xl px-4 py-3">
-      <div className={`text-2xl font-bold tabular-nums ${tone ?? 'text-white'}`}>{value}</div>
+      <div className={`text-2xl font-bold tabular-nums ${tone ?? 'text-dt-title'}`}>{value}</div>
       <div className="text-[11px] text-dt-support mt-0.5">{label}</div>
       {sub && <div className="text-[10px] text-dt-muted mt-0.5">{sub}</div>}
     </div>
@@ -226,7 +226,7 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
           tone={workforceAutonomy != null && workforceAutonomy >= 60 ? 'text-emerald-400' : 'text-dt-body'}
           sub="of actions, done without a human" />
         <StatTile label="Sent to your team" value={totalSentHuman.toLocaleString()}
-          tone={totalSentHuman > 0 ? 'text-amber-300' : 'text-dt-body'} sub="approvals routed to people" />
+          tone={totalSentHuman > 0 ? 'text-dt-warn' : 'text-dt-body'} sub="approvals routed to people" />
         <StatTile label="AI cost" value={`$${totalCostUsd.toFixed(2)}`} sub={`${totalCalls.toLocaleString()} model calls`} />
       </div>
 
@@ -235,7 +235,7 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
       {metering && (metering.totals.resolutions > 0 || metering.totals.escalations > 0) && (
         <div className="bg-dt-card border border-dt-border rounded-xl p-4 mb-6">
           <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-            <p className="text-sm font-semibold text-white">Outcome value</p>
+            <p className="text-sm font-semibold text-dt-title">Outcome value</p>
             <p className="text-[11px] text-dt-muted">metered at ${(metering.price_per_resolution_cents / 100).toFixed(2)} per resolution · escalations to your team are free</p>
           </div>
           <div className="grid grid-cols-3 gap-3">
@@ -248,7 +248,7 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
               <p className="text-[11px] text-dt-muted mt-0.5">handed to your team (free)</p>
             </div>
             <div>
-              <p className="text-2xl font-semibold text-white">${(metering.totals.billable_amount_cents / 100).toFixed(2)}</p>
+              <p className="text-2xl font-semibold text-dt-title">${(metering.totals.billable_amount_cents / 100).toFixed(2)}</p>
               <p className="text-[11px] text-dt-muted mt-0.5">metered value this period</p>
             </div>
           </div>
@@ -269,7 +269,7 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
       {(totalBlocked > 0 || totalFailed > 0) && (
         <div className="bg-dt-card border border-dt-border rounded-xl px-4 py-2.5 mb-6 text-xs text-dt-support flex items-center gap-4 flex-wrap">
           <span className="text-dt-muted">Safety net this period:</span>
-          {totalBlocked > 0 && <span><span className="text-rose-300 font-medium">{totalBlocked}</span> action{totalBlocked === 1 ? '' : 's'} blocked by a guardrail or access rule</span>}
+          {totalBlocked > 0 && <span><span className="text-dt-danger font-medium">{totalBlocked}</span> action{totalBlocked === 1 ? '' : 's'} blocked by a guardrail or access rule</span>}
           {totalFailed > 0 && <span><span className="text-red-400 font-medium">{totalFailed}</span> failed and recorded honestly</span>}
         </div>
       )}
@@ -303,12 +303,12 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
                   <div className="flex items-center gap-3">
                     <span className="w-9 h-9 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold">{(de.persona_name ?? de.name)[0]}</span>
                     <div>
-                      <p className="text-sm font-semibold text-white">{de.persona_name ?? de.name}</p>
+                      <p className="text-sm font-semibold text-dt-title">{de.persona_name ?? de.name}</p>
                       <p className="text-[11px] text-dt-muted">{de.persona_name ? de.name : (de.description || de.category)}</p>
                     </div>
                   </div>
                   {/* A performance roster row lands on the file's Performance tab. */}
-                  <button onClick={() => openFile(de.id, 'performance')} className="text-xs text-dt-muted hover:text-indigo-300 transition-colors">Employee File →</button>
+                  <button onClick={() => openFile(de.id, 'performance')} className="text-xs text-dt-muted hover:text-dt-accent-text transition-colors">Employee File →</button>
                 </div>
 
                 {!hasActivity ? (
@@ -340,8 +340,8 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
                           {[
                             { label: 'On its own', value: a.auto_executed, color: 'text-emerald-400' },
                             { label: 'After approval', value: a.approved_after_gate, color: 'text-dt-body' },
-                            { label: 'Sent to human', value: a.sent_to_human, color: a.sent_to_human > 0 ? 'text-amber-300' : 'text-dt-support' },
-                            { label: 'Blocked', value: a.blocked + a.failed, color: (a.blocked + a.failed) > 0 ? 'text-rose-300' : 'text-dt-support' },
+                            { label: 'Sent to human', value: a.sent_to_human, color: a.sent_to_human > 0 ? 'text-dt-warn' : 'text-dt-support' },
+                            { label: 'Blocked', value: a.blocked + a.failed, color: (a.blocked + a.failed) > 0 ? 'text-dt-danger' : 'text-dt-support' },
                           ].map(x => (
                             <div key={x.label} className="bg-dt-page rounded-lg px-2 py-2 text-center">
                               <p className={`text-sm font-semibold tabular-nums ${x.color}`}>{x.value}</p>
@@ -501,12 +501,12 @@ const PWC_INSIGHTS: Insight[] = [
 const INSIGHTS: Record<CompanyId, Insight[]> = { tcp: TCP_INSIGHTS, pwc: PWC_INSIGHTS };
 
 const KIND_META: Record<InsightKind, { label: string; cls: string }> = {
-  anomaly: { label: 'ANOMALY', cls: 'bg-red-500/15 text-red-300' },
-  retraining: { label: 'RETRAINING', cls: 'bg-blue-500/15 text-blue-300' },
-  config_drift: { label: 'CONFIG DRIFT', cls: 'bg-amber-500/15 text-amber-300' },
-  trend: { label: 'TREND', cls: 'bg-indigo-500/15 text-indigo-300' },
-  action_failed: { label: 'ACTION FAILED', cls: 'bg-red-500/15 text-red-300' },
-  opportunity: { label: 'OPPORTUNITY', cls: 'bg-emerald-500/15 text-emerald-300' },
+  anomaly: { label: 'ANOMALY', cls: 'bg-dt-danger-soft text-dt-danger' },
+  retraining: { label: 'RETRAINING', cls: 'bg-dt-info-soft text-dt-info' },
+  config_drift: { label: 'CONFIG DRIFT', cls: 'bg-dt-warn-soft text-dt-warn' },
+  trend: { label: 'TREND', cls: 'bg-dt-accent-soft text-dt-accent-text' },
+  action_failed: { label: 'ACTION FAILED', cls: 'bg-dt-danger-soft text-dt-danger' },
+  opportunity: { label: 'OPPORTUNITY', cls: 'bg-dt-ok-soft text-dt-ok' },
 };
 
 export function InsightsPage({ setPage }: { setPage: (p: Page) => void }) {
@@ -612,7 +612,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
       {benchmark && (benchmark.outcomes.resolutions + benchmark.outcomes.escalations > 0 || benchmark.judged_quality.graded > 0) && (
         <div className="bg-dt-card border border-dt-border rounded-xl p-4 mb-6">
           <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-            <p className="text-sm font-semibold text-white">Benchmark — honest numbers</p>
+            <p className="text-sm font-semibold text-dt-title">Benchmark — honest numbers</p>
             <p className="text-[11px] text-dt-muted">all traffic counted, nothing cherry-picked · recountable from raw data</p>
           </div>
           {/* ── THE DEFINITIONS WERE IN TOOLTIPS ────────────────────────────
@@ -646,7 +646,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
               <p className="text-xs text-dt-muted mt-1">{benchmark.definitions.csat}</p>
             </div>
             <div>
-              <p className="text-2xl font-semibold text-white">{benchmark.cost.cost_per_resolution_cents != null ? `$${(benchmark.cost.cost_per_resolution_cents / 100).toFixed(2)}` : '—'}</p>
+              <p className="text-2xl font-semibold text-dt-title">{benchmark.cost.cost_per_resolution_cents != null ? `$${(benchmark.cost.cost_per_resolution_cents / 100).toFixed(2)}` : '—'}</p>
               <p className="text-xs font-medium text-dt-body mt-0.5">per thing resolved</p>
               <p className="text-xs text-dt-muted mt-1">{benchmark.definitions.cost_per_resolution_cents}</p>
             </div>
@@ -669,7 +669,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
           {trendCards.map(t => (
             <div key={t.name} className="bg-dt-card border border-dt-border rounded-xl p-4 flex items-center justify-between">
               <div>
-                <p className="text-sm font-semibold text-white">{t.name}</p>
+                <p className="text-sm font-semibold text-dt-title">{t.name}</p>
                 <p className={`text-xs ${t.delta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                   {t.delta >= 0 ? '↑' : '↓'} {Math.abs(t.delta).toFixed(0)} pts resolution rate
                 </p>
@@ -688,14 +688,14 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
           {actionFailures.map(f => (
             <div key={`fail-${f.de_id}`} className={`rounded-xl border p-4 ${f.severity === 'high' ? 'border-red-500/30 bg-red-500/5' : 'border-amber-500/25 bg-amber-500/5'}`}>
               <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-300">ACTION FAILED</span>
-                <span className="text-sm font-medium text-white">{f.name}: {f.failed} action{f.failed === 1 ? '' : 's'} failed</span>
-                <span className={`ml-auto text-[10px] uppercase px-1.5 py-0.5 rounded ${f.severity === 'high' ? 'bg-red-500/15 text-red-300' : 'bg-amber-500/15 text-amber-300'}`}>{f.severity}</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-dt-danger-soft text-dt-danger">ACTION FAILED</span>
+                <span className="text-sm font-medium text-dt-title">{f.name}: {f.failed} action{f.failed === 1 ? '' : 's'} failed</span>
+                <span className={`ml-auto text-[10px] uppercase px-1.5 py-0.5 rounded ${f.severity === 'high' ? 'bg-dt-danger-soft text-dt-danger' : 'bg-dt-warn-soft text-dt-warn'}`}>{f.severity}</span>
               </div>
               <p className="text-xs text-dt-support leading-relaxed">
                 In the last 30 days. This usually means a connected system rejected the request — often expired credentials or a downstream error. Check the connector.
               </p>
-              <button onClick={() => setPage('systems_connectors')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors mt-2">Open Connectors →</button>
+              <button onClick={() => setPage('systems_connectors')} className="text-xs text-dt-accent-text hover:underline transition-colors mt-2">Open Connectors →</button>
             </div>
           ))}
 
@@ -703,22 +703,22 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
           {approvalBottlenecks.map(b => (
             <div key={`bottleneck-${b.de_id}`} className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-4">
               <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">OPPORTUNITY</span>
-                <span className="text-sm font-medium text-white">{b.name} routed {b.sent} action{b.sent === 1 ? '' : 's'} for approval</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-dt-ok-soft text-dt-ok">OPPORTUNITY</span>
+                <span className="text-sm font-medium text-dt-title">{b.name} routed {b.sent} action{b.sent === 1 ? '' : 's'} for approval</span>
               </div>
               <p className="text-xs text-dt-support leading-relaxed">
                 {b.autonomy != null ? `Only ${b.autonomy}% of its actions ran without a human. ` : 'It needs a person for most actions. '}
                 If your team keeps approving these, raise {b.name}'s trust dial to clear the queue — guardrails still cap what it can do.
               </p>
-              <button onClick={() => openFile(b.de_id, 'trust')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors mt-2">Open {b.name}'s Employee File →</button>
+              <button onClick={() => openFile(b.de_id, 'trust')} className="text-xs text-dt-accent-text hover:underline transition-colors mt-2">Open {b.name}'s Employee File →</button>
             </div>
           ))}
 
           {anomalies.map(a => (
             <div key={a.deName} className="rounded-xl border border-red-500/30 bg-red-500/5 p-4">
               <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-300">ANOMALY</span>
-                <span className="text-sm font-medium text-white">{a.deName} escalation rate spiked</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-dt-danger-soft text-dt-danger">ANOMALY</span>
+                <span className="text-sm font-medium text-dt-title">{a.deName} escalation rate spiked</span>
               </div>
               <p className="text-xs text-dt-support leading-relaxed">{a.detail}</p>
             </div>
@@ -727,8 +727,8 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
           {guardrails.map((g, i) => (
             <div key={g.de_id ?? `tenant-${i}`} className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4">
               <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">CONFIG DRIFT</span>
-                <span className="text-sm font-medium text-white">
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-dt-warn-soft text-dt-warn">CONFIG DRIFT</span>
+                <span className="text-sm font-medium text-dt-title">
                   {g.de_name ? `${g.de_name}: ${g.gated_count + g.blocked_count} guardrail event(s)` : 'Guardrail activity recorded'}
                 </span>
               </div>
@@ -737,7 +737,7 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
                   ? `${g.gated_count} gated, ${g.blocked_count} blocked in the last 30 days.`
                   : `${g.tenant_total_events} guardrail event(s) recorded tenant-wide, but none could be matched to a currently-named Digital Employee (likely renamed since).`}
               </p>
-              <button onClick={() => setPage('gov_compliance')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors mt-2">
+              <button onClick={() => setPage('gov_compliance')} className="text-xs text-dt-accent-text hover:underline transition-colors mt-2">
                 Open Compliance & Guardrails →
               </button>
             </div>
@@ -746,14 +746,14 @@ function LiveInsightsPage({ tenantId, setPage }: { tenantId: string; setPage: (p
           {evalFailures.map(e => (
             <div key={e.id} className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-4">
               <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300">PROVING GROUND</span>
-                <span className="text-sm font-medium text-white">{e.failed} of {e.total} scenarios failed</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-dt-info-soft text-dt-info">PROVING GROUND</span>
+                <span className="text-sm font-medium text-dt-title">{e.failed} of {e.total} scenarios failed</span>
               </div>
               <p className="text-xs text-dt-support leading-relaxed">
                 {e.trigger} eval run on {new Date(e.started_at).toLocaleDateString()} — {e.passed} passed, {e.failed} failed.
                 Tenant-wide (Proving Ground runs aren't yet attributed to one Digital Employee).
               </p>
-              <button onClick={() => setPage('intelligence_evals')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors mt-2">
+              <button onClick={() => setPage('intelligence_evals')} className="text-xs text-dt-accent-text hover:underline transition-colors mt-2">
                 Open Proving Ground →
               </button>
             </div>

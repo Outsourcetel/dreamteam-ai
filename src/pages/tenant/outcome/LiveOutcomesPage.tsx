@@ -51,13 +51,13 @@ interface KpiStatusRow {
 }
 
 const HEALTH_STYLE: Record<string, string> = {
-  healthy: 'bg-emerald-500/15 text-emerald-300',
-  improving: 'bg-sky-500/15 text-sky-300',
-  insufficient_data: 'bg-slate-600/40 text-dt-support',
-  degraded: 'bg-rose-500/15 text-rose-300',
-  low_confidence: 'bg-amber-500/15 text-amber-300',
-  high_cost: 'bg-amber-500/15 text-amber-300',
-  incident_active: 'bg-rose-500/15 text-rose-300',
+  healthy: 'bg-dt-ok-soft text-dt-ok',
+  improving: 'bg-dt-info-soft text-dt-info',
+  insufficient_data: 'bg-dt-neutral-soft text-dt-support',
+  degraded: 'bg-dt-danger-soft text-dt-danger',
+  low_confidence: 'bg-dt-warn-soft text-dt-warn',
+  high_cost: 'bg-dt-warn-soft text-dt-warn',
+  incident_active: 'bg-dt-danger-soft text-dt-danger',
   retired: 'bg-dt-panel text-dt-muted',
 };
 
@@ -70,7 +70,7 @@ function Tile({ label, value, sub, tone }: { label: string; value: string; sub?:
   return (
     <div className="bg-dt-card border border-dt-border rounded-xl p-4">
       <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{label}</p>
-      <p className={`text-xl font-bold ${tone ?? 'text-white'}`}>{value}</p>
+      <p className={`text-xl font-bold ${tone ?? 'text-dt-title'}`}>{value}</p>
       {sub && <p className="text-[10px] text-dt-muted mt-1">{sub}</p>}
     </div>
   );
@@ -108,7 +108,7 @@ function MeteringCard({ tenantId }: { tenantId: string }) {
     <div className="mb-6">
       <p className="text-xs font-medium text-dt-muted uppercase tracking-wider mb-2">Outcome billing · last 30 days</p>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Tile label="Resolutions delivered" value={String(om.totals.resolutions)} tone="text-emerald-300" />
+        <Tile label="Resolutions delivered" value={String(om.totals.resolutions)} tone="text-dt-ok" />
         <Tile label="Handed to your team" value={String(om.totals.escalations)} sub="always free" />
         <Tile label="Metered value" value={`$${(om.totals.billable_amount_cents / 100).toFixed(2)}`} />
         <div className="bg-dt-card border border-dt-border rounded-xl p-4">
@@ -230,13 +230,13 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
           <Tile label="Hours saved" value={econ?.hours_saved == null ? '—' : `${Math.round(Number(econ.hours_saved))}h`} />
           <Tile label="FTE equivalent" value={econ?.fte_equivalent == null ? '—' : Number(econ.fte_equivalent).toFixed(2)} />
           <Tile label="AI cost" value={fmtUsd(econ?.de_cost_usd)} sub={`all-time total ${fmtUsd(totalCostUsd)}`} />
-          <Tile label="Monthly saving" value={fmtUsd(econ?.monthly_saving_usd)} tone={econ?.monthly_saving_usd != null && econ.monthly_saving_usd > 0 ? 'text-emerald-300' : undefined} />
-          <Tile label="ROI" value={econ?.roi_ratio == null ? '—' : `${Number(econ.roi_ratio).toFixed(1)}×`} tone={econ?.roi_ratio != null && econ.roi_ratio > 0 ? 'text-emerald-300' : undefined} />
+          <Tile label="Monthly saving" value={fmtUsd(econ?.monthly_saving_usd)} tone={econ?.monthly_saving_usd != null && econ.monthly_saving_usd > 0 ? 'text-dt-ok' : undefined} />
+          <Tile label="ROI" value={econ?.roi_ratio == null ? '—' : `${Number(econ.roi_ratio).toFixed(1)}×`} tone={econ?.roi_ratio != null && econ.roi_ratio > 0 ? 'text-dt-ok' : undefined} />
         </div>
         {econ && !econ.configured && (
           <p className="mt-2 text-[11px] text-amber-400/90">
             Savings and ROI need your workforce baselines ({econ.unconfigured.join(', ') || 'not set'}) —{' '}
-            <button onClick={() => setPage('workforce_des')} className="underline underline-offset-2 hover:text-amber-300">configure them on the workforce page</button>.
+            <button onClick={() => setPage('workforce_des')} className="underline underline-offset-2 hover:brightness-110">configure them on the workforce page</button>.
             Counts and AI cost above are real regardless.
           </p>
         )}
@@ -245,7 +245,7 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
       {/* ── 2. Delivery, by department ── */}
       <div className="mb-6 rounded-2xl border border-dt-border bg-dt-card p-5">
         <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
-          <h3 className="text-sm font-semibold text-white">Delivery</h3>
+          <h3 className="text-sm font-semibold text-dt-title">Delivery</h3>
           <span className="text-[11px] text-dt-muted">{kpisMet + kpisMissed > 0 ? `${kpisMet}/${kpisMet + kpisMissed} KPI targets met` : 'No KPI targets set yet — add them on each employee\'s profile'}</span>
         </div>
         <p className="text-[11px] text-dt-muted mb-3">Grouped by department — the same grouping guardrail scoping uses.</p>
@@ -281,7 +281,7 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
                         <td className={`${td} text-xs text-dt-support font-mono`}>{m && m.total_decisions > 0 ? fmtPct(m.resolution_rate) : '—'}</td>
                         <td className={`${td} text-xs text-dt-support font-mono`}>{m && m.total_decisions > 0 ? fmtPct(m.avg_confidence) : '—'}</td>
                         <td className={`${td} text-xs text-dt-support font-mono`}>{cs && cs.total_ratings > 0 ? `${fmtPct(cs.csat_pct)} (${cs.total_ratings})` : '—'}</td>
-                        <td className={`${td} text-xs font-mono ${judged > 0 && met === judged ? 'text-emerald-300' : judged > 0 && met < judged ? 'text-amber-300' : 'text-dt-muted'}`}>
+                        <td className={`${td} text-xs font-mono ${judged > 0 && met === judged ? 'text-dt-ok' : judged > 0 && met < judged ? 'text-dt-warn' : 'text-dt-muted'}`}>
                           {kpis.length === 0 ? '—' : `${met}/${judged}${kpis.length > judged ? ` (+${kpis.length - judged} no data)` : ''}`}
                         </td>
                         <td className={`${td} text-xs text-dt-support font-mono`}>{(() => { const b = metering?.by_de.find(x => x.de_id === de.id); return b && b.amount_cents > 0 ? `$${(b.amount_cents / 100).toFixed(2)}` : '—'; })()}</td>
@@ -297,11 +297,11 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
 
       {/* ── 3. Risk posture (30 days) ── */}
       <div className="mb-6 rounded-2xl border border-dt-border bg-dt-card p-5">
-        <h3 className="text-sm font-semibold text-white mb-3">Risk posture · last 30 days</h3>
+        <h3 className="text-sm font-semibold text-dt-title mb-3">Risk posture · last 30 days</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
           <Tile label="Guardrail interventions" value={String(tenantGuardrailEvents)} sub="gated or blocked by your rules" />
           <Tile label="High-frustration inquiries" value={String(highFrustration)} sub="routed to a human" />
-          <Tile label="Employees needing attention" value={String(unhealthy.length)} tone={unhealthy.length > 0 ? 'text-amber-300' : 'text-emerald-300'}
+          <Tile label="Employees needing attention" value={String(unhealthy.length)} tone={unhealthy.length > 0 ? 'text-dt-warn' : 'text-dt-ok'}
             sub={unhealthy.length > 0 ? unhealthy.map(h => h.de_name).join(', ') : 'all healthy or building evidence'} />
           <Tile label="Eval regressions" value={String(evalFails.length)} sub={evalFails.length > 0 ? 'recent runs with failures' : 'no failing eval runs'} />
         </div>
@@ -316,7 +316,7 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
 
       {/* ── 4. Work in your pipeline (drill into Company Data) ── */}
       <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
-        <h3 className="text-sm font-semibold text-white mb-1">Work in flight</h3>
+        <h3 className="text-sm font-semibold text-dt-title mb-1">Work in flight</h3>
         <p className="text-[11px] text-dt-muted mb-3">Live counts from your business records — click through for the detail.</p>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {([
@@ -329,7 +329,7 @@ function LiveOutcomes({ tenantId, setPage }: { tenantId: string; setPage: (p: Pa
             <button key={t.label} onClick={() => setPage(t.page)}
               className="bg-dt-card border border-dt-border hover:border-dt-border-strong rounded-xl p-4 text-left transition-colors">
               <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{t.label}</p>
-              <p className="text-xl font-bold text-white">{t.value}</p>
+              <p className="text-xl font-bold text-dt-title">{t.value}</p>
               <p className="text-[10px] text-indigo-400 mt-1">Open →</p>
             </button>
           ))}

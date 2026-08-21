@@ -33,7 +33,7 @@ export default function CaseTimelinePanel({ deId }: { deId: string }) {
   return (
     <div>
       <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-2">Waiting on — cases paused mid-motion</p>
-      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      {error && <p className="text-xs text-dt-danger mb-2">{error}</p>}
       {items === null ? (
         <p className="text-xs text-dt-muted">Loading…</p>
       ) : (
@@ -41,13 +41,13 @@ export default function CaseTimelinePanel({ deId }: { deId: string }) {
           {items.map((c) => (
             <div key={c.id} className="bg-dt-inset rounded-lg px-4 py-2.5">
               <div className="flex items-center gap-2">
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-warn-soft text-dt-warn">
                   {c.awaiting_ref ? 'awaiting reply' : c.kind === 'wait' ? 'waiting' : 'follow-up'}
                 </span>
                 <span className="text-sm text-dt-body flex-1">{c.objective_title}</span>
                 <span className="text-[11px] text-dt-muted">{whenLabel(c.fire_at)}</span>
                 <button onClick={() => void cancel(c.id)} disabled={busy}
-                  className="text-[10px] text-dt-faint hover:text-rose-300 shrink-0">cancel</button>
+                  className="text-[10px] text-dt-faint hover:text-dt-danger shrink-0">cancel</button>
               </div>
               {c.instruction && <p className="text-xs text-dt-support mt-1">Then: {c.instruction}</p>}
               <p className="text-[10px] text-dt-faint mt-0.5">Resumes {new Date(c.fire_at).toLocaleString()}</p>

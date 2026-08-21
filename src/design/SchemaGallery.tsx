@@ -7,7 +7,7 @@
 import React from 'react';
 import {
   EmployeeCard, DecisionCard, FilterBar, SetupChecklist,
-  Button, Chip, PanelCard, INPUT_CLS, SELECT_CLS, StatTile, DetailTile, TableScroll, TH, TD,
+  Button, Chip, PanelCard, INPUT_CLS, SELECT_CLS, StatTile, DetailTile, TableScroll, TH, TD, EntityRow,
 } from './primitives';
 import { Sidebar } from '../components/Sidebar';
 import { AuthProvider } from '../context/AuthContext';
@@ -126,6 +126,16 @@ export default function SchemaPreview() {
               </tbody>
             </table>
           </TableScroll>
+        </PanelCard>
+
+        <PanelCard title="EntityRow — default and selected">
+          {/* dt-accent-border check: the selected row's border and the ai
+              Chip/Button above both resolve --dt-accent-border, which never
+              emitted CSS as `border-dt-accent/NN` (task 4b). */}
+          <div className="space-y-2">
+            <EntityRow title="Meridian Group" meta="Not selected" onOpen={() => {}} />
+            <EntityRow title="Apex Systems" meta="Selected" selected onOpen={() => {}} />
+          </div>
         </PanelCard>
 
         <PanelCard title="FilterBar">
