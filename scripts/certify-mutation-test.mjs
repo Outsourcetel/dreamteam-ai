@@ -1101,6 +1101,37 @@ const CASES = [
       + 'silent zero-row UPDATE (RLS applies SELECT policies to the WHERE read of an UPDATE) that would have '
       + 'let every sweep re-raise the same proposal forever.',
   },
+  {
+    // mig 828 arm 9b (eligibility-not-re-derivable). Cannot join the automated
+    // fires/silent block below: 9b's join (open_proposals op join trust_policies
+    // tp on tp.pending_task_id = op.task_id) requires a REAL trust_policies row
+    // already carrying the fixture's task_id in pending_task_id, and a bare
+    // proposalExtra SELECT cannot fabricate a trust_policies row — only inject
+    // an open_proposals one. Production holds exactly one such real linkage
+    // (measured 2026-08-21) and it is eligible, so a live "fires" case has no
+    // anchor to attach to without a write. See the comment at arm 9b itself for
+    // the standing, always-live compensating control (arm 9c, the denominator
+    // sum) that would catch a structural break here even between manual runs.
+    name: 'trust-proposer (arm 9b, eligibility-not-re-derivable: fires+silent proven on dev)',
+    manual: 'Driven against DEV (nmuntxrcdksyhsdywpan) on 2026-08-21 inside one rolled-back transaction, '
+      + 'via scripts/dev-query.mjs — chosen over production per this probe\'s own precedent for anything '
+      + 'requiring a write, even one that rolls back. Two synthetic trust_policies rows inserted for a real '
+      + 'dev tenant (distinct action_category values, to clear the tenant/category/source/de unique index): '
+      + 'one with criteria = {min_eval_samples:0, min_human_samples:0, max_guardrail_blocks:0} — every '
+      + 'threshold zero, so trust_evidence_for reports eligible:true on zero data by construction (mirrors '
+      + '828\'s own founder ruling: "an eligible policy raises a request even with NO approved-action '
+      + 'history"); one left on the TABLE\'S OWN DEFAULT criteria (min_human_samples:5, min_eval_samples:25, '
+      + '...) on the same zero data — genuinely eligible:false, no fabricated history needed. Both linked via '
+      + 'pending_task_id to a fresh open_proposals fixture (proposalExtra, criteria-shaped, no pattern key) '
+      + 'run through the REAL trustProposerBoundarySql(). Result: the eligible policy\'s proposal produced NO '
+      + 'eligibility-not-re-derivable violation (silent, correctly); the not-eligible policy\'s proposal fired '
+      + 'exactly that violation, naming its own task id. Denominator over the two-fixture population read '
+      + '"2 open system proposal(s) scanned (0 pattern-filed ...; 2 criteria-filed ...)" — both counted, both '
+      + 'summed, arm 9c silent. (The same run also surfaced several UNRELATED can-decide/cannot-file/identity-'
+      + 'drift/reachable-decider findings — these are dev\'s own pre-existing privilege/ownership drift from '
+      + 'production, not this arm, and are expected on dev.) Rollback confirmed: a separate read-only call '
+      + 'afterward showed trust_policies back to 0 rows on dev, its state before this test.',
+  },
   ...(() => {
     const HQ = '5bb802e1-8e92-4eef-9a7a-ac348785d43f';       // outsourcetel-hq (active)
     const ACME = 'a1b2c3d4-0000-0000-0000-000000000001';     // acme-telecom (suspended)
