@@ -135,7 +135,7 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
   return (
     <div className={variant === 'full' ? '' : 'rounded-2xl border border-dt-border bg-dt-card p-6'}>
       <div className="mb-1 flex items-center gap-2 flex-wrap">
-        <h3 className="text-base font-semibold text-white">Guardrails</h3>
+        <h3 className="text-base font-semibold text-dt-title">Guardrails</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300">always enforced</span>
         <span className="text-[11px] text-dt-muted">for {entityLabel}</span>
         <button onClick={() => setShowAI(v => !v)}

@@ -111,7 +111,7 @@ export default function ResponsiblePeoplePanel({ deId, deName }: { deId: string;
   return (
     <div className="bg-dt-card border border-dt-border rounded-xl p-5">
       <div className="flex items-start justify-between gap-4 flex-wrap mb-1">
-        <h2 className="text-sm font-semibold text-white">Responsible people</h2>
+        <h2 className="text-sm font-semibold text-dt-title">Responsible people</h2>
         {!loading && totalAssigned === 0 && (
           <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300">Nobody assigned</span>
         )}

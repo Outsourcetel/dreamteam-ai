@@ -368,7 +368,7 @@ function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => v
           {pendingDecisions > 0 && (
             <>{pendingDecisions} item{pendingDecisions === 1 ? '' : 's'} {pendingDecisions === 1 ? 'is' : 'are'} waiting for your decision in the approvals queue.{' '}</>
           )}
-          {canOpenApprovals && <button onClick={() => setPage('ops_human_tasks' as Page)} className="underline hover:text-white">Review approvals →</button>}
+          {canOpenApprovals && <button onClick={() => setPage('ops_human_tasks' as Page)} className="underline hover:text-dt-body">Review approvals →</button>}
         </Banner>
       )}
 

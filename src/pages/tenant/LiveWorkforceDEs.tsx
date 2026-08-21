@@ -362,7 +362,7 @@ function TeamsPanel() {
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6 mt-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
-        <h3 className="text-base font-semibold text-white">Backup &amp; coverage — Workforce Teams</h3>
+        <h3 className="text-base font-semibold text-dt-title">Backup &amp; coverage — Workforce Teams</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">fallback chains</span>
         <button onClick={() => setShowCreate(s => !s)}
           className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body">
@@ -403,7 +403,7 @@ function TeamsPanel() {
             return (
               <div key={team.id} className="rounded-xl border border-dt-border bg-dt-page p-3">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm text-white font-medium">{team.name}</span>
+                  <span className="text-sm text-dt-title font-medium">{team.name}</span>
                   <button onClick={async () => {
                     if (!await confirm({
                       title: `Archive the "${team.name}" team?`,

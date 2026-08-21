@@ -45,7 +45,7 @@ function ProposalCard({ p, onApproved }: { p: ArchitectProposal; onApproved: () 
           <div className="flex items-center gap-2">
             <span className="text-[11px] uppercase tracking-wide text-dt-muted font-semibold">{meta.kind}</span>
           </div>
-          <h4 className="text-white font-semibold leading-tight mt-0.5">{title}</h4>
+          <h4 className="text-dt-title font-semibold leading-tight mt-0.5">{title}</h4>
 
           {/* Details drawn from the proposal's parameters */}
           <div className="mt-2 space-y-1 text-[13px] text-dt-support">
@@ -125,7 +125,7 @@ export default function OnboardingArchitectPage({ setPage }: { setPage?: (p: Pag
               onChange={(e) => setDesc(e.target.value)}
               rows={4}
               placeholder="e.g. We run a dental clinic and want an employee that answers patient questions about appointments, billing and insurance…"
-              className="mt-3 w-full resize-y rounded-xl border border-white/10 bg-black/30 p-3 text-[14px] text-white placeholder:text-dt-faint outline-none focus:border-indigo-400/60"
+              className="mt-3 w-full resize-y rounded-xl border border-white/10 bg-black/30 p-3 text-[14px] text-dt-body placeholder:text-dt-faint outline-none focus:border-indigo-400/60"
             />
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button

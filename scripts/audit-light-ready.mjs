@@ -180,7 +180,83 @@ const slateText = lines('text-slate-');
 // LiveKnowledgeLibrary precedent) and `hover:ring-slate-600` on
 // UserManagementPage's role-badge button (not one of the four tracked
 // metrics, out of this sweep's scope).
-const BASELINE = { 'bare text-white': 307, 'bg-slate': 36, 'border-slate': 6, 'text-slate': 2 };
+//
+// RATCHETED 2026-08-21 (Task 5, Workforce group). LiveWorkforceDEs.tsx (the
+// DE roster + Workforce Teams board — "workforce boards" turned out to be
+// this file's own Teams panel, not a separate file), EmployeeFilePage.tsx +
+// EmployeeFileSections.tsx (the Employee File's sections, split out of
+// LiveWorkforceDEs.tsx per that file's own header comment), DeWorkbench.tsx,
+// HireEmployeeWizard.tsx (sole reachable entry: LiveWorkforceDEs.tsx's "Hire
+// with AI" button, confirmed by grep — the one setPage('workforce_hire')
+// call site in the app) and OnboardingArchitectPage.tsx (reachable from
+// CompanySetupPage's "Quick Start" button and GettingStartedGuide's "Hire
+// with Ada instead" — taken here as a DE-hiring flow per this group's brief,
+// rather than left for a Setup/Dashboard pass) moved onto dt-* tokens.
+// ScopedGuardrails.tsx and GovernanceAIPanel.tsx — named by the governance
+// group's ratchet note above as shared with EmployeeFileSections.tsx rather
+// than governance-only — were confirmed by grep to be consumed exactly that
+// way (ScopedGuardrails: EmployeeFileSections.tsx only; GovernanceAIPanel:
+// ScopedGuardrails.tsx and CompliancePage.tsx) and converted here as this
+// group's sole-consumer components. WorkforceHubPage.tsx (LiveWorkforceDEs'
+// container) was audited and found already clean — zero hits in all four
+// metrics. Converted: 68 bare text-white (24 identical `text-base
+// font-semibold text-white` section h3s across EmployeeFileSections.tsx in
+// one scripted pass -> dt-title; row/card primary names — skill names, team
+// names, archetype-card titles -> dt-title, matching the row-primary-name
+// precedent; stat-tile values in the Economics panel -> dt-title; form
+// input/select/textarea typed-value text across the Edit-DE modal, retire
+// modal, colleague-grant selects and the two AI-panel composer textareas ->
+// dt-body, matching the governance-group precedent; 3 `hover:text-white` on
+// ghost-style links/icon-buttons -> hover:text-dt-body) and 5 bg-slate (2
+// DeWorkbench.tsx statusPill entries, `queued`/`assigned` — not toggle
+// tracks, so not the doc §7 control-shade exception, but not rare states
+// either, so kept OPAQUE as bg-dt-border-strong rather than softened, same
+// high-traffic reasoning as the Setup group's tenant_user precedent; 1
+// EmployeeFileSections.tsx severity dot and 1 promotion-history fallback dot
+// -> bg-dt-border-strong, and 1 trust-evidence progress-bar track ->
+// bg-dt-border-strong, all three matching the Setup group's "a soft tint on
+// a small dot or bar track reads as invisible, not softened" precedent).
+// GovernanceAIPanel.tsx's `border-slate-500 focus:border-slate-500` (line
+// 157, identical to its own sibling AISessionPanel.tsx and to
+// SecurityAccessPage/LivePlaybookBuilder) is the doc §7 sanctioned control-
+// shade/focus-ring exception and was deliberately left untouched — this is
+// why border-slate does not move in this ratchet. One more sole-consumer
+// component surfaced by re-checking every import in EmployeeFileSections.tsx
+// (not just the two the brief named): src/components/de/ResponsiblePeoplePanel.tsx,
+// imported only there — its one section-heading `text-white` on an opaque
+// `bg-dt-card` card -> dt-title, already folded into the 68-count above.
+// Its sibling import DEActionDials.tsx was audited and found
+// already clean. EmployeeFilePage.tsx's other local imports were checked the
+// same way: CaseTimelinePanel.tsx, DeliverablesPanel.tsx and
+// OperatingModelPanel.tsx are each sole-consumer and already clean (zero
+// hits in all four metrics); WorkforceBoard.tsx (imported for `fmtWhen`) and
+// MissionPanel.tsx are shared — WorkforceBoard.tsx also renders on
+// DEActivityPage.tsx, and MissionPanel.tsx's other exports (PlanDrawer,
+// MissionRowView) are consumed by TeamMissionPanel.tsx, which itself renders
+// on DashboardPage.tsx and WorkforceBoard.tsx — so both stay excluded as
+// out-of-group shared components, same reasoning as AISessionPanel.tsx.
+//
+// The real hazard this group was assigned to fix: HireEmployeeWizard.tsx:634
+// had `setupAnswers[q.key] === opt ? 'border-indigo-500 bg-indigo-500/10
+// text-white' : …` — a selected-option pill whose ONLY background in the
+// selected branch was a 10%-opacity indigo tint (COLORED_BG requires an
+// OPAQUE fill, so this never qualified even before the audit's own bare-
+// text-white regression test tightened that rule), with bare white text on
+// top. In light theme that tint reads as a near-white wash, so the label
+// vanished exactly when a user clicked to select it. Fixed with the
+// codebase's existing accent-selection pattern — `border-dt-accent
+// bg-dt-accent-soft text-dt-accent-text` — already used for this identical
+// selected-pill shape at EmployeeFilePage.tsx:686, DiscoveryInterviewPage.tsx
+// :519 and MobileShell.tsx:480, so no new vocabulary was introduced. A
+// second instance of the same button-with-conditional-indigo-tint shape
+// exists at HireEmployeeWizard.tsx:374-378 (the role-archetype picker), but
+// there the `text-white` on the card's name was UNCONDITIONAL — rendered in
+// both the selected AND unselected state, not gated by the ternary — so the
+// accent-selection pattern would have been wrong (accent-colored text on an
+// unselected card). That one got the ordinary dt-title heading treatment
+// instead, which reads correctly against both bg-dt-card (unselected) and
+// bg-indigo-500/10 (selected).
+const BASELINE = { 'bare text-white': 239, 'bg-slate': 31, 'border-slate': 6, 'text-slate': 2 };
 const NOW = {
   'bare text-white': bareWhite.length,
   'bg-slate': slateBg.length,

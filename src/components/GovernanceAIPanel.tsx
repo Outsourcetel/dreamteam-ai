@@ -101,10 +101,10 @@ export default function GovernanceAIPanel({ scope, scopeRef, entityLabel, onProp
     <div className="flex flex-col h-[28rem] bg-dt-page border border-dt-border rounded-lg overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-dt-border bg-dt-card">
         <div className="min-w-0">
-          <div className="text-sm font-semibold text-white">Set up guardrails with AI</div>
+          <div className="text-sm font-semibold text-dt-title">Set up guardrails with AI</div>
           <div className="text-xs text-dt-support truncate">for {entityLabel}</div>
         </div>
-        {onClose && <button onClick={onClose} aria-label="Close" className="text-dt-support hover:text-white text-lg leading-none px-2">×</button>}
+        {onClose && <button onClick={onClose} aria-label="Close" className="text-dt-support hover:text-dt-body text-lg leading-none px-2">×</button>}
       </div>
 
       <div className="px-4 py-2 text-[11px] text-amber-200 bg-amber-900/25 border-b border-amber-800/40">
@@ -130,7 +130,7 @@ export default function GovernanceAIPanel({ scope, scopeRef, entityLabel, onProp
           turns.map((t, i) => (
             <div key={i} className={t.role === 'user' ? 'flex justify-end' : ''}>
               <div className={t.role === 'user'
-                ? 'bg-dt-panel text-white rounded-lg px-3 py-2 max-w-[85%] whitespace-pre-wrap'
+                ? 'bg-dt-panel text-dt-body rounded-lg px-3 py-2 max-w-[85%] whitespace-pre-wrap'
                 : 'text-dt-body whitespace-pre-wrap max-w-[95%]'}>
                 {t.role === 'assistant' ? renderLite(t.content) : t.content}
                 {t.proposed.map((p, j) => (
@@ -154,7 +154,7 @@ export default function GovernanceAIPanel({ scope, scopeRef, entityLabel, onProp
           <textarea value={input} onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(input); } }}
             rows={2} placeholder="Describe a limit you want in place…"
-            className="flex-1 resize-none bg-dt-card border border-dt-border rounded px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-slate-500" />
+            className="flex-1 resize-none bg-dt-card border border-dt-border rounded px-3 py-2 text-sm text-dt-body placeholder-slate-500 focus:outline-none focus:border-slate-500" />
           <button onClick={() => void send(input)} disabled={busy || !input.trim()}
             className="self-end px-4 py-2 text-sm rounded bg-dt-accent-strong hover:bg-dt-accent-hover text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed">
             Send

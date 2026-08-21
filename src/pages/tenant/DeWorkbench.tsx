@@ -75,13 +75,13 @@ const Empty = ({ children }: { children: React.ReactNode }) => (
 const Loading = () => <div className="text-center text-dt-muted text-sm py-10">Loading…</div>;
 
 const statusPill: Record<string, string> = {
-  queued: 'bg-slate-600 text-dt-body', running: 'bg-blue-500/20 text-blue-300', done: 'bg-emerald-500/20 text-emerald-300',
+  queued: 'bg-dt-border-strong text-dt-body', running: 'bg-blue-500/20 text-blue-300', done: 'bg-emerald-500/20 text-emerald-300',
   failed: 'bg-rose-500/20 text-rose-300', waiting_human: 'bg-amber-500/20 text-amber-300', cancelled: 'bg-dt-panel text-dt-support',
   open: 'bg-blue-500/20 text-blue-300', in_progress: 'bg-blue-500/20 text-blue-300', achieved: 'bg-emerald-500/20 text-emerald-300',
   blocked: 'bg-amber-500/20 text-amber-300', abandoned: 'bg-dt-panel text-dt-support',
   passed: 'bg-emerald-500/20 text-emerald-300', proposed: 'bg-amber-500/20 text-amber-300',
   approved: 'bg-emerald-500/20 text-emerald-300', denied: 'bg-rose-500/20 text-rose-300',
-  completed: 'bg-emerald-500/20 text-emerald-300', assigned: 'bg-slate-600 text-dt-body',
+  completed: 'bg-emerald-500/20 text-emerald-300', assigned: 'bg-dt-border-strong text-dt-body',
   auto_resolved: 'bg-emerald-500/20 text-emerald-300',
 };
 const Pill = ({ s }: { s: string }) => (
@@ -121,7 +121,7 @@ export function DeCertificationPanel({ deId }: { deId: string }) {
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
-        <h3 className="text-base font-semibold text-white">Certification</h3>
+        <h3 className="text-base font-semibold text-dt-title">Certification</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">gates autonomy</span>
       </div>
       <p className="text-[11px] text-dt-muted mb-3">
@@ -195,7 +195,7 @@ export function DeCompliancePanel() {
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
-        <h3 className="text-base font-semibold text-white">Compliance packs</h3>
+        <h3 className="text-base font-semibold text-dt-title">Compliance packs</h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300">workspace-wide · un-toggleable</span>
       </div>
       <p className="text-[11px] text-dt-muted mb-3">
@@ -366,7 +366,7 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
   return (
     <div className={`${card} overflow-hidden`}>
       <div className="px-5 py-4 border-b border-dt-border">
-        <p className="text-sm font-semibold text-white">Workbench</p>
+        <p className="text-sm font-semibold text-dt-title">Workbench</p>
         <p className="text-xs text-dt-muted mt-0.5">The inspection lab — what this employee remembers, how it reasons, the exceptions it raises, and the replay bench. All live.</p>
       </div>
       <div className="flex flex-wrap gap-1 px-3 pt-3">

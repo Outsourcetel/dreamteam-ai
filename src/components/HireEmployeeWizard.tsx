@@ -373,7 +373,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                         {archetypes.map((a) => (
                           <button key={a.key} onClick={() => { setSelectedRole(a); setRoleDeName(a.name); }}
                             className={`text-left rounded-xl border p-3 transition-colors ${selectedRole?.key === a.key ? 'border-indigo-500 bg-indigo-500/10' : 'border-dt-border bg-dt-card hover:border-dt-border-strong'}`}>
-                            <p className="text-xs font-semibold text-white">{a.name}</p>
+                            <p className="text-xs font-semibold text-dt-title">{a.name}</p>
                             <p className="text-[11px] text-dt-muted">{a.domain}</p>
                           </button>
                         ))}
@@ -407,7 +407,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                   {persona.charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-white">{persona} — {roleName}</p>
+                  <p className="text-sm font-semibold text-dt-title">{persona} — {roleName}</p>
                   <p className="text-xs text-dt-support mt-1">{draft.config.purpose_statement || draft.config.description}</p>
                 </div>
               </div>
@@ -527,7 +527,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
           {step === 'done' && draft && (
             <>
               <div className="rounded-xl border border-dt-border bg-dt-card p-4">
-                <p className="text-sm font-semibold text-white mb-1">{persona} is {describeStage(promo?.reachedStage ?? 'designed')}.</p>
+                <p className="text-sm font-semibold text-dt-title mb-1">{persona} is {describeStage(promo?.reachedStage ?? 'designed')}.</p>
                 {teach?.knowledgeDocId && (
                   <p className="text-xs text-dt-support">✓ Your interview answers were saved as company knowledge{teach.embeddedChunks > 0 ? ' and indexed' : ' (indexing finishes automatically)'}.</p>
                 )}
@@ -541,7 +541,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
 
               {rehearsal && (
                 <div className={`rounded-xl border p-4 ${rehearsal.passed === rehearsal.total && rehearsal.total > 0 ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/10'}`}>
-                  <p className="text-sm text-white font-medium">
+                  <p className="text-sm text-dt-title font-medium">
                     Rehearsal: {rehearsal.passed} of {rehearsal.total} answers passed the judge (average score {Math.round(rehearsal.avgScore)}).
                   </p>
                   <button onClick={() => setShowScenarios((v) => !v)} className="text-[11px] text-dt-support hover:text-dt-body underline mt-1">
@@ -598,7 +598,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                     void navigator.clipboard?.writeText(note);
                     setCommsCopied(true); setTimeout(() => setCommsCopied(false), 2000);
                   }}
-                  className="mt-3 text-[11px] px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-indigo-500 hover:text-white transition-colors">
+                  className="mt-3 text-[11px] px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-indigo-500 hover:text-dt-body transition-colors">
                   {commsCopied ? 'Copied ✓' : 'Copy a "what changes for the team" note'}
                 </button>
               </div>
@@ -614,7 +614,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
           {step === 'tailor' && selectedRole && (
             <>
               <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-4">
-                <p className="text-sm font-semibold text-white mb-1">
+                <p className="text-sm font-semibold text-dt-title mb-1">
                   {roleDeName.trim() || selectedRole.name} is hired — now let’s tailor it to your business.
                 </p>
                 <p className="text-xs text-dt-support">
@@ -631,7 +631,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                       <div className="flex flex-wrap gap-2">
                         {q.options.map((opt) => (
                           <button key={opt} onClick={() => setSetupAnswers((prev) => ({ ...prev, [q.key]: opt }))}
-                            className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${setupAnswers[q.key] === opt ? 'border-indigo-500 bg-indigo-500/10 text-white' : 'border-dt-border bg-dt-card text-dt-support hover:border-dt-border-strong'}`}>
+                            className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${setupAnswers[q.key] === opt ? 'border-dt-accent bg-dt-accent-soft text-dt-accent-text' : 'border-dt-border bg-dt-card text-dt-support hover:border-dt-border-strong'}`}>
                             {opt}
                           </button>
                         ))}
@@ -660,7 +660,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
           {step === 'archetype_done' && selectedRole && archResult && (
             <>
               <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
-                <p className="text-sm font-semibold text-white mb-1">
+                <p className="text-sm font-semibold text-dt-title mb-1">
                   {roleDeName.trim() || selectedRole.name} is hired from the {selectedRole.name} template.
                 </p>
                 <p className="text-xs text-dt-support">
@@ -694,10 +694,10 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
               {hasProposal && (
                 <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-4 space-y-2">
                   <p className="text-[11px] uppercase tracking-wide text-indigo-300 mb-1">Proposed from your answers — you approve before it applies</p>
-                  {tailoredProposal.partyScope && <p className="text-xs text-dt-support">• Scope: <span className="text-white font-medium">{tailoredProposal.partyScope}</span></p>}
-                  {tailoredProposal.discountPct != null && <p className="text-xs text-dt-support">• Discount allowed without approval: <span className="text-white font-medium">{tailoredProposal.discountPct}%</span></p>}
-                  {tailoredProposal.approvalCents != null && <p className="text-xs text-dt-support">• Human approval required above: <span className="text-white font-medium">${(tailoredProposal.approvalCents / 100).toLocaleString()}</span></p>}
-                  {tailoredProposal.systems.length > 0 && <p className="text-xs text-dt-support">• Systems to connect: <span className="text-white font-medium">{tailoredProposal.systems.join(', ')}</span></p>}
+                  {tailoredProposal.partyScope && <p className="text-xs text-dt-support">• Scope: <span className="text-dt-title font-medium">{tailoredProposal.partyScope}</span></p>}
+                  {tailoredProposal.discountPct != null && <p className="text-xs text-dt-support">• Discount allowed without approval: <span className="text-dt-title font-medium">{tailoredProposal.discountPct}%</span></p>}
+                  {tailoredProposal.approvalCents != null && <p className="text-xs text-dt-support">• Human approval required above: <span className="text-dt-title font-medium">${(tailoredProposal.approvalCents / 100).toLocaleString()}</span></p>}
+                  {tailoredProposal.systems.length > 0 && <p className="text-xs text-dt-support">• Systems to connect: <span className="text-dt-title font-medium">{tailoredProposal.systems.join(', ')}</span></p>}
 
                   {applyResult ? (
                     <p className="text-xs text-emerald-300 pt-1">
