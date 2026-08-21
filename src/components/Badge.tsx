@@ -8,14 +8,17 @@ const Badge = ({
   color?: string;
 }) => {
   const colors: Record<string, string> = {
-    green: 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30',
-    red: 'bg-red-500/20 text-red-300 border border-red-500/30',
-    yellow: 'bg-amber-500/20 text-amber-300 border border-amber-500/30',
-    blue: 'bg-blue-500/20 text-blue-300 border border-blue-500/30',
-    purple: 'bg-purple-500/20 text-purple-300 border border-purple-500/30',
+    green: 'bg-dt-ok-soft text-dt-ok border border-dt-ok-border',
+    red: 'bg-dt-danger-soft text-dt-danger border border-dt-danger-border',
+    yellow: 'bg-dt-warn-soft text-dt-warn border border-dt-warn-border',
+    blue: 'bg-dt-info-soft text-dt-info border border-dt-info-border',
+    // purple: non-core hue, kept as a tier/identity marker (e.g. "enterprise"
+    // plan) per the mapping table's "non-semantic identity hues keep their
+    // hue" rule — made opaque so it reads correctly in both themes.
+    purple: 'bg-purple-600 text-purple-100 border border-purple-500',
     slate: 'bg-dt-neutral-soft text-dt-neutral border border-dt-neutral-border',
-    indigo: 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30',
-    amber: 'bg-amber-500/20 text-amber-300 border border-amber-500/30',
+    indigo: 'bg-dt-accent-soft text-dt-accent-text border border-dt-accent-border',
+    amber: 'bg-dt-warn-soft text-dt-warn border border-dt-warn-border',
   };
   return (
     <span

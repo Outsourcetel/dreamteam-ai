@@ -113,7 +113,7 @@ const MfaEnrollmentPanel = () => {
           <button
             onClick={() => removeFactor(verifiedFactor.id)}
             disabled={removingId === verifiedFactor.id}
-            className="text-xs font-medium text-red-400 hover:text-red-300 disabled:opacity-50"
+            className="text-xs font-medium text-red-400 hover:text-dt-danger disabled:opacity-50"
           >
             {removingId === verifiedFactor.id ? 'Removing…' : 'Turn off two-factor authentication'}
           </button>

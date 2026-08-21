@@ -459,7 +459,7 @@ const EndUserChatPage = ({
                     m.role === 'user'
                       ? 'text-white rounded-br-sm'
                       : m.role === 'system'
-                      ? 'bg-amber-500/10 border border-amber-500/30 text-amber-200 rounded-bl-sm'
+                      ? 'bg-dt-warn-soft border border-dt-warn-border text-dt-warn rounded-bl-sm'
                       : 'bg-dt-panel text-dt-title rounded-bl-sm'
                   }`}
                     style={m.role === 'user' ? { backgroundColor: accentColor } : {}}>
@@ -548,7 +548,7 @@ const EndUserChatPage = ({
         {escalated && (
           <div className="flex justify-center">
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-5 py-3 text-center max-w-sm">
-              <div className="text-xs font-medium text-amber-300 mb-1">Handed to our team</div>
+              <div className="text-xs font-medium text-dt-warn mb-1">Handed to our team</div>
               <div className="text-xs text-dt-support">A human agent will review your conversation and respond shortly.</div>
               <button onClick={startNew}
                 className="mt-3 text-xs text-dt-support hover:text-dt-body underline transition-all">
@@ -566,7 +566,7 @@ const EndUserChatPage = ({
         {escalated ? (
           <div className="text-center text-xs text-dt-faint">
             This conversation has been escalated to our team.{' '}
-            <button onClick={startNew} className="text-indigo-400 hover:text-indigo-300 underline">Start new</button>
+            <button onClick={startNew} className="text-dt-accent-text underline hover:brightness-110">Start new</button>
           </div>
         ) : (
           <>

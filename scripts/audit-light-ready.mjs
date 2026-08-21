@@ -152,6 +152,28 @@ const slateText = lines('text-slate-');
 // original literal pairing did not have. Left as-is; not a missed line.
 const TONE_FILL_SURVIVORS = [
   { file: 'DEChatDock.tsx', contains: "msg.role === 'user' ? 'text-indigo-200' : 'text-dt-muted'" },
+  // LoginPage.tsx leftPanel (Task 5T, group C): the SAME fixed dark-navy
+  // gradient marketing hero already sanctioned in SOLID_FILL_SURVIVORS above
+  // for its bare-white text — style={{background: 'linear-gradient(135deg,
+  // #1e1b4b ...)'}} is a hardcoded inline style, not a dt-token surface, and
+  // does not participate in either app theme. Converting text-indigo-300/200
+  // here to text-dt-accent-text would be a REAL regression: in light theme
+  // that token resolves to a dark ink (#1146d4) rendered on this still-dark
+  // fixed background, which is far LESS legible than the literal light
+  // lavender it replaces — the opposite of what this sweep exists to fix.
+  { file: 'LoginPage.tsx', contains: 'text-indigo-300 text-xs">Digital Workforce Platform' },
+  { file: 'LoginPage.tsx', contains: 'text-indigo-200 text-sm leading-relaxed mb-8' },
+  { file: 'LoginPage.tsx', contains: 'justify-center text-indigo-300 flex-shrink-0 font-bold' },
+  { file: 'LoginPage.tsx', contains: 'text-indigo-300 text-xs">{f.desc}' },
+  // WorkforceConversation.tsx (Task 5T, group C): the SAME shape as the
+  // DEChatDock.tsx survivor above — `isUser ? 'text-blue-200' : 'text-dt-muted'`
+  // (the timestamp) sits inside the bubble painted a few lines up by its own
+  // identical `isUser` check (`isUser ? 'bg-blue-600 text-white' : 'bg-dt-panel
+  // text-dt-title'`). The bubble fill is a literal, non-theme-reactive opaque
+  // blue; converting only the timestamp text to a dt-* token would swap in a
+  // light-theme-tuned value against that still-literal fill, the exact
+  // regression the DEChatDock precedent was recorded to avoid.
+  { file: 'WorkforceConversation.tsx', contains: "isUser ? 'text-blue-200' : 'text-dt-support'" },
 ];
 const TONE_HUES = 'amber\\|indigo\\|emerald\\|rose\\|red\\|sky\\|teal\\|violet\\|purple\\|cyan\\|orange\\|fuchsia\\|pink\\|lime\\|yellow\\|green\\|blue';
 const toneText = lines(`text-\\(${TONE_HUES}\\)-\\(100\\|200\\|300\\)\\b`)
@@ -600,7 +622,71 @@ const toneText = lines(`text-\\(${TONE_HUES}\\)-\\(100\\|200\\|300\\)\\b`)
 // for a literal violet, so keeping it would have meant an opaque-ification of
 // a fairly large card, judged more disruptive than reusing the file's existing
 // accent token; this keeps it visually distinct from sky="instruction"/info.
-const BASELINE = { 'bare text-white': 0, 'bg-slate': 0, 'border-slate': 0, 'text-slate': 0, 'tone text-300': 318 };
+//
+// RATCHETED 2026-08-21 (Task 5T, Group C — CLOSING THE SWEEP). Everything
+// `--files` still listed after groups A+B (48 files, 176 raw lines) moved
+// onto dt-* tokens: governance (AuditTrailPage 32, SecurityAccessPage 20,
+// TrustArchitecturePage 10, CompliancePage 9, DataAccessPage 6,
+// IdentityInventoryPage 6), knowledge (LiveKnowledgeLibrary 15,
+// KnowledgeQualityPage 12, KnowledgeIngestionPage 5, KnowledgeGapsPage 4,
+// KnowledgeHubPage 3), intelligence (IntelligencePages 21, LiveProvingGround
+// 8, SelfLearningPage 4), platform (PlatformConsolePage 23,
+// PlatformInvitesPanel 4, PlatformTeamPage 4), and the full shared/small-file
+// tail (ScopedGuardrails, AISessionPanel, GovernanceAIPanel, Badge,
+// HireEmployeeWizard, DashboardPage, SettingsPage, SupportCommandCenterPage,
+// deHealthApi, ChatCore, OutcomeStatement, SupportTriageRulesPage,
+// ImportCustomersModal, PlatformAIEnginePanel, LoginPage, App,
+// CaseTimelinePanel, ResponsiblePeoplePanel, GettingStartedGuide,
+// DraftApprovalCard, WorkforceTrustDefaults, EndUserChatPage,
+// SetPasswordScreen, CompanySetupPage, DeliverablesPanel, LiveDataStates,
+// PlatformEmailKeyPanel, OrgSetupScreen, UserManagementPage, DEActionDials,
+// KnowledgeTreePanel, MfaEnrollmentPanel, PageErrorBoundary,
+// PlatformShelfPanel, WorkforceConversation, WorkforceBoard,
+// SupportCallsPage) — 318 → 0, the true floor, not a padded number.
+//
+// The known hazard this group was assigned: GettingStartedGuide.tsx:194's
+// three-branch ternary (`s.done ? 'bg-emerald-500/20 text-emerald-300' :
+// isCurrent ? 'bg-indigo-500 text-white' : 'bg-dt-panel text-dt-support'`)
+// put a translucent emerald 'done' branch on the SAME line as an opaque
+// indigo 'isCurrent' branch — COLORED_BG is line-based, so the opaque indigo
+// branch false-exempted the whole line and the emerald wash (near-white on a
+// light page) was never counted. Converted the emerald branch to
+// `bg-dt-ok-soft text-dt-ok` anyway, per the brief, even though it does not
+// move this metric (still exempted the same way — the indigo branch is still
+// on the line).
+//
+// Two real TONE_FILL_SURVIVORS additions (both the identical DEChatDock.tsx
+// shape from Group A — a status/tint text ternary keyed off the SAME
+// condition as an opaque same-family fill one element up, so converting only
+// the text half would regress against the still-literal fill): LoginPage.tsx
+// leftPanel's four indigo-300/200 lines (:149,155,165,168) sit on a hardcoded
+// inline-style dark-navy gradient — NOT a dt-token surface and NOT
+// theme-reactive at all, already sanctioned for its bare-white text in
+// SOLID_FILL_SURVIVORS above; and WorkforceConversation.tsx's timestamp
+// (`isUser ? 'text-blue-200' : 'text-dt-support'`) sits inside a chat bubble
+// painted by the identical `isUser` check a few lines up (`bg-blue-600
+// text-white`). Both left as literal; see TONE_FILL_SURVIVORS above for the
+// full reasoning.
+//
+// Kept-hue judgment calls (non-core hues, opaque-fill-exempted, no new
+// TONE_FILL_SURVIVORS entries needed — doc §7 kept-hue table has the full
+// rows): AuditTrailPage.tsx's LIVE_CATEGORY_META event-type vocabulary
+// (playbook_step/evidence_step=teal, invoice=teal, connector_sync/
+// connector_action=cyan — five non-core-hue category badges in an
+// 11-member scheme, matching the HumanTasksPage precedent for "one more
+// entry in an already-established, purely-identity type scheme");
+// SecurityAccessPage.tsx's ROLE_COLORS (knowledge_manager=purple,
+// approver=cyan — a role-badge vocabulary where a distinct fixed color per
+// role is the point, explicitly named load-bearing by this group's brief);
+// Badge.tsx's generic `purple` color key (tenant-plan "enterprise" tier
+// badge, the shared primitive's own non-semantic identity slot); deHealthApi
+// .ts's `high_cost` DE-health state (orange, kept distinct from the amber
+// `degraded`/`low_confidence` states in the same 7-member vocabulary);
+// WorkforceTrustDefaults.tsx's "per employee" tag (violet, the same
+// AI-written/provenance-scope identity already sanctioned for
+// EmployeeFileSections.tsx); LiveKnowledgeLibrary.tsx's "New doc proposed"/
+// "Specialist" badges (teal ×2, the same non-status identity marker).
+const BASELINE = { 'bare text-white': 0, 'bg-slate': 0, 'border-slate': 0, 'text-slate': 0, 'tone text-300': 0 };
 const NOW = {
   'bare text-white': bareWhite.length,
   'bg-slate': slateBg.length,

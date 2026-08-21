@@ -73,7 +73,7 @@ export default function OrgSetupScreen() {
           <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold">DT</div>
           <div>
             <div className="text-dt-title font-bold text-lg">DreamTeam AI</div>
-            <div className="text-indigo-300 text-xs">Digital Workforce Platform</div>
+            <div className="text-dt-accent-text text-xs">Digital Workforce Platform</div>
           </div>
         </div>
 
@@ -119,7 +119,7 @@ export default function OrgSetupScreen() {
             Signed in as {authedUser?.email}.{' '}
             <button
               onClick={() => { void (async () => { await handleLogout(); })(); }}
-              className="text-indigo-400 hover:text-indigo-300 underline"
+              className="text-dt-accent-text underline hover:brightness-110"
             >
               Sign out
             </button>

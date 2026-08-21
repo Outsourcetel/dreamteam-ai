@@ -404,7 +404,7 @@ const SettingsPage = ({
           </p>
         </div>
         <button onClick={() => setShowAi(v => !v)}
-          className="text-xs px-3 py-1.5 rounded-lg border border-indigo-500/40 text-indigo-300 hover:border-indigo-400 transition-colors shrink-0">
+          className="text-xs px-3 py-1.5 rounded-lg border border-dt-accent-border text-dt-accent-text hover:border-dt-accent transition-colors shrink-0">
           ✨ Ask about settings
         </button>
       </div>
@@ -460,7 +460,7 @@ const SettingsPage = ({
         <div className="max-w-2xl space-y-4">
           {tenant?.status === 'trial' && tenant?.trialEndsAt && (
             <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
-              <p className="text-sm font-medium text-amber-300 mb-0.5">
+              <p className="text-sm font-medium text-dt-warn mb-0.5">
                 Trial — ends {new Date(tenant.trialEndsAt).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}
               </p>
               <p className="text-xs text-amber-400/70">
@@ -629,13 +629,13 @@ const SettingsPage = ({
                 self-serve setting.
               </p>
               {keyMode === 'byo' && !anthropicSet && (
-                <p className="text-xs text-amber-300 mt-2.5">
+                <p className="text-xs text-dt-warn mt-2.5">
                   No Anthropic key is set for this workspace, so its Digital Employees cannot answer. Add one below.
                 </p>
               )}
             </div>
 
-            {keyError && <p className="text-xs text-rose-300 mb-4">{keyError}</p>}
+            {keyError && <p className="text-xs text-dt-danger mb-4">{keyError}</p>}
 
             {/* Anthropic */}
             <div className="mb-5">
@@ -997,7 +997,7 @@ const SettingsPage = ({
                       <p className="text-xs text-dt-title truncate">{k.label}</p>
                       <p className="text-[11px] mt-0.5">
                         {identityConfigured[k.id]
-                          ? <span className="text-emerald-300">● Configured</span>
+                          ? <span className="text-dt-ok">● Configured</span>
                           : <span className="text-dt-muted">○ Not configured</span>}
                       </p>
                     </div>
@@ -1013,9 +1013,9 @@ const SettingsPage = ({
             )}
             {identitySecret && (
               <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
-                <p className="text-[11px] text-amber-200 mb-1.5 font-medium">Copy this secret now — it’s shown only once. Store it in your server’s environment; never ship it to the browser.</p>
+                <p className="text-[11px] text-dt-warn mb-1.5 font-medium">Copy this secret now — it’s shown only once. Store it in your server’s environment; never ship it to the browser.</p>
                 <code className="block text-[11px] text-dt-title font-mono bg-dt-panel rounded-lg px-3 py-2 break-all mb-2">{identitySecret.secret}</code>
-                <p className="text-[11px] text-dt-support mb-1">On your server, sign each end user’s hash and pass it to the widget as <code className="text-indigo-300">userHash</code>:</p>
+                <p className="text-[11px] text-dt-support mb-1">On your server, sign each end user’s hash and pass it to the widget as <code className="text-dt-accent-text">userHash</code>:</p>
                 <pre className="text-[11px] text-dt-support font-mono bg-dt-panel rounded-lg p-3 overflow-x-auto whitespace-pre">{`const crypto = require('crypto');
 const b64url = s => Buffer.from(s, 'utf8').toString('base64url');
 const canonical =

@@ -136,10 +136,10 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
     <div className={variant === 'full' ? '' : 'rounded-2xl border border-dt-border bg-dt-card p-6'}>
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-dt-title">Guardrails</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300">always enforced</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-danger-soft text-dt-danger">always enforced</span>
         <span className="text-[11px] text-dt-muted">for {entityLabel}</span>
         <button onClick={() => setShowAI(v => !v)}
-          className="ml-auto text-[11px] px-2 py-1 rounded-lg bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/30 border border-indigo-700/50">
+          className="ml-auto text-[11px] px-2 py-1 rounded-lg bg-dt-accent-soft text-dt-accent-text hover:brightness-110 border border-dt-accent-border">
           {showAI ? 'Close assistant' : '✨ Set up with AI'}
         </button>
       </div>
@@ -148,7 +148,7 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
         an employee can never be talked, trained, or trusted past one.
         {scope !== 'workspace' && ' Workspace-wide rules are inherited and shown greyed out; edit those at the workspace level.'}
       </p>
-      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      {error && <p className="text-xs text-dt-danger mb-2">{error}</p>}
 
       {showAI && (
         <div className="mb-3">
@@ -159,13 +159,13 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
       {/* The assistant's pending suggestions — a person approves each into a live rule. */}
       {proposals.length > 0 && (
         <div className="mb-3 rounded-xl border border-indigo-800/50 bg-indigo-900/15 p-3">
-          <div className="text-[11px] font-medium text-indigo-200 mb-2">
+          <div className="text-[11px] font-medium text-dt-accent-text mb-2">
             ✨ Proposed by the assistant — needs your approval ({proposals.length})
           </div>
           <div className="space-y-1.5">
             {proposals.map((p) => (
               <div key={p.id} className="flex items-center gap-2 text-xs rounded-lg border border-indigo-800/40 bg-dt-inset px-3 py-2">
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">{p.severity === 'warning' ? 'warns' : 'blocks'}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-accent-soft text-dt-accent-text">{p.severity === 'warning' ? 'warns' : 'blocks'}</span>
                 <span className="text-dt-body">{describeProposal(p)}</span>
                 {p.rationale && <span className="text-dt-muted hidden sm:inline">— {p.rationale}</span>}
                 <div className="ml-auto flex items-center gap-2 shrink-0">
@@ -194,7 +194,7 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
               <div key={r.id + (inherited ? '-inh' : '')}
                 className={`flex items-center gap-2 text-xs rounded-lg border px-3 py-2 ${
                   inherited ? 'border-dt-border bg-dt-inset opacity-60' : 'border-dt-border bg-dt-inset'}`}>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded ${r.severity === 'blocking' ? 'bg-rose-500/15 text-rose-300' : 'bg-amber-500/15 text-amber-300'}`}>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded ${r.severity === 'blocking' ? 'bg-dt-danger-soft text-dt-danger' : 'bg-dt-warn-soft text-dt-warn'}`}>
                   {r.severity === 'blocking' ? 'blocks' : 'warns'}
                 </span>
                 <span className="text-dt-body">{r.rule}</span>
@@ -202,7 +202,7 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
                 {inherited
                   ? <span className="ml-auto text-[10px] text-dt-faint">workspace-wide</span>
                   : <button onClick={() => void run(() => updateGuardrailRule(r, { active: !r.active }, 'hand_authored'))} disabled={busy || !canEditGuardrails}
-                      className={`ml-auto text-[10px] ${r.active ? 'text-dt-muted hover:text-amber-300' : 'text-emerald-400 hover:text-emerald-300'}`}>
+                      className={`ml-auto text-[10px] ${r.active ? 'text-dt-muted hover:text-dt-warn' : 'text-emerald-400 hover:text-dt-ok'}`}>
                       {r.active ? 'pause' : 'resume'}
                     </button>}
                 {!inherited && !r.active && <span className="text-[10px] text-dt-faint">(paused)</span>}
@@ -213,7 +213,7 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
       )}
 
       {!adding ? (
-        <button onClick={() => setAdding(true)} disabled={!canEditGuardrails} className="text-[11px] text-indigo-400 hover:text-indigo-300 disabled:opacity-50">
+        <button onClick={() => setAdding(true)} disabled={!canEditGuardrails} className="text-[11px] text-dt-accent-text hover:underline disabled:opacity-50">
           + Add a guardrail{scope !== 'workspace' ? ` for ${entityLabel}` : ''}
         </button>
       ) : (

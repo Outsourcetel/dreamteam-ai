@@ -234,7 +234,7 @@ const PlatformConsolePage = ({
                   : `${debrisTenants.length} suspended test tenant${debrisTenants.length === 1 ? '' : 's'} from earlier security testing hidden.`}{' '}
                 <button
                   onClick={() => setShowTestDebris((v) => !v)}
-                  className="text-indigo-400 hover:text-indigo-300 underline"
+                  className="text-dt-accent-text underline hover:brightness-110"
                 >
                   {showTestDebris ? 'Hide them' : 'Show them'}
                 </button>
@@ -315,7 +315,7 @@ const PlatformConsolePage = ({
                         <div className="text-sm font-medium text-dt-title">
                           {t.name}
                           {t.allowSelfServeSubtenants && (
-                            <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 align-middle">
+                            <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-dt-ok-soft text-dt-ok align-middle">
                               Self-serve sub-tenants ON
                             </span>
                           )}
@@ -381,13 +381,13 @@ const PlatformConsolePage = ({
                       </button>
                       <button
                         onClick={() => setFeatureTarget(t)}
-                        className="text-xs px-2 py-1 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 rounded-lg transition-all"
+                        className="text-xs px-2 py-1 bg-dt-accent-soft hover:brightness-110 text-dt-accent-text rounded-lg transition-all"
                       >
                         Features
                       </button>
                       <button
                         onClick={() => { setEnterError(''); setGodModeTarget(t); }}
-                        className="text-xs px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 rounded-lg transition-all"
+                        className="text-xs px-2 py-1 bg-dt-warn-soft hover:brightness-110 text-dt-warn rounded-lg transition-all"
                       >
                         Remote Access
                       </button>
@@ -522,7 +522,7 @@ const PlatformConsolePage = ({
                     setGodModeTarget(selectedTenant);
                     setSelectedTenant(null);
                   }}
-                  className="flex-1 py-2.5 text-sm font-medium rounded-xl bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 transition-all"
+                  className="flex-1 py-2.5 text-sm font-medium rounded-xl bg-dt-warn-soft text-dt-warn hover:brightness-110 transition-all"
                 >
                   Remote Access
                 </button>
@@ -560,7 +560,7 @@ const PlatformConsolePage = ({
           >
             <div className="space-y-4">
               <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl">
-                <p className="text-sm text-amber-300 font-medium mb-1">
+                <p className="text-sm text-dt-warn font-medium mb-1">
                   Remote Access — enter this tenant's workspace
                 </p>
                 <p className="text-xs text-amber-400/70">
@@ -571,7 +571,7 @@ const PlatformConsolePage = ({
               <div className="space-y-2 text-xs text-dt-support">
                 <div className="flex justify-between">
                   <span>Access Level</span>
-                  <span className="text-amber-300 font-medium">
+                  <span className="text-dt-warn font-medium">
                     Full Read and Write
                   </span>
                 </div>
@@ -613,7 +613,7 @@ const PlatformConsolePage = ({
         </div>
 
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-6">
-          <p className="text-xs text-amber-300">
+          <p className="text-xs text-dt-warn">
             Billing isn't connected to any payment provider yet — there's no real MRR, ARR, or renewal data to
             show. This page reflects only what's actually known: each tenant's plan tier and status.
           </p>
@@ -881,10 +881,10 @@ const PlatformHealthPage = () => {
           </div>
           {(dispatch.cron_failed > 0 || dispatch.http_failed > 0) && dispatch.worst_error && (
             <div className="mt-3 bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
-              <p className="text-xs text-amber-200 font-semibold mb-1">
+              <p className="text-xs text-dt-warn font-semibold mb-1">
                 Most recent failure{dispatch.last_failure_at ? ` — ${new Date(dispatch.last_failure_at).toLocaleString()}` : ''}
               </p>
-              <p className="text-[11px] text-amber-100/80 font-mono break-words">{dispatch.worst_error.slice(0, 400)}</p>
+              <p className="text-[11px] text-dt-warn font-mono break-words">{dispatch.worst_error.slice(0, 400)}</p>
             </div>
           )}
         </div>
@@ -903,7 +903,7 @@ const PlatformHealthPage = () => {
 
       {unknown > 0 && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 mb-6">
-          <p className="text-xs text-red-300">
+          <p className="text-xs text-dt-danger">
             {unknown} connector{unknown === 1 ? '' : 's'} report a status this page does not recognise. They are
             counted in the total and in none of the four classes above — deliberately not treated as healthy.
             Somebody widened connectors_status_check without teaching this screen the new value.
@@ -912,7 +912,7 @@ const PlatformHealthPage = () => {
       )}
 
       <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-6">
-        <p className="text-xs text-amber-300">
+        <p className="text-xs text-dt-warn">
           Platform-level infrastructure metrics (API latency, uptime, error rate, incidents) aren't monitored yet —
           shown here honestly rather than with placeholder numbers.
         </p>
@@ -1126,9 +1126,9 @@ const changedFields = (row: RemoteAccessWriteLogRow): string[] => {
 };
 
 const operationBadgeClasses: Record<string, string> = {
-  INSERT: 'bg-emerald-500/15 text-emerald-300',
-  UPDATE: 'bg-blue-500/15 text-blue-300',
-  DELETE: 'bg-red-500/15 text-red-300',
+  INSERT: 'bg-dt-ok-soft text-dt-ok',
+  UPDATE: 'bg-dt-info-soft text-dt-info',
+  DELETE: 'bg-dt-danger-soft text-dt-danger',
 };
 
 const RemoteAccessWriteAuditPanel = ({ dbTenants, operatorUserId }: {
@@ -1328,7 +1328,7 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants, operatorUserId }: {
                 <div className="space-y-2">
                   {changedFields(detailRow).map((field) => (
                     <div key={field} className="bg-dt-panel rounded-xl p-3">
-                      <div className="text-xs font-mono text-amber-300 mb-1">{field}</div>
+                      <div className="text-xs font-mono text-dt-warn mb-1">{field}</div>
                       <div className="text-xs text-dt-support space-y-1">
                         <div>
                           <span className="text-dt-muted">before:</span>{' '}
@@ -1407,7 +1407,7 @@ const PendingApprovalsPanel = () => {
             These tenants asked to create a sub-account. Nothing is created until you approve or reject.
           </p>
         </div>
-        <span className="text-xs px-2 py-1 rounded-full bg-amber-500/15 text-amber-300 font-medium">
+        <span className="text-xs px-2 py-1 rounded-full bg-dt-warn-soft text-dt-warn font-medium">
           {requests.length} pending
         </span>
       </div>
@@ -1426,14 +1426,14 @@ const PendingApprovalsPanel = () => {
               <button
                 disabled={busyId === r.id}
                 onClick={() => handleApprove(r.id)}
-                className="text-xs px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded-lg transition-all disabled:opacity-50"
+                className="text-xs px-3 py-1.5 bg-dt-ok-soft hover:brightness-110 text-dt-ok rounded-lg transition-all disabled:opacity-50"
               >
                 Approve
               </button>
               <button
                 disabled={busyId === r.id}
                 onClick={() => setRejectTarget(r)}
-                className="text-xs px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-lg transition-all disabled:opacity-50"
+                className="text-xs px-3 py-1.5 bg-dt-danger-soft hover:brightness-110 text-dt-danger rounded-lg transition-all disabled:opacity-50"
               >
                 Reject
               </button>
@@ -1545,7 +1545,7 @@ const SuspendToggle = ({ tenant, onChanged }: { tenant: Tenant; onChanged: (stat
       disabled={saving}
       className={`px-4 py-2.5 text-sm font-medium rounded-xl transition-all disabled:opacity-50 ${
         isSuspended
-          ? 'text-emerald-300 bg-emerald-500/20 hover:bg-emerald-500/30'
+          ? 'text-dt-ok bg-dt-ok-soft hover:brightness-110'
           : 'text-dt-support hover:text-dt-body bg-dt-panel'
       }`}
     >
@@ -1585,7 +1585,7 @@ const DeleteTenantControl = ({ tenant, onDeleted }: { tenant: Tenant; onDeleted:
     <div className="bg-red-500/5 border border-red-500/25 rounded-xl p-4">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <div className="text-sm font-medium text-red-300">Delete this tenant</div>
+          <div className="text-sm font-medium text-dt-danger">Delete this tenant</div>
           <div className="text-xs text-dt-support mt-0.5">
             {canDelete
               ? 'Permanent and irreversible — removes the workspace, its people, digital employees, playbooks, knowledge, and history.'
@@ -1596,7 +1596,7 @@ const DeleteTenantControl = ({ tenant, onDeleted }: { tenant: Tenant; onDeleted:
           <button
             onClick={() => { setArming(true); setError(''); setConfirmText(''); }}
             disabled={!canDelete}
-            className="flex-shrink-0 px-4 py-2.5 text-sm font-medium rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed text-red-300 bg-red-500/15 hover:bg-red-500/25"
+            className="flex-shrink-0 px-4 py-2.5 text-sm font-medium rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed text-dt-danger bg-dt-danger-soft hover:brightness-110"
           >
             Delete…
           </button>
@@ -1605,7 +1605,7 @@ const DeleteTenantControl = ({ tenant, onDeleted }: { tenant: Tenant; onDeleted:
       {arming && (
         <div className="mt-3 space-y-2">
           <label className="block text-xs text-dt-support">
-            Type the tenant slug <span className="font-mono text-red-300">{tenant.slug}</span> to confirm.
+            Type the tenant slug <span className="font-mono text-dt-danger">{tenant.slug}</span> to confirm.
           </label>
           <input
             value={confirmText}

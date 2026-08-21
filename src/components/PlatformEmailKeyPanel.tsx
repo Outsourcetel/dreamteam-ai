@@ -106,7 +106,7 @@ export default function PlatformEmailKeyPanel() {
           you do, the old one still works.
         </p>
       )}
-      {status === 'error' && error && <p className="text-xs text-rose-300 mt-2">{error}</p>}
+      {status === 'error' && error && <p className="text-xs text-dt-danger mt-2">{error}</p>}
 
       <InboundSecretField />
     </div>
@@ -194,7 +194,7 @@ function InboundSecretField() {
           email to your receiving address and watch it arrive in the Support inbox.
         </p>
       )}
-      {status === 'error' && error && <p className="text-xs text-rose-300 mt-2">{error}</p>}
+      {status === 'error' && error && <p className="text-xs text-dt-danger mt-2">{error}</p>}
     </div>
   );
 }

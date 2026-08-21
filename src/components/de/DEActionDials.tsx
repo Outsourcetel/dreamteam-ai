@@ -188,7 +188,7 @@ export default function DEActionDials({ deId, canEdit }: { deId: string; canEdit
                       {busy ? 'Saving…' : 'Save'}
                     </Button>
                     {savedKey === d.action_type && (
-                      <span className="text-[11px] text-emerald-300">Saved for {scopeLabel}.</span>
+                      <span className="text-[11px] text-dt-ok">Saved for {scopeLabel}.</span>
                     )}
                   </div>
                 )}

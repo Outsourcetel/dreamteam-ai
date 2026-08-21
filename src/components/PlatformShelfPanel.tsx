@@ -130,7 +130,7 @@ export default function PlatformShelfPanel({ tenantQuery }: { tenantQuery?: stri
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs text-dt-body">{d.title}</span>
                     {/* Every row says whose it is. */}
-                    <span className="text-[10px] px-1 py-0.5 rounded bg-indigo-500/10 text-indigo-300">provided</span>
+                    <span className="text-[10px] px-1 py-0.5 rounded bg-dt-accent-soft text-dt-accent-text">provided</span>
                     {d.cited_30d > 0 && (
                       <span className="text-[10px] text-dt-muted ml-auto">
                         used {d.cited_30d}× in 30d

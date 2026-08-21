@@ -165,7 +165,7 @@ export default function ImportCustomersModal({
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-medium text-dt-support">CSV data</label>
-              <label className="text-xs text-indigo-400 hover:text-indigo-300 cursor-pointer">
+              <label className="text-xs text-dt-accent-text hover:underline cursor-pointer">
                 Upload file
                 <input
                   type="file"
@@ -246,13 +246,13 @@ export default function ImportCustomersModal({
 
           {/* Result / errors */}
           {fatalError && (
-            <div className="rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{fatalError}</div>
+            <div className="rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{fatalError}</div>
           )}
           {result && (
             <div className="rounded-xl border border-dt-border-strong bg-dt-panel px-4 py-3 text-xs">
-              <p className="text-emerald-300 font-medium mb-1">{result.imported} row(s) imported.</p>
+              <p className="text-dt-ok font-medium mb-1">{result.imported} row(s) imported.</p>
               {result.errors.length > 0 && (
-                <div className="text-amber-300">
+                <div className="text-dt-warn">
                   <p className="mb-1">{result.errors.length} row(s) skipped:</p>
                   <ul className="list-disc ml-4 space-y-0.5 text-amber-400/80">
                     {result.errors.slice(0, 8).map(e => (

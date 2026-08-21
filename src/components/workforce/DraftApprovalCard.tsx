@@ -37,9 +37,9 @@ export function DraftApprovalCard({ action }: DraftApprovalCardProps) {
 
   if (approved) {
     return (
-      <div className="bg-green-900 border border-green-700 rounded p-2 flex items-center gap-2">
-        <CheckCircle className="w-4 h-4 text-green-300 flex-shrink-0" />
-        <span className="text-xs text-green-100">Approved</span>
+      <div className="bg-dt-ok-soft border border-dt-ok-border rounded p-2 flex items-center gap-2">
+        <CheckCircle className="w-4 h-4 text-dt-ok flex-shrink-0" />
+        <span className="text-xs text-dt-ok">Approved</span>
       </div>
     );
   }
@@ -58,7 +58,7 @@ export function DraftApprovalCard({ action }: DraftApprovalCardProps) {
         <p className="text-dt-support mt-1 line-clamp-2">{action.proposal_rationale}</p>
       )}
 
-      {error && <div className="text-red-300 mt-1">{error}</div>}
+      {error && <div className="text-dt-danger mt-1">{error}</div>}
 
       <div className="flex gap-1 mt-2">
         <button

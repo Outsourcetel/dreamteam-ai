@@ -207,7 +207,7 @@ function LearningDigestPanel() {
       </p>
 
       {quality.drift && (
-        <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-300">
+        <div className="mt-3 rounded-xl border border-dt-warn-border bg-dt-warn-soft px-4 py-2.5 text-xs text-dt-warn">
           Drift watch: judged answer quality dropped {Math.abs(quality.delta ?? 0)} points vs the prior period
           (avg {quality.prev_avg_score} → {quality.avg_score}). Review recent knowledge and amendment changes before promoting anyone's trust.
         </div>
@@ -366,7 +366,7 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
 
       <LearningDigestPanel />
 
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {error && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {loading ? (
         <LiveLoadingSkeleton rows={4} />
@@ -549,9 +549,9 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
                 )}
                 {selected.status === 'resolved' && (
                   <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 mb-6">
-                    <p className="text-xs text-emerald-300">Resolved{selected.fix_applied_at ? ` on ${new Date(selected.fix_applied_at).toLocaleDateString()}` : ''} — the guardrail change is live.</p>
+                    <p className="text-xs text-dt-ok">Resolved{selected.fix_applied_at ? ` on ${new Date(selected.fix_applied_at).toLocaleDateString()}` : ''} — the guardrail change is live.</p>
                     {selected.recurred_after_fix && (
-                      <p className="text-xs text-red-300 mt-1">This pattern has since recurred {selected.recurrence_count} time{selected.recurrence_count === 1 ? '' : 's'} after that fix — the underlying issue may not have been fully resolved.</p>
+                      <p className="text-xs text-dt-danger mt-1">This pattern has since recurred {selected.recurrence_count} time{selected.recurrence_count === 1 ? '' : 's'} after that fix — the underlying issue may not have been fully resolved.</p>
                     )}
                   </div>
                 )}

@@ -81,8 +81,8 @@ const PlatformTeamPage = () => {
         </p>
       </div>
 
-      {toast && <div className="mb-4 rounded-xl border border-emerald-800/50 bg-emerald-500/10 px-4 py-2.5 text-xs text-emerald-300">✓ {toast}</div>}
-      {err && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-2.5 text-xs text-rose-300">{err}</div>}
+      {toast && <div className="mb-4 rounded-xl border border-dt-ok-border bg-dt-ok-soft px-4 py-2.5 text-xs text-dt-ok">✓ {toast}</div>}
+      {err && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-2.5 text-xs text-dt-danger">{err}</div>}
 
       <PlatformInvitesPanel />
 
@@ -130,7 +130,7 @@ const PlatformTeamPage = () => {
                     </button>
                   )}
 
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap ${m.is_active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-dt-border-strong text-dt-support'}`}>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap ${m.is_active ? 'bg-dt-ok-soft text-dt-ok' : 'bg-dt-border-strong text-dt-support'}`}>
                     {m.is_active ? 'active' : 'inactive'}
                   </span>
 
@@ -251,7 +251,7 @@ function PermissionsModal({ member, onClose, onChanged }: {
                 >
                   <span className="text-xs text-dt-body">{PLATFORM_CAPABILITY_LABELS[cap]}</span>
                   <span className="flex items-center gap-2 flex-shrink-0">
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full ${effective ? 'bg-emerald-500/15 text-emerald-300' : 'bg-dt-panel text-dt-muted'}`}>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full ${effective ? 'bg-dt-ok-soft text-dt-ok' : 'bg-dt-panel text-dt-muted'}`}>
                       {effective ? 'allowed' : 'not allowed'}
                     </span>
                     <span className="text-[10px] text-dt-faint w-24 text-right">

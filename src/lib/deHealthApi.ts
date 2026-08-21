@@ -144,12 +144,16 @@ export interface DEHealth {
 
 export const DE_HEALTH_LABELS: Record<DEHealthState, { label: string; color: string }> = {
   retired: { label: 'Retired', color: 'bg-dt-neutral-soft text-dt-neutral' },
-  incident_active: { label: 'Incident', color: 'bg-rose-500/15 text-rose-300' },
-  degraded: { label: 'Degraded', color: 'bg-amber-500/15 text-amber-300' },
-  low_confidence: { label: 'Low confidence', color: 'bg-amber-500/15 text-amber-300' },
-  high_cost: { label: 'High cost', color: 'bg-orange-500/15 text-orange-300' },
-  improving: { label: 'Improving', color: 'bg-sky-500/15 text-sky-300' },
-  healthy: { label: 'Healthy', color: 'bg-emerald-500/15 text-emerald-300' },
+  incident_active: { label: 'Incident', color: 'bg-dt-danger-soft text-dt-danger' },
+  degraded: { label: 'Degraded', color: 'bg-dt-warn-soft text-dt-warn' },
+  low_confidence: { label: 'Low confidence', color: 'bg-dt-warn-soft text-dt-warn' },
+  // orange: non-core hue, kept as its own state-identity distinct from the
+  // amber 'degraded'/'low_confidence' states in this 7-member health
+  // vocabulary — made opaque per the mapping table's "non-semantic identity
+  // hues keep their hue" rule.
+  high_cost: { label: 'High cost', color: 'bg-orange-600 text-orange-100' },
+  improving: { label: 'Improving', color: 'bg-dt-info-soft text-dt-info' },
+  healthy: { label: 'Healthy', color: 'bg-dt-ok-soft text-dt-ok' },
   insufficient_data: { label: 'Not enough data yet', color: 'bg-dt-neutral-soft text-dt-neutral' },
 };
 

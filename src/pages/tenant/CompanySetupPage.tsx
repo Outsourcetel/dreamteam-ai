@@ -171,7 +171,7 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
       />
 
       {!isLive && (
-        <div className="mb-6 rounded-xl border border-amber-800/50 bg-amber-500/10 px-4 py-3 text-xs text-amber-300">
+        <div className="mb-6 rounded-xl border border-dt-warn-border bg-dt-warn-soft px-4 py-3 text-xs text-dt-warn">
           Demo workspace — the wizard is fully interactive but nothing is provisioned here. In a live workspace, Finish creates real employees and guardrails.
         </div>
       )}
@@ -184,7 +184,7 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
         onClick={() => setPage('onboarding_architect')}
         className="w-full mb-6 text-left rounded-xl border border-indigo-800/50 bg-indigo-500/10 px-4 py-3 hover:bg-indigo-500/15 transition-colors"
       >
-        <div className="text-sm text-indigo-300 font-medium">✦ Rather just describe your business?</div>
+        <div className="text-sm text-dt-accent-text font-medium">✦ Rather just describe your business?</div>
         <div className="text-xs text-dt-muted mt-1">
           Quick Start asks what you do in a sentence and proposes the industry, employees and
           guardrails for you — about 30 seconds. Everything it suggests is editable here afterwards.
@@ -213,7 +213,7 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
         ))}
       </div>
 
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {error && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {/* Step 1: Industry */}
       {step === 0 && (

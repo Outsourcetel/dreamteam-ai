@@ -321,7 +321,7 @@ function AppShell() {
   if (mfaGateBlocking) {
     return (
       <div className="flex-1 flex flex-col h-screen bg-dt-page">
-        <div className="bg-amber-500/10 border-b border-amber-500/30 px-6 py-3 text-sm text-amber-300">
+        <div className="bg-dt-warn-soft border-b border-dt-warn-border px-6 py-3 text-sm text-dt-warn">
           Your workspace requires two-factor authentication before you can continue.
         </div>
         <MfaEnrollmentPanel />
@@ -507,14 +507,14 @@ function AppShell() {
             <div className="bg-amber-500/10 border-b border-amber-500/30 px-6 py-2 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-amber-400 text-sm">!</span>
-                <span className="text-xs text-amber-300">
+                <span className="text-xs text-dt-warn">
                   Remote Access — viewing {godModeSession.tenant.name} as{' '}
                   {godModeSession.operator.name}
                 </span>
               </div>
               <button
                 onClick={() => { void exitRemoteAccess(); }}
-                className="text-xs text-amber-500 hover:text-amber-300 underline transition-all"
+                className="text-xs text-amber-500 hover:text-dt-warn underline transition-all"
               >
                 Exit Remote Access
               </button>

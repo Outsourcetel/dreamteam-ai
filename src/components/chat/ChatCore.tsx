@@ -91,14 +91,14 @@ function AssistantBubble({ msg, onDone }: { msg: Msg; onDone?: () => void }) {
         ))}</span>}
       </div>
       {msg.needsHuman && (
-        <div className="mt-1.5 text-[11px] text-indigo-300 flex items-center gap-1.5">
+        <div className="mt-1.5 text-[11px] text-dt-accent-text flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" /> A teammate will follow up here
         </div>
       )}
       {msg.sources && msg.sources.length > 0 && shown === msg.full && (
         <div className="mt-1.5 flex flex-wrap gap-1">
           {msg.sources.slice(0, 4).map((s, i) => (
-            <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-200 border border-indigo-400/20">{s}</span>
+            <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-dt-accent-soft text-dt-accent-text border border-dt-accent-border">{s}</span>
           ))}
         </div>
       )}
@@ -265,7 +265,7 @@ export default function ChatCore({
         </div>
         <div className="min-w-0">
           <p className="text-sm font-semibold text-dt-title truncate">{brandName}</p>
-          <p className="text-[11px] text-emerald-300/90 flex items-center gap-1.5">
+          <p className="text-[11px] text-dt-ok flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_2px_rgba(52,211,153,0.7)]" /> Online now
           </p>
         </div>
@@ -284,8 +284,8 @@ export default function ChatCore({
         {csat === 'shown' && (
           <div className="self-start flex items-center gap-2 text-[12px] text-dt-support mt-1 cc-in">
             <span>Was this helpful?</span>
-            <button onClick={() => rateCsat(1)} className="w-7 h-7 rounded-full bg-white/5 hover:bg-emerald-500/20 border border-white/10 text-dt-support hover:text-emerald-300 transition-colors">👍</button>
-            <button onClick={() => rateCsat(-1)} className="w-7 h-7 rounded-full bg-white/5 hover:bg-rose-500/20 border border-white/10 text-dt-support hover:text-rose-300 transition-colors">👎</button>
+            <button onClick={() => rateCsat(1)} className="w-7 h-7 rounded-full bg-white/5 hover:bg-emerald-500/20 border border-white/10 text-dt-support hover:text-dt-ok transition-colors">👍</button>
+            <button onClick={() => rateCsat(-1)} className="w-7 h-7 rounded-full bg-white/5 hover:bg-rose-500/20 border border-white/10 text-dt-support hover:text-dt-danger transition-colors">👎</button>
           </div>
         )}
         {csat === 'done' && <div className="self-start text-[12px] text-dt-muted">Thanks for the feedback!</div>}

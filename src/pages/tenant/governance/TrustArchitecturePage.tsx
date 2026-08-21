@@ -17,9 +17,9 @@ import { PageHeader, th, td } from '../../../components/ui'
 type Status = 'live' | 'live_pending' | 'designed' | 'roadmap'
 
 const STATUS_META: Record<Status, { label: string; cls: string }> = {
-  live: { label: 'Live', cls: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' },
-  live_pending: { label: 'Live (pending activation)', cls: 'bg-emerald-500/10 text-emerald-300/90 border border-emerald-500/25' },
-  designed: { label: 'Designed', cls: 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30' },
+  live: { label: 'Live', cls: 'bg-dt-ok-soft text-dt-ok border border-dt-ok-border' },
+  live_pending: { label: 'Live (pending activation)', cls: 'bg-dt-ok-soft text-dt-ok border border-dt-ok-border' },
+  designed: { label: 'Designed', cls: 'bg-dt-accent-soft text-dt-accent-text border border-dt-accent-border' },
   roadmap: { label: 'Roadmap', cls: 'bg-dt-neutral-soft text-dt-neutral border border-dt-border-strong' },
 }
 
@@ -197,7 +197,7 @@ export default function TrustArchitecturePage() {
             {FLOW_STEPS.map((s, i) => (
               <div key={s.title} className="bg-dt-page rounded-lg p-3 border border-dt-border">
                 <div className="flex items-center gap-2 mb-1.5">
-                  <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center text-[10px] font-bold">{i + 1}</span>
+                  <span className="w-5 h-5 rounded-full bg-dt-accent-soft text-dt-accent-text flex items-center justify-center text-[10px] font-bold">{i + 1}</span>
                   <p className="text-[11px] font-semibold text-dt-body">{s.title}</p>
                 </div>
                 <p className="text-[11px] text-dt-support leading-relaxed">{s.body}</p>
@@ -324,7 +324,7 @@ export default function TrustArchitecturePage() {
               </Row>
             </div>
             <button onClick={() => handleSetPage('gov_security')}
-              className="mt-3 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
+              className="mt-3 text-xs text-dt-accent-text hover:underline transition-colors">
               View Security &amp; Access →
             </button>
           </Card>
@@ -362,8 +362,8 @@ export default function TrustArchitecturePage() {
         {/* ── Known limitations (the trust-builder) ── */}
         <div className="bg-amber-500/5 border border-amber-500/30 rounded-xl p-5">
           <div className="flex items-center justify-between gap-3 mb-2">
-            <p className="text-xs font-medium text-amber-300 uppercase tracking-wider">What we haven't done yet — and when</p>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">Stated deliberately</span>
+            <p className="text-xs font-medium text-dt-warn uppercase tracking-wider">What we haven't done yet — and when</p>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-dt-warn-soft text-dt-warn border border-dt-warn-border">Stated deliberately</span>
           </div>
           <p className="text-[11px] text-dt-support mb-3 leading-relaxed">
             A reviewer should hear these from us first. Each gap has a named hardening step; none is hidden behind marketing language.
@@ -395,9 +395,9 @@ export default function TrustArchitecturePage() {
 
         {/* Cross-links */}
         <div className="flex flex-wrap gap-4 pb-2">
-          <button onClick={() => handleSetPage('gov_audit')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">Audit Trail (verify the chain live) →</button>
-          <button onClick={() => handleSetPage('gov_compliance')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">Compliance &amp; Guardrails →</button>
-          <button onClick={() => handleSetPage('systems_connectors')} className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">Connectors →</button>
+          <button onClick={() => handleSetPage('gov_audit')} className="text-xs text-dt-accent-text hover:underline transition-colors">Audit Trail (verify the chain live) →</button>
+          <button onClick={() => handleSetPage('gov_compliance')} className="text-xs text-dt-accent-text hover:underline transition-colors">Compliance &amp; Guardrails →</button>
+          <button onClick={() => handleSetPage('systems_connectors')} className="text-xs text-dt-accent-text hover:underline transition-colors">Connectors →</button>
         </div>
       </div>
     </div>

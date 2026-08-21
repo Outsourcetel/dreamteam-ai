@@ -113,7 +113,7 @@ const SupportTriageRulesPage = ({ setPage, embedded }: { setPage: (p: Page) => v
         </div>
       </div>
 
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {error && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {/* Editor */}
       {draft && (
@@ -217,10 +217,10 @@ const SupportTriageRulesPage = ({ setPage, embedded }: { setPage: (p: Page) => v
                   <td className="py-3 px-4 text-dt-support text-xs max-w-xs truncate">{r.match_pattern || <span className="italic">catch-all</span>}</td>
                   <td className="py-3 px-4 text-dt-support">{r.set_category}</td>
                   <td className="py-3 px-4 text-dt-support text-xs">{ownerLabel(r.owner_de_id)}</td>
-                  <td className="py-3 px-4"><span className={`text-xs ${r.set_priority === 'urgent' ? 'text-rose-400' : r.set_priority === 'high' ? 'text-amber-300' : 'text-dt-support'}`}>{r.set_priority}</span></td>
-                  <td className="py-3 px-4"><span className={`text-xs ${r.set_severity === 'sev1' ? 'text-rose-400' : r.set_severity === 'sev2' ? 'text-amber-300' : 'text-dt-support'}`}>{r.set_severity}</span></td>
-                  <td className="py-3 px-4"><button onClick={() => setDraft({ ...r })} className="text-xs text-indigo-400 hover:text-indigo-300">Edit</button></td>
-                  <td className="py-3 px-4"><button onClick={() => void remove(r)} className="text-xs text-rose-400 hover:text-rose-300">Delete</button></td>
+                  <td className="py-3 px-4"><span className={`text-xs ${r.set_priority === 'urgent' ? 'text-rose-400' : r.set_priority === 'high' ? 'text-dt-warn' : 'text-dt-support'}`}>{r.set_priority}</span></td>
+                  <td className="py-3 px-4"><span className={`text-xs ${r.set_severity === 'sev1' ? 'text-rose-400' : r.set_severity === 'sev2' ? 'text-dt-warn' : 'text-dt-support'}`}>{r.set_severity}</span></td>
+                  <td className="py-3 px-4"><button onClick={() => setDraft({ ...r })} className="text-xs text-dt-accent-text hover:underline">Edit</button></td>
+                  <td className="py-3 px-4"><button onClick={() => void remove(r)} className="text-xs text-rose-400 hover:text-dt-danger">Delete</button></td>
                 </tr>
               ))}
             </tbody>

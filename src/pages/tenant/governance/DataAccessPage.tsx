@@ -164,8 +164,8 @@ export default function DataAccessPage({ setPage }: { setPage: (p: Page) => void
         title="Data Access"
         subtitle="Default-deny: a digital employee or specialist can only touch a connected system you grant here. Enforced on the server, on every call."
       />
-      {error && <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 mb-4 text-xs text-red-300">{error}</div>}
-      {lastChange && <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-4 py-3 mb-4 text-xs text-emerald-300">{lastChange}</div>}
+      {error && <div className="bg-dt-danger-soft border border-dt-danger-border rounded-xl px-4 py-3 mb-4 text-xs text-dt-danger">{error}</div>}
+      {lastChange && <div className="bg-dt-ok-soft border border-dt-ok-border rounded-xl px-4 py-3 mb-4 text-xs text-dt-ok">{lastChange}</div>}
 
       {/* Permission ladder legend */}
       <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-6">
@@ -322,7 +322,7 @@ export default function DataAccessPage({ setPage }: { setPage: (p: Page) => void
             {denials.map((d) => (
               <div key={d.id} className="rounded-xl border border-dt-border bg-dt-inset px-3 py-2">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300">denied</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-danger-soft text-dt-danger">denied</span>
                   <span className="text-xs text-dt-support">{d.detail.connector_label ?? 'connected system'}</span>
                   {d.detail.op && <span className="text-[10px] text-dt-muted font-mono">{d.detail.op}</span>}
                   {d.detail.needed && (
@@ -343,7 +343,7 @@ export default function DataAccessPage({ setPage }: { setPage: (p: Page) => void
       <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
         <div className="flex items-start justify-between gap-3 flex-wrap mb-1">
           <h3 className="text-sm font-semibold text-dt-title">MCP servers this workspace will talk to</h3>
-          <span className={`text-[10px] px-2 py-0.5 rounded ${mcpAllow.length === 0 ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300'}`}>
+          <span className={`text-[10px] px-2 py-0.5 rounded ${mcpAllow.length === 0 ? 'bg-dt-warn-soft text-dt-warn' : 'bg-dt-ok-soft text-dt-ok'}`}>
             {mcpAllow.length === 0 ? 'Open — any public MCP server' : `Restricted — ${mcpAllow.length} server${mcpAllow.length === 1 ? '' : 's'}`}
           </span>
         </div>
@@ -355,7 +355,7 @@ export default function DataAccessPage({ setPage }: { setPage: (p: Page) => void
 
         {mcpAllow.length === 0 ? (
           <p className="text-[11px] text-dt-muted mb-3">
-            No servers listed, so <span className="text-amber-300">any public MCP server may be connected</span>.
+            No servers listed, so <span className="text-dt-warn">any public MCP server may be connected</span>.
             Listing one switches this workspace to strict mode, where only the servers you list are allowed.
           </p>
         ) : (
@@ -371,7 +371,7 @@ export default function DataAccessPage({ setPage }: { setPage: (p: Page) => void
         )}
 
         {blockedMcpConnectors.length > 0 && (
-          <p className="text-[11px] text-amber-300 mb-3">
+          <p className="text-[11px] text-dt-warn mb-3">
             ⚠ {blockedMcpConnectors.length} connected MCP server{blockedMcpConnectors.length === 1 ? ' is' : 's are'} not on this list
             ({blockedMcpConnectors.map(c => c.display_name || c.base_url).join(', ')}) — calls to {blockedMcpConnectors.length === 1 ? 'it' : 'them'} are refused until you add the host.
           </p>

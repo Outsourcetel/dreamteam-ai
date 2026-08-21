@@ -105,7 +105,7 @@ const PlatformInvitesPanel = () => {
 
       {justCreated && (
         <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
-          <p className="text-xs text-emerald-300 font-medium mb-1">
+          <p className="text-xs text-dt-ok font-medium mb-1">
             Invite created for {justCreated.email}
           </p>
           <p className="text-[11px] text-emerald-400/70 mb-2">
@@ -142,8 +142,8 @@ const PlatformInvitesPanel = () => {
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
-                  inv.status === 'pending' ? 'bg-amber-500/15 text-amber-300'
-                  : inv.status === 'redeemed' ? 'bg-emerald-500/15 text-emerald-300'
+                  inv.status === 'pending' ? 'bg-dt-warn-soft text-dt-warn'
+                  : inv.status === 'redeemed' ? 'bg-dt-ok-soft text-dt-ok'
                   : 'bg-dt-border-strong text-dt-support'
                 }`}>
                   {inv.status}
@@ -159,7 +159,7 @@ const PlatformInvitesPanel = () => {
                     <button
                       disabled={busyId === inv.id}
                       onClick={() => handleRevoke(inv.id)}
-                      className="text-xs px-2 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-lg transition-all disabled:opacity-50"
+                      className="text-xs px-2 py-1 bg-dt-danger-soft hover:brightness-110 text-dt-danger rounded-lg transition-all disabled:opacity-50"
                     >
                       Revoke
                     </button>

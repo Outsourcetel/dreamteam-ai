@@ -20,10 +20,10 @@ import type { KnowledgeDoc, KnowledgeDocCitationStats, ScopeSubject, CoverageDem
 // ============================================================
 
 const heatClsLive = (v: number) =>
-  v >= 90 ? 'bg-emerald-500/25 text-emerald-300'
+  v >= 90 ? 'bg-dt-ok-soft text-dt-ok'
   : v >= 80 ? 'bg-emerald-500/10 text-emerald-400'
-  : v >= 70 ? 'bg-amber-500/15 text-amber-300'
-  : 'bg-red-500/15 text-red-300';
+  : v >= 70 ? 'bg-dt-warn-soft text-dt-warn'
+  : 'bg-dt-danger-soft text-dt-danger';
 
 function freshnessDays(doc: KnowledgeDoc): number {
   const anchor = doc.last_verified_at ?? doc.created_at;
@@ -39,9 +39,9 @@ const fmtAgo = (iso: string) => {
   return `${Math.floor(days / 365)}y`;
 };
 const COVERAGE_BADGE: Record<string, { cls: string; label: string }> = {
-  covered: { cls: 'bg-emerald-500/20 text-emerald-300', label: 'Covered' },
-  weak: { cls: 'bg-amber-500/20 text-amber-300', label: 'Thin' },
-  none: { cls: 'bg-red-500/20 text-red-300', label: 'No coverage' },
+  covered: { cls: 'bg-dt-ok-soft text-dt-ok', label: 'Covered' },
+  weak: { cls: 'bg-dt-warn-soft text-dt-warn', label: 'Thin' },
+  none: { cls: 'bg-dt-danger-soft text-dt-danger', label: 'No coverage' },
   unknown: { cls: 'bg-dt-page text-dt-faint border border-dt-border', label: '—' },
 };
 const CoverageBadge = ({ state }: { state: CoverageDemand['top_gaps'][number]['coverage_state'] }) => {
@@ -201,7 +201,7 @@ function LiveKnowledgeQuality() {
     <div className="p-6 relative">
       <PageHeader title="Quality & Coverage" subtitle="Real coverage per Digital Employee, real document freshness, and real confidence calibration against human feedback." />
 
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {error && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {loading ? (
         <LiveLoadingSkeleton rows={4} />
@@ -305,7 +305,7 @@ function LiveKnowledgeQuality() {
                         {coverage.most_cited.slice(0, 5).map(d => (
                           <div key={d.id} className="flex items-center justify-between gap-2">
                             <span className="text-xs text-dt-body truncate">{d.title}</span>
-                            <span className="text-[11px] text-emerald-300 flex-shrink-0">{d.citation_count}×</span>
+                            <span className="text-[11px] text-dt-ok flex-shrink-0">{d.citation_count}×</span>
                           </div>
                         ))}
                       </div>
@@ -352,7 +352,7 @@ function LiveKnowledgeQuality() {
                     return (
                       <div key={c.id} className="p-4">
                         <div className="flex items-center gap-2 mb-2">
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${isConflict ? 'bg-red-500/20 text-red-300' : 'bg-amber-500/20 text-amber-300'}`}>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${isConflict ? 'bg-dt-danger-soft text-dt-danger' : 'bg-dt-warn-soft text-dt-warn'}`}>
                             {isConflict ? 'Potential conflict' : 'Near-duplicate'}
                           </span>
                           {c.confidence != null && <span className="text-[10px] text-dt-faint">{Math.round(c.confidence * 100)}% confidence</span>}
@@ -372,10 +372,10 @@ function LiveKnowledgeQuality() {
                           </div>
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          <button disabled={busy || !canResolve} title={canResolve ? undefined : 'Resolving a conflict is done by a workspace owner, admin or knowledge manager.'} onClick={() => void resolveConflict(c, 'resolved_pick_a')} className="text-xs px-2.5 py-1 rounded-lg border border-emerald-500/40 text-emerald-300 hover:border-emerald-400 disabled:opacity-50">Keep A as source</button>
-                          <button disabled={busy || !canResolve} title={canResolve ? undefined : 'Resolving a conflict is done by a workspace owner, admin or knowledge manager.'} onClick={() => void resolveConflict(c, 'resolved_pick_b')} className="text-xs px-2.5 py-1 rounded-lg border border-emerald-500/40 text-emerald-300 hover:border-emerald-400 disabled:opacity-50">Keep B as source</button>
+                          <button disabled={busy || !canResolve} title={canResolve ? undefined : 'Resolving a conflict is done by a workspace owner, admin or knowledge manager.'} onClick={() => void resolveConflict(c, 'resolved_pick_a')} className="text-xs px-2.5 py-1 rounded-lg border border-dt-ok-border text-dt-ok hover:border-dt-ok disabled:opacity-50">Keep A as source</button>
+                          <button disabled={busy || !canResolve} title={canResolve ? undefined : 'Resolving a conflict is done by a workspace owner, admin or knowledge manager.'} onClick={() => void resolveConflict(c, 'resolved_pick_b')} className="text-xs px-2.5 py-1 rounded-lg border border-dt-ok-border text-dt-ok hover:border-dt-ok disabled:opacity-50">Keep B as source</button>
                           <button disabled={busy || !canResolve} title={canResolve ? undefined : 'Resolving a conflict is done by a workspace owner, admin or knowledge manager.'} onClick={() => void resolveConflict(c, 'dismissed')} className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-muted disabled:opacity-50">Dismiss</button>
-                          {busy && <span className="text-xs text-indigo-300 self-center">Saving…</span>}
+                          {busy && <span className="text-xs text-dt-accent-text self-center">Saving…</span>}
                         </div>
                       </div>
                     );

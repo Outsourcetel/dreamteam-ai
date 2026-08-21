@@ -102,7 +102,7 @@ export default function WorkforceBoard({ setPage }: { setPage: (p: Page) => void
       </p>
       {unassigned.length > 0 && (
         <button onClick={() => openFile(unassigned[0].de_id, 'governance')}
-          className="w-full text-left rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 mb-3 text-xs text-amber-200 hover:border-amber-400 transition-colors">
+          className="w-full text-left rounded-lg border border-dt-warn-border bg-dt-warn-soft px-3 py-2 mb-3 text-xs text-dt-warn hover:border-dt-warn transition-colors">
           {unassigned.length} employee{unassigned.length === 1 ? ' has' : 's have'} nobody responsible — assign people →
         </button>
       )}

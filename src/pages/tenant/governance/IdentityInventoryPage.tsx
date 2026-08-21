@@ -40,10 +40,10 @@ function healthMeta(status: string, lastOkAt: string | null, lastErrorAt: string
   if (failures > 0 || status === 'error') {
     return {
       label: `Failing${failures ? ` (${failures} in a row)` : ''}`,
-      cls: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
+      cls: 'bg-dt-danger-soft text-dt-danger border-dt-danger-border',
     };
   }
-  if (lastOkAt) return { label: `Healthy — last OK ${fmtDate(lastOkAt)}`, cls: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' };
+  if (lastOkAt) return { label: `Healthy — last OK ${fmtDate(lastOkAt)}`, cls: 'bg-dt-ok-soft text-dt-ok border-dt-ok-border' };
   return { label: 'Never checked', cls: 'bg-dt-neutral-soft text-dt-neutral border-dt-border-strong' };
 }
 
@@ -94,7 +94,7 @@ function SubjectCard({ s }: { s: IdentitySubject }) {
                         <span className={`text-[10px] px-2 py-0.5 rounded-full border whitespace-nowrap ${health.cls}`}>{health.label}</span>
                         <span className={`text-[10px] px-2 py-0.5 rounded-full border whitespace-nowrap ${
                           sys.hasCredential
-                            ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'
+                            ? 'bg-dt-accent-soft text-dt-accent-text border-dt-accent-border'
                             : 'bg-dt-neutral-soft text-dt-neutral border-dt-border-strong'
                         }`}>
                           {sys.hasCredential ? 'Credential stored' : 'No stored credential'}
@@ -118,7 +118,7 @@ function SubjectCard({ s }: { s: IdentitySubject }) {
                               title={a.destructive ? 'Destructive — always requires human approval, regardless of trust level.' : 'Non-destructive — may auto-execute once trust allows it.'}
                               className={`text-[10px] px-2 py-0.5 rounded-full border whitespace-nowrap ${
                                 a.destructive
-                                  ? 'bg-amber-500/10 text-amber-300 border-amber-500/25'
+                                  ? 'bg-dt-warn-soft text-dt-warn border-dt-warn-border'
                                   : 'bg-dt-panel text-dt-support border-dt-border-strong'
                               }`}
                             >
@@ -176,7 +176,7 @@ export default function IdentityInventoryPage() {
         title="Identity & Credentials"
         subtitle="Every digital employee and specialist, every connected system it can touch, and how — one view for a security review. No secret value is ever shown here, only whether one is stored."
       />
-      {error && <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 mb-4 text-xs text-red-300">{error}</div>}
+      {error && <div className="bg-dt-danger-soft border border-dt-danger-border rounded-xl px-4 py-3 mb-4 text-xs text-dt-danger">{error}</div>}
 
       {!loading && !error && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
@@ -193,7 +193,7 @@ export default function IdentityInventoryPage() {
             <p className="text-[11px] text-dt-muted mt-1">Systems with a stored credential</p>
           </div>
           <div className={`rounded-xl border p-4 ${failing > 0 ? 'border-rose-500/30 bg-rose-500/5' : 'border-dt-border bg-dt-card'}`}>
-            <p className={`text-2xl font-bold ${failing > 0 ? 'text-rose-300' : 'text-dt-title'}`}>{failing}</p>
+            <p className={`text-2xl font-bold ${failing > 0 ? 'text-dt-danger' : 'text-dt-title'}`}>{failing}</p>
             <p className="text-[11px] text-dt-muted mt-1">Currently failing connections</p>
           </div>
         </div>

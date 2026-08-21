@@ -325,7 +325,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
         </Banner>
       )}
         <div className="px-6 pb-6 space-y-5">
-          {error && <div className="rounded-xl border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{error}</div>}
+          {error && <div className="rounded-xl border border-dt-danger-border bg-dt-danger-soft px-3 py-2 text-xs text-dt-danger">{error}</div>}
 
           {/* ── Step 1: describe the role ── */}
           {step === 'brief' && (
@@ -403,7 +403,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
           {step === 'meet' && draft && (
             <>
               <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-4 flex gap-3">
-                <div className="w-11 h-11 rounded-xl bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-indigo-300 text-lg font-bold flex-shrink-0">
+                <div className="w-11 h-11 rounded-xl bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-dt-accent-text text-lg font-bold flex-shrink-0">
                   {persona.charAt(0).toUpperCase()}
                 </div>
                 <div className="min-w-0">
@@ -464,7 +464,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                 <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 space-y-2">
                   <p className="text-[11px] uppercase tracking-wide text-amber-400">Conflicts worth fixing</p>
                   {draft.study.contradictions.map((c, i) => (
-                    <p key={i} className="text-xs text-amber-200/90">
+                    <p key={i} className="text-xs text-dt-warn">
                       The role expects <span className="font-medium">{c.role_expects}</span>, but “{c.source_title}” says <span className="font-medium">{c.kb_says}</span>.
                     </p>
                   ))}
@@ -564,7 +564,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
               )}
               {rehearsalError && (
                 <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
-                  <p className="text-xs text-amber-300">The live rehearsal couldn’t run: {rehearsalError}. {persona} was still created — rehearse from their profile when ready.</p>
+                  <p className="text-xs text-dt-warn">The live rehearsal couldn’t run: {rehearsalError}. {persona} was still created — rehearse from their profile when ready.</p>
                 </div>
               )}
 
@@ -693,20 +693,20 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
 
               {hasProposal && (
                 <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-4 space-y-2">
-                  <p className="text-[11px] uppercase tracking-wide text-indigo-300 mb-1">Proposed from your answers — you approve before it applies</p>
+                  <p className="text-[11px] uppercase tracking-wide text-dt-accent-text mb-1">Proposed from your answers — you approve before it applies</p>
                   {tailoredProposal.partyScope && <p className="text-xs text-dt-support">• Scope: <span className="text-dt-title font-medium">{tailoredProposal.partyScope}</span></p>}
                   {tailoredProposal.discountPct != null && <p className="text-xs text-dt-support">• Discount allowed without approval: <span className="text-dt-title font-medium">{tailoredProposal.discountPct}%</span></p>}
                   {tailoredProposal.approvalCents != null && <p className="text-xs text-dt-support">• Human approval required above: <span className="text-dt-title font-medium">${(tailoredProposal.approvalCents / 100).toLocaleString()}</span></p>}
                   {tailoredProposal.systems.length > 0 && <p className="text-xs text-dt-support">• Systems to connect: <span className="text-dt-title font-medium">{tailoredProposal.systems.join(', ')}</span></p>}
 
                   {applyResult ? (
-                    <p className="text-xs text-emerald-300 pt-1">
+                    <p className="text-xs text-dt-ok pt-1">
                       ✓ Applied{(applyResult.discountUpdated || applyResult.approvalUpdated) ? ' — its discount/approval guardrails now match your answers.' : '.'}
                       {tailoredProposal.systems.length > 0 ? ` Connect ${tailoredProposal.systems.join(', ')} in Settings → Connectors so it can work your real records.` : ''}
                     </p>
                   ) : (tailoredProposal.discountPct != null || tailoredProposal.approvalCents != null) ? (
                     <button onClick={doApplyTailored} disabled={applyBusy}
-                      className="mt-1 text-xs px-3 py-1.5 rounded-lg border text-indigo-300 border-indigo-700/50 hover:border-indigo-500 disabled:opacity-50 transition-all">
+                      className="mt-1 text-xs px-3 py-1.5 rounded-lg border text-dt-accent-text border-dt-accent-border hover:border-dt-accent disabled:opacity-50 transition-all">
                       {applyBusy ? 'Applying…' : 'Apply these guardrail thresholds'}
                     </button>
                   ) : tailoredProposal.systems.length > 0 ? (

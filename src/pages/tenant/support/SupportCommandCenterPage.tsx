@@ -14,7 +14,7 @@ import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDat
 // ============================================================
 
 const SEVERITY_LABEL: Record<string, string> = { sev1: 'Critical (sev1)', sev2: 'High (sev2)', sev3: 'Medium (sev3)', sev4: 'Low (sev4)' };
-const SEVERITY_CLS: Record<string, string> = { sev1: 'text-rose-400', sev2: 'text-amber-300', sev3: 'text-indigo-300', sev4: 'text-dt-support' };
+const SEVERITY_CLS: Record<string, string> = { sev1: 'text-rose-400', sev2: 'text-dt-warn', sev3: 'text-dt-accent-text', sev4: 'text-dt-support' };
 const STATUS_LABEL: Record<string, string> = { ai_handling: 'AI handling', needs_human: 'Needs human', human_owned: 'Human owned', resolved: 'Resolved' };
 
 function StatCard({ label, value, sub, color = 'text-dt-title' }: { label: string; value: string | number; sub?: string; color?: string }) {
@@ -98,7 +98,7 @@ const SupportCommandCenterPage = ({ setPage, embedded }: { setPage: (p: Page) =>
         </div>
       </div>}
 
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {error && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {loading ? (
         <LiveLoadingSkeleton rows={4} />
@@ -115,10 +115,10 @@ const SupportCommandCenterPage = ({ setPage, embedded }: { setPage: (p: Page) =>
           {/* Stat cards */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <StatCard label="Conversations" value={ov.total} sub="widget / email / portal / chat" />
-            <StatCard label="Needs a human" value={ov.needsHuman} color={ov.needsHuman ? 'text-amber-300' : 'text-emerald-300'} />
-            <StatCard label="Open escalations" value={ov.openEscalations} color={ov.openEscalations ? 'text-rose-400' : 'text-emerald-300'} sub="in Human Tasks" />
-            <StatCard label="Drafts pending" value={ov.draftsPending} color={ov.draftsPending ? 'text-indigo-300' : 'text-dt-support'} sub="awaiting approval" />
-            <StatCard label="Resolved" value={resolved} color="text-emerald-300" />
+            <StatCard label="Needs a human" value={ov.needsHuman} color={ov.needsHuman ? 'text-dt-warn' : 'text-dt-ok'} />
+            <StatCard label="Open escalations" value={ov.openEscalations} color={ov.openEscalations ? 'text-rose-400' : 'text-dt-ok'} sub="in Human Tasks" />
+            <StatCard label="Drafts pending" value={ov.draftsPending} color={ov.draftsPending ? 'text-dt-accent-text' : 'text-dt-support'} sub="awaiting approval" />
+            <StatCard label="Resolved" value={resolved} color="text-dt-ok" />
           </div>
 
           {/* Breakdowns */}
@@ -138,7 +138,7 @@ const SupportCommandCenterPage = ({ setPage, embedded }: { setPage: (p: Page) =>
             )}
             <Breakdown title="By channel" data={ov.byChannel} />
             <Breakdown title="By priority" data={ov.byPriority}
-              clsOf={(k) => k === 'urgent' ? 'text-rose-400' : k === 'high' ? 'text-amber-300' : 'text-dt-support'} />
+              clsOf={(k) => k === 'urgent' ? 'text-rose-400' : k === 'high' ? 'text-dt-warn' : 'text-dt-support'} />
           </div>
         </div>
       )}

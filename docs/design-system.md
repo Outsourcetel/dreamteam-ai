@@ -230,6 +230,17 @@ below as a named, script-excluded survivor. Nothing is silent baseline slack:
 `node scripts/audit-light-ready.mjs --strict` reports 0/0/0/0 and any new hit
 outside these rows is a real regression, not noise.
 
+The Task 5T tone-text sweep (fifth metric, `tone text-300` — dark-only
+`text-{tone}-100|200|300`, found by the final whole-branch review after the
+Task-5 sweep above had already driven the first four metrics to zero) is ALSO
+now CLOSED (groups A, B, C — 2026-08-21): 749 raw lines / 520 measured after
+the `COLORED_BG` exemption at calibration, driven to **zero** across the
+whole estate. Same discipline: every hit converted to a `dt-*` token by
+SEMANTIC family, or recorded below as a named survivor
+(`TONE_FILL_SURVIVORS`) or a kept-hue identity row. `tone text-300` is no
+longer pinned at a measured baseline — it is floored at zero like the other
+four.
+
 **Sanctioned raw-slate survivors** (do NOT convert; anything else is drift):
 - **Control shades** — `slate-500`/`slate-600` (+alphas) on toggle knobs and
   tracks, placeholders (`placeholder-slate-500`), and focus rings. These are
@@ -286,6 +297,8 @@ exclude list):
 | File : line | Fill | Reason |
 |---|---|---|
 | `DEChatDock.tsx` — the chat-bubble timestamp row (`msg.role === 'user' ? 'text-indigo-200' : 'text-dt-muted'`) | `bg-indigo-600` (a separate ternary a few lines up, same message row) | Both ternaries key off the same `msg.role === 'user'` check, so the timestamp only ever renders inside the bubble its own role paints — but `COLORED_BG` only looks within one physical line, so it cannot see the opaque fill one element up. `text-indigo-200` on an opaque same-family fill is the mapping table's own "leave it" case; converting only the text half to a `dt-*` token would swap in a light-theme-tuned value against the still-literal, non-theme-reactive `bg-indigo-600`, which is a real regression the original all-literal pairing did not have. |
+| `WorkforceConversation.tsx` — the chat-bubble timestamp row (`isUser ? 'text-blue-200' : 'text-dt-support'`) (Task 5T, Group C) | `bg-blue-600` (a separate ternary a few lines up, same bubble: `isUser ? 'bg-blue-600 text-white' : 'bg-dt-panel text-dt-title'`) | Identical shape to the `DEChatDock.tsx` row above — same `isUser` check paints both the bubble and the timestamp, but `COLORED_BG` cannot see the opaque fill one element up. |
+| `LoginPage.tsx` leftPanel — 4 lines (`:149,155,165,168`, all `text-indigo-300`/`text-indigo-200`) (Task 5T, Group C) | `style={{background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e1b4b 100%)'}}` on the `leftPanel` | The same fixed dark-navy gradient marketing hero already sanctioned in `SOLID_FILL_SURVIVORS` above for its bare-white text — a hardcoded inline style, not a `dt-token` surface, that does not participate in either app theme. Converting to `dt-accent-text` would resolve to a dark ink in light theme, rendered on this still-dark fixed background — a real legibility regression, not a fix. |
 
 **Sanctioned kept-hue identity badges** (Task 5T, Group A — employee/DE/ops;
 non-semantic category/meta tags, not one of the five core semantics
@@ -308,6 +321,12 @@ exemption):
 | `Judgment` step-grade badge / `missing_data` gap-kind badge | `bg-fuchsia-600 text-fuchsia-100 border-fuchsia-500` | `LivePlaybookBuilder.tsx` (Task 5T, Group B) | Step-type/gap-kind identity, not a status; part of the plan's load-bearing Rail/Judgment/Guide family (Guide is already `dt-neutral` from an earlier ratchet) — missing_data reuses the same "AI/complexity-flavored" hue in a different, non-colliding context |
 | `Rail` step-grade badge | `bg-cyan-600 text-cyan-100 border-cyan-500` | `LivePlaybookBuilder.tsx` (Task 5T, Group B) | Sibling of `Judgment` above — the "mechanical/rule-based" step type needs its own hue to stay visually distinct from it and from `Guide` |
 | `ingest · working copy` access-mode badge | `bg-purple-600 text-purple-100` | `LiveConnectorsPage.tsx` (Task 5T, Group B) | Sibling of the teal `fetch_only` badge on the same connector card — a data-handling MODE identity, not a risk severity, so not reassigned to `dt-warn` |
+| `playbook_step`/`evidence_step` (teal), `invoice` (teal), `connector_sync`/`connector_action` (cyan) — `LIVE_CATEGORY_META` event-type badges | `bg-teal-600 text-teal-100` / `bg-cyan-600 text-cyan-100` | `AuditTrailPage.tsx` (Task 5T, Group C) | Five non-core-hue entries in an 11-member audit-category vocabulary (alongside the mechanically-mapped `resolved`/`escalated`/`approval`/`guardrail_*`/`config_change`) — same "one more entry in an already-established, purely-identity type scheme" shape as the `HumanTasksPage.tsx` precedent. `access_control` (rose) and `guardrail_adjudication` (amber) ARE core hues and were mapped mechanically to `dt-danger`/`dt-warn` in this same table, not kept. |
+| `knowledge_manager` (purple), `approver` (cyan) — `ROLE_COLORS` | `bg-purple-600 text-purple-100` / `bg-cyan-600 text-cyan-100` | `SecurityAccessPage.tsx` (Task 5T, Group C) | A role-badge vocabulary named load-bearing by this group's brief — a distinct fixed color per role is the point; `tenant_owner`/`tenant_admin`/`tenant_manager` (the three core hues in the same map) were mapped mechanically to `dt-danger`/`dt-warn`/`dt-info` in the same commit, `tenant_user` stays the pre-existing opaque fallback documented above. |
+| `purple` color key (generic) | `bg-purple-600 text-purple-100 border border-purple-500` | `Badge.tsx` (Task 5T, Group C) | Shared primitive's own non-semantic identity slot — its sole live caller (`PlatformConsolePage.tsx`) uses it for the "enterprise" tenant-plan tier, a category not a status. `green`/`red`/`yellow`/`blue`/`indigo`/`slate` in the same map were mapped mechanically to `dt-ok`/`dt-danger`/`dt-warn`/`dt-info`/`dt-accent-text`/`dt-neutral`. |
+| `high_cost` DE-health state | `bg-orange-600 text-orange-100` | `deHealthApi.ts` `DE_HEALTH_LABELS` (Task 5T, Group C) | Kept distinct from the amber `degraded`/`low_confidence` states in the same 7-member health vocabulary — `incident_active`/`improving`/`healthy` (the core hues in the same map) were mapped mechanically to `dt-danger`/`dt-info`/`dt-ok`. |
+| "per employee" tag | `bg-violet-600 text-violet-100` | `WorkforceTrustDefaults.tsx` (Task 5T, Group C) | Same AI-written/provenance-scope violet identity already sanctioned for `EmployeeFileSections.tsx` above, reused for one more scope-identity tag. |
+| "New doc proposed" / "Specialist" badges | `bg-teal-600 text-teal-100` | `LiveKnowledgeLibrary.tsx` (Task 5T, Group C) | Same non-status "new/other-kind" identity marker shape as the other kept-teal rows in this table — each badge's sibling branch (`bg-indigo-*`/core hue) was mapped mechanically to `dt-accent-soft`/`dt-accent-text`. |
 
 Rejected alternative for every Group B row above: reassigning the hue to
 whichever `dt-*` core semantic seemed closest by vibe (`dt-info` for teal,

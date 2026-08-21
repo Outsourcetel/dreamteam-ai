@@ -150,7 +150,7 @@ function GapPolicyPanel({ policies, onSaved }: { policies: KnowledgeGapPolicy[];
       </button>
       {open && (
         <div className="mt-3 space-y-3">
-          {err && <p className="text-xs text-rose-300">{err}</p>}
+          {err && <p className="text-xs text-dt-danger">{err}</p>}
           {policies.map(p => {
             const d = draftFor(p);
             const set = (k: keyof typeof d, v: string) => setDrafts(prev => ({ ...prev, [p.id]: { ...draftFor(p), [k]: v } }));
@@ -326,7 +326,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
         </div>
       )}
 
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {error && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {/* Ledger-3 (docs/16): the detection thresholds were only tunable via
           raw SQL — now a product control. */}
@@ -484,9 +484,9 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
                 )}
                 {selected.status === 'resolved' && (
                   <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 mb-6">
-                    <p className="text-xs text-emerald-300">Resolved — a knowledge update was published{selected.fix_applied_at ? ` on ${new Date(selected.fix_applied_at).toLocaleDateString()}` : ''}.</p>
+                    <p className="text-xs text-dt-ok">Resolved — a knowledge update was published{selected.fix_applied_at ? ` on ${new Date(selected.fix_applied_at).toLocaleDateString()}` : ''}.</p>
                     {selected.recurred_after_fix && (
-                      <p className="text-xs text-red-300 mt-1">This gap has since recurred {selected.recurrence_count} time{selected.recurrence_count === 1 ? '' : 's'} after that fix — the underlying question may not have been fully resolved.</p>
+                      <p className="text-xs text-dt-danger mt-1">This gap has since recurred {selected.recurrence_count} time{selected.recurrence_count === 1 ? '' : 's'} after that fix — the underlying question may not have been fully resolved.</p>
                     )}
                   </div>
                 )}

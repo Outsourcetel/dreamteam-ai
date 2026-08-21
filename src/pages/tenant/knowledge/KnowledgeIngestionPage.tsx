@@ -174,7 +174,7 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
     <div className="p-6 relative">
       <PageHeader title="Ingestion & Sources" subtitle="Real connector syncs pull external content into the knowledge base — chunked and indexed automatically." />
 
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {error && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {/* Deliberately ABOVE the connector gate below: importing pages from the
           web needs no connector, so a workspace with none must still be able to
@@ -271,7 +271,7 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
                                 title={!canSchedule
                                   ? 'Turning auto-sync on or off is done by a workspace owner, admin, manager or knowledge manager.'
                                   : c.scheduled_sync_enabled ? 'Auto-sync is on (daily). Click to turn off.' : 'Turn on daily auto-sync for this source.'}
-                                className={`text-[11px] px-2 py-1 rounded-lg border transition-colors disabled:opacity-50 disabled:hover:border-dt-border-strong ${c.scheduled_sync_enabled ? 'border-emerald-500/50 text-emerald-300' : 'border-dt-border-strong text-dt-muted hover:border-indigo-500'}`}>
+                                className={`text-[11px] px-2 py-1 rounded-lg border transition-colors disabled:opacity-50 disabled:hover:border-dt-border-strong ${c.scheduled_sync_enabled ? 'border-dt-ok-border text-dt-ok' : 'border-dt-border-strong text-dt-muted hover:border-dt-accent'}`}>
                                 {c.scheduled_sync_enabled ? 'Auto-sync ✓' : 'Auto-sync'}
                               </button>
                             </div>
@@ -311,7 +311,7 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
                       className="flex-1 bg-dt-page border border-dt-border rounded-lg px-3 py-1.5 text-xs text-dt-body focus:outline-none focus:border-indigo-500" />
                     <button onClick={() => void importUrl()} disabled={!urlInput.trim() || !!busyMsg} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white">Import</button>
                   </div>
-                  {busyMsg && <p className="text-xs text-indigo-300 mt-2">{busyMsg}</p>}
+                  {busyMsg && <p className="text-xs text-dt-accent-text mt-2">{busyMsg}</p>}
                 </div>
               ) : (
                 <div className="rounded-2xl border border-dt-border bg-dt-card p-4 space-y-2">
@@ -321,7 +321,7 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
                       placeholder="…or import a URL" className="flex-1 bg-dt-page border border-dt-border rounded-lg px-2 py-1 text-xs text-dt-body focus:outline-none focus:border-indigo-500" />
                     <button onClick={() => void importUrl()} disabled={!urlInput.trim() || !!busyMsg} className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-indigo-500 disabled:opacity-50">Import</button>
                   </div>
-                  {busyMsg && <p className="text-xs text-indigo-300">{busyMsg}</p>}
+                  {busyMsg && <p className="text-xs text-dt-accent-text">{busyMsg}</p>}
                   <input
                     value={addTitle}
                     onChange={e => setAddTitle(e.target.value)}
@@ -346,7 +346,7 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
                   </div>
                 </div>
               )}
-              {canOpenConnectors && <button onClick={() => setPage('systems_connectors')} className="w-full text-xs text-indigo-400 hover:text-indigo-300 transition-colors text-center">
+              {canOpenConnectors && <button onClick={() => setPage('systems_connectors')} className="w-full text-xs text-dt-accent-text hover:underline transition-colors text-center">
                 Manage connectors →
               </button>}
             </div>

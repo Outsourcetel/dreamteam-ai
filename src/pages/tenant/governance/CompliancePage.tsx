@@ -355,7 +355,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
         title="Compliance & Guardrails"
         subtitle="Checked on every action before anything happens — invoice approvals check them now; answers are checked as they are written. Every change to a rule is written to the record."
       />
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {error && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {loading ? (
         <LiveLoadingSkeleton rows={4} />
@@ -476,7 +476,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                 <p className="text-xs text-dt-muted mt-0.5">Checked on every invoice generation and every DE answer. The same controls appear, pre-scoped, on each employee&apos;s Governance tab — this is the central view of all of them.</p>
               </div>
               <button onClick={() => setShowGovAI(v => !v)}
-                className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/30 border border-indigo-700/50 transition-colors">
+                className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-soft text-dt-accent-text hover:brightness-110 border border-dt-accent-border transition-colors">
                 {showGovAI ? 'Close assistant' : '✨ Set up with AI'}
               </button>
               {/* Clears `editing` on the way in — otherwise "+ Add rule"
@@ -516,13 +516,13 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
             )}
             {proposals.length > 0 && (
               <div className="mb-4 rounded-xl border border-indigo-800/50 bg-indigo-900/15 p-3">
-                <div className="text-[11px] font-medium text-indigo-200 mb-2">
+                <div className="text-[11px] font-medium text-dt-accent-text mb-2">
                   ✨ Proposed by the assistant for {govTarget.label} — needs your approval ({proposals.length})
                 </div>
                 <div className="space-y-1.5">
                   {proposals.map(p => (
                     <div key={p.id} className="flex items-center gap-2 text-xs rounded-lg border border-indigo-800/40 bg-dt-inset px-3 py-2">
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">{p.severity === 'warning' ? 'warns' : 'blocks'}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-accent-soft text-dt-accent-text">{p.severity === 'warning' ? 'warns' : 'blocks'}</span>
                       <span className="text-dt-body">{describeProposal(p)}</span>
                       {p.rationale && <span className="text-dt-muted hidden sm:inline">— {p.rationale}</span>}
                       <div className="ml-auto flex items-center gap-2 shrink-0">
@@ -574,7 +574,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support">{ruleTypeMeta(r.rule_type).label}</span>
                       </td>
                       <td className={td}>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${r.scope === 'workspace' ? 'bg-dt-panel text-dt-support' : 'bg-indigo-500/15 text-indigo-300'}`}>{scopeLabel(r)}</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${r.scope === 'workspace' ? 'bg-dt-panel text-dt-support' : 'bg-dt-accent-soft text-dt-accent-text'}`}>{scopeLabel(r)}</span>
                       </td>
                       <td className={`${td} text-xs text-dt-support font-mono`}>
                         {r.rule_type === 'require_approval_over_cents' && r.threshold != null ? `$${Math.round(r.threshold / 100).toLocaleString()}`
@@ -614,7 +614,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
             </div>
             <p className="mt-3 text-[11px] text-dt-muted">
               The approval-threshold rule replaces the built-in $10K gate on renewal invoices. Blocked phrases/topics are checked against every DE answer before it reaches the user (simple pattern matching, v1) — matches are withheld, escalated to Human Tasks, and recorded as a guardrail block in the{' '}
-              <button onClick={() => setPage('gov_audit')} className="text-indigo-400 hover:text-indigo-300 underline underline-offset-2">audit trail</button>.
+              <button onClick={() => setPage('gov_audit')} className="text-dt-accent-text underline underline-offset-2 hover:brightness-110">audit trail</button>.
             </p>
 
             {/* ── The retired shelf ──────────────────────────────────────────
@@ -1062,9 +1062,9 @@ const ACTIVE_TEMPLATE: Record<CompanyId, { name: string; version: string }> = {
 
 function SeverityBadge({ severity }: { severity: Severity }) {
   const styles: Record<Severity, string> = {
-    blocking: 'bg-red-500/15 text-red-300',
-    warning: 'bg-amber-500/15 text-amber-300',
-    regulatory: 'bg-indigo-500/15 text-indigo-300',
+    blocking: 'bg-dt-danger-soft text-dt-danger',
+    warning: 'bg-dt-warn-soft text-dt-warn',
+    regulatory: 'bg-dt-accent-soft text-dt-accent-text',
   }
   return <span className={`text-[10px] uppercase px-1.5 py-0.5 rounded ${styles[severity]}`}>{severity}</span>
 }

@@ -179,7 +179,7 @@ const LiveProvingGround = () => {
       <div className="p-6">
         <PageHeader title="Proving Ground" subtitle="Golden Q&A evals run against your live Digital Employee." />
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-5 max-w-xl">
-          <p className="text-sm text-amber-300 font-medium mb-1">Workspace still provisioning</p>
+          <p className="text-sm text-dt-warn font-medium mb-1">Workspace still provisioning</p>
           <p className="text-xs text-dt-support">
             The eval tables haven't been created yet. Apply
             <code className="mx-1 text-dt-support">supabase/migrations/018_proving_ground.sql</code>
@@ -201,19 +201,19 @@ const LiveProvingGround = () => {
       />
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 mb-4 text-xs text-red-300">{error}</div>
+        <div className="bg-dt-danger-soft border border-dt-danger-border rounded-xl px-4 py-3 mb-4 text-xs text-dt-danger">{error}</div>
       )}
 
       {/* Gate banner */}
       {gate?.status === 'failed' && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 mb-4">
-          <p className="text-sm text-red-300 font-medium">Publishing gated — last eval run failed {gate.passed}/{gate.total}</p>
+          <p className="text-sm text-dt-danger font-medium">Publishing gated — last eval run failed {gate.passed}/{gate.total}</p>
           <p className="text-xs text-dt-support mt-0.5">Knowledge publishes will ask for an explicit override until a run passes. Fix the failing answers or update the suite, then re-run.</p>
         </div>
       )}
       {gate?.status === 'blocked_llm' && (
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 mb-4">
-          <p className="text-sm text-amber-300 font-medium">DE brain not activated — suite is ready and will run on activation.</p>
+          <p className="text-sm text-dt-warn font-medium">DE brain not activated — suite is ready and will run on activation.</p>
           <p className="text-xs text-dt-support mt-0.5">The last run reached the live DE but the LLM key isn't set yet, so grading couldn't execute. Nothing is simulated.</p>
         </div>
       )}
@@ -306,11 +306,11 @@ const LiveProvingGround = () => {
                           fragments: qa.expected_fragments.join(', '),
                           minConfidence: qa.min_confidence, category: qa.category,
                         })}
-                        className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                        className="text-xs text-dt-accent-text hover:underline transition-colors"
                       >
                         Edit
                       </button>
-                      <button onClick={() => setRemoveTarget(qa)} className="text-xs text-red-400/80 hover:text-red-300 transition-colors">
+                      <button onClick={() => setRemoveTarget(qa)} className="text-xs text-red-400/80 hover:text-dt-danger transition-colors">
                         Delete
                       </button>
                     </div>
@@ -336,7 +336,7 @@ const LiveProvingGround = () => {
             <span className="text-xs text-dt-faint ml-auto">{fmtTime(latestShown.started_at)}</span>
           </div>
           {latestShown.status === 'blocked_llm' && (
-            <p className="text-xs text-amber-300 mb-3">
+            <p className="text-xs text-dt-warn mb-3">
               DE brain not activated — suite is ready and will run on activation. The runner reached the live DE and stopped honestly at the LLM gate.
             </p>
           )}
@@ -398,7 +398,7 @@ const LiveProvingGround = () => {
                     <td className={td}>
                       <button
                         onClick={() => setExpandedRunId(expandedRunId === r.id ? null : r.id)}
-                        className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                        className="text-xs text-dt-accent-text hover:underline transition-colors"
                       >
                         {expandedRunId === r.id ? 'Hide' : 'Detail'}
                       </button>

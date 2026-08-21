@@ -107,7 +107,7 @@ export default function GovernanceAIPanel({ scope, scopeRef, entityLabel, onProp
         {onClose && <button onClick={onClose} aria-label="Close" className="text-dt-support hover:text-dt-body text-lg leading-none px-2">×</button>}
       </div>
 
-      <div className="px-4 py-2 text-[11px] text-amber-200 bg-amber-900/25 border-b border-amber-800/40">
+      <div className="px-4 py-2 text-[11px] text-dt-warn bg-dt-warn-soft border-b border-dt-warn-border">
         The assistant proposes changes — it can't switch a guardrail on or off. You approve each one below.
       </div>
 
@@ -134,10 +134,10 @@ export default function GovernanceAIPanel({ scope, scopeRef, entityLabel, onProp
                 : 'text-dt-body whitespace-pre-wrap max-w-[95%]'}>
                 {t.role === 'assistant' ? renderLite(t.content) : t.content}
                 {t.proposed.map((p, j) => (
-                  <div key={j} className="mt-2 text-xs rounded border border-indigo-800/60 bg-indigo-900/20 px-3 py-2 text-indigo-100">
+                  <div key={j} className="mt-2 text-xs rounded border border-dt-accent-border bg-dt-accent-soft px-3 py-2 text-dt-accent-text">
                     <div className="font-medium">Proposed — approve it below</div>
                     <div className="mt-1">{p.what}</div>
-                    {p.why && <div className="mt-1 text-indigo-200/60">{p.why}</div>}
+                    {p.why && <div className="mt-1 text-dt-accent-text">{p.why}</div>}
                   </div>
                 ))}
               </div>
@@ -145,7 +145,7 @@ export default function GovernanceAIPanel({ scope, scopeRef, entityLabel, onProp
           ))
         )}
         {busy && <div className="text-dt-muted text-xs">Working on it…</div>}
-        {error && <div className="text-xs rounded border border-red-800/60 bg-red-900/25 px-3 py-2 text-red-200">{error}</div>}
+        {error && <div className="text-xs rounded border border-dt-danger-border bg-dt-danger-soft px-3 py-2 text-dt-danger">{error}</div>}
         <div ref={endRef} />
       </div>
 

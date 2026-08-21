@@ -150,7 +150,7 @@ export default function AISessionPanel({
       </div>
 
       {readOnly && (
-        <div className="px-4 py-2 text-xs text-amber-200 bg-amber-900/30 border-b border-amber-800/50">
+        <div className="px-4 py-2 text-xs text-dt-warn bg-dt-warn-soft border-b border-dt-warn-border">
           This is a remote support session, so changes can be suggested but not applied. Apply them from your own login.
         </div>
       )}
@@ -189,19 +189,19 @@ export default function AISessionPanel({
                     <div key={c.change_id}
                       className={`mt-2 flex items-start gap-2 text-xs rounded border px-3 py-2 ${
                         isUndone ? 'bg-dt-card border-dt-border text-dt-muted'
-                                 : 'bg-teal-900/25 border-teal-800/60 text-teal-100'}`}>
+                                 : 'bg-dt-ok-soft border-dt-ok-border text-dt-ok'}`}>
                       <span className="mt-0.5">{isUndone ? '↩' : '✓'}</span>
                       <span className="flex-1">
                         {c.summary}
                         {!isUndone && (
-                          <span className="block text-teal-300/60 mt-0.5">
+                          <span className="block text-dt-ok mt-0.5">
                             Undo available for {hrs} more hour{hrs === 1 ? '' : 's'}
                           </span>
                         )}
                       </span>
                       {!isUndone && (
                         <button onClick={() => handleUndo(c.change_id)} disabled={undoing === c.change_id}
-                          className="text-teal-300 hover:text-teal-100 underline disabled:opacity-50 shrink-0">
+                          className="text-dt-ok underline hover:brightness-110 disabled:opacity-50 shrink-0">
                           {undoing === c.change_id ? 'Undoing…' : 'Undo'}
                         </button>
                       )}
@@ -211,10 +211,10 @@ export default function AISessionPanel({
 
                 {/* What it deliberately would not do on its own */}
                 {t.proposed.map((p, j) => (
-                  <div key={j} className="mt-2 text-xs rounded border border-amber-800/60 bg-amber-900/20 px-3 py-2 text-amber-100">
+                  <div key={j} className="mt-2 text-xs rounded border border-dt-warn-border bg-dt-warn-soft px-3 py-2 text-dt-warn">
                     <div className="font-medium">Needs a person to approve</div>
                     <div className="mt-1">{p.what}</div>
-                    <div className="mt-1 text-amber-200/60">{p.why}</div>
+                    <div className="mt-1 text-dt-warn">{p.why}</div>
                   </div>
                 ))}
               </div>
@@ -223,7 +223,7 @@ export default function AISessionPanel({
         )}
         {busy && <div className="text-dt-muted text-xs">Working on it…</div>}
         {error && (
-          <div className="text-xs rounded border border-red-800/60 bg-red-900/25 px-3 py-2 text-red-200">{error}</div>
+          <div className="text-xs rounded border border-dt-danger-border bg-dt-danger-soft px-3 py-2 text-dt-danger">{error}</div>
         )}
         <div ref={endRef} />
       </div>
