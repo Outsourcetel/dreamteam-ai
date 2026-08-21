@@ -7,7 +7,7 @@
 -- file is the schema half of the answer; data is NOT in here (see below).
 --
 -- Contents: 9 extensions · 0 enums · 306 tables ·
--- 1413 constraints · 423 indexes · 880 functions ·
+-- 1414 constraints · 423 indexes · 883 functions ·
 -- 296 triggers · 404 policies · 841 role grants ·
 -- explicit REVOKEs for the closed perimeter.
 --
@@ -1807,7 +1807,16 @@ begin
       jsonb_build_object('kind', 'trust_promotion_blocked_self_approval', 'policy_id', v_policy.id,
         'action_category', v_policy.action_category, 'task_id', p_task_id, 'user_id', auth.uid())
     );
-    raise exception 'the requester cannot approve their own promotion — a different teammate must approve';
+    -- ⚠ 837: THE REFUSAL TRAVELS AS A VALUE, NOT AN EXCEPTION.
+    -- A raise here rolled the append_audit_event above back with it, so the
+    -- blocked attempt left no trace. Measured on production 2026-08-21:
+    -- blocked_self_approval rows 0 -> 0 across a real refusal, while the same
+    -- function's trust_promoted write on the non-self path went 0 -> 1.
+    -- The message is kept BYTE-FOR-BYTE and moved into the payload;
+    -- trustApi.resolveTrustPromotion turns ok:false back into a thrown error,
+    -- so the person still sees this exact sentence.
+    return jsonb_build_object('applied', false, 'ok', false, 'reason', 'self_approval_blocked',
+      'message', 'the requester cannot approve their own promotion — a different teammate must approve');
   end if;
 
   -- Stale-check: evidence could have regressed since the request.
@@ -1824,7 +1833,13 @@ begin
         'action_category', v_policy.action_category, 'task_id', p_task_id,
         'evidence_at_request', v_policy.pending_evidence, 'evidence_at_apply', v_evidence)
     );
-    raise exception 'evidence regressed since the request — promotion rejected as stale';
+    -- ⚠ 837: same reason as the self-approval path above. The raise that used
+    -- to sit here also rolled back the cleanup UPDATE eight lines up, so the
+    -- stale path never actually cleared the pending state it exists to clear
+    -- (measured: pending_task_id still set after the refusal), and its
+    -- trust_promotion_stale audit row was lost with it.
+    return jsonb_build_object('applied', false, 'ok', false, 'reason', 'stale',
+      'message', 'evidence regressed since the request — promotion rejected as stale');
   end if;
 
   v_new := least(v_policy.current_level + 1, v_policy.max_level);
@@ -6551,6 +6566,15 @@ begin
         ev := ev || to_jsonb('The citation names fewer decisions than the pattern floor (3) — this proposal should not exist in this state.'::text);
         v_attention := array_append(v_attention, 'cites fewer decisions than the pattern floor');
       end if;
+    elsif pol.pending_evidence ? 'criteria' then
+      -- mig 828 round 3 (IMPORTANT 3): the second machine-raised shape --
+      -- request_eligible_promotions, via trust_evidence_for. Keyed on the
+      -- evidence's own shape (criteria present, pattern absent), not a
+      -- second lookup, so this stays a pure function of what is already
+      -- loaded. Same severity as the branch it splits from -- only the
+      -- sentence about WHO asked was wrong.
+      ev := ev || to_jsonb('Raised automatically because this employee''s trust criteria are met — no human asked for it. The criteria are re-verified at apply time.'::text);
+      v_caution := array_append(v_caution, 'raised automatically from criteria — review before approving');
     else
       ev := ev || to_jsonb('Requested by a person from the employee file (no pattern citation) — the policy criteria were met at request time and are re-verified at apply.'::text);
       v_caution := array_append(v_caution, 'human-requested; review the criteria evidence');
@@ -7889,6 +7913,7 @@ declare
   v_sla integer := 0;
   v_de_name text;
   v_prop jsonb;
+  v_elig jsonb;
   v_goals integer; v_measured integer; v_unmet integer; v_decisions bigint;
   v_pip_dismissed integer := 0;
   v_pip_unassessable integer := 0;
@@ -8057,11 +8082,42 @@ begin
     v_prop := jsonb_build_object('error', sqlerrm);
   end;
 
+  -- (f) mig 834: the OTHER writer on the same seam. Mig 828 built
+  --     request_eligible_promotions -- "eligibility can ask for itself":
+  --     a policy whose own criteria are met raises its own promotion
+  --     request, without waiting for three identical repeated approvals
+  --     for the detector in (e) to notice. 828 shipped it with NO CALLER.
+  --     This function is the seam's only heartbeat, so a writer the sweep
+  --     does not call is a writer that never runs: exactly the
+  --     built-and-starved defect arm 8 of scripts/trust-proposer-boundary
+  --     exists to catch, and arm 8 watched only (e).
+  --
+  --     ⚠ ORDER IS DELIBERATE: (e) BEFORE (f), never the reverse.
+  --     Both writers can target the same policy, and whichever runs first
+  --     takes it -- the other's own dedupe then declines. (e)'s proposal
+  --     carries citations: dates, approvers and landed receipts for three
+  --     or more identical approvals. (f)'s carries criteria counts only.
+  --     Running (e) first means a contested policy gets the RICHER
+  --     evidence, and (f) skips it on pending_task_id. Reversed, the
+  --     detector's own chain-block (detect_trust_widening_patterns's
+  --     `not exists (... pending_task_id ... status = 'pending')`) would
+  --     suppress the citation-bearing proposal in favour of the thinner
+  --     one. Neither order can double-raise; only one keeps the receipts.
+  --
+  --     Errors are captured exactly as (e)'s are: they ride in the return
+  --     payload rather than costing steps (a)-(e).
+  begin
+    v_elig := public.request_eligible_promotions(null);
+  exception when others then
+    v_elig := jsonb_build_object('error', sqlerrm);
+  end;
+
   return jsonb_build_object('cert_warnings', v_warned, 'certs_expired', v_expired,
     'pips_completed', v_pip_completed, 'pips_failed', v_pip_failed,
     'pips_dismissed', v_pip_dismissed, 'pips_unassessable', v_pip_unassessable,
     'sla_nudges', v_sla,
-    'trust_proposals', coalesce(v_prop, '{}'::jsonb));
+    'trust_proposals', coalesce(v_prop, '{}'::jsonb),
+    'eligible_promotions', coalesce(v_elig, '{}'::jsonb));
 end;
 $function$;
 
@@ -10994,6 +11050,16 @@ begin
         v_failed := v_failed || jsonb_build_object(
           'id', v_id, 'title', coalesce(v_title, '(untitled)'),
           'error', 'first_approval_recorded: a second approver is required');
+      elsif v_row.status is distinct from p_decision then
+        -- mig 836: THE THIRD STATE. A row came back but the task was NOT
+        -- closed -- the server refused and said why on the row. This is not
+        -- an exception, so the refusal it recorded COMMITS with the rest of
+        -- the batch; counting it as decided would be the exact lie this
+        -- migration exists to remove.
+        v_failed := v_failed || jsonb_build_object(
+          'id', v_id, 'title', coalesce(v_title, '(untitled)'),
+          'error', coalesce(v_row.refusal_reason,
+                            format('refused: the task is still %s', v_row.status)));
       else
         v_ok := v_ok + 1;
       end if;
@@ -11319,6 +11385,26 @@ AS $function$
   from roots r
   left join chain c on c.task_id = r.task_id
   group by r.task_id, r.work_item_id;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.declared_trust_signals(p_policy_id uuid)
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE
+AS $function$
+  select case
+           when jsonb_typeof(v.signals) = 'array' then v.signals
+           else '[]'::jsonb
+         end
+  from (
+    select (
+      select a.trust_signals -> p.action_category
+      from public.trust_policies p
+      join public.digital_employees d on d.id = p.de_id
+      join public.role_archetypes a on a.key = d.archetype_key
+      where p.id = p_policy_id
+    ) as signals
+  ) v;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.delete_account_contact(p_contact_id uuid)
@@ -21197,7 +21283,10 @@ AS $function$
                    E'\r\n?', E'\n', 'g'),
                  E'[ \t]+', ' ', 'g'),
                E' *\n *', E'\n', 'g'),
-             E'\n{3,}', E'\n\n', 'g'));
+             E'\n{3,}', E'\n\n', 'g'),
+           -- ⛔ THE SECOND ARGUMENT IS THE ENTIRE FIX. Without it btrim strips
+           -- spaces only, and the twin diverges from JavaScript's .trim().
+           E'\u0009\u000A\u000B\u000C\u000D\u0020\u00A0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF');
 $function$;
 
 CREATE OR REPLACE FUNCTION public.knowledge_permission_rank(p_level text)
@@ -23464,6 +23553,73 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.open_trust_promotion_request(p_tenant_id uuid, p_policy_id uuid, p_evidence jsonb, p_requested_by uuid, p_title text, p_detail text, p_actor text, p_audit_action text, p_audit_metadata jsonb)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_task uuid := gen_random_uuid();
+begin
+  insert into human_tasks (id, tenant_id, type, title, detail, source, related_table, related_id, status)
+  values (v_task, p_tenant_id, 'trust_promotion', p_title, p_detail,
+          'system', 'trust_policies', p_policy_id, 'pending');
+
+  -- requested_by: a straight pass-through, NULL from both current callers.
+  -- See ROUND 3 / CRITICAL 1 above -- do not reintroduce a sentinel or any
+  -- other transform here; NULL is the system-raised marker
+  -- trust-proposer-boundary.mjs and apply_trust_promotion both key on.
+  -- ⚠ FINAL REVIEW / IMPORTANT 2 -- `and tenant_id = p_tenant_id` is
+  -- AUTHORISATION, not decoration, and the `if not found` below is half of
+  -- the same guard. Without them this writer would take a policy id from one
+  -- tenant and p_tenant_id from another, stamp the HUMAN_TASKS row with the
+  -- CALLER's tenant, update ZERO policy rows, and return a task id that reads
+  -- as success -- the exact "a tenant id passed as a parameter is an
+  -- assertion, not authorisation" family migs 662-664 and 823 closed
+  -- elsewhere. Neither of today's two callers can trip it (both pass the
+  -- policy row's OWN tenant_id, from the same row) -- but this function is
+  -- documented as a SHARED writer built to acquire more callers, and the
+  -- ledger keys on filename AND checksum, so before-it-lands is the only
+  -- moment it is fixable.
+  --
+  -- The raise sits AFTER the insert on purpose: the raise unwinds the
+  -- statement/subtransaction that wrote the human_tasks row, so a refused
+  -- call leaves NOTHING behind -- no orphan task, no audit event (the
+  -- append below never runs), no returned id. A pre-check would also work;
+  -- this ordering additionally guarantees the update and the insert can
+  -- never disagree about which tenant this request belongs to.
+  update trust_policies
+     set pending_task_id = v_task,
+         pending_evidence = p_evidence,
+         requested_by = p_requested_by,
+         requested_at = now()
+   where id = p_policy_id
+     and tenant_id = p_tenant_id;
+
+  if not found then
+    raise exception 'open_trust_promotion_request: policy % is not tenant %''s to file a request against — a policy id is not its own authorisation. No policy row was updated; the task row this call would have returned is unwound with this refusal.',
+      p_policy_id, p_tenant_id;
+  end if;
+
+  perform public.append_audit_event_internal(
+    p_tenant_id, p_actor, 'system', p_audit_action, 'config_change',
+    p_audit_metadata || jsonb_build_object('task_id', v_task));
+
+  -- Advisory overlay -- its failure must never cost the proposal. Verbatim
+  -- from raise_trust_widening_proposals, relocated unchanged (comment and
+  -- all): mig 705's AFTER INSERT trigger wrote a provisional brief BEFORE
+  -- the policy linkage existed (same statement, earlier moment); refresh it
+  -- now so the stored brief is right from birth.
+  begin
+    perform public.refresh_approval_briefs_internal(p_tenant_id);
+  exception when others then
+    null;
+  end;
+
+  return v_task;
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.opportunities_stage_guard()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -24446,6 +24602,12 @@ declare
   v_ok      int := 0;
   v_refuse  jsonb := '[]'::jsonb;
   v_title   text;
+  v_prow    human_tasks;
+  -- mig 836: the verdict has to travel OUT through the raise, because the
+  -- raise is what undoes the trial decision. A plpgsql variable assigned
+  -- inside the block survives the unwind, but only the message is guaranteed
+  -- to reach the handler, so the reason rides on it behind a sentinel prefix.
+  v_why     text;
 begin
   if p_task_ids is null or array_length(p_task_ids, 1) is null then
     return jsonb_build_object('would_succeed', 0, 'would_refuse', 0, 'refusals', v_refuse);
@@ -24457,13 +24619,24 @@ begin
   foreach v_id in array p_task_ids loop
     select title into v_title from human_tasks where id = v_id;
     begin
-      perform public.decide_human_task(v_id, p_decision, p_reason_code, '__preview__');
+      v_prow := public.decide_human_task(v_id, p_decision, p_reason_code, '__preview__');
+      if v_prow.id is not null and v_prow.status is distinct from p_decision then
+        -- mig 836: refused, and the trial write must still be undone. The
+        -- refusal record decide_human_task just made is rolled back with
+        -- everything else -- a preview does not write, not even a refusal.
+        raise exception using errcode = 'P0001',
+          message = '__PREVIEW_WOULD_REFUSE__' || coalesce(v_prow.refusal_reason, 'refused without a reason');
+      end if;
       -- Reaching this line means the decision WOULD go through. Undo it: the
       -- raise rolls this block back to where it started.
       raise exception using errcode = 'P0001', message = '__PREVIEW_WOULD_SUCCEED__';
     exception when others then
       if sqlerrm = '__PREVIEW_WOULD_SUCCEED__' then
         v_ok := v_ok + 1;
+      elsif sqlerrm like '__PREVIEW_WOULD_REFUSE__%' then
+        v_why := substr(sqlerrm, length('__PREVIEW_WOULD_REFUSE__') + 1);
+        v_refuse := v_refuse || jsonb_build_object(
+          'id', v_id, 'title', coalesce(v_title, '(untitled)'), 'why', v_why);
       else
         v_refuse := v_refuse || jsonb_build_object(
           'id', v_id, 'title', coalesce(v_title, '(untitled)'), 'why', sqlerrm);
@@ -25985,7 +26158,6 @@ begin
     -- same ladder in a single sweep.
     if r.policy_id = any(v_done) then continue; end if;
     v_done := v_done || r.policy_id;
-    v_task := gen_random_uuid();
 
     select string_agg(format('- %s, approved by %s. Receipt: %s',
              to_char((d->>'decided_at')::timestamptz, 'YYYY-MM-DD'),
@@ -26014,41 +26186,24 @@ begin
              r.policy_category, r.current_level, r.proposed_level,
              coalesce((r.evidence->'dial'->'proposed_settings')::text, '(defaults)'));
 
-    insert into human_tasks (id, tenant_id, type, title, detail, source, related_table, related_id, status)
-    values (v_task, r.tenant_id, 'trust_promotion', v_title, v_detail,
-            'system', 'trust_policies', r.policy_id, 'pending');
-
-    -- The linkage apply_trust_promotion resolves the task through. NULL
-    -- requested_by = system-raised (no requester to self-approve; the
-    -- probe's marker for holding it to the evidence bar).
-    update trust_policies
-       set pending_task_id = v_task,
-           pending_evidence = r.evidence,
-           requested_by = null,
-           requested_at = now()
-     where id = r.policy_id;
-
-    perform public.append_audit_event_internal(
-      r.tenant_id, 'Trust pattern detector', 'system',
+    -- mig 828: relocated to the shared writer (open_trust_promotion_request).
+    -- Everything above this line, and the text passed into it, is unchanged.
+    -- The `null` here is requested_by -- unchanged since before this task
+    -- existed, and reverted to mean exactly that again after round 2's
+    -- sentinel detour (see header, CRITICAL 1).
+    v_task := public.open_trust_promotion_request(
+      r.tenant_id, r.policy_id, r.evidence, null,
+      v_title, v_detail,
+      'Trust pattern detector',
       format('Trust-widening proposal raised — %s identical landed approvals of "%s" by %s; "%s" level %s -> %s awaits a human decision',
              r.n_approved, coalesce(r.action_label, r.action_key), r.de_name,
              r.policy_category, r.current_level, r.proposed_level),
-      'config_change',
       jsonb_build_object('kind', 'trust_widening_proposed',
-        'policy_id', r.policy_id, 'task_id', v_task, 'de_id', r.de_id,
+        'policy_id', r.policy_id, 'de_id', r.de_id,
         'action_key', r.action_key, 'n_approved', r.n_approved,
         'from_level', r.current_level, 'to_level', r.proposed_level,
-        'evidence', r.evidence));
-
-    -- The brief: mig 705's AFTER INSERT trigger wrote a provisional one
-    -- BEFORE the policy linkage existed (same statement, earlier moment);
-    -- refresh it now so the stored brief is right from birth. Advisory
-    -- overlay — its failure must never cost the proposal.
-    begin
-      perform public.refresh_approval_briefs_internal(r.tenant_id);
-    exception when others then
-      null;
-    end;
+        'evidence', r.evidence)
+    );
 
     v_raised := v_raised + 1;
     v_tasks := v_tasks || v_task;
@@ -28024,6 +28179,135 @@ BEGIN
 
   RETURN jsonb_build_object('ok', true, 'request_id', v_req, 'objective_id', v_obj);
 END; $function$;
+
+CREATE OR REPLACE FUNCTION public.request_eligible_promotions(p_tenant_id uuid DEFAULT NULL::uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_examined  int := 0;
+  v_requested int := 0;
+  v_skipped   int := 0;
+  v_thin      int := 0;
+  v_failed    int := 0;
+  v_failures  jsonb := '[]'::jsonb;
+  v_p         public.trust_policies;
+  v_ev        jsonb;
+  v_label     text;
+  v_task      uuid;
+begin
+  for v_p in
+    select * from public.trust_policies
+    where status = 'active'
+      -- IMPORTANT 4 (round 3): mirrors detect_trust_widening_patterns's own
+      -- filter exactly. Latent on today's data -- see header.
+      and public.tenant_is_operational(tenant_id)
+      and (p_tenant_id is null or tenant_id = p_tenant_id)
+  loop
+    v_examined := v_examined + 1;
+    v_ev := public.trust_evidence_for(v_p);
+
+    if not coalesce((v_ev->>'eligible')::boolean, false) then
+      continue;
+    end if;
+
+    if v_p.pending_task_id is not null then
+      v_skipped := v_skipped + 1;
+      continue;
+    end if;
+
+    v_label := replace(v_p.action_category, '_', ' ');
+
+    begin
+      v_task := public.open_trust_promotion_request(
+        v_p.tenant_id, v_p.id, v_ev, null,
+        format('Trust promotion — %s to level %s', v_label, v_p.current_level + 1),
+        -- ⚠ FINAL REVIEW / IMPORTANT 3. This string used to be copied verbatim
+        -- from migration 025's request_trust_promotion:
+        --   'Evidence met all criteria: %s. Approving widens autonomy one
+        --    step — still capped by guardrails.'
+        -- Two things were wrong with carrying it here, and both were measured,
+        -- not reasoned:
+        --
+        -- 1. IT RESTATED THE EVIDENCE THE CARD NOW CARRIES. Task 6 renders a
+        --    curated evidence card from the SAME pending_evidence snapshot,
+        --    directly below this text on both the ops queue and mobile. The
+        --    approver read the criteria twice, in two voices, the SQL-composed
+        --    one first.
+        -- 2. "STILL CAPPED BY GUARDRAILS" PROMISED A LIMIT THE TRUST LADDER
+        --    DOES NOT GRANT. Measured on production: trust_level_settings
+        --    ('action_execute', 0) is enabled=false; levels 1, 2 and 3 are all
+        --    enabled=true with max_amount_cents NULL. The ladder caps nothing
+        --    for this category. Guardrails DO still gate independently --
+        --    decide_action_execution stops destructive actions, blocked
+        --    phrases/topics, and amounts over require_approval_over_cents
+        --    (default 1,000,000 cents) BEFORE it ever reads the dial -- but
+        --    that is a different mechanism, it bites only on the action-
+        --    execution path, and only some of it is an AMOUNT cap. A sentence
+        --    that says "capped" without naming which mechanism caps what is
+        --    read as "the step you are approving is bounded", and for a
+        --    non-money action_execute action it is not.
+        --
+        -- What is left is only what apply_trust_promotion itself guarantees at
+        -- the moment the button is pressed, verified against its live body:
+        -- it re-runs trust_evidence_for and refuses as stale if the evidence
+        -- regressed, and it moves the level by least(current_level + 1,
+        -- max_level) -- one step, never past this policy's own ceiling.
+        -- No claim is made here about what the new level permits; that is the
+        -- card's job, and it declines to claim a cap for the same reason.
+        --
+        -- ⚠ NOT FIXED HERE, deliberately: migration 025's request_trust_
+        -- promotion still writes the original sentence, and it is APPLIED --
+        -- the human "Request promotion" button produces the same contradiction
+        -- on the same card. Both surfaces stop rendering the raw detail beside
+        -- the curated card for criteria-shaped requests (see
+        -- trustPromotionPresentation.detailIsRedundantBesideCard), which
+        -- covers 025's copy too; rewriting an applied function's copy was not
+        -- in this fix's scope and is named in the final-fix report instead.
+        format('Raised automatically because this policy''s trust criteria are met — no human asked for it. The evidence behind it is on this request. Approving moves "%s" up one step and no further than this policy''s own ceiling; the criteria are re-verified at that moment and the request is refused if the evidence has gone stale.',
+          v_label),
+        'Trust engine',
+        format('Trust promotion requested — %s level %s -> %s (evidence eligible; raised automatically by the eligibility sweep, no human requested it)',
+          v_label, v_p.current_level, v_p.current_level + 1),
+        jsonb_build_object('kind', 'trust_promotion_requested', 'policy_id', v_p.id,
+          'action_category', v_p.action_category, 'from_level', v_p.current_level,
+          'to_level', v_p.current_level + 1, 'requested_by', null, 'evidence', v_ev,
+          'raised_by', 'request_eligible_promotions')
+      );
+      v_requested := v_requested + 1;
+
+      -- ⚠ THIN EVIDENCE IS RAISED, NOT SUPPRESSED (founder ruling 2026-08-21).
+      -- A policy whose criteria require no human samples is eligible on an
+      -- empty record. That request is still raised, and pending_evidence
+      -- carries the count so the card can say so. Suppressing it here would
+      -- re-create the deadlock this function exists to break. Counted only
+      -- on the success branch: this is "how thin was a RAISED request's
+      -- evidence", not "how thin was an attempt".
+      if coalesce((v_ev->>'corroborated_refusals')::int, 0) = 0
+         and coalesce((v_ev->'criteria'->0->>'actual')::numeric, 0) = 0 then
+        v_thin := v_thin + 1;
+      end if;
+    exception when others then
+      -- Defensive, not expected: a genuine write failure (constraint
+      -- violation, data anomaly) on ONE policy must not cost every OTHER
+      -- tenant's eligible policy its own chance to be asked, so the loop
+      -- continues and the failure is recorded by policy/tenant/reason
+      -- rather than silently folded into a lower "requested" count.
+      v_failed := v_failed + 1;
+      v_failures := v_failures || jsonb_build_array(jsonb_build_object(
+        'policy_id', v_p.id, 'tenant_id', v_p.tenant_id,
+        'action_category', v_p.action_category, 'error', sqlerrm));
+    end;
+  end loop;
+
+  return jsonb_build_object(
+    'examined', v_examined, 'requested', v_requested,
+    'skipped_existing', v_skipped, 'thin', v_thin,
+    'failed', v_failed, 'failures', v_failures);
+end;
+$function$;
 
 CREATE OR REPLACE FUNCTION public.request_subtenant(p_parent_tenant_id uuid, p_name text, p_industry text DEFAULT NULL::text)
  RETURNS jsonb
@@ -34516,7 +34800,7 @@ BEGIN
   IF v_tenant IS NULL OR NOT public.auth_has_tenant_role(ARRAY['tenant_owner','tenant_admin']) THEN
     RETURN jsonb_build_object('ok', false, 'error', 'not_permitted');
   END IF;
-  IF p_surface_key NOT IN ('midnight','graphite') THEN
+  IF p_surface_key NOT IN ('midnight','graphite','daylight','editorial') THEN
     RETURN jsonb_build_object('ok', false, 'error', 'unknown_surface');
   END IF;
   v_hex := nullif(lower(btrim(coalesce(p_accent_hex,''))), '');
@@ -39232,6 +39516,32 @@ DECLARE
   v_read jsonb; v_actual jsonb; v_matched boolean := true; v_diffs jsonb := '[]'::jsonb;
   k text; v_exp text; v_act text; v_tenant uuid;
 BEGIN
+  -- ── THE GUARD (new in 835) ───────────────────────────────────────────────
+  -- Refuse to record a match for a check that compared nothing. This runs
+  -- FIRST -- before the employee lookup and before the read of the system of
+  -- record -- so that no failure further down can decide whether it applies.
+  --
+  -- The shape test comes first and is separate: jsonb_object_keys RAISES on a
+  -- non-object, and p_expectation is not NOT NULL, so both a scalar/array and
+  -- a SQL NULL are reachable from a direct RPC call. jsonb_typeof(NULL) is
+  -- NULL, and NULL <> 'object' is NULL rather than true, so the IS NULL test
+  -- has to be spelled out -- it does not fall out of the type check.
+  IF p_expectation IS NULL OR jsonb_typeof(p_expectation) <> 'object' THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'expectation_not_object');
+  END IF;
+
+  -- "At least one value that is not JSON null" -- NOT merely "not empty".
+  -- {"reference": null} is a non-empty object that compares nothing, which is
+  -- the whole defect. jsonb_typeof(value) <> 'null' is deliberate over any
+  -- truthiness test: 0 and false are genuine assertions about the record and
+  -- must pass. This is the same predicate mig 832 counts by.
+  IF NOT EXISTS (
+    SELECT 1 FROM jsonb_each(p_expectation) e WHERE jsonb_typeof(e.value) <> 'null'
+  ) THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'vacuous_expectation');
+  END IF;
+  -- ── end guard; everything below is mig 221 unchanged ─────────────────────
+
   SELECT tenant_id INTO v_tenant FROM digital_employees WHERE id = p_de_id;
   v_read := public.read_de_system(p_de_id, p_system_key, p_entity_ref);
   IF (v_read->>'ok') <> 'true' THEN RETURN v_read; END IF;
@@ -46193,6 +46503,9 @@ CREATE TABLE IF NOT EXISTS public.human_tasks (
   "repeat_count" integer DEFAULT 1 NOT NULL,
   "distinct_reports" integer DEFAULT 1 NOT NULL,
   "last_raised_at" timestamp with time zone,
+  "refusal_reason" text,
+  "refused_at" timestamp with time zone,
+  "refused_by" uuid,
   CONSTRAINT human_tasks_decision_edit_shape_check CHECK (((decision_edit IS NULL) OR ((decision_edit ? 'before'::text) AND (decision_edit ? 'after'::text)))),
   CONSTRAINT human_tasks_decision_other_needs_note_check CHECK (((decision_reason_code IS DISTINCT FROM 'other'::text) OR (COALESCE(btrim(decision_note), ''::text) <> ''::text))),
   CONSTRAINT human_tasks_decision_reason_code_check CHECK (((decision_reason_code IS NULL) OR (decision_reason_code = ANY (ARRAY['wrong_facts'::text, 'wrong_tone'::text, 'missing_context'::text, 'incomplete'::text, 'not_permitted'::text, 'customer_specific'::text, 'other'::text])))),
@@ -48109,8 +48422,10 @@ CREATE TABLE IF NOT EXISTS public.role_archetypes (
   "performance_contract" jsonb DEFAULT '[]'::jsonb NOT NULL,
   "worklist_templates" jsonb DEFAULT '[]'::jsonb NOT NULL,
   "claim_order" text DEFAULT 'urgency'::text NOT NULL,
+  "trust_signals" jsonb,
   CONSTRAINT role_archetypes_claim_order_check CHECK ((claim_order = ANY (ARRAY['urgency'::text, 'arrival'::text]))),
   CONSTRAINT role_archetypes_status_check CHECK ((status = ANY (ARRAY['active'::text, 'draft'::text]))),
+  CONSTRAINT role_archetypes_trust_signals_is_object CHECK (((trust_signals IS NULL) OR (jsonb_typeof(trust_signals) = 'object'::text))),
   CONSTRAINT role_archetypes_pkey PRIMARY KEY (key)
 );
 CREATE TABLE IF NOT EXISTS public.de_model_routes (
@@ -50278,7 +50593,7 @@ CREATE TABLE IF NOT EXISTS public.tenant_branding (
   "accent_hex" text,
   "surface_key" text DEFAULT 'midnight'::text NOT NULL,
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-  CONSTRAINT tenant_branding_surface_key_check CHECK ((surface_key = ANY (ARRAY['midnight'::text, 'graphite'::text]))),
+  CONSTRAINT tenant_branding_surface_key_check CHECK ((surface_key = ANY (ARRAY['midnight'::text, 'graphite'::text, 'daylight'::text, 'editorial'::text]))),
   CONSTRAINT tenant_branding_pkey PRIMARY KEY (tenant_id)
 );
 CREATE TABLE IF NOT EXISTS public.tenant_comms_settings (
@@ -53033,6 +53348,8 @@ DECLARE
   v_amt    bigint;
   v_auth   jsonb;
   v_risk jsonb;
+  v_trust   jsonb;   -- mig 836
+  v_refusal text;    -- mig 836
 BEGIN
   perform set_config('app.allow_task_decision', 'on', true);   -- mig 486: sanctioned decision path
   IF v_tenant IS NULL THEN RAISE EXCEPTION 'not_authenticated'; END IF;
@@ -53101,7 +53418,7 @@ BEGIN
         coalesce(v_risk->'reasons'->0->>'why', 'a workspace rule denies this');
     END IF;
 
-    -- THE HOLE THIS MIGRATION EXISTS TO CLOSE.
+    -- THE HOLE MIGRATION 786 EXISTS TO CLOSE.
     --
     -- evaluate_authority downgrades a rule it could not CHECK to
     -- `require_human`, because it cannot know whether the rule would have
@@ -53144,6 +53461,89 @@ BEGIN
     END IF;
   END IF;
 
+  -- ══ mig 836: THE PROMOTION IS PART OF THE DECISION ═══════════════════════
+  -- BEFORE the close, never after. If this refuses, the task must not be
+  -- closed, and the refusal must SURVIVE -- and a raise cannot do both (see
+  -- this migration's header, and 837's). So it returns instead.
+  --
+  -- Gated on the task type, so this whole block is unreachable for the other
+  -- ten types and their callers see the contract they always saw.
+  IF v_task.type = 'trust_promotion' THEN
+    -- Re-read under a row lock. Everything below commits, so a concurrent
+    -- session must not be able to slip a decision in between the promotion
+    -- and the close -- which would promote against a task somebody else had
+    -- already closed.
+    SELECT * INTO v_task FROM human_tasks
+     WHERE id = p_task_id AND tenant_id = v_tenant FOR UPDATE;
+    IF v_task.status IS DISTINCT FROM 'pending' THEN
+      RETURN NULL;   -- already decided; unchanged contract, caller skips hooks
+    END IF;
+
+    BEGIN
+      v_trust := public.apply_trust_promotion(p_task_id, p_decision);
+
+      IF p_decision = 'approved' THEN
+        -- Nothing but applied:true means a level actually moved.
+        IF NOT coalesce((v_trust->>'applied')::boolean, false) THEN
+          v_refusal := coalesce(v_trust->>'message', v_trust->>'reason',
+                                'apply_trust_promotion refused without saying why');
+        END IF;
+      ELSE
+        -- On a rejection applied is ALWAYS false and that is the success
+        -- case, so the reason carries the meaning. Two are legitimate:
+        --   'rejected'          the policy was found and released
+        --   'no_pending_policy' nothing left to release -- the task is being
+        --                       cleaned up and "do not promote" has been
+        --                       honoured either way. Refusing this would trap
+        --                       a stranded task open forever.
+        -- Anything else means we do not know what happened, so we refuse. A
+        -- future third false reason fails loudly instead of passing silently.
+        IF coalesce(v_trust->>'reason', '') NOT IN ('rejected', 'no_pending_policy') THEN
+          v_refusal := coalesce(v_trust->>'message', v_trust->>'reason',
+                                'apply_trust_promotion refused without saying why');
+        END IF;
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      -- THE PRE-837 SHAPE. Until 837 is applied, apply_trust_promotion RAISES
+      -- on a self-approval and on stale evidence. Caught here so that shape
+      -- lands in exactly the same place as the payload shape: the savepoint
+      -- unwinds whatever that call wrote, the reason survives in a plpgsql
+      -- variable, and the task still does not close. This block is what makes
+      -- the migration correct regardless of whether 837 is applied first.
+      v_refusal := sqlerrm;
+    END;
+
+    IF v_refusal IS NOT NULL THEN
+      -- ⚠ status, decided_by and decided_at are NOT touched. That is what
+      -- keeps guard_human_task_decision (mig 486) quiet, and it is the
+      -- point: nothing was decided.
+      UPDATE human_tasks
+         SET refusal_reason = v_refusal,
+             refused_at     = now(),
+             refused_by     = auth.uid(),
+             updated_at     = now()
+       WHERE id = p_task_id AND tenant_id = v_tenant;
+
+      -- The governance record, on the same transaction as the refusal, so it
+      -- commits with it. 'approval' is constraint-legal against
+      -- audit_events_category_check (checked, not assumed).
+      PERFORM append_audit_event(
+        v_tenant,
+        coalesce((SELECT full_name FROM profiles WHERE user_id = auth.uid()), 'An approver'),
+        'human',
+        format('Task NOT %s — %s: %s', p_decision, v_task.title, v_refusal),
+        'approval',
+        jsonb_build_object(
+          'kind', 'human_task_decision_refused', 'task_id', p_task_id,
+          'task_type', v_task.type, 'decision', p_decision,
+          'refusal_reason', v_refusal, 'de_id', v_task.de_id,
+          'related_table', v_task.related_table, 'related_id', v_task.related_id));
+
+      SELECT * INTO v_row FROM human_tasks WHERE id = p_task_id AND tenant_id = v_tenant;
+      RETURN v_row;   -- status is still 'pending' <> p_decision. See the header.
+    END IF;
+  END IF;
+
   -- ⚠ The pending-only clause is the double-approval guard the caller depends
   -- on. No row back means "already decided" and the caller MUST skip its side
   -- effects (invoice send, gated-action execute, write-backs). Do not relax.
@@ -53154,11 +53554,25 @@ BEGIN
          updated_at           = now(),
          decision_reason_code = nullif(btrim(p_reason_code), ''),
          decision_note        = nullif(btrim(p_note), ''),
-         decision_edit        = p_edit
+         decision_edit        = p_edit,
+         -- mig 836: an earlier refusal is history the moment one succeeds.
+         refusal_reason       = NULL,
+         refused_at           = NULL,
+         refused_by           = NULL
    WHERE id = p_task_id AND tenant_id = v_tenant AND status = 'pending'
    RETURNING * INTO v_row;
 
-  IF v_row.id IS NULL THEN RETURN NULL; END IF;   -- already decided; caller skips hooks
+  IF v_row.id IS NULL THEN
+    -- mig 836: for a trust_promotion this is unreachable -- the row is held
+    -- FOR UPDATE above and was pending then. If it ever happens the
+    -- promotion has already been applied and the close did not stick, and
+    -- committing that would be the original defect with the halves swapped.
+    -- Raise so the promotion goes back with it.
+    IF v_task.type = 'trust_promotion' THEN
+      RAISE EXCEPTION 'decision_lost_after_promotion: task % was promoted but could not be closed; refusing to commit half a decision', p_task_id;
+    END IF;
+    RETURN NULL;   -- already decided; caller skips hooks
+  END IF;
 
   -- Governance record. 'approval' is constraint-legal (checked against
   -- audit_events_category_check); p_category is NOT normalised by
@@ -54254,6 +54668,15 @@ declare
   v_h_pending    bigint := 0;
   -- mig 819: refusals the SYSTEM can corroborate, counted by distinct cause.
   v_h_corrob     bigint := 0;
+  -- mig 832: SUCCESSES the system can corroborate — the positive half of 819,
+  -- counted by distinct subject, from the signals the ROLE declared. Folded
+  -- into the SAME counter as v_h_corrob; deliberately not a second counter.
+  v_h_success    bigint := 0;
+  -- The role's declaration, read ONCE per call. Mig 831 guarantees a jsonb
+  -- array (never SQL NULL, never a scalar); if that contract ever breaks this
+  -- raises loudly rather than coalescing to a silent zero, because a silent
+  -- zero here is indistinguishable from "the employee earned nothing".
+  v_signals      jsonb := '[]'::jsonb;
   -- guardrail evidence
   v_blocks       bigint := 0;
   -- criteria thresholds
@@ -54384,6 +54807,121 @@ begin
      and exists (select 1 from connectors c
                   where c.tenant_id = t.tenant_id
                     and public.connector_circuit_open(c.consecutive_failures, c.last_error_at));
+
+  -- mig 832: A SUCCESS THE SYSTEM CAN VERIFY.
+  --
+  -- The symmetric counterpart to 819 above. 819 credits a refusal the platform
+  -- could independently confirm; this credits a piece of work the platform
+  -- went and re-read in the system of record and found to be as the employee
+  -- said it would be.
+  --
+  -- ── THE SIGNAL INTERFACE (decided here, and now binding on Task 7) ────────
+  --   table      public.de_system_verifications  (mig 221 — "the verify audit
+  --              trail: proof the DE came back and checked its own work")
+  --   named by   de_system_verifications.system_key — the exact string a role
+  --              lists in role_archetypes.trust_signals -> <action_category>,
+  --              read through public.declared_trust_signals (mig 831)
+  --   subject    de_system_verifications.entity_ref — the anti-farming key
+  --   predicate  matched = true, over an expectation that ACTUALLY COMPARED
+  --              at least one field (guard 2 below -- not merely non-empty)
+  --
+  -- ── WHY THIS TABLE AND NOT THE EMPLOYEE'S OWN WORD ────────────────────────
+  -- 819's first load-bearing guard is "it cannot be self-asserted". The
+  -- obvious source — de_work_items.status = 'done' — fails that test: the
+  -- runner sets it from a tool the MODEL calls (de-work/index.ts, "if
+  -- (out.done)"), so an employee could farm trust by declaring itself
+  -- finished. de_system_verifications cannot be farmed the same way: the
+  -- employee supplies only the EXPECTATION, and "actual" is read back out of
+  -- the system of record by read_de_system inside verify_de_system. "matched"
+  -- is the platform's comparison of the two, not the employee's claim.
+  --
+  -- ── THE THREE GUARDS ──────────────────────────────────────────────────────
+  -- 1. ONLY WHAT THE ROLE DECLARED. system_key must appear in this role's
+  --    declaration for this action category. A role that declares nothing
+  --    earns nothing here — which is every one of the 15 active roles on the
+  --    day this shipped, and is why applying this changes no eligibility.
+  -- 2. A CHECK THAT COMPARED NOTHING EARNS NOTHING -- and "nothing" has TWO
+  --    spellings, which is the whole of fix round 1. verify_de_system
+  --    (mig 221:128-135) walks jsonb_object_keys(p_expectation) and records a
+  --    difference only when "p_expectation->>k IS DISTINCT FROM v_actual->>k".
+  --      {}                    the loop never runs at all
+  --      {"reference": null}   ->> on a JSON null yields SQL NULL, and a field
+  --                            the record does not carry is SQL NULL too.
+  --                            NULL IS DISTINCT FROM NULL is FALSE, so no
+  --                            difference is ever recorded.
+  --    BOTH leave v_matched = true having compared nothing. Reproduced live
+  --    against production by replaying that exact loop before writing this,
+  --    not reasoned about: {"reference": null} yields matched = true, and the
+  --    first version of this migration COUNTED it.
+  --    Both are reachable, not theoretical -- de-work declares the tool's
+  --    expectation parameter as { type: "object" } with NO property schema
+  --    (de-work/index.ts:2021) and passes it straight through (:975), and
+  --    entity_ref is model-controlled whenever it is a uuid (:105-106). So an
+  --    employee could name N real records and bank N corroborated successes
+  --    having verified none of them. The guard therefore requires at least one
+  --    NON-NULL expectation value -- one field genuinely put to the system of
+  --    record -- rather than merely a non-empty object.
+  --
+  --    ⚠ THIS DECLINES TO COUNT DISHONEST DATA; IT DOES NOT STOP IT BEING
+  --    WRITTEN. The root defect is upstream: verify_de_system records
+  --    matched = true for an expectation that compared nothing, so such rows
+  --    still land in de_system_verifications and still read as "the DE came
+  --    back and checked its own work" on any surface that shows them. Fixing
+  --    that is a change to verify_de_system, deliberately NOT in this
+  --    migration's scope and handled separately. Whoever reads this next
+  --    should know the DATA is still wrong; only the COUNTING is now honest.
+  --
+  --    ⚠ AND THE WRITER IS NOT THE ONLY DOOR. service_role holds direct
+  --    DELETE/INSERT/TRUNCATE/UPDATE on de_system_verifications
+  --    (supabase/baseline/full_schema.sql:57668, confirmed live against
+  --    information_schema.role_table_grants). Nothing writes the table that
+  --    way today, but any edge function that ever does bypasses
+  --    verify_de_system's comparison entirely and can set matched = true with
+  --    no read of the system of record at all. That is also why the shape
+  --    check sits INSIDE the guard below rather than beside it: a directly
+  --    written non-object expectation is writable, jsonb_each raises on one,
+  --    and sibling WHERE quals have no guaranteed evaluation order -- a guard
+  --    that can be evaluated second is not a guard.
+  -- 3. DISTINCT SUBJECT, NOT ROWS — 819's guard, applied identically. Checking
+  --    one invoice seventeen times is one demonstration, not seventeen.
+  --    Deliberately keyed on entity_ref ALONE rather than
+  --    (system_key, entity_ref): the same entity confirmed in two declared
+  --    systems collapses to one. That under-counts rather than over-counts,
+  --    and under-counting only delays a promotion where over-counting would
+  --    hand out authority nobody earned.
+  --
+  -- ── WHAT THIS DOES NOT CARRY, STATED PLAINLY ──────────────────────────────
+  -- 682's production-vs-exam filter is applied to every other source in this
+  -- function via evidence_is_production(...). It is NOT applied here, because
+  -- de_system_verifications has no origin column to apply it to. That is not
+  -- a hole TODAY: the sole writer is verify_de_system, whose sole caller in
+  -- the whole repository is the de-work production loop's verify_in_system tool (offered at
+  -- de-work/index.ts:2018, dispatched at :972)
+  -- (grepped across supabase/functions and src, and no SQL routine calls it).
+  -- It BECOMES a hole the day an exam or simulation path is given that tool,
+  -- and the fix then is an origin column on the table, not a filter invented
+  -- here over a column that does not exist.
+  --
+  -- A tenant-scoped policy (de_id IS NULL) always scores 0 here, and that is
+  -- correct rather than an oversight: declared_trust_signals resolves a role
+  -- through the policy's EMPLOYEE, so a policy with no employee has no role,
+  -- and a policy with no role has declared nothing.
+  v_signals := public.declared_trust_signals(p_policy.id);
+
+  select count(distinct v.entity_ref) into v_h_success
+    from de_system_verifications v
+   where v.tenant_id = p_policy.tenant_id
+     and v.created_at >= v_since
+     and v.matched
+     and exists (select 1
+                   from jsonb_each(case when jsonb_typeof(v.expectation) = 'object'
+                                        then v.expectation
+                                        else '{}'::jsonb end) e
+                  where jsonb_typeof(e.value) <> 'null')
+     and (p_policy.de_id is null or v.de_id = p_policy.de_id)
+     and exists (select 1 from jsonb_array_elements_text(v_signals) s(sig)
+                  where s.sig = v.system_key);
+
   v_h_rate := case when v_h_total > 0 then round(v_h_approved::numeric / v_h_total, 4) else 0 end;
 
   -- Source 3: guardrail blocks in the window. A tenant-scoped policy counts
@@ -54425,17 +54963,17 @@ begin
       'detail', format('%s evaluated answers (needs %s)', v_eval_total, v_min_samples)),
     jsonb_build_object(
       'key', 'human_approval_rate', 'label', 'Human approval rate',
-      'actual', case when (v_h_total + v_h_corrob) = 0 then 0
-                     else round((v_h_approved + v_h_corrob)::numeric / (v_h_total + v_h_corrob), 4) end,
+      'actual', case when (v_h_total + v_h_corrob + v_h_success) = 0 then 0
+                     else round((v_h_approved + v_h_corrob + v_h_success)::numeric / (v_h_total + v_h_corrob + v_h_success), 4) end,
       'required', v_min_h_rate,
       -- mig 819: corroborated refusals count on BOTH sides of the rate. A
       -- refusal the system confirmed is an observation, and it went the right
       -- way. Mixing them into the numerator only would inflate the rate; into
       -- the denominator only would punish an employee for being right.
-      'met', (v_min_h_n = 0 or ((v_h_total + v_h_corrob) >= v_min_h_n
-                                and (case when (v_h_total + v_h_corrob) = 0 then 0
-                                          else round((v_h_approved + v_h_corrob)::numeric
-                                                     / (v_h_total + v_h_corrob), 4) end) >= v_min_h_rate)),
+      'met', (v_min_h_n = 0 or ((v_h_total + v_h_corrob + v_h_success) >= v_min_h_n
+                                and (case when (v_h_total + v_h_corrob + v_h_success) = 0 then 0
+                                          else round((v_h_approved + v_h_corrob + v_h_success)::numeric
+                                                     / (v_h_total + v_h_corrob + v_h_success), 4) end) >= v_min_h_rate)),
       'detail', case
         -- A rate over zero observations is not 0%, it is absent. Reporting
         -- "0 of 0 approved" reads as an employee that scored nothing, which
@@ -54449,9 +54987,9 @@ begin
       end),
     jsonb_build_object(
       'key', 'human_samples', 'label', 'Human review sample size',
-      'actual', v_h_total + v_h_corrob, 'required', v_min_h_n,
-      'met', (v_h_total + v_h_corrob) >= v_min_h_n,
-      'detail', format('%s decided review(s) + %s corroborated refusal(s) (needs %s)%s', v_h_total, v_h_corrob, v_min_h_n,
+      'actual', v_h_total + v_h_corrob + v_h_success, 'required', v_min_h_n,
+      'met', (v_h_total + v_h_corrob + v_h_success) >= v_min_h_n,
+      'detail', format('%s decided review(s) + %s corroborated refusal(s) + %s corroborated success(es) (needs %s)%s', v_h_total, v_h_corrob, v_h_success, v_min_h_n,
         case when v_h_pending > 0
              then format(' — %s awaiting a decision', v_h_pending)
              else '' end)),
@@ -54473,6 +55011,7 @@ begin
     'window_days', v_window,
     'pending_reviews', v_h_pending,
     'corroborated_refusals', v_h_corrob,
+    'corroborated_successes', v_h_success,
     'criteria', v_criteria,
     -- 692: the door only shows green if it can actually open.
     'eligible', coalesce(v_eligible, false) and p_policy.current_level < v_ceiling and p_policy.status = 'active',
@@ -54827,9 +55366,9 @@ begin
     raise exception 'not_authenticated';
   end if;
 
-  -- ⚠ 'other', not 'withdrawn'. See this migration's header: 'withdrawn' is
+  -- ⚠ 'other', not 'withdrawn'. See mig 798's header: 'withdrawn' is
   -- not admitted by human_tasks_decision_reason_code_check and never was, so
-  -- every call raised 23514 from 790 until now. The withdrawal stays findable
+  -- every call raised 23514 from 790 until then. The withdrawal stays findable
   -- through disposition='cancelled' plus a non-null reason code, which the
   -- sweeps do not write.
   v_row := public.decide_human_task(p_task_id, 'rejected', 'other', p_note);
@@ -54837,6 +55376,15 @@ begin
   -- NULL composite = already decided.
   if v_row.id is null then
     return null;
+  end if;
+
+  -- mig 836: THE THIRD STATE. A row with a status that is not 'rejected'
+  -- means the server refused and left the task open. Returning it unstamped
+  -- is the honest answer -- the caller can read refusal_reason. Stamping
+  -- disposition here would take the task out of the approval-rate denominator
+  -- while it is still, in fact, waiting for a decision.
+  if v_row.status is distinct from 'rejected' then
+    return v_row;
   end if;
 
   update human_tasks
@@ -55481,8 +56029,8 @@ ALTER TABLE public.de_learning_policies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.renewal_invoices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_comms_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.guardrail_rule_adjudicable ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.de_missions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.role_archetypes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.de_missions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.end_user_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.benchmark_samples ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_provisioning_requests ENABLE ROW LEVEL SECURITY;
@@ -55645,9 +56193,9 @@ ALTER TABLE public.amendment_metrics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.certification_types ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.connectors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customer_account_contacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.human_tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_objective_wakes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_development_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.human_tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.de_improvements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.dunning_ladders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.dunning_rungs ENABLE ROW LEVEL SECURITY;
@@ -55743,7 +56291,6 @@ ALTER TABLE public.rate_limit_counters ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.role_certifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.schema_migrations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.skill_categories ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.tenant_branding ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.specialist_source_secrets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_compliance_packs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.scim_tokens ENABLE ROW LEVEL SECURITY;
@@ -55751,6 +56298,7 @@ ALTER TABLE public.tenant_cost_tracking ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_deletion_receipts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_deletion_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_feature_overrides ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tenant_branding ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_pipeline_stages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_usage_metrics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.widget_key_secrets ENABLE ROW LEVEL SECURITY;
@@ -56949,6 +57497,7 @@ REVOKE ALL ON ROUTINE de_trust_surface_candidates(uuid,uuid) FROM PUBLIC, anon, 
 REVOKE ALL ON ROUTINE decide_action_execution(uuid,text,text,boolean,uuid,bigint,text,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE decide_inquiry_triage(uuid,text,integer,uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE decide_work_item_triage(uuid,text,text,integer,uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE declared_trust_signals(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE delete_tenant_as(uuid,text,uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE delete_tenant_internal(uuid,text,uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE deprovision_starter_de_internal(uuid,text) FROM PUBLIC, anon, authenticated;
@@ -57072,6 +57621,7 @@ REVOKE ALL ON ROUTINE onboarding_check_complete(uuid) FROM PUBLIC, anon, authent
 REVOKE ALL ON ROUTINE onboarding_progress_recalc() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE onboarding_verb_verdict(uuid,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE open_de_escalation(uuid,uuid,uuid,uuid,text,text,text,text,boolean,integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE open_trust_promotion_request(uuid,uuid,jsonb,uuid,text,text,text,text,jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE opportunities_stage_guard() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE org_units_check_parent() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE p_workspace_period_end(uuid) FROM PUBLIC, anon, authenticated;
@@ -57141,6 +57691,7 @@ REVOKE ALL ON ROUTINE register_computer_use_runtime(text,text,text,text) FROM PU
 REVOKE ALL ON ROUTINE reject_draft(uuid,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE reject_entity_amendment(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE report_edge_error(text,text,jsonb,uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON ROUTINE request_eligible_promotions(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE resolve_access(uuid,text,uuid,uuid,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE resolve_action_definition_for_category(uuid,text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON ROUTINE resolve_case_await(uuid,uuid,text) FROM PUBLIC, anon, authenticated;
