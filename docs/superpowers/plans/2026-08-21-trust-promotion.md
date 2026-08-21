@@ -246,37 +246,62 @@ exception when others then
 end;
 ```
 
-- [ ] **Step 3: Run the dry run to verify it fails**
+- [ ] **Step 3: Run the dry run, then invert the guard to prove the probe reaches it**
 
-Expected: FAIL with `self-approval SUCCEEDED`, because `requested_by` is NULL and the guard short-circuits.
+Expected: **PASS, 0 findings** — and that is the honest result. The guard is
+sound; what was missing is a human-requested promotion to point it at. A task that
+cannot fail is theatre, so the proof here is the INVERSION: comment out the
+`self_approval_refused` raise, re-run, and the probe must report
+`self-approval SUCCEEDED`. If it still passes with the guard removed, the probe
+is not reaching the guard and the whole task proves nothing. Restore the raise
+before committing.
 
-- [ ] **Step 4: Make the automatic path record a requester**
+- [ ] **Step 4: Do NOT stamp a requester on the automatic path**
 
-Two changes, both required. Task 1's `request_eligible_promotions` and the existing `raise_trust_widening_proposals` must both stamp `requested_by`. For a machine-raised request there is no human requester, so record the raiser explicitly rather than leaving NULL:
+⚠ **CORRECTED 2026-08-21, after Task 1's review and before Task 2 was built.
+An earlier draft of this task instructed both writers to stamp a sentinel
+`00000000-0000-0000-0000-000000000000` into `requested_by`. That instruction was
+wrong twice over and must not be reintroduced.**
 
-```sql
--- ⚠ NULL is not "no requester", it is "the guard cannot fire". A machine-raised
--- request records a sentinel so the guard has something to compare, and so the
--- card can say who asked.
-update trust_policies
-   set requested_by = coalesce(auth.uid(), '00000000-0000-0000-0000-000000000000'::uuid),
-       requested_at = now()
- where id = v_policy_id;
-```
+*It achieves nothing.* The guard compares `auth.uid() = requested_by`. A real
+approver's uid is never equal to the sentinel, so after stamping it the guard
+still refuses nobody — the identical outcome to NULL, reached by a longer route.
 
-- [ ] **Step 5: Make the guard fail closed**
+*And it destroys a live discriminator.* `scripts/trust-proposer-boundary.mjs:79`
+states the semantic in its own words: **"requested_by IS NULL is the system
+marker — `request_trust_promotion` always stamps the human requester."** That
+column is how the Ring-0 probe `trust-proposer-cannot-decide` separates
+system-raised proposals from human-requested ones; arms 9, 10 and 11 select on
+it. Measured 2026-08-21: the population is **1 of 1** — every pending proposal
+today is system-raised. Stamping a sentinel takes that population to zero, and
+the probe's denominator arm rules zero a legal state, so certify would stay
+green while comparing nothing. That is the theatre this repo has paid for twice.
 
-```sql
--- Was: if v_policy.requested_by is not null and auth.uid() = v_policy.requested_by
--- The `is not null` prefix is the same shape as the `auth.uid() is not null and`
--- prefix mig 749 closed 29 of: it SKIPS the check rather than failing it.
-if v_policy.requested_by is null then
-  raise exception 'promotion_has_no_requester: refusing to approve a request whose origin was not recorded';
-end if;
-if auth.uid() = v_policy.requested_by then
-  raise exception 'self_approval_refused: the person who requested this promotion cannot approve it';
-end if;
-```
+`NULL` is the correct encoding of "no human asked for this." Leave it. Neither
+`request_eligible_promotions` nor `raise_trust_widening_proposals` writes
+`requested_by`.
+
+- [ ] **Step 5: Leave the guard as it is — and prove it fires**
+
+The original draft of this step read `requested_by is not null` as the fail-open
+prefix migration 749 closed 29 of. **It is not that shape.** In 749 the null
+test lets a caller who *should* be checked escape the check. Here null means
+*there is no human requester*, which is a true state and not an escape: a
+machine-raised request has no self for a self-approval guard to catch.
+
+So `apply_trust_promotion`'s guard is **already correct for the path it governs**
+and this task changes no logic. What has never been done is demonstrating it —
+the guard has never refused anything, because no human-requested promotion has
+ever existed. Steps 2, 3 and 6 stand unchanged and are now the whole task: drive
+a real human-requested promotion, watch the self-approval refuse, and watch the
+control approver succeed.
+
+⚠ **What this task does NOT solve, stated so it is not lost.** Nothing restrains
+*who* may approve a **system-raised** promotion. That is segregation of duties,
+not self-approval, and it belongs to the authority seam in Task 3 — which is
+blocked pending agreement with the parallel session. Do not invent an approver
+rule here.
+
 
 - [ ] **Step 6: Run the dry run to verify it passes**
 
