@@ -56,6 +56,17 @@
         "5198"
       ],
       "port": 5198
+    },
+    {
+      "name": "dreamteam-task6",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "node_modules/vite/bin/vite.js",
+        "--port",
+        "5201",
+        "--strictPort"
+      ],
+      "port": 5201
     }
   ]
 }

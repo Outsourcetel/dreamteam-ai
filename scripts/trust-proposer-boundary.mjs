@@ -17,12 +17,16 @@
 //   which re-verifies evidence and is undone by trust_demote.
 //
 //   EVIDENCE — every OPEN system-raised proposal (trust_policies.requested_by
-//   IS NULL is the marker; the human path always stamps auth.uid()) cites
-//   >= 3 decisions that the ledger, RE-READ at probe time, confirms as
-//   approved + production-origin + landed (mig 679's shared predicate). A
-//   stored citation is a stored marker, never truth (mig 642) — so the arms
-//   join back to human_tasks and action_executions rather than trusting
-//   pending_evidence.
+//   IS NULL is the marker; the human path always stamps auth.uid()) is
+//   re-derivable from the ledger, RE-READ at probe time, not trusted from
+//   pending_evidence (mig 642: a stored marker is never truth). Mig 828 gave
+//   this population TWO shapes, and each is re-derived its own way: a
+//   PATTERN-FILED proposal (raise_trust_widening_proposals, the detector)
+//   cites >= 3 decisions that the ledger confirms as approved +
+//   production-origin + landed (mig 679's shared predicate) — arms 9/10. A
+//   CRITERIA-FILED proposal (request_eligible_promotions, via
+//   trust_evidence_for) carries no citations to re-verify; instead its
+//   policy must STILL satisfy its own criteria when re-asked — arm 9b.
 //
 // ⚠ has_function_privilege / has_table_privilege answer INCLUDING
 // inheritance through PUBLIC — a REVOKE is not a description of the
@@ -126,6 +130,19 @@ ${orphanExtra}` : ''}
 ),
 counted as (
   select (select count(*) from open_proposals) as proposals_scanned,
+         -- Split by shape (mig 828 gave the population two writers): arm 9's
+         -- real denominator and arm 9b's, so neither can quietly fall to
+         -- zero while the combined total still reads healthy. coalesce is
+         -- load-bearing, not decoration: '?' is a jsonb operator, and jsonb
+         -- NULL ? 'pattern' evaluates to SQL NULL, not false — a NULL
+         -- pending_evidence (the column is nullable; nothing ties it to
+         -- pending_task_id) would otherwise satisfy NEITHER filter below,
+         -- undercounting proposals_scanned's own sum. See arm 9c, which
+         -- exists because this exact hole was found live.
+         (select count(*) filter (where coalesce(op.pending_evidence ? 'pattern', false))
+            from open_proposals op) as pattern_filed,
+         (select count(*) filter (where not coalesce(op.pending_evidence ? 'pattern', false))
+            from open_proposals op) as criteria_filed,
          (select count(*) from cited) as citations_checked,
          (select count(*) from orphan_scan) as orphan_scanned
 )
@@ -303,23 +320,66 @@ select 'seam-reachable — ' || f.sig || ' is executable by ' || who.r
 union all
 
 -- ── 8. SWEEP UNFED — built-but-unfed is the mig-625 breaker defect. The
---      daily governance sweep is the seam's only heartbeat; if its body
---      stops calling the proposer, patterns accumulate and nothing fires,
---      which looks exactly like "no group qualifies yet". ──────────────────
+--      daily governance sweep is the seam's only heartbeat — the cron job
+--      de-governance-sweep-daily is the single statement
+--      "select de_governance_sweep_internal()" and nothing else — so A
+--      WRITER ITS BODY DOES NOT NAME IS A WRITER THAT NEVER RUNS. Patterns
+--      accumulate, nothing fires, and it looks exactly like "no group
+--      qualifies yet".
+--
+--      ⚠ TWO WRITERS SINCE MIG 828, AND THIS ARM WATCHED ONLY ONE — which
+--      is this arm committing, against itself, the defect it is named
+--      after. 828 added request_eligible_promotions (the half that lets a
+--      policy whose own criteria are met ask for its own promotion instead
+--      of waiting for a repeated-approval pattern that may never form) and
+--      extended neither the sweep nor this arm. Measured on production
+--      2026-08-21: calls raise_trust_widening_proposals = true, calls
+--      request_eligible_promotions = false — built and starved, with this
+--      control green throughout. Mig 834 wires the call; the row below is
+--      now PER WRITER, so either one going missing is named on its own.
+--
+--      ⚠ THE NEW WRITER'S ROW IS GATED ON ITS CALLEE EXISTING. Before mig
+--      828 there is nothing to starve, and reporting a missing call to a
+--      function that does not exist would turn every environment behind
+--      828 — a fresh build, dev mid-replay — red for a defect it does not
+--      have. Once 828 is applied and 834 is not, it fires: that IS the
+--      true state, and exactly the state nothing reported.
+--
+--      f.src is comment-stripped by live_fns, so this arm cannot be
+--      satisfied by prose that merely names the writer it looks for. ─────
 select 'sweep-unfed — de_governance_sweep_internal no longer calls '
-       || 'raise_trust_widening_proposals. The seam is built and starved: '
-       || 'repeated approvals teach nothing again, silently.' as violation,
+       || w.writer || '. ' || w.why as violation,
        null::text as note
- where not exists (
+  from (values
+    ('raise_trust_widening_proposals', null::text,
+     'The seam is built and starved: repeated approvals teach nothing again, silently.'),
+    ('request_eligible_promotions', 'request_eligible_promotions(p_tenant_id uuid)',
+     'Mig 828''s eligibility writer, wired into the sweep by mig 834, is back to having no caller — so a policy that already meets its own criteria can never ask, which is the closed loop that whole task exists to break.')
+  ) w(writer, gate_sig, why)
+ where (w.gate_sig is null
+        or exists (select 1 from live_fns g where g.sig = w.gate_sig))
+   and not exists (
          select 1 from live_fns f
           where f.sig = 'de_governance_sweep_internal()'
-            and f.src ilike '%raise_trust_widening_proposals%')
+            and f.src ilike '%' || w.writer || '%')
 
 union all
 
--- ── 9. CITATION BELOW FLOOR — an open system proposal must cite >= 3
---      decisions. One that does not should not exist (the writer only files
---      what the detector qualified at N=3). ────────────────────────────────
+-- ── 9. CITATION BELOW FLOOR — an open, PATTERN-FILED system proposal must
+--      cite >= 3 decisions. One that does not should not exist (the writer
+--      only files what the detector qualified at N=3). Scoped to proposals
+--      carrying a 'pattern' key — the detector's shape (raise_trust_
+--      widening_proposals). Mig 828 added a SECOND writer
+--      (request_eligible_promotions, via trust_evidence_for) whose evidence
+--      carries 'criteria' and no 'pattern' at all — it never claimed a
+--      citation count, so it is not this arm's population. That shape is
+--      judged by 9b below, on whether its policy's OWN criteria still hold,
+--      not on a citation floor it was never subject to. ⚠ coalesced to
+--      false: '?' is a jsonb operator, so a NULL pending_evidence (the
+--      column is nullable, nothing ties it to pending_task_id) makes
+--      pending_evidence ? 'pattern' evaluate to SQL NULL, not false — an
+--      un-coalesced predicate would silently exclude a NULL-evidence row
+--      from THIS arm's population too, not just admit it. ────────────────
 select 'citation-below-floor — ' || op.slug || ' [task ' || op.task_id || ']: '
        || 'open system-raised proposal cites '
        || coalesce(jsonb_array_length(op.pending_evidence->'pattern'->'decisions'), 0)
@@ -327,7 +387,83 @@ select 'citation-below-floor — ' || op.slug || ' [task ' || op.task_id || ']: 
        || 'edited after filing or a writer bypassed the detector.' as violation,
        null::text as note
   from open_proposals op
- where coalesce(jsonb_array_length(op.pending_evidence->'pattern'->'decisions'), 0) < 3
+ where coalesce(op.pending_evidence ? 'pattern', false)
+   and coalesce(jsonb_array_length(op.pending_evidence->'pattern'->'decisions'), 0) < 3
+
+union all
+
+-- ── 9b. ELIGIBILITY NOT RE-DERIVABLE — a criteria-filed proposal whose policy
+--       does not currently satisfy its own criteria. The stored payload is a
+--       stored marker; this arm re-asks trust_evidence_for (mig 642), the
+--       same discipline arm 10 applies to citations. Population: every open
+--       proposal WITHOUT a 'pattern' key (mig 828's second writer; see arm
+--       9's comment) — including one with pending_evidence NULL entirely
+--       (SQL NULL, not JSON null): not coalesce(NULL ? 'pattern', false)
+--       is not false = true, so a shapeless proposal lands HERE rather
+--       than falling through both arms (found live, not by inspection —
+--       the un-coalesced form let a NULL-evidence row satisfy neither 9 nor
+--       9b, three-valued logic doing what it always does when a '?'/'->'
+--       chain meets NULL). A proposal with no evidence at all is exactly
+--       "a writer bypassed the detector" and belongs on whether its policy
+--       can independently justify itself — which is what re-deriving
+--       eligibility here answers, evidence or none.
+--
+--       ⚠ COVERAGE GAP, NAMED RATHER THAN HIDDEN: this arm has no automated
+--       can-fire case in scripts/certify-mutation-test.mjs's proposalExtra
+--       block. Its join needs a REAL trust_policies row already carrying the
+--       fixture's task_id in pending_task_id — a bare SELECT fixture can add
+--       a row to open_proposals but cannot fabricate one in trust_policies,
+--       and production holds exactly one such real linkage (measured
+--       2026-08-21), which is eligible. So an automated "fires" case has no
+--       live anchor without a write, which this read-only probe's own
+--       injection point cannot offer. Proven by hand instead, against DEV,
+--       in a rolled-back transaction — see the 'arm 9b ... proven on dev'
+--       manual entry in certify-mutation-test.mjs for the full record
+--       (both directions: a genuinely-eligible policy stays silent, a
+--       genuinely-not-eligible one fires, by construction rather than luck).
+--       The STANDING, always-live compensating control for a structural
+--       break here (this arm silently stops matching anything, or its join
+--       condition rots) is arm 9c below: if proposals stop being judged by
+--       EITHER 9 or 9b, the denominator stops summing and 9c fires on every
+--       run, forever, with no fixture required. That does not re-prove 9b's
+--       own eligibility logic — only that SOMETHING is still judging every
+--       row — which is the honest scope of what an always-on check can give
+--       here without a live not-eligible proposal to point at. ───────────
+select 'eligibility-not-re-derivable — ' || op.slug || ' [task ' || op.task_id
+       || ']: open criteria-filed (or evidence-less) proposal whose policy '
+       || 'does NOT currently satisfy its own criteria. Either the evidence '
+       || 'was edited after filing, or a writer bypassed the eligibility '
+       || 'check.' as violation,
+       null::text as note
+  from open_proposals op
+  join trust_policies tp on tp.pending_task_id = op.task_id
+ where not coalesce(op.pending_evidence ? 'pattern', false)
+   and coalesce((public.trust_evidence_for(tp)->>'eligible')::boolean, false) is not true
+
+union all
+
+-- ── 9c. DENOMINATOR DOES NOT SUM — the structural check behind 9/9b's
+--       split. pattern_filed + criteria_filed must equal proposals_scanned,
+--       every run, by construction (9 and 9b partition on the SAME
+--       coalesced predicate and its negation) — so a mismatch means the
+--       partition itself is broken: a third evidence shape neither arm's
+--       WHERE clause recognises, or another three-valued-logic hole like
+--       the one this task found live (a NULL pending_evidence that used to
+--       satisfy neither pending_evidence ? 'pattern' nor its bare
+--       negation, because jsonb NULL ? 'pattern' is SQL NULL, not false).
+--       Without this arm, that exact hole reads as a healthy denominator —
+--       "N scanned" — right up until the two halves silently stop adding
+--       up to N. This is the general form; the coalesce fixes above are
+--       one instance of it. ──────────────────────────────────────────────
+select 'denominator-does-not-sum — pattern_filed (' || c.pattern_filed
+       || ') + criteria_filed (' || c.criteria_filed || ') = '
+       || (c.pattern_filed + c.criteria_filed) || ', not proposals_scanned ('
+       || c.proposals_scanned || '). ' || (c.proposals_scanned - c.pattern_filed - c.criteria_filed)
+       || ' proposal(s) are counted in the total but judged by NEITHER arm 9 '
+       || 'nor arm 9b — a shape (or a NULL) is falling through the split.' as violation,
+       null::text as note
+  from counted c
+ where c.pattern_filed + c.criteria_filed <> c.proposals_scanned
 
 union all
 
@@ -374,7 +510,9 @@ union all
 --    failed on). Zero open proposals is a legal state — the line says so. ───
 select null::text as violation,
        'trust-proposer-boundary: ' || c.proposals_scanned
-       || ' open system proposal(s) scanned; ' || c.citations_checked
+       || ' open system proposal(s) scanned (' || c.pattern_filed
+       || ' pattern-filed, judged at the N=3 floor; ' || c.criteria_filed
+       || ' criteria-filed, judged by re-derived eligibility); ' || c.citations_checked
        || ' citation(s) re-verified against the ledger; ' || c.orphan_scanned
        || ' pending trust_promotion task(s) in the orphan scan; detector '
        || 'currently reports '

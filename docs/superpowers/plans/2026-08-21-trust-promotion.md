@@ -196,6 +196,153 @@ node scripts/db-query.mjs --file supabase/migrations/NNN_eligibility_can_ask_for
 
 ---
 
+### Task 1b: Teach the Ring-0 probe that proposals now come in two shapes
+
+**Files:**
+- Modify: `scripts/trust-proposer-boundary.mjs` (arm 9, the denominator line, one new arm)
+
+**Interfaces:**
+- Consumes: `public.trust_evidence_for(trust_policies) → jsonb` and the
+  `open_proposals` CTE already in the file.
+- Produces: no new export. `trustProposerBoundarySql()` keeps its signature; the
+  `opts.proposalExtra` injection point the mutation suite uses must keep working.
+
+**⚠ ORDERING: this task must land BEFORE Task 1's migration is applied.** Task 1
+is committed and dry-run but unapplied. Applying it first turns certify RED.
+
+**Why this task exists.** Arm 9 states its own premise in its comment: *"an open
+system proposal must cite >= 3 decisions. One that does not should not exist (the
+writer only files what the detector qualified at N=3)."* Task 1 adds a **second
+writer** that files what the *criteria* qualified, not what the detector did. Its
+evidence is criteria-shaped and carries no `pattern` key at all, so line 330's
+`coalesce(jsonb_array_length(op.pending_evidence->'pattern'->'decisions'), 0)`
+coalesces to **0**, `0 < 3` is true, and arm 9 reports a violation for a proposal
+that never claimed a pattern.
+
+That collides head-on with the founder ruling recorded in Task 1: *an eligible
+policy raises a request even with no approved-action history.* Both cannot hold.
+Arm 9 is not wrong — Task 1 invalidates its premise, and this task makes the
+arm's implicit scope explicit now that the population has two shapes.
+
+**Measured 2026-08-21, before any change:** the probe runs clean, scanning 1 open
+system proposal with 4 citations re-verified against the ledger. That proposal is
+pattern-shaped, so arm 9 must still judge it exactly as it does today.
+
+**What this task must NOT do.** Scoping arm 9 without adding the new arm leaves
+criteria-shaped proposals checked by nothing, and this file's own denominator arm
+rules a zero population legal — so certify would stay green over an unchecked
+population. That is the theatre this repo has paid for twice. The scope and the
+new arm ship together or neither ships.
+
+- [ ] **Step 1: Write the failing case first**
+
+Add a criteria-shaped row through the existing `opts.proposalExtra` injection
+point and confirm the CURRENT probe reports `citation-below-floor` for it. Use a
+real policy id so the row joins; give it evidence with `criteria` and no
+`pattern` key:
+
+```sql
+select gen_random_uuid() as task_id, tp.tenant_id, 'probe-fixture' as slug,
+       jsonb_build_object('criteria', jsonb_build_object('min_human_samples', 0),
+                          'eligible', true) as pending_evidence
+  from trust_policies tp limit 1
+```
+
+Expected: **one `citation-below-floor` violation.** That is the defect, reproduced
+before it is fixed. If it does not appear, stop — the fixture is not reaching arm 9
+and nothing below this line proves anything.
+
+- [ ] **Step 2: Scope arm 9 to proposals that actually claim a pattern**
+
+Change arm 9's predicate to judge only pattern-claiming proposals. Keep the floor
+of 3 exactly as it is for them — it is migration 683's founder-ratified floor and
+this task does not touch it:
+
+```sql
+ where op.pending_evidence ? 'pattern'
+   and coalesce(jsonb_array_length(op.pending_evidence->'pattern'->'decisions'), 0) < 3
+```
+
+Update the arm's comment so the premise it now relies on is written down: it
+judges proposals filed by the detector, and criteria-filed proposals are judged by
+the arm below.
+
+- [ ] **Step 3: Add the arm that judges the other shape**
+
+A criteria-filed proposal claims one thing: that the policy met its own bar. Do
+not trust the stored payload — re-derive it, the same discipline arm 10 applies to
+citations (mig 642, the stored marker is never truth):
+
+```sql
+union all
+
+-- ── 9b. ELIGIBILITY NOT RE-DERIVABLE — a criteria-filed proposal whose policy
+--       does not currently satisfy its own criteria. The stored payload is a
+--       stored marker; this arm re-asks trust_evidence_for (mig 642). ───────
+select 'eligibility-not-re-derivable — ' || op.slug || ' [task ' || op.task_id
+       || ']: open criteria-filed proposal whose policy does NOT currently '
+       || 'satisfy its own criteria. Either the evidence was edited after '
+       || 'filing, or a writer bypassed the eligibility check.' as violation,
+       null::text as note
+  from open_proposals op
+  join trust_policies tp on tp.pending_task_id = op.task_id
+ where not (op.pending_evidence ? 'pattern')
+   and coalesce((public.trust_evidence_for(tp.*)->>'eligible')::boolean, false) is not true
+```
+
+⚠ Read `trust_evidence_for`'s actual signature with `pg_get_function_arguments`
+first and match how the existing code calls it — never
+`pg_get_function_identity_arguments`, which omits defaults and has cost this repo
+`42P13` twice.
+
+- [ ] **Step 4: Make the denominator report both shapes**
+
+The closing denominator line currently says *"N open system proposal(s)
+scanned."* One number can no longer describe two populations — if criteria-filed
+proposals grow to dominate, arm 9's real denominator could fall to zero while the
+line still reports a healthy total. Split it:
+
+```
+... || ' open system proposal(s) scanned (' || c.pattern_filed
+    || ' pattern-filed, judged at the N=3 floor; ' || c.criteria_filed
+    || ' criteria-filed, judged by re-derived eligibility); '
+```
+
+Add both counts to the `counted` CTE.
+
+- [ ] **Step 5: Prove both arms fail, not just pass**
+
+Four runs, all four required. Two findings and two clean results prove nothing on
+their own — a probe that cannot fail is theatre:
+
+1. Criteria fixture with `eligible: true` on a genuinely eligible policy → **no
+   violation** (arm 9 no longer misfires; 9b is satisfied).
+2. Criteria fixture pointing at a policy that is NOT eligible → **`eligibility-not-re-derivable`** fires.
+3. Pattern fixture citing 2 decisions → **`citation-below-floor` still fires.** Arm
+   9 is unchanged for its own population.
+4. No fixtures, live data → **clean, and the denominator reads `1 pattern-filed, 0
+   criteria-filed`**, matching today's baseline.
+
+- [ ] **Step 6: Confirm the mutation suite still injects**
+
+`scripts/certify-mutation-test.mjs` feeds fixtures through `proposalExtra`, which
+is `UNION ALL`'d into `open_proposals`. Run it and confirm the trust arms still
+report as they did:
+
+```bash
+node scripts/certify-mutation-test.mjs 2>&1 | grep -i "trust-proposer"
+```
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add scripts/trust-proposer-boundary.mjs
+git commit -m "fix(certify): arm 9 judged one proposal shape; there are now two"
+```
+
+---
+
+
 ### Task 2: An approver who is not the requester
 
 **Files:**
@@ -246,37 +393,62 @@ exception when others then
 end;
 ```
 
-- [ ] **Step 3: Run the dry run to verify it fails**
+- [ ] **Step 3: Run the dry run, then invert the guard to prove the probe reaches it**
 
-Expected: FAIL with `self-approval SUCCEEDED`, because `requested_by` is NULL and the guard short-circuits.
+Expected: **PASS, 0 findings** — and that is the honest result. The guard is
+sound; what was missing is a human-requested promotion to point it at. A task that
+cannot fail is theatre, so the proof here is the INVERSION: comment out the
+`self_approval_refused` raise, re-run, and the probe must report
+`self-approval SUCCEEDED`. If it still passes with the guard removed, the probe
+is not reaching the guard and the whole task proves nothing. Restore the raise
+before committing.
 
-- [ ] **Step 4: Make the automatic path record a requester**
+- [ ] **Step 4: Do NOT stamp a requester on the automatic path**
 
-Two changes, both required. Task 1's `request_eligible_promotions` and the existing `raise_trust_widening_proposals` must both stamp `requested_by`. For a machine-raised request there is no human requester, so record the raiser explicitly rather than leaving NULL:
+⚠ **CORRECTED 2026-08-21, after Task 1's review and before Task 2 was built.
+An earlier draft of this task instructed both writers to stamp a sentinel
+`00000000-0000-0000-0000-000000000000` into `requested_by`. That instruction was
+wrong twice over and must not be reintroduced.**
 
-```sql
--- ⚠ NULL is not "no requester", it is "the guard cannot fire". A machine-raised
--- request records a sentinel so the guard has something to compare, and so the
--- card can say who asked.
-update trust_policies
-   set requested_by = coalesce(auth.uid(), '00000000-0000-0000-0000-000000000000'::uuid),
-       requested_at = now()
- where id = v_policy_id;
-```
+*It achieves nothing.* The guard compares `auth.uid() = requested_by`. A real
+approver's uid is never equal to the sentinel, so after stamping it the guard
+still refuses nobody — the identical outcome to NULL, reached by a longer route.
 
-- [ ] **Step 5: Make the guard fail closed**
+*And it destroys a live discriminator.* `scripts/trust-proposer-boundary.mjs:79`
+states the semantic in its own words: **"requested_by IS NULL is the system
+marker — `request_trust_promotion` always stamps the human requester."** That
+column is how the Ring-0 probe `trust-proposer-cannot-decide` separates
+system-raised proposals from human-requested ones; arms 9, 10 and 11 select on
+it. Measured 2026-08-21: the population is **1 of 1** — every pending proposal
+today is system-raised. Stamping a sentinel takes that population to zero, and
+the probe's denominator arm rules zero a legal state, so certify would stay
+green while comparing nothing. That is the theatre this repo has paid for twice.
 
-```sql
--- Was: if v_policy.requested_by is not null and auth.uid() = v_policy.requested_by
--- The `is not null` prefix is the same shape as the `auth.uid() is not null and`
--- prefix mig 749 closed 29 of: it SKIPS the check rather than failing it.
-if v_policy.requested_by is null then
-  raise exception 'promotion_has_no_requester: refusing to approve a request whose origin was not recorded';
-end if;
-if auth.uid() = v_policy.requested_by then
-  raise exception 'self_approval_refused: the person who requested this promotion cannot approve it';
-end if;
-```
+`NULL` is the correct encoding of "no human asked for this." Leave it. Neither
+`request_eligible_promotions` nor `raise_trust_widening_proposals` writes
+`requested_by`.
+
+- [ ] **Step 5: Leave the guard as it is — and prove it fires**
+
+The original draft of this step read `requested_by is not null` as the fail-open
+prefix migration 749 closed 29 of. **It is not that shape.** In 749 the null
+test lets a caller who *should* be checked escape the check. Here null means
+*there is no human requester*, which is a true state and not an escape: a
+machine-raised request has no self for a self-approval guard to catch.
+
+So `apply_trust_promotion`'s guard is **already correct for the path it governs**
+and this task changes no logic. What has never been done is demonstrating it —
+the guard has never refused anything, because no human-requested promotion has
+ever existed. Steps 2, 3 and 6 stand unchanged and are now the whole task: drive
+a real human-requested promotion, watch the self-approval refuse, and watch the
+control approver succeed.
+
+⚠ **What this task does NOT solve, stated so it is not lost.** Nothing restrains
+*who* may approve a **system-raised** promotion. That is segregation of duties,
+not self-approval, and it belongs to the authority seam in Task 3 — which is
+blocked pending agreement with the parallel session. Do not invent an approver
+rule here.
+
 
 - [ ] **Step 6: Run the dry run to verify it passes**
 

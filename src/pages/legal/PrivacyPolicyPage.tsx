@@ -1,5 +1,12 @@
 import React from 'react';
 import { Banner } from '../../design/primitives';
+// Section 4 is GENERATED, not written. See src/lib/subprocessors.ts for why:
+// a provider joins the model failover chain the moment its key resolves, so a
+// hand-maintained list of "who receives your data" is accurate only by
+// coincidence of configuration. certify › subprocessor-disclosure checks that
+// list against what the code can reach AND what is actually configured, and
+// checks that this page still renders from it rather than restating it.
+import { SUBPROCESSORS, ARMING_GROUPS, COUNSEL_PLACEHOLDER } from '../../lib/subprocessors';
 
 // Starter draft, not a finished legal document — see the banner below.
 // Added during the pre-launch readiness review (2026-07-08): no privacy
@@ -10,7 +17,7 @@ const PrivacyPolicyPage = ({ onBack }: { onBack?: () => void }) => (
   <div className="min-h-screen bg-dt-page text-dt-support overflow-y-auto">
     <div className="max-w-3xl mx-auto px-6 py-12">
       {onBack && (
-        <button onClick={onBack} className="text-sm text-dt-accent-text mb-6">← Back</button>
+        <button onClick={onBack} className="text-sm text-dt-accent-text hover:text-dt-title mb-6">← Back</button>
       )}
 
       <Banner tone="warn" className="mb-8">
@@ -58,26 +65,48 @@ const PrivacyPolicyPage = ({ onBack }: { onBack?: () => void }) => (
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold text-dt-title mb-2">4. Third parties we share data with</h2>
+          <h2 className="text-lg font-semibold text-dt-title mb-2">4. Third parties the Service can send data to</h2>
           <p>
-            To generate AI responses, the Service sends relevant portions of your data to a third-party AI model
-            provider. Today that is <strong>Anthropic (Claude)</strong> — it is the only provider currently
-            receiving any customer content.
+            This list is generated from the software itself, not maintained by hand. It names every third party this
+            product is <em>capable</em> of sending your data to, and what puts each one in that path — so it stays
+            correct when a setting changes, without anyone having to remember to edit this page.
           </p>
           <p className="mt-3">
-            The Service can also fail over to <strong>Amazon Web Services (Bedrock)</strong>, <strong>OpenAI</strong>{' '}
-            and <strong>Google</strong>. A provider only ever joins that chain once its API key is configured in
-            Settings → AI Engine, and none of the three is configured today. We list all four here rather than only
-            the one in use, because adding a key is a settings change: without this paragraph it could route your
-            conversations to a processor this policy had never named.
+            Which of these are active for your workspace at any given moment is a live setting, not a document:
+            model providers are shown in <strong>Settings → AI Engine</strong>, and connected systems in{' '}
+            <strong>Systems</strong>. We do not sell your data to anyone.
           </p>
-          <p className="mt-3">
-            Beyond the model providers, the Service relies on <strong>Supabase</strong> (database and hosting),{' '}
-            <strong>Vercel</strong> (application hosting) and <strong>Resend</strong> (outbound and inbound email).
-            [Placeholder for counsel: confirm and link each provider's data-processing terms, and state whether any
-            provider trains its own models on your data — as of this draft that should be explicitly opted out
-            wherever the provider allows it.] We do not sell your data to anyone.
-          </p>
+
+          <div className="bg-dt-warn-soft border border-dt-warn-border rounded-lg p-3 mt-4">
+            {/* Full-strength warn text: dt tokens are plain var() colors, so a Tailwind
+                alpha suffix on them emits NO css rule (proven in the theme branch's 4b
+                work) — the suffixed form silently rendered as inherited color. */}
+            <p className="text-xs text-dt-warn">{COUNSEL_PLACEHOLDER}</p>
+          </div>
+
+          {ARMING_GROUPS.map((group) => {
+            const entries = SUBPROCESSORS.filter((s) => s.arming === group.arming);
+            if (entries.length === 0) return null;
+            return (
+              <div key={group.arming} className="mt-6">
+                <h3 className="text-sm font-semibold text-dt-body">{group.heading}</h3>
+                <p className="text-xs text-dt-muted mt-1">{group.note}</p>
+                <ul className="mt-3 space-y-3">
+                  {entries.map((s) => (
+                    <li key={s.id} className="border border-dt-border rounded-lg p-3 bg-dt-card">
+                      <p className="text-sm font-medium text-dt-body">{s.vendor}</p>
+                      <p className="text-xs text-dt-support mt-1">{s.purpose}</p>
+                      {s.armedBy.length > 0 && (
+                        <p className="text-xs text-dt-muted mt-1">
+                          Joins the path when configured: <code className="text-dt-faint">{s.armedBy.join(', ')}</code>
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
         </section>
 
         <section>

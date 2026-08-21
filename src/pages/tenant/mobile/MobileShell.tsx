@@ -30,15 +30,32 @@ import type { Connector } from '../../../lib/connectorApi';
 import { getPushState, enablePush, disablePush } from '../../../lib/pushClient';
 import type { PushState } from '../../../lib/pushClient';
 import type { Page } from '../../../types';
+// Task 6 fix round 1 (2026-08-21): NO SECOND SOURCE OF TRUTH applies to what
+// a decision is INFORMED by, not only to how it is written. This screen calls
+// the exact same decideHumanTask() desktop does, so it must show the exact
+// same evidence desktop now does for a trust_promotion task — same reader,
+// same pure module (tests/trust-promotion.test.ts already proves it).
+import { getTrustPolicyById } from '../../../lib/trustApi';
+import type { TrustPolicy } from '../../../lib/trustApi';
+import { trustPromotionCardCopy, isThinTrustEvidence, extractPolicyEvidence, detailIsRedundantBesideCard } from '../../../lib/trustPromotionPresentation';
+import { listDigitalEmployees } from '../../../lib/digitalEmployeesApi';
 
 // ⚠ APPROVING SOMETHING YOU HAVE NOT READ is the failure this product exists
 // to prevent, so a task carrying DRAFTED CONTENT never gets an inline
 // Approve — it gets "Read it", which opens the detail first. Only tasks whose
 // decision rests on facts visible on the card itself can be approved in one
 // tap. This list is the reason the phone shell cannot be a thinner desktop.
+//
+// trust_promotion (fix round 1, 2026-08-21 — coordinator review): WIDENING
+// what an employee may do belongs here for the same reason
+// trust_demotion_notice already did — the list was backwards on risk, since
+// demotion (the safe direction) required the read and promotion did not. The
+// facts a promotion decision rests on (the evidence behind it, and whether it
+// is thin) are not on the list card — they load only once "Read it" is
+// opened, same as the reader in HumanTasksPage.tsx's detail panel.
 const READ_FIRST: HumanTaskType[] = [
   'review_gate', 'knowledge_revision', 'inquiry_review', 'training_feedback',
-  'escalation', 'checklist', 'trust_demotion_notice',
+  'escalation', 'checklist', 'trust_demotion_notice', 'trust_promotion',
 ];
 const readFirst = (t: DBHumanTask) => READ_FIRST.includes(t.type);
 
@@ -118,6 +135,78 @@ export default function MobileShell({ setPage }: { setPage: (p: Page) => void })
     return () => { alive = false; };
   }, [openConvId]);
 
+  // The evidence behind a trust_promotion request — same reader as the
+  // desktop ops queue (HumanTasksPage.tsx), same reason: the task's own row
+  // carries no evidence, only trust_policies.pending_evidence does. Raw data
+  // only; the card copy is derived inline below, next to `open`, rather than
+  // stored — same discipline as `draft` above.
+  // ⚠ FIX ROUND 2 (coordinator review): tri-state, not a resolved value plus
+  // a separate boolean — the SAME shape `draft` two hundred lines above
+  // already uses, for the reason its own comment gives ("`undefined` = still
+  // looking"). `trustPolicy` used to start at `null` with a SEPARATE
+  // `trustLoading` flag that also started `false` — both resolved,
+  // settled-looking values — so for one real, user-visible frame between a
+  // task being opened and this effect's async fetch resolving, the screen
+  // could show "No trust policy is linked — approving would change nothing"
+  // with Approve tappable. `undefined` now means exactly "still looking",
+  // present on the very first render, no gap for a false claim to render in.
+  const [trustPolicy, setTrustPolicy] = useState<TrustPolicy | null | undefined>(undefined);
+  const [trustEmployeeName, setTrustEmployeeName] = useState<string | null>(null);
+  const [trustLoadError, setTrustLoadError] = useState<string | null>(null);
+  useEffect(() => {
+    setTrustPolicy(undefined); setTrustEmployeeName(null); setTrustLoadError(null);
+    if (!open || open.type !== 'trust_promotion' || !open.related_id) return;
+    let alive = true;
+    void getTrustPolicyById(open.related_id)
+      .then(async policy => {
+        if (!alive) return;
+        setTrustPolicy(policy);
+        // human_tasks carries no de_id for this type — only related_id, to
+        // trust_policies. A tenant-scoped policy (de_id null) names no single
+        // employee; the card falls back to naming the workspace instead.
+        if (policy?.de_id) {
+          try {
+            const des = await listDigitalEmployees(true); // include retired — still the right name
+            if (alive) {
+              const de = des.find(d => d.id === policy.de_id);
+              setTrustEmployeeName(de ? (de.persona_name || de.name) : null);
+            }
+          } catch { /* falls back to the workspace phrasing below */ }
+        }
+      })
+      .catch(err => {
+        if (!alive) return;
+        setTrustLoadError(err instanceof Error ? err.message : 'Could not load the evidence behind this request.');
+        // Settle OUT of "loading" on failure too — a network hiccup must not
+        // leave Approve disabled forever.
+        setTrustPolicy(null);
+      });
+    return () => { alive = false; };
+  }, [open?.id, open?.type, open?.related_id]);
+
+  const trustEvidence = trustPolicy ? extractPolicyEvidence(trustPolicy.pending_evidence) : null;
+  const trustCopy = (trustPolicy && trustEvidence) ? trustPromotionCardCopy({
+    employeeName: trustEmployeeName || 'This workspace',
+    category: trustPolicy.action_category,
+    currentLevel: trustPolicy.current_level,
+    targetLevel: trustPolicy.target_level,
+    evidence: trustEvidence,
+    ladder: trustPolicy.ladder ?? null,
+  }) : null;
+  const trustThin = trustEvidence ? isThinTrustEvidence(trustEvidence) : false;
+  const trustLoading = open?.type === 'trust_promotion' && trustPolicy === undefined;
+  // ⚠ FINAL REVIEW (2026-08-21): identical rule to the desktop ops queue, from
+  // the SAME shared predicate — the "Why it stopped" paragraph below renders
+  // the raw task.detail above the evidence card, and for a criteria-shaped
+  // request that is the SQL-composed sentence the card supersedes, promising a
+  // cap the trust ladder does not grant. Suppressed only when the card
+  // actually rendered AND the evidence carries no cited decisions; a
+  // pattern-shaped proposal keeps its detail, because the receipts live
+  // nowhere else. See detailIsRedundantBesideCard's own header.
+  const trustDetailRedundant = open?.type === 'trust_promotion'
+    && !!trustCopy
+    && detailIsRedundantBesideCard(trustPolicy?.pending_evidence);
+
   const decide = async (task: DBHumanTask, decision: 'approved' | 'rejected',
                         capture?: { reasonCode?: DecisionReasonCode; note?: string }) => {
     setBusy(true);
@@ -172,10 +261,12 @@ export default function MobileShell({ setPage }: { setPage: (p: Page) => void })
         </div>
         <div className="p-5 space-y-5 flex-1">
           <h1 className="text-[22px] font-semibold text-dt-title leading-snug">{open.title}</h1>
-          <div>
-            <p className="text-[14px] text-dt-muted mb-1">Why it stopped</p>
-            <p className="text-[16px] text-dt-body leading-relaxed">{open.detail}</p>
-          </div>
+          {!trustDetailRedundant && (
+            <div>
+              <p className="text-[14px] text-dt-muted mb-1">Why it stopped</p>
+              <p className="text-[16px] text-dt-body leading-relaxed">{open.detail}</p>
+            </div>
+          )}
           <div className="rounded-xl border border-dt-border bg-dt-card divide-y divide-dt-border">
             {[
               ['Raised', ago(open.created_at)],
@@ -188,6 +279,35 @@ export default function MobileShell({ setPage }: { setPage: (p: Page) => void })
               </div>
             ))}
           </div>
+          {/* Task 6 fix round 1: the evidence behind a trust_promotion
+              request, read the same way the desktop ops queue reads it.
+              Thin evidence is RAISED, not suppressed (founder ruling) — this
+              never hides a no-history request, it says so, in the sentence
+              and in the chip. */}
+          {open.type === 'trust_promotion' && (
+            <div>
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <p className="text-[14px] text-dt-muted">Evidence behind this request</p>
+                {trustThin && <Chip tone="warn">Thin evidence</Chip>}
+              </div>
+              {trustLoading ? (
+                <p className="text-[16px] text-dt-support leading-relaxed">Loading the evidence behind this request…</p>
+              ) : trustLoadError ? (
+                <p className="text-[16px] text-dt-warn leading-relaxed">{trustLoadError}</p>
+              ) : !trustPolicy ? (
+                <p className="text-[16px] text-dt-support leading-relaxed">No trust policy is linked to this request — approving would change nothing.</p>
+              ) : !trustCopy ? (
+                <p className="text-[16px] text-dt-support leading-relaxed">This request carries no readable evidence snapshot.</p>
+              ) : (
+                <>
+                  <p className="text-[16px] text-dt-body leading-relaxed rounded-xl border border-dt-border bg-dt-card p-4">
+                    {trustCopy.detail}
+                  </p>
+                  <p className="text-[14px] text-dt-muted mt-1.5">{trustCopy.meta}</p>
+                </>
+              )}
+            </div>
+          )}
           {draft && (
             <div>
               <p className="text-[14px] text-dt-muted mb-1">
@@ -213,10 +333,12 @@ export default function MobileShell({ setPage }: { setPage: (p: Page) => void })
           {/* ⚠ THE BUTTON SAYS WHAT IT DOES. It read "Approve and send it" on
               every task in the queue, including the ones that send nothing —
               which is how F-6 read as normal behaviour for a day. */}
-          <Button kind="primary" size="touch" className="w-full justify-center" disabled={busy || draft === undefined}
+          <Button kind="primary" size="touch" className="w-full justify-center"
+            disabled={busy || draft === undefined || (open.type === 'trust_promotion' && trustLoading)}
             onClick={() => void decide(open, 'approved')}>
             {busy ? 'Sending…'
               : draft === undefined ? 'Checking…'
+              : open.type === 'trust_promotion' && trustLoading ? 'Checking…'
               : draft?.deliverable ? 'Approve and send it'
               : 'Approve'}
           </Button>
