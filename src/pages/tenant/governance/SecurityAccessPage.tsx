@@ -30,7 +30,14 @@ const ROLE_COLORS: Record<TenantRole, string> = {
   tenant_manager: 'bg-blue-500/15 text-blue-300',
   knowledge_manager: 'bg-purple-500/15 text-purple-300',
   approver: 'bg-cyan-500/15 text-cyan-300',
-  tenant_user: 'bg-dt-neutral-soft text-dt-neutral',
+  // Opaque, not the neutral-soft tint the other fallback chips use — this is
+  // the platform default role (useUsers.ts falls back to it) and renders on
+  // every non-privileged team member, both in the permission-matrix header
+  // and every regular row of the team table. A ~10%-alpha fill on the most
+  // common badge on the page is a legibility risk nobody can eyeball without
+  // a dark walk, so it keeps the original's opaque solidity: dark #414b6e
+  // with white text is ~7:1; light #d0d5dd with #101828 title text is ~10:1.
+  tenant_user: 'bg-dt-border-strong text-dt-title',
   read_only: 'bg-dt-panel text-dt-support',
 }
 
