@@ -106,6 +106,37 @@ const slateBg = lines('bg-slate-');
 const slateBorder = lines('border\\(-[lrtbxy]\\)\\?-slate-').filter(l => !excluded(l, CONTROL_SHADE_FOCUS_RING));
 const slateText = lines('text-slate-');
 
+// ── Fifth metric (Task 5T, 2026-08-21): tone-tint text the original audit
+// never measured. `text-{tone}-100|200|300` is dark-only semantic text —
+// found by the final whole-branch review at ~749 raw lines (amber-300 x153,
+// indigo-300 x148, emerald-300 x136, rose-300 x116, red-300 x84, + ~110
+// more) sitting at roughly 1.3-2.5:1 contrast against a white page, invisible
+// to all four metrics above. Same exemption logic as bare text-white: a
+// tinted label on an OPAQUE same-line fill (e.g. `bg-amber-900 text-amber-100`)
+// is a deliberate pairing, reused via the same COLORED_BG regex — but a
+// TRANSLUCENT fill (`bg-amber-500/20 text-amber-300`) does not qualify,
+// because that wash is effectively the page surface underneath and goes
+// near-white in light theme, which is exactly the hazard this metric exists
+// to catch. Unlike bare text-white, no doc §7 row grants a file-level
+// survivor for tone tints as of this commit — SOLID_FILL_SURVIVORS and
+// CONTROL_SHADE_FOCUS_RING are both keyed to bare-text-white/border-slate
+// line snippets, so running excluded() against them here would be dead
+// weight, not documentation, and inventing a new list without a §7 row to
+// back it would be the exact "invent new exclusions" this metric was told
+// not to do. If a real tone-tint survivor is found during the estate
+// conversion, it gets its own doc §7 row and its own named list.
+//
+// COLORED_BG is line-based, not branch-based, so a multi-branch ternary can
+// still false-exempt (GettingStartedGuide.tsx:194 pairs a translucent
+// `bg-emerald-500/20 text-emerald-300` branch with an unrelated opaque
+// `bg-indigo-500 text-white` branch on the same line) — the identical known
+// blind spot already documented for bare text-white (see the
+// ImportCustomersModal.tsx tab-ternary note in this file's baseline
+// history); left as-is here for the same reason, not reintroduced.
+const TONE_HUES = 'amber\\|indigo\\|emerald\\|rose\\|red\\|sky\\|teal\\|violet\\|purple\\|cyan\\|orange\\|fuchsia\\|pink\\|lime\\|yellow\\|green\\|blue';
+const toneText = lines(`text-\\(${TONE_HUES}\\)-\\(100\\|200\\|300\\)\\b`)
+  .filter(l => !new RegExp(COLORED_BG).test(l));
+
 // Baselines pinned 2026-08-21 (first measurement). Tighten in the SAME
 // commit that lowers a number — design-drift.mjs enforces its own version
 // of this rule for exactly the reason recorded there.
@@ -481,14 +512,18 @@ const slateText = lines('text-slate-');
 // Both lists are enumerated above this baseline, one entry per doc §7 row, so
 // a new bare hit anywhere else is a real regression the moment it lands.
 //
-// Baselines below are the TRUE floor: 0/0/0/0. `--strict` now fails on the
-// first unaccounted-for hit, not on drift past a padded number.
-const BASELINE = { 'bare text-white': 0, 'bg-slate': 0, 'border-slate': 0, 'text-slate': 0 };
+// Baselines below are the TRUE floor for the first four: 0/0/0/0. `--strict`
+// now fails on the first unaccounted-for hit, not on drift past a padded
+// number. `tone text-300` is PINNED, not floored at zero — calibrated
+// 2026-08-21 (Task 5T) at the measured count below; the estate conversion
+// that drives it toward zero is later groups' work (see plan Task 5T).
+const BASELINE = { 'bare text-white': 0, 'bg-slate': 0, 'border-slate': 0, 'text-slate': 0, 'tone text-300': 747 };
 const NOW = {
   'bare text-white': bareWhite.length,
   'bg-slate': slateBg.length,
   'border-slate': slateBorder.length,
   'text-slate': slateText.length,
+  'tone text-300': toneText.length,
 };
 
 const strict = process.argv.includes('--strict');
@@ -506,6 +541,11 @@ if (showFiles) {
   const perFile = {};
   for (const l of bareWhite) { const f = l.split(':')[0]; perFile[f] = (perFile[f] ?? 0) + 1; }
   Object.entries(perFile).sort((a, b) => b[1] - a[1]).forEach(([f, n]) => console.log(`${String(n).padStart(4)}  ${f}`));
+
+  console.log('\n── tone text-300 worklist ──');
+  const perFileTone = {};
+  for (const l of toneText) { const f = l.split(':')[0]; perFileTone[f] = (perFileTone[f] ?? 0) + 1; }
+  Object.entries(perFileTone).sort((a, b) => b[1] - a[1]).forEach(([f, n]) => console.log(`${String(n).padStart(4)}  ${f}`));
 }
 if (strict && regressions) { console.log(`✗ ${regressions} metric(s) regressed`); process.exit(1); }
 console.log(regressions ? '▲ regressions present (non-strict run)' : '✓ within baseline');
