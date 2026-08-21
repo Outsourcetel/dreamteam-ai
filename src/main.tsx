@@ -14,7 +14,11 @@ initSentry();
 const LIGHT_SURFACES = new Set(['daylight']);
 {
   const urlTheme = new URLSearchParams(window.location.search).get('theme');
-  const cached = localStorage.getItem('dt.surface');
+  // Guarded like every other storage call in this codebase: a throw here
+  // (sandboxed embed, storage disabled) runs before the error boundary
+  // exists and would blank the whole app.
+  let cached: string | null = null;
+  try { cached = localStorage.getItem('dt.surface'); } catch { /* boot on the default */ }
   const light = urlTheme ? urlTheme === 'light' : (cached ? LIGHT_SURFACES.has(cached) : false);
   document.documentElement.classList.toggle('light', light);
 }
