@@ -21,18 +21,19 @@ import { supabase } from '../supabase';
  *  palette; this owns the dynamic one's default. */
 export const DEFAULT_ACCENT = '#6366f1';
 
-export interface TenantBranding { accent_hex: string | null; surface_key: 'midnight' | 'graphite' | 'daylight' }
+export interface TenantBranding { accent_hex: string | null; surface_key: 'midnight' | 'graphite' | 'daylight' | 'editorial' }
 
 const SURFACES: Record<string, Record<string, string>> = {
   midnight: {}, // tokens.css :root defaults
   daylight: {}, // tokens.css :root.light defaults — the class carries it
+  editorial: {}, // tokens.css :root.light.editorial defaults — the class carries it
   graphite: {
     '--dt-page': '#0a0a0c', '--dt-panel': '#17171c66', '--dt-card': '#17171c66',
     '--dt-inset': '#0a0a0c99', '--dt-border': '#2c2c3499', '--dt-border-strong': '#3f3f4a',
   },
 };
 // Must stay identical to LIGHT_SURFACES in src/main.tsx (boot-time copy).
-const LIGHT_SURFACES = new Set(['daylight']);
+const LIGHT_SURFACES = new Set(['daylight', 'editorial']);
 
 const clamp = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
 const hexToRgb = (h: string) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)] as const;
@@ -49,6 +50,9 @@ export function applyBranding(b: TenantBranding | null): void {
     ...Object.keys(SURFACES.graphite)].forEach(k => root.style.removeProperty(k));
   const key = b?.surface_key ?? 'midnight';
   document.documentElement.classList.toggle('light', LIGHT_SURFACES.has(key));
+  // Forced (not just added) so switching editorial → any other family removes
+  // it in the same pass as `light` above, rather than leaving it stuck on.
+  document.documentElement.classList.toggle('editorial', key === 'editorial');
   try { localStorage.setItem('dt.surface', key); } catch { /* cosmetic */ }
   if (!b) return;
   const surf = SURFACES[b.surface_key] ?? {};

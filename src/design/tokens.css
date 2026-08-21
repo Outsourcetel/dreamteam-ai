@@ -26,6 +26,11 @@
   /* ── Typography ────────────────────────────────────────────────────── */
   --dt-font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
                   "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Editorial's serif display token (Task 8). Chained to --dt-font-sans so
+     every theme except editorial renders headings exactly as before — the
+     chain resolves per-element, so this single :root declaration is enough;
+     :root.light and .dt-force-dark deliberately do NOT re-declare it. */
+  --dt-font-display: var(--dt-font-sans);
 
   /* ── Borders (exactly two + focus) ───────────────────────────────────── */
   --dt-border:        #2d355499; /* navy-700/60 — default hairline          */
@@ -141,21 +146,58 @@
   --dt-neutral:   #475467; --dt-neutral-soft:#f2f4f7; --dt-neutral-border:#e0e3e9;
 }
 
+/* ═══ WARM EDITORIAL — the second light family (founder-requested 2026-08-21).
+   Overrides on top of :root.light; activated by classes `light editorial`
+   together. Cream paper, ink text, terracotta accent, serif display. ═══ */
+:root.light.editorial {
+  --dt-page:    #faf6ef;
+  --dt-panel:   #fffdf8;
+  --dt-card:    #fffdf8;
+  --dt-inset:   #f3ede1;
+  --dt-border:        #e5dcc9;
+  --dt-border-strong: #d3c6ab;
+  --dt-text-title:   #221c14;
+  --dt-text-body:    #383024;
+  --dt-text-support: #6b6152;
+  --dt-text-muted:   #8a7f6e;
+  --dt-text-faint:   #b0a693;
+  --dt-accent:        #c14d21;
+  --dt-accent-strong: #a63e17;
+  --dt-accent-hover:  #c14d21;
+  --dt-accent-soft:   #c14d2114;
+  --dt-accent-text:   #a63e17;
+  --dt-accent-border: #c14d214d;
+  --dt-ok:      #37613a; --dt-ok-soft:     #e7efe0; --dt-ok-border:     #c3d5c4;
+  --dt-warn:    #8a5406; --dt-warn-soft:   #f7ead0; --dt-warn-border:   #e8d3a4;
+  --dt-danger:  #b42318; --dt-danger-soft: #fdecea; --dt-danger-border: #f4b3ae;
+  --dt-info:    #16606c; --dt-info-soft:   #e3edee; --dt-info-border:   #b7d3d8;
+  --dt-neutral: #6b6152; --dt-neutral-soft:#ede6d8; --dt-neutral-border:#dcd2c0;
+  --dt-font-sans: "Schibsted Grotesk Variable", ui-sans-serif, system-ui, -apple-system,
+                  BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --dt-font-display: "Newsreader Variable", Georgia, "Times New Roman", serif;
+}
+
 /* Theme-independent dark surfaces (customer-facing embeds — EmbedWidget
    precedent, doc §7): a page that must stay dark regardless of the
    operator's theme wraps its root in this class. Re-declares the COLOR
    custom properties of the dark :root block above (surfaces, borders, all
    five text levels, the accent set, all five semantic triples) verbatim,
-   plus the two other theme-dependent declarations that go with a forced
+   plus the three other theme-dependent declarations that go with a forced
    dark ground: color-scheme (so native controls/scrollbars/pickers stay
-   dark even when :root.light is active above this) and --dt-font-sans
+   dark even when :root.light is active above this), --dt-font-sans
    (the sans stack DOES flip between :root and :root.light — pinned here so
    the customer-facing surface doesn't change typeface when the operator
-   switches theme). Layout tokens are the only things NOT re-declared here,
-   since those are founder-locked and never theme-dependent. CSS custom
-   properties cascade normally, so any descendant's var(--dt-*) resolves to
-   these values regardless of whether :root or :root.light is active above
-   it. */
+   switches theme), and --dt-font-display (Task 8: :root.light.editorial
+   hardcodes this to the Newsreader serif stack rather than chaining it off
+   --dt-font-sans, so — unlike the plain :root default, which a descendant
+   would fall through to on its own — that literal wins the cascade on
+   <html> and would otherwise inherit straight into this block too; pinned
+   here for the same reason as --dt-font-sans above, and confirmed by a
+   computed-style probe under `light editorial` before this line existed).
+   Layout tokens are the only things NOT re-declared here, since those are
+   founder-locked and never theme-dependent. CSS custom properties cascade
+   normally, so any descendant's var(--dt-*) resolves to these values
+   regardless of which theme is active above it. */
 .dt-force-dark {
   color-scheme: dark;
 
@@ -166,6 +208,7 @@
 
   --dt-font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
                   "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --dt-font-display: var(--dt-font-sans);
 
   --dt-border:        #2d355499;
   --dt-border-strong: #414b6e;

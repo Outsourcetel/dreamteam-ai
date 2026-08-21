@@ -75,7 +75,7 @@ export function PanelCard({ title, badge, actions, children, className = '' }:
       {(title || actions) && (
         <header className="flex items-center justify-between gap-3 px-5 pt-4 pb-1">
           <div className="flex items-center gap-2 min-w-0">
-            {title && <h2 className="text-base font-semibold text-dt-title truncate">{title}</h2>}
+            {title && <h2 className="text-base font-semibold text-dt-title truncate font-display">{title}</h2>}
             {badge}
           </div>
           {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
@@ -95,7 +95,7 @@ export function StatTile({ label, value, sub, tone, icon, onClick }:
     <>
       {icon && <div className={`text-base mb-2 ${tone === 'warn' ? 'text-dt-warn' : 'text-dt-support'}`}>{icon}</div>}
       <div className="text-xs uppercase tracking-wide text-dt-muted mb-1">{label}</div>
-      <div className={`text-xl font-semibold ${v}`}>{value}</div>
+      <div className={`text-xl font-semibold font-display ${v}`}>{value}</div>
       {sub && <div className="text-xs text-dt-muted mt-0.5">{sub}</div>}
     </>
   );
@@ -390,7 +390,7 @@ export function PageHeaderV2({ title, subtitle, actions }:
   return (
     <div className="flex items-start justify-between gap-4 mb-6">
       <div>
-        <h1 className="text-2xl font-semibold text-dt-title">{title}</h1>
+        <h1 className="text-2xl font-semibold text-dt-title font-display">{title}</h1>
         {subtitle && <p className="text-sm text-dt-support mt-1 max-w-3xl">{subtitle}</p>}
       </div>
       {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}

@@ -3,6 +3,11 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './style.css';
 import '@fontsource-variable/instrument-sans';
+// Warm Editorial's display/body faces (Task 8) — loaded unconditionally like
+// Instrument Sans above; inert unless the `editorial` class selects them via
+// --dt-font-display / --dt-font-sans in tokens.css.
+import '@fontsource-variable/newsreader';
+import '@fontsource-variable/schibsted-grotesk';
 import { initSentry, SentryErrorBoundary } from './lib/sentry';
 
 initSentry();
@@ -12,9 +17,12 @@ initSentry();
 // last surface family branding applied (cached by applyBranding in
 // src/design/branding.ts) → dark default (flips to light in the
 // default-flip task, after the estate is verified).
-const LIGHT_SURFACES = new Set(['daylight']);
+// Must stay identical to LIGHT_SURFACES in src/design/branding.ts (runtime copy).
+const LIGHT_SURFACES = new Set(['daylight', 'editorial']);
 {
-  const urlTheme = new URLSearchParams(window.location.search).get('theme');
+  const params = new URLSearchParams(window.location.search);
+  const urlTheme = params.get('theme');
+  const urlSurface = params.get('surface');
   // Guarded like every other storage call in this codebase: a throw here
   // (sandboxed embed, storage disabled) runs before the error boundary
   // exists and would blank the whole app.
@@ -22,6 +30,10 @@ const LIGHT_SURFACES = new Set(['daylight']);
   try { cached = localStorage.getItem('dt.surface'); } catch { /* boot on the default */ }
   const light = urlTheme ? urlTheme === 'light' : (cached ? LIGHT_SURFACES.has(cached) : false);
   document.documentElement.classList.toggle('light', light);
+  // Warm Editorial (Task 8): `?theme=light&surface=editorial` is the dev
+  // vehicle; otherwise it follows the cached surface family like `light` does.
+  const editorial = urlTheme ? urlSurface === 'editorial' : cached === 'editorial';
+  document.documentElement.classList.toggle('editorial', editorial);
 }
 
 function CrashFallback() {

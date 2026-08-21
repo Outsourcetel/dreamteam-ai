@@ -5,6 +5,7 @@ export default {
     extend: {
       fontFamily: {
         sans: ['var(--dt-font-sans)'],
+        display: ['var(--dt-font-display)'],
       },
       // ── DreamTeam Design System v1 — semantic tokens (src/design/tokens.css).
       // New/touched UI composes from these; raw slate-* classes are legacy and

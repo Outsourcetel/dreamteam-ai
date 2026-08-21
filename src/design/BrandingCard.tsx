@@ -9,6 +9,7 @@ import { applyBranding, saveBranding, type TenantBranding } from './branding';
 // instantly; Save persists for everyone in the workspace.
 const SURFACES: { key: TenantBranding['surface_key']; label: string; swatch: string }[] = [
   { key: 'daylight', label: 'Daylight', swatch: '#f4f5f7' },
+  { key: 'editorial', label: 'Warm Editorial', swatch: '#faf6ef' },
   { key: 'midnight', label: 'Midnight Navy', swatch: '#0c1123' },
   { key: 'graphite', label: 'Graphite', swatch: '#0a0a0c' },
 ];
