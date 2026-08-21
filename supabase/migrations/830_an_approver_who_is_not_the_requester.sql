@@ -109,6 +109,57 @@
 -- fixture's pending task id, named v_task_id / v_task_id_2 below so the id
 -- it actually is stays visible in the code rather than overloading
 -- v_policy_id for two different kinds of id.
+--
+-- ============================================================================
+-- FIX ROUND 1 (coordinator review: spec + quality approved; 3 items)
+-- ============================================================================
+-- 1. PROMOTED TO IMPORTANT -- this migration installs no schema, so on a
+--    database with no qualifying tenant (empty, or one where no tenant has
+--    2 active members) the whole probe made ZERO comparisons -- and because
+--    db-query.mjs prints only the HTTP response body, RAISE NOTICE never
+--    reaches the console either way. A vacuous apply and a real 4-comparison
+--    apply were indistinguishable to an operator watching a real apply, and
+--    left an identical ledger row. Fixed with a SCHEMA ARM (below, runs
+--    first, unconditionally): it asserts, via pg_get_functiondef with
+--    comments stripped first (this repo's own convention -- see
+--    trust-proposer-boundary.mjs), that apply_trust_promotion's body still
+--    contains the self-approval guard's condition AND still raises its exact
+--    message. This is a statement about SCHEMA, not data -- true on any
+--    database the function exists on, including one with no tenants at all
+--    -- so it stays replayable (confirmed again below) and guarantees the
+--    denominator is never zero.
+--
+--    Console legibility on a REAL apply is NOT fully solved, and said so
+--    rather than papered over: db-query.mjs's HTTP response body does not
+--    carry RAISE NOTICE content (confirmed empirically -- see task-2-report
+--    for the raw response of a successful DO block), and no existing
+--    convention in this repo surfaces DO-block state through it without
+--    RAISE EXCEPTION (searched; none found). RAISE EXCEPTION on the clean
+--    path was explicitly rejected -- it would make a genuine pass indistin-
+--    guishable from a genuine failure at the transaction-outcome level,
+--    which is worse than the problem it would fix. So: the schema arm
+--    guarantees the denominator is structurally never zero, but an operator
+--    watching only db-query.mjs's console output still cannot SEE the count
+--    on a clean run without a real psql/terminal session. Both facts are
+--    true at once and both are stated, not blended into one.
+--
+-- 2. Minor -- PROBE 1's "refused for the right reason" check was a loose
+--    ilike '%approver%'/'%requester%' substring match. Replaced with an
+--    EXACT match against the guard's literal message (v_guard_message,
+--    declared once and shared with the schema arm's presence check below),
+--    fetched byte-for-byte from pg_proc.prosrc via JSON parsing (not
+--    retyped from memory) to guarantee the pin and the live text agree.
+--
+-- 3. Minor -- the header above (see "DOES NOT DEPEND ON MIGRATION 828")
+--    overstated the human_tasks insert as matching mig 828's writer
+--    "verbatim". It does not: this fixture's insert omits the `id` column
+--    (letting it default) and ADDS `origin = 'exercise'`, which 828's writer
+--    does not set (human_tasks.origin defaults to 'production'). That is a
+--    deliberate improvement, not an oversight: evidence_is_production('exer
+--    cise') is false, so trust_evidence_for cannot count these fixture rows
+--    as evidence for any OTHER policy during the brief window they exist.
+--    Corrected here rather than left to mislead the next reader; full
+--    credit for the choice is in task-2-report.md.
 -- ============================================================================
 
 begin;
@@ -145,11 +196,47 @@ declare
   v_ctrl_level_before  int;
   v_ctrl_level_after   int;
   v_ctrl_pending_after uuid;
+
+  -- FIX ROUND 1: the guard's exact literal, fetched byte-for-byte from
+  -- pg_proc.prosrc at task time (not retyped), shared by the schema arm
+  -- (presence check) and PROBE 1 (exact-match refusal check) so there is
+  -- exactly one place this text is spelled out.
+  v_guard_message      text := 'the requester cannot approve their own promotion — a different teammate must approve';
+  v_fn_src             text;
 begin
+  ------------------------------------------------------------------
+  -- SCHEMA ARM (FIX ROUND 1) -- runs UNCONDITIONALLY, independent of any
+  -- data, BEFORE tenant discovery. This is what guarantees the denominator
+  -- is never zero: apply_trust_promotion predates this migration (it must
+  -- already exist for this migration to mean anything), so this comparison
+  -- is available on EVERY database this migration can run against --
+  -- including one with no tenants at all, where it is the ONLY comparison
+  -- made. Comments are stripped first so the check cannot match its own
+  -- prose in a comment rather than the live guard (this repo's convention --
+  -- see trust-proposer-boundary.mjs's live_fns CTE).
+  ------------------------------------------------------------------
+  v_checks := v_checks + 1;
+  select regexp_replace(prosrc, '--[^' || chr(10) || ']*', '', 'g')
+    into v_fn_src
+    from pg_proc
+   where pronamespace = 'public'::regnamespace and proname = 'apply_trust_promotion';
+
+  if v_fn_src is null then
+    v_bad := array_append(v_bad, 'SCHEMA ARM: public.apply_trust_promotion does not exist on this database -- nothing below can be governed by a guard that was never installed.');
+  else
+    if v_fn_src !~ 'requested_by\s+is\s+not\s+null\s+and\s+auth\.uid\(\)\s*=\s*v_policy\.requested_by' then
+      v_bad := array_append(v_bad, 'SCHEMA ARM: apply_trust_promotion no longer tests "requested_by is not null and auth.uid() = requested_by" -- the self-approval guard''s condition is gone or was rewritten.');
+    end if;
+    if position(v_guard_message in v_fn_src) = 0 then
+      v_bad := array_append(v_bad, format('SCHEMA ARM: apply_trust_promotion no longer raises the guard''s exact message (%s) -- PROBE 1''s exact-match check below would be comparing against dead text.', v_guard_message));
+    end if;
+  end if;
+
   -- ── discover a real tenant with >= 2 distinct active tenant-layer
   -- members. Never a hardcoded id (CLAUDE.md): on an empty database, or one
-  -- where no tenant has two active members, this whole probe is vacuous and
-  -- says so rather than failing.
+  -- where no tenant has two active members, PROBE 1 and CONTROL below are
+  -- vacuous and say so rather than failing -- the schema arm above already
+  -- ran and is NOT vacuous either way.
   select p.tenant_id
     into v_tenant
     from public.profiles p
@@ -178,7 +265,7 @@ begin
   end if;
 
   if v_tenant is null or v_requester is null or v_other_user is null then
-    raise notice '830: VACUITY -- no tenant with 2 distinct active tenant-layer members exists on this database. 0 comparisons made; the self-approval guard is UNEXERCISED on this dataset. True (and the honest result) on an empty database -- not a manufactured pass.';
+    raise notice '830: VACUITY -- no tenant with 2 distinct active tenant-layer members exists on this database. PROBE 1 and CONTROL make ZERO comparisons on this dataset -- true, and the honest result, on an empty database, not a manufactured pass. The schema arm above already ran and is NOT vacuous: it is comparable on any database where apply_trust_promotion exists, so the total denominator below is 1, never 0.';
   else
     v_ran := true;
 
@@ -267,8 +354,12 @@ begin
       end;
 
       if v_p1_raised then
-        if v_p1_err not ilike '%approver%' and v_p1_err not ilike '%requester%' then
-          v_bad := array_append(v_bad, format('PROBE 1 refused for the WRONG reason: %s', v_p1_err));
+        -- FIX ROUND 1: exact match against the guard's literal message
+        -- (shared with the schema arm above), not a loose substring test.
+        -- A future message containing "approver" or "requester" for an
+        -- unrelated reason would have silently passed the old check.
+        if v_p1_err is distinct from v_guard_message then
+          v_bad := array_append(v_bad, format('PROBE 1 refused for the WRONG reason: %s (expected exactly: %s)', v_p1_err, v_guard_message));
         end if;
       elsif coalesce((v_p1_result->>'applied')::boolean, false) then
         v_bad := array_append(v_bad, format(
@@ -342,12 +433,13 @@ begin
   end if;
 
   if v_ran then
-    raise notice '830: % assertion(s) compared, 0 findings. tenant=%, requester=%, other_approver=%. PROBE 1 task=% raised=% message=%. CONTROL task=% result=% level_before=% level_after=% pending_after=%. Both fixtures and every row either write touched (trust_policies x2, human_tasks x2, audit_events, de_autonomy) were rolled back inside the probe via the __undo_probe_830__ sentinel -- nothing committed by this migration beyond this notice.',
+    raise notice '830: % assertion(s) compared, 0 findings (1 schema-level + 3 data-level: fixture sanity, PROBE 1, CONTROL). tenant=%, requester=%, other_approver=%. PROBE 1 task=% raised=% message=%. CONTROL task=% result=% level_before=% level_after=% pending_after=%. Both fixtures and every row either write touched (trust_policies x2, human_tasks x2, audit_events, de_autonomy) were rolled back inside the probe via the __undo_probe_830__ sentinel -- nothing committed by this migration beyond this notice. NOTE: db-query.mjs does not surface RAISE NOTICE -- this line is not visible on a real apply; see task-2-report.md.',
       v_checks, v_tenant, v_requester, v_other_user,
       v_task_id, v_p1_raised, v_p1_err,
       v_task_id_2, v_ctrl_result, v_ctrl_level_before, v_ctrl_level_after, v_ctrl_pending_after;
   else
-    raise notice '830: 0 assertion(s) -- no eligible tenant existed to drive the probe. Vacuously fine (there is nothing on this dataset for the guard to have gotten wrong), and NOT the same claim as "N compared, 0 findings" above -- see the VACUITY notice.';
+    raise notice '830: % assertion(s) compared, 0 findings -- SCHEMA ARM ONLY. No tenant with 2 distinct active tenant-layer members existed to drive PROBE 1 / CONTROL on this dataset, so those made zero comparisons (vacuously fine -- see the VACUITY notice above). NOT the same claim as the "1 schema-level + 3 data-level" line above for a dataset with a qualifying tenant.',
+      v_checks;
   end if;
 end;
 $verify$;
