@@ -17,6 +17,12 @@ import CustomerOnboardingLive from './CustomerOnboardingLive';
 // hub points there instead of duplicating it.
 // ═══════════════════════════════════════════════════════════════
 
+// ⚠ NORMALIZE IS DELIBERATE — do not "fix" it by restoring a BD tab. It is
+// the founder's "BD folds into Sales" decision (280f5c51) in one line. What
+// WAS broken is that the fold never carried BD's controls across, so
+// "+ Add prospect" and "+ Import CSV" rendered nowhere and `opportunities`
+// stayed empty for a month (register B-19). They now live on the Pipeline
+// surface itself — CustomerSalesLive in PipelineLive.tsx.
 const NORMALIZE: Partial<Record<Page, Page>> = {
   entity_customer: 'entity_customer_success',
   entity_customer_bd: 'entity_customer_sales',

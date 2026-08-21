@@ -70,6 +70,31 @@ export function useCanScheduleKnowledgeSync(): boolean {
   return isDTUser || ['tenant_owner', 'tenant_admin', 'tenant_manager', 'knowledge_manager'].includes(authedUser?.role ?? '');
 }
 
+// ── the pipeline write gate ──────────────────────────────────────────────
+//
+// `opportunities` is not fronted by a SECURITY DEFINER function — the browser
+// INSERTs straight through PostgREST — so the authority that matters is the
+// RLS policy, and it is the whole predicate this hook mirrors:
+//
+//   opportunities_tenant_write  WITH CHECK (exists (select 1 from profiles p
+//     where p.user_id = auth.uid() and p.tenant_id = opportunities.tenant_id
+//       and coalesce(p.is_active, true) and p.role <> 'read_only'))
+//
+// Tenancy and is_active are not knowable from the session shape and are not
+// this hook's business — the server settles both. The ROLE half is knowable,
+// and it is the half that would otherwise put "+ Add prospect" in front of a
+// read_only account. ⚠ Refusal here is loud, not silent: an INSERT that fails
+// WITH CHECK raises 42501, unlike an UPDATE, which matches zero rows and comes
+// back as PostgREST success. The gate is still the server's; this only stops
+// the UI offering a button whose only possible outcome is an error banner.
+//
+// ⚠ Least privilege on an unknown role, same rule as SettingsPage: an absent
+// role reads as read_only, never as "probably fine".
+export function useCanWritePipeline(): boolean {
+  const { authedUser } = useAuth();
+  return (authedUser?.role ?? 'read_only') !== 'read_only';
+}
+
 // ════════════════════════════════════════════════════════════════════════
 // ⚠ CAN THIS PERSON OPEN THAT PAGE?
 //
