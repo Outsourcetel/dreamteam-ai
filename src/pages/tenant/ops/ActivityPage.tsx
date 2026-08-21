@@ -140,7 +140,7 @@ function borderColor(type: ActivityType): string {
   if (type === 'resolved') return 'border-l-emerald-500';
   if (type === 'escalated') return 'border-l-amber-500';
   if (type === 'kb_gap') return 'border-l-blue-500';
-  if (type === 'config_change') return 'border-l-slate-500';
+  if (type === 'config_change') return 'border-l-dt-border-strong';
   if (type === 'guardrail_block') return 'border-l-red-600';
   return 'border-l-red-500';
 }

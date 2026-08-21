@@ -96,7 +96,14 @@ const bareWhite = lines('text-white')
   .filter(l => !new RegExp(COLORED_BG).test(l))
   .filter(l => !excluded(l, SOLID_FILL_SURVIVORS));
 const slateBg = lines('bg-slate-');
-const slateBorder = lines('border-slate-').filter(l => !excluded(l, CONTROL_SHADE_FOCUS_RING));
+// Widened 2026-08-21 (review fix round): plain `border-slate-` missed the
+// DIRECTIONAL variants (`border-l-slate-500` etc.) — ActivityPage.tsx's
+// `borderColor()` had exactly one, a left-border accent stripe sibling to its
+// own already-converted `dotColor()` dot, verified as the only directional
+// escape estate-wide. `border\(-[lrtbxy]\)\?-slate-` is BRE (GNU grep's `\?`/
+// `\(...\)` extensions, not ERE) because `lines()` calls plain `grep`, not
+// `grep -E`; keeps matching bare `border-slate-` too since the group is optional.
+const slateBorder = lines('border\\(-[lrtbxy]\\)\\?-slate-').filter(l => !excluded(l, CONTROL_SHADE_FOCUS_RING));
 const slateText = lines('text-slate-');
 
 // Baselines pinned 2026-08-21 (first measurement). Tighten in the SAME

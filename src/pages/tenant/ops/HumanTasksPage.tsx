@@ -1325,7 +1325,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                             <textarea
                               value={draftEditText} onChange={e => setDraftEditText(e.target.value)}
                               rows={Math.min(12, Math.max(4, gatedDraft.split('\n').length + 1))}
-                              className="w-full rounded-md border border-dt-border bg-dt-bg px-2 py-1.5 text-xs text-dt-text focus:outline-none focus:border-indigo-500"
+                              className="w-full rounded-md border border-dt-border bg-dt-inset px-2 py-1.5 text-xs text-dt-body focus:outline-none focus:border-indigo-500"
                             />
                           ) : (
                             <p className="whitespace-pre-wrap text-dt-support">{gatedDraft}</p>
@@ -1342,7 +1342,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                         decision_edit — never one without the other. */}
                     {draftEditing && selected.status === 'pending' && (
                       <div className="mt-3 rounded-lg border border-emerald-500/30 bg-emerald-950/20 p-3">
-                        <p className="text-xs font-medium text-dt-text mb-2">
+                        <p className="text-xs font-medium text-dt-body mb-2">
                           What was wrong with it? <span className="text-dt-muted font-normal">(optional — it&apos;s what the employee learns from)</span>
                         </p>
                         <div className="flex flex-wrap gap-1.5">
@@ -1351,7 +1351,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                               className={`rounded-md border px-2 py-1 text-[11px] transition-colors ${
                                 draftReasonCode === rc.code
                                   ? 'border-emerald-400 bg-emerald-500/20 text-emerald-200'
-                                  : 'border-dt-border text-dt-muted hover:text-dt-text'}`}>
+                                  : 'border-dt-border text-dt-muted hover:text-dt-body'}`}>
                               {rc.label}
                             </button>
                           ))}
@@ -1362,7 +1362,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                           placeholder={draftReasonCode === 'other'
                             ? 'Required — what was wrong?'
                             : 'Optional: anything that would help this employee next time'}
-                          className="mt-2 w-full rounded-md border border-dt-border bg-dt-bg px-2 py-1.5 text-xs text-dt-text placeholder:text-dt-muted"
+                          className="mt-2 w-full rounded-md border border-dt-border bg-dt-inset px-2 py-1.5 text-xs text-dt-body placeholder:text-dt-muted"
                         />
                         <div className="mt-2 flex gap-2">
                           <button
@@ -1377,7 +1377,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                           </button>
                           <button onClick={() => { setDraftEditing(false); setDraftEditText(''); setDraftReasonCode(''); setDraftNote(''); }}
                             disabled={deciding}
-                            className="rounded-md border border-dt-border text-dt-muted hover:text-dt-text text-xs px-3 py-1.5 transition-colors">
+                            className="rounded-md border border-dt-border text-dt-muted hover:text-dt-body text-xs px-3 py-1.5 transition-colors">
                             Cancel
                           </button>
                         </div>
@@ -1484,7 +1484,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                     {editing ? (
                       <>
                         <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={10}
-                          className="mt-2 w-full rounded-md bg-dt-card border border-dt-border px-2 py-1.5 text-xs text-dt-text" />
+                          className="mt-2 w-full rounded-md bg-dt-card border border-dt-border px-2 py-1.5 text-xs text-dt-body" />
                         <p className="mt-1 text-[11px] text-dt-muted">
                           {editText.trim() === proposal.content.trim()
                             ? 'Unchanged — approving publishes the original.'
@@ -1535,7 +1535,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                     disclosure. */}
                 {selected.status === 'pending' && !draftEditing && !rejecting && blocked && (
                   <div className="mt-3">
-                    <label htmlFor="dt-instruction" className="block text-xs font-medium text-dt-text mb-1.5">
+                    <label htmlFor="dt-instruction" className="block text-xs font-medium text-dt-body mb-1.5">
                       Your answer to the employee <span className="text-dt-faint font-normal">— optional, but it is what tells them how to proceed</span>
                     </label>
                     <textarea
@@ -1586,7 +1586,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                       </button>
                     ) : (
                       <div className="rounded-lg border border-dt-border bg-dt-inset p-3">
-                        <p className="text-xs font-medium text-dt-text mb-2">Who should own this instead?</p>
+                        <p className="text-xs font-medium text-dt-body mb-2">Who should own this instead?</p>
                         <select value={rerouteTo} onChange={(e) => setRerouteTo(e.target.value)} className={INPUT_CLS}>
                           <option value="">Choose an employee…</option>
                           {colleagues.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -1620,14 +1620,14 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                     commits, because asking afterwards is how you get noise. */}
                 {selected.status === 'pending' && rejecting && (
                   <div className="mt-3 rounded-lg border border-red-500/30 bg-red-950/20 p-3">
-                    <p className="text-xs font-medium text-dt-text mb-2">Why is this being rejected?</p>
+                    <p className="text-xs font-medium text-dt-body mb-2">Why is this being rejected?</p>
                     <div className="flex flex-wrap gap-1.5">
                       {DECISION_REASON_CODES.map(rc => (
                         <button key={rc.code} onClick={() => setReasonCode(rc.code)}
                           className={`rounded-md border px-2 py-1 text-[11px] transition-colors ${
                             reasonCode === rc.code
                               ? 'border-red-400 bg-red-500/20 text-red-200'
-                              : 'border-dt-border text-dt-muted hover:text-dt-text'}`}>
+                              : 'border-dt-border text-dt-muted hover:text-dt-body'}`}>
                           {rc.label}
                         </button>
                       ))}
@@ -1638,7 +1638,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                       placeholder={reasonCode === 'other'
                         ? 'Required — what was wrong?'
                         : 'Optional: anything that would help this employee next time'}
-                      className="mt-2 w-full rounded-md border border-dt-border bg-dt-bg px-2 py-1.5 text-xs text-dt-text placeholder:text-dt-muted"
+                      className="mt-2 w-full rounded-md border border-dt-border bg-dt-inset px-2 py-1.5 text-xs text-dt-body placeholder:text-dt-muted"
                     />
                     <div className="mt-2 flex gap-2">
                       <button
@@ -1651,7 +1651,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                       </button>
                       <button onClick={() => { setRejecting(false); setReasonCode(''); setReasonNote(''); }}
                         disabled={deciding}
-                        className="rounded-md border border-dt-border text-dt-muted hover:text-dt-text text-xs px-3 py-1.5 transition-colors">
+                        className="rounded-md border border-dt-border text-dt-muted hover:text-dt-body text-xs px-3 py-1.5 transition-colors">
                         Cancel
                       </button>
                     </div>

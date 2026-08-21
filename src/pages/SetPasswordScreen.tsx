@@ -82,7 +82,7 @@ export default function SetPasswordScreen({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-dt-bg px-4">
+    <div className="min-h-screen flex items-center justify-center bg-dt-page px-4">
       <div className="w-full max-w-md">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-dt-title">Choose a password</h1>

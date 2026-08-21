@@ -905,7 +905,7 @@ function RoleTemplatePanel({
           </Button>
         </div>
       ) : (
-        <div className="rounded-xl border border-dt-border bg-dt-bg p-3 space-y-2">
+        <div className="rounded-xl border border-dt-border bg-dt-inset p-3 space-y-2">
           <p className="text-xs text-dt-support">
             A role template installs this employee's Book of Work watchers, a published SOP it follows,
             and the guardrails for that role. Existing work is never deleted.
