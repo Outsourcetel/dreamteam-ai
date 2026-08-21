@@ -40,16 +40,16 @@ const btnGhost = 'text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong 
 
 const STATUS_META: Record<OnboardingItemStatus, { label: string; cls: string }> = {
   pending: { label: 'Pending', cls: 'bg-dt-panel text-dt-support' },
-  in_progress: { label: 'In progress', cls: 'bg-indigo-500/15 text-indigo-300' },
-  done: { label: 'Done', cls: 'bg-emerald-500/15 text-emerald-300' },
-  blocked: { label: 'Blocked', cls: 'bg-red-500/15 text-red-300' },
-  signed_off: { label: 'Signed off', cls: 'bg-emerald-500/25 text-emerald-200' },
+  in_progress: { label: 'In progress', cls: 'bg-dt-accent-soft text-dt-accent-text' },
+  done: { label: 'Done', cls: 'bg-dt-ok-soft text-dt-ok' },
+  blocked: { label: 'Blocked', cls: 'bg-dt-danger-soft text-dt-danger' },
+  signed_off: { label: 'Signed off', cls: 'bg-dt-ok-soft text-dt-ok' },
 };
 
 const PROJECT_STATUS_CLS: Record<OnboardingProject['status'], string> = {
-  active: 'bg-indigo-500/15 text-indigo-300',
-  on_hold: 'bg-amber-500/15 text-amber-300',
-  completed: 'bg-emerald-500/15 text-emerald-300',
+  active: 'bg-dt-accent-soft text-dt-accent-text',
+  on_hold: 'bg-dt-warn-soft text-dt-warn',
+  completed: 'bg-dt-ok-soft text-dt-ok',
   cancelled: 'bg-dt-neutral-soft text-dt-support',
 };
 
@@ -156,7 +156,7 @@ function ProjectDetail({ project, onBack, onChanged, setPage }: {
               {proj.target_golive && (
                 <> · target go-live {proj.target_golive}
                   {days !== null && proj.status === 'active' && (
-                    <span className={days < 0 ? 'text-red-300' : days <= 7 ? 'text-amber-300' : 'text-dt-muted'}>
+                    <span className={days < 0 ? 'text-dt-danger' : days <= 7 ? 'text-dt-warn' : 'text-dt-muted'}>
                       {' '}({days < 0 ? `${-days}d overdue` : `${days}d left`})
                     </span>
                   )}
@@ -169,7 +169,7 @@ function ProjectDetail({ project, onBack, onChanged, setPage }: {
             {proj.status === 'active' && (
               <>
                 <button onClick={() => void changeProjectStatus('on_hold')} disabled={statusBusy} className={btnGhost}>Hold</button>
-                <button onClick={() => void changeProjectStatus('cancelled')} disabled={statusBusy} className={`${btnGhost} !text-red-300 hover:!border-red-800`}>Cancel</button>
+                <button onClick={() => void changeProjectStatus('cancelled')} disabled={statusBusy} className={`${btnGhost} !text-dt-danger hover:!border-dt-danger-border`}>Cancel</button>
               </>
             )}
             {proj.status === 'on_hold' && (
@@ -185,8 +185,8 @@ function ProjectDetail({ project, onBack, onChanged, setPage }: {
               const past = PHASES.findIndex(x => x.key === p.key) < PHASES.findIndex(x => x.key === phase);
               return (
                 <span key={p.key} className={`text-[10px] px-2 py-0.5 rounded-full border ${
-                  active ? 'border-indigo-500 bg-indigo-500/15 text-indigo-300'
-                  : past ? 'border-emerald-800/50 bg-emerald-500/10 text-emerald-300' : 'border-dt-border text-dt-muted'
+                  active ? 'border-dt-accent bg-dt-accent-soft text-dt-accent-text'
+                  : past ? 'border-dt-ok-border bg-dt-ok-soft text-dt-ok' : 'border-dt-border text-dt-muted'
                 }`}>{past ? '✓ ' : ''}{p.label}</span>
               );
             })}
@@ -194,8 +194,8 @@ function ProjectDetail({ project, onBack, onChanged, setPage }: {
         )}
       </div>
 
-      {toast && <div className="mb-3 rounded-xl border border-emerald-800/50 bg-emerald-500/10 px-4 py-2.5 text-xs text-emerald-300">✓ {toast}</div>}
-      {err && <div className="mb-3 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-2.5 text-xs text-rose-300">{err}</div>}
+      {toast && <div className="mb-3 rounded-xl border border-dt-ok-border bg-dt-ok-soft px-4 py-2.5 text-xs text-dt-ok">✓ {toast}</div>}
+      {err && <div className="mb-3 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-2.5 text-xs text-dt-danger">{err}</div>}
 
       {version && (
         <ProjectRequirements
@@ -224,18 +224,18 @@ function ProjectDetail({ project, onBack, onChanged, setPage }: {
                       <div className="flex items-center gap-3 flex-wrap">
                         <div className="flex-1 min-w-[180px]">
                           <p className="text-sm text-dt-title">{item.label}
-                            {item.requires_signoff && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 align-middle">sign-off</span>}
+                            {item.requires_signoff && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-dt-warn-soft text-dt-warn align-middle">sign-off</span>}
                             <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted align-middle">{item.owner_type}</span>
                             {item.verify && (
-                              <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300 align-middle" title={`Auto-verified via ${item.verify.category}.${item.verify.op}`}>
+                              <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-teal-600 text-teal-100 align-middle" title={`Auto-verified via ${item.verify.category}.${item.verify.op}`}>
                                 connector-verified
                               </span>
                             )}
                           </p>
                           {item.description && <p className="text-[11px] text-dt-muted mt-0.5">{item.description}</p>}
-                          {st.note && <p className="text-[11px] text-amber-200/80 mt-1">📝 {st.note}</p>}
+                          {st.note && <p className="text-[11px] text-dt-warn mt-1">📝 {st.note}</p>}
                           {st.verified_by === 'system' && (
-                            <p className="text-[11px] text-teal-300 mt-1">
+                            <p className="text-[11px] text-dt-ok mt-1">
                               ✓ Verified by the platform{st.verified_at ? ` at ${new Date(st.verified_at).toLocaleString()}` : ''} — not a self-reported tick.{st.verify_detail ? ` ${st.verify_detail}` : ''}
                             </p>
                           )}
@@ -291,9 +291,9 @@ function ProjectDetail({ project, onBack, onChanged, setPage }: {
                         )}
                       </div>
                       {awaitingSignoff && (
-                        <p className="text-[11px] text-amber-300 mt-2">
+                        <p className="text-[11px] text-dt-warn mt-2">
                           ⚠ Awaiting human sign-off — decide it in{' '}
-                          <button className="underline hover:text-amber-200" onClick={() => setPage?.('ops_human_tasks')}>Human Tasks</button>, then reload this page.
+                          <button className="underline hover:brightness-110" onClick={() => setPage?.('ops_human_tasks')}>Human Tasks</button>, then reload this page.
                         </p>
                       )}
                       {noteKey === item.key && (
@@ -401,7 +401,7 @@ function VerifyEditor({ item, onChange }: {
     return (
       <button onClick={() => onChange({
         verify: { category: CATEGORIES[0], op: CATEGORY_OPS[CATEGORIES[0]][0].op, match: 'exists' },
-      })} className="text-[11px] text-teal-400 hover:text-teal-300 underline mt-1">
+      })} className="text-[11px] text-dt-accent-text underline hover:brightness-110 mt-1">
         + Verify automatically via a connected system (instead of a manual tick)
       </button>
     );
@@ -445,7 +445,7 @@ function VerifyEditor({ item, onChange }: {
         <input value={v.contains_text ?? ''} onChange={e => setVerify({ contains_text: e.target.value })}
           placeholder="Text to find" className={`${inputCls} !py-1 !px-1.5 !text-[11px] w-28`} />
       )}
-      <button onClick={() => onChange({ verify: undefined })} className="text-dt-faint hover:text-red-300 text-[11px]">✕ remove check</button>
+      <button onClick={() => onChange({ verify: undefined })} className="text-dt-faint hover:text-dt-danger text-[11px]">✕ remove check</button>
       <p className="w-full text-[10px] text-dt-faint mt-0.5">
         This item completes on its own once a live check against {CATEGORY_LABELS[v.category as SystemCategory]?.split(' —')[0]} matches — {'{{'}account.name{'}}'} is the only token supported. The manual "Done" option is hidden for auto-verified items.
       </p>
@@ -545,7 +545,7 @@ function TemplateEditor({ template, onClose, onSaved }: {
                 <input type="checkbox" checked={it.requires_signoff} onChange={e => setItem(idx, { requires_signoff: e.target.checked })} className="accent-amber-500" />
                 sign-off
               </label>
-              <button onClick={() => remove(idx)} className="text-dt-faint hover:text-red-300 text-sm">✕</button>
+              <button onClick={() => remove(idx)} className="text-dt-faint hover:text-dt-danger text-sm">✕</button>
               {it.owner_type !== 'human' && (
                 <div className="w-full pl-6">
                   <VerifyEditor item={it} onChange={patch => setItem(idx, patch)} />
@@ -558,11 +558,11 @@ function TemplateEditor({ template, onClose, onSaved }: {
         </div>
 
         {errors.length > 0 && (
-          <div className="mb-3 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-2.5">
-            {errors.map((e, i) => <p key={i} className="text-xs text-rose-300">✗ {e}</p>)}
+          <div className="mb-3 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-2.5">
+            {errors.map((e, i) => <p key={i} className="text-xs text-dt-danger">✗ {e}</p>)}
           </div>
         )}
-        {msg && <p className="text-xs text-emerald-300 mb-3">✓ {msg}</p>}
+        {msg && <p className="text-xs text-dt-ok mb-3">✓ {msg}</p>}
 
         <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => void save()} disabled={busy !== null} className={btnGhost}>{busy === 'save' ? 'Saving…' : 'Save draft'}</button>
@@ -684,8 +684,8 @@ export default function CustomerOnboardingLive({ setPage }: { setPage?: (p: Page
         )}
       </div>
 
-      {toast && <div className="mb-4 rounded-xl border border-emerald-800/50 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-300">✓ {toast}</div>}
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {toast && <div className="mb-4 rounded-xl border border-dt-ok-border bg-dt-ok-soft px-4 py-3 text-xs text-dt-ok">✓ {toast}</div>}
+      {error && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {loading ? <LiveLoadingSkeleton rows={5} /> : missingTables ? <MissingTablesNotice /> : detail ? (
         <ProjectDetail project={detail} setPage={setPage}
@@ -721,9 +721,9 @@ export default function CustomerOnboardingLive({ setPage }: { setPage?: (p: Page
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
                   {[
                     { label: 'Active projects', value: String(activeProjects.length), color: 'text-dt-title' },
-                    { label: 'Completed', value: String(projects.filter(p => p.status === 'completed').length), color: 'text-emerald-300' },
-                    { label: 'Avg progress (active)', value: activeProjects.length ? `${Math.round(activeProjects.reduce((s, p) => s + p.progress_pct, 0) / activeProjects.length)}%` : '—', color: 'text-indigo-300' },
-                    { label: 'Go-lives in 14d', value: String(activeProjects.filter(p => { const d = daysUntil(p.target_golive); return d !== null && d >= 0 && d <= 14; }).length), color: 'text-amber-300' },
+                    { label: 'Completed', value: String(projects.filter(p => p.status === 'completed').length), color: 'text-dt-ok' },
+                    { label: 'Avg progress (active)', value: activeProjects.length ? `${Math.round(activeProjects.reduce((s, p) => s + p.progress_pct, 0) / activeProjects.length)}%` : '—', color: 'text-dt-accent-text' },
+                    { label: 'Go-lives in 14d', value: String(activeProjects.filter(p => { const d = daysUntil(p.target_golive); return d !== null && d >= 0 && d <= 14; }).length), color: 'text-dt-warn' },
                   ].map(s => (
                     <div key={s.label} className="bg-dt-card border border-dt-border rounded-xl p-4">
                       <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{s.label}</p>
@@ -746,7 +746,7 @@ export default function CustomerOnboardingLive({ setPage }: { setPage?: (p: Page
                         <div className="flex items-center justify-between mt-2">
                           <span className="text-[10px] text-dt-faint">{p.items_state.filter(s => s.status === 'done' || s.status === 'signed_off').length}/{p.items_state.length} items</span>
                           {p.status === 'active' && days !== null && (
-                            <span className={`text-[10px] ${days < 0 ? 'text-red-300' : days <= 7 ? 'text-amber-300' : 'text-dt-muted'}`}>
+                            <span className={`text-[10px] ${days < 0 ? 'text-dt-danger' : days <= 7 ? 'text-dt-warn' : 'text-dt-muted'}`}>
                               go-live {days < 0 ? `${-days}d overdue` : days === 0 ? 'today' : `in ${days}d`}
                             </span>
                           )}
@@ -779,14 +779,14 @@ export default function CustomerOnboardingLive({ setPage }: { setPage?: (p: Page
                   <div key={t.id} className="rounded-2xl border border-dt-border bg-dt-card p-4 flex items-center gap-3 flex-wrap">
                     <div className="flex-1 min-w-[200px]">
                       <p className="text-sm font-medium text-dt-title">{t.name}
-                        <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded align-middle ${t.status === 'published' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>
+                        <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded align-middle ${t.status === 'published' ? 'bg-dt-ok-soft text-dt-ok' : 'bg-dt-warn-soft text-dt-warn'}`}>
                           {t.status === 'published' ? `published v${t.version}` : t.version > 0 ? `draft (v${t.version} live)` : 'draft'}
                         </span>
                       </p>
                       <p className="text-[11px] text-dt-muted mt-0.5">{t.items.length} items · {t.items.filter(i => i.requires_signoff).length} sign-off gates{t.description ? ` · ${t.description}` : ''}</p>
                     </div>
                     <button onClick={() => setEditTemplate(t)} className={btnGhost}>Edit</button>
-                    <button onClick={() => void removeTemplate(t)} className={`${btnGhost} !text-red-300 hover:!border-red-800`} disabled={busy}>Delete</button>
+                    <button onClick={() => void removeTemplate(t)} className={`${btnGhost} !text-dt-danger hover:!border-dt-danger-border`} disabled={busy}>Delete</button>
                   </div>
                 ))}
               </div>

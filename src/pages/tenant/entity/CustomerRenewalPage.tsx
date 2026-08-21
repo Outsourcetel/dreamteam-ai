@@ -41,8 +41,8 @@ const invoiceStatusLabel: Record<InvoiceStatus, string> = {
 
 const invoiceStatusClass: Record<InvoiceStatus, string> = {
   pending_generation: 'text-dt-support',
-  awaiting_approval: 'text-amber-300',
-  sent: 'text-indigo-300',
+  awaiting_approval: 'text-dt-warn',
+  sent: 'text-dt-accent-text',
   paid: 'text-emerald-400',
   overdue: 'text-rose-400',
 };
@@ -50,11 +50,11 @@ const invoiceStatusClass: Record<InvoiceStatus, string> = {
 // ── Playbook run step timeline (live) ─────────────────────────
 const stepChip: Record<RunStep['status'], { label: string; cls: string }> = {
   pending: { label: 'pending', cls: 'bg-dt-panel text-dt-muted' },
-  done: { label: 'done', cls: 'bg-emerald-500/15 text-emerald-300' },
-  waiting: { label: 'waiting on human', cls: 'bg-amber-500/15 text-amber-300' },
+  done: { label: 'done', cls: 'bg-dt-ok-soft text-dt-ok' },
+  waiting: { label: 'waiting on human', cls: 'bg-dt-warn-soft text-dt-warn' },
   skipped: { label: 'skipped', cls: 'bg-dt-panel text-dt-support' },
-  failed: { label: 'failed', cls: 'bg-red-500/15 text-red-300' },
-  cancelled: { label: 'cancelled', cls: 'bg-red-500/15 text-red-300' },
+  failed: { label: 'failed', cls: 'bg-dt-danger-soft text-dt-danger' },
+  cancelled: { label: 'cancelled', cls: 'bg-dt-danger-soft text-dt-danger' },
 };
 
 function RunTimeline({ run, setPage }: { run: PlaybookRun; setPage: (p: Page) => void }) {
@@ -65,22 +65,22 @@ function RunTimeline({ run, setPage }: { run: PlaybookRun; setPage: (p: Page) =>
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-dt-title">{acct}</span>
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support font-mono">{run.playbook_key}</span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300" title="Executed by the playbook-execute edge function — the run survives closed tabs">server-run</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-600 text-violet-100" title="Executed by the playbook-execute edge function — the run survives closed tabs">server-run</span>
         </div>
         <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-          run.status === 'completed' ? 'bg-emerald-500/15 text-emerald-300'
-          : run.status === 'waiting_approval' ? 'bg-amber-500/15 text-amber-300'
-          : run.status === 'cancelled' ? 'bg-red-500/15 text-red-300'
-          : 'bg-indigo-500/15 text-indigo-300'
+          run.status === 'completed' ? 'bg-dt-ok-soft text-dt-ok'
+          : run.status === 'waiting_approval' ? 'bg-dt-warn-soft text-dt-warn'
+          : run.status === 'cancelled' ? 'bg-dt-danger-soft text-dt-danger'
+          : 'bg-dt-accent-soft text-dt-accent-text'
         }`}>{run.status === 'waiting_approval' ? 'waiting on human' : run.status}</span>
       </div>
       <ol className="space-y-1.5">
         {run.steps.map((s, i) => (
           <li key={s.key} className="flex items-start gap-2 text-xs">
             <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] flex-shrink-0 ${
-              s.status === 'done' ? 'bg-emerald-500/20 text-emerald-300'
-              : s.status === 'waiting' ? 'bg-amber-500/20 text-amber-300'
-              : s.status === 'cancelled' || s.status === 'failed' ? 'bg-red-500/20 text-red-300'
+              s.status === 'done' ? 'bg-dt-ok-soft text-dt-ok'
+              : s.status === 'waiting' ? 'bg-dt-warn-soft text-dt-warn'
+              : s.status === 'cancelled' || s.status === 'failed' ? 'bg-dt-danger-soft text-dt-danger'
               : 'bg-dt-panel text-dt-muted'
             }`}>{s.status === 'done' ? '✓' : i + 1}</span>
             <div className="min-w-0 flex-1">
@@ -95,7 +95,7 @@ function RunTimeline({ run, setPage }: { run: PlaybookRun; setPage: (p: Page) =>
       </ol>
       {run.status === 'waiting_approval' && (
         <button onClick={() => setPage('ops_human_tasks')}
-          className="mt-3 text-xs px-3 py-1.5 rounded-lg border text-amber-300 border-amber-800/50 hover:border-amber-500 transition-all">
+          className="mt-3 text-xs px-3 py-1.5 rounded-lg border text-dt-warn border-dt-warn-border hover:border-dt-warn transition-all">
           Decide in Human Tasks →
         </button>
       )}
@@ -211,7 +211,7 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
         <p className="text-dt-support text-sm mt-1">{liveTenantName || 'Your company'} · Live {vocab.renewal_label.toLowerCase()} pipeline — invoices above {fmtMoneyK(thresholdCents)} route through a human approval gate (guardrail-configured)</p>
       </div>
 
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {error && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {loading ? (
         <LiveLoadingSkeleton rows={5} />
@@ -231,8 +231,8 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
           <div className="grid grid-cols-3 gap-3 mb-5">
             {[
               { label: 'Invoices outstanding', value: fmtMoneyK(outstandingCents), sub: `${invoices.filter(i => i.status === 'sent' || i.status === 'overdue').length} invoice(s)`, color: 'text-dt-title' },
-              { label: 'Awaiting approval', value: String(awaitingApproval.length), sub: awaitingApproval.length > 0 ? fmtMoneyK(awaitingApproval.reduce((s, i) => s + i.amount_cents, 0)) : '—', color: awaitingApproval.length > 0 ? 'text-amber-300' : 'text-emerald-300' },
-              { label: 'Collected', value: fmtMoneyK(paidCents), sub: `${invoices.filter(i => i.status === 'paid').length} paid`, color: 'text-emerald-300' },
+              { label: 'Awaiting approval', value: String(awaitingApproval.length), sub: awaitingApproval.length > 0 ? fmtMoneyK(awaitingApproval.reduce((s, i) => s + i.amount_cents, 0)) : '—', color: awaitingApproval.length > 0 ? 'text-dt-warn' : 'text-dt-ok' },
+              { label: 'Collected', value: fmtMoneyK(paidCents), sub: `${invoices.filter(i => i.status === 'paid').length} paid`, color: 'text-dt-ok' },
             ].map(s => (
               <div key={s.label} className="bg-dt-card border border-dt-border rounded-xl p-4">
                 <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{s.label}</p>
@@ -267,11 +267,11 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
                       <td className="py-3 px-4 text-dt-support text-xs whitespace-nowrap">{inv.due_date || '—'}</td>
                       <td className="py-3 px-4">
                         {inv.status === 'awaiting_approval' ? (
-                          <button onClick={() => setPage('ops_human_tasks')} className="text-xs px-3 py-1.5 rounded-lg border text-amber-300 border-amber-800/50 hover:border-amber-500 transition-all">
+                          <button onClick={() => setPage('ops_human_tasks')} className="text-xs px-3 py-1.5 rounded-lg border text-dt-warn border-dt-warn-border hover:border-dt-warn transition-all">
                             View approval →
                           </button>
                         ) : inv.status === 'sent' || inv.status === 'overdue' ? (
-                          <button onClick={() => void markPaid(inv)} className="text-xs px-3 py-1.5 rounded-lg border text-dt-support border-dt-border-strong hover:border-emerald-500 hover:text-emerald-300 transition-all">
+                          <button onClick={() => void markPaid(inv)} className="text-xs px-3 py-1.5 rounded-lg border text-dt-support border-dt-border-strong hover:border-dt-ok hover:text-dt-ok transition-all">
                             Mark paid
                           </button>
                         ) : <span className="text-dt-faint text-xs">—</span>}
@@ -308,11 +308,11 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
                       <td className="py-3 px-4 text-dt-support text-xs whitespace-nowrap">{a.renewal_date || '—'}</td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
-                          <button onClick={() => setGenModal(a)} className="text-xs px-3 py-1.5 rounded-lg border text-indigo-300 border-indigo-800/50 hover:border-indigo-500 transition-all">
+                          <button onClick={() => setGenModal(a)} className="text-xs px-3 py-1.5 rounded-lg border text-dt-accent-text border-dt-accent-border hover:border-dt-accent transition-all">
                             Generate Invoice
                           </button>
                           <button onClick={() => void runPlaybook(a)} disabled={runningId !== null}
-                            className="text-xs px-3 py-1.5 rounded-lg border text-violet-300 border-violet-800/50 hover:border-violet-500 disabled:opacity-50 transition-all whitespace-nowrap">
+                            className="text-xs px-3 py-1.5 rounded-lg border bg-violet-600 text-violet-100 border-violet-500 hover:bg-violet-500 disabled:opacity-50 transition-all whitespace-nowrap">
                             {runningId === a.id ? 'Running…' : '▶ Run playbook'}
                           </button>
                         </div>
@@ -345,10 +345,10 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
           <div>
             <p className="text-sm text-dt-support mb-2">
               Generate renewal invoice for <span className="text-dt-title font-medium">{genModal.name}</span> —{' '}
-              <span className="text-indigo-300 font-medium">{fmtMoneyK(genModal.arr_cents)}</span>?
+              <span className="text-dt-accent-text font-medium">{fmtMoneyK(genModal.arr_cents)}</span>?
             </p>
             {genModal.arr_cents > thresholdCents && (
-              <p className="text-xs text-amber-300 mb-4">Above the {fmtMoneyK(thresholdCents)} guardrail threshold — will route to Human Tasks for approval before sending.</p>
+              <p className="text-xs text-dt-warn mb-4">Above the {fmtMoneyK(thresholdCents)} guardrail threshold — will route to Human Tasks for approval before sending.</p>
             )}
             <div className="flex gap-3 mt-3">
               <button onClick={() => void confirmGenerate()} disabled={generating}

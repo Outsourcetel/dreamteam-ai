@@ -557,7 +557,50 @@ const toneText = lines(`text-\\(${TONE_HUES}\\)-\\(100\\|200\\|300\\)\\b`)
 // de/ResponsiblePeoplePanel, de/DEActionDials, workforce/DraftApprovalCard,
 // WorkforceTrustDefaults, WorkforceBoard) were left for groups B/C — see the
 // group report for the full exclusion table.
-const BASELINE = { 'bare text-white': 0, 'bg-slate': 0, 'border-slate': 0, 'text-slate': 0, 'tone text-300': 520 };
+//
+// RATCHETED 2026-08-21 (Task 5T, Group B — systems/entity/outcome). Every
+// src/pages/tenant/systems/*, entity/* and outcome/* file the worklist listed
+// moved onto dt-* tokens: LivePlaybookBuilder.tsx (50), CustomerOnboardingLive.tsx
+// (32), LiveConnectorsPage.tsx (25), CustomerRenewalPage.tsx (24),
+// CustomerSuccessLive.tsx (19), PipelineLive.tsx (15), CommercialContinuityPage.tsx
+// (12), LiveOutcomesPage.tsx (12, outcome/), TemplateBuilder.tsx (8, systems/ —
+// not named in the brief's headline list but on the worklist and in-directory,
+// so included and named here), McpServersPage.tsx (5, systems/ — same reasoning)
+// — 202 raw lines, all converted or documented; zero unaccounted drift (520 → 318
+// matches the sum exactly). entity/CustomerJourneyStubs.tsx, entity/CustomersHubPage.tsx
+// and entity/onboarding/{ProjectRequirements,VerbBinding}.tsx were checked by
+// grep and confirmed already at zero hits — left untouched, not skipped.
+// One accidental match was NOT a real hit: LiveConnectorsPage.tsx:1138 was a
+// `/* block comment */` continuation line quoting the OLD class name
+// (`text-xs text-red-300`, backticked) as history — the audit's NO_COMMENTS
+// filter only strips lines starting with `//`/`*`, not block-comment
+// continuations, so this literal string was inflating the worklist count by
+// one line that was never real UI code. Reworded the comment (no class-name
+// literal) rather than adding a survivor entry for prose that was never a
+// styling hazard.
+// Kept-hue judgment calls (non-core hues, all opaque-fill-exempted via the
+// existing COLORED_BG regex — no new TONE_FILL_SURVIVORS entries needed):
+// teal (CustomerOnboardingLive.tsx "connector-verified" badge,
+// LiveConnectorsPage.tsx "fetch_only" access-mode badge, TemplateBuilder.tsx
+// "yours" scope badge — all the SAME "verified/owned, not a status" identity
+// already sanctioned in doc §7's kept-hue table); violet (CustomerRenewalPage.tsx
+// "server-run" badge + "Run playbook" button — a "playbook execution
+// machinery" identity distinct from teal's meaning, consistently used twice
+// in that one file); fuchsia/cyan (LivePlaybookBuilder.tsx stepGrade's
+// Judgment/Rail step-type badges, load-bearing per the plan's own callout —
+// Guide was already dt-neutral from an earlier ratchet; missing_data gap-kind
+// also kept fuchsia, reusing the same hue for the same "AI/complexity-flavored"
+// meaning as Judgment, distinct context, no visual collision); purple
+// (LiveConnectorsPage.tsx access-mode badge's "ingest" branch, sibling to the
+// teal "fetch_only" branch). One judgment reassignment, not a kept-hue: violet
+// in LivePlaybookBuilder.tsx's DocStepRow "decision" step-type card/badge/code
+// was folded into this file's own dt-accent vocabulary (already used for its
+// "SOP" badge) rather than kept as a literal, because the badge+code sit bare
+// on a translucent (non-opaque) card wash — no theme-reactive dt-token exists
+// for a literal violet, so keeping it would have meant an opaque-ification of
+// a fairly large card, judged more disruptive than reusing the file's existing
+// accent token; this keeps it visually distinct from sky="instruction"/info.
+const BASELINE = { 'bare text-white': 0, 'bg-slate': 0, 'border-slate': 0, 'text-slate': 0, 'tone text-300': 318 };
 const NOW = {
   'bare text-white': bareWhite.length,
   'bg-slate': slateBg.length,

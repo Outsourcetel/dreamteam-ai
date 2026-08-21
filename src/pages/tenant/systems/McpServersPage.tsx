@@ -223,12 +223,12 @@ function ServerCard({ s, onChanged }: { s: McpServer; onChanged: () => void }) {
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-dt-muted">
         <span>{s.tools.length} tool{s.tools.length === 1 ? '' : 's'} registered</span>
         {destructive > 0 && <span>· {destructive} always need a human</span>}
-        {sensitive > 0 && <span className="text-rose-300">· {sensitive} sensitive read{sensitive === 1 ? '' : 's'}</span>}
+        {sensitive > 0 && <span className="text-dt-danger">· {sensitive} sensitive read{sensitive === 1 ? '' : 's'}</span>}
         {s.tools.length === 0 && <span>· nothing registered yet — use “Read tools”</span>}
       </div>
 
-      {msg && <p className="mt-2 text-xs text-emerald-300">{msg}</p>}
-      {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
+      {msg && <p className="mt-2 text-xs text-dt-ok">{msg}</p>}
+      {err && <p className="mt-2 text-xs text-dt-danger">{err}</p>}
 
       {preview && (
         <ToolPicker tools={preview} busy={busy} onCancel={() => setPreview(null)} onRegister={(n) => void register(n)} />
@@ -283,7 +283,7 @@ function ConnectForm({ onDone }: { onDone: () => void }) {
           <input className={INPUT_CLS} type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="••••••••" />
         </Field>
       </div>
-      {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
+      {err && <p className="mt-2 text-xs text-dt-danger">{err}</p>}
       <div className="mt-3">
         <Button kind="primary" size="sm" disabled={busy || !canManageConnectors} onClick={() => void submit()}>
           {busy ? 'Connecting…' : 'Connect'}
@@ -369,7 +369,7 @@ function Allowlist({ hosts, onChanged, setPage }: {
           <Button kind="secondary" size="sm" disabled={busy} onClick={() => void add()}>Allow this host</Button>
         </div>
       </div>
-      {err && <p className="mt-2 text-xs text-red-300">{err}</p>}
+      {err && <p className="mt-2 text-xs text-dt-danger">{err}</p>}
 
       {/* The other half of the picture. This list decides which SERVERS may be
           reached at all; Governance → Data access decides which employees may

@@ -23,15 +23,15 @@ import { Drawer, Modal as DtModal, Toast } from '../../../design/primitives';
 type Tab = 'command' | 'portfolio' | 'cases';
 
 const RISK_CLS: Record<string, string> = {
-  critical: 'text-rose-400', high: 'text-amber-300', medium: 'text-dt-support', low: 'text-emerald-400',
+  critical: 'text-rose-400', high: 'text-dt-warn', medium: 'text-dt-support', low: 'text-emerald-400',
 };
 
 function dateChip(dateStr: string | null): { label: string; cls: string } {
   const d = daysUntil(dateStr);
   if (dateStr === null || d === null) return { label: '—', cls: 'text-dt-faint' };
   if (d < 0) return { label: `${Math.abs(d)}d overdue`, cls: 'text-rose-400' };
-  if (d <= 14) return { label: `in ${d}d`, cls: 'text-amber-300' };
-  if (d <= 60) return { label: `in ${d}d`, cls: 'text-indigo-300' };
+  if (d <= 14) return { label: `in ${d}d`, cls: 'text-dt-warn' };
+  if (d <= 60) return { label: `in ${d}d`, cls: 'text-dt-accent-text' };
   return { label: `in ${d}d`, cls: 'text-dt-support' };
 }
 
@@ -103,7 +103,7 @@ function AddAgreementDialog({ onClose, onSaved }: { onClose: () => void; onSaved
             <label className="text-[11px] text-dt-muted">Notice deadline<input className={inp} type="date" value={f.notice_deadline} onChange={e => setF({ ...f, notice_deadline: e.target.value })} /></label>
           </div>
           <p className="text-[11px] text-dt-muted">Dates are never inferred from each other — the employee only acts on the dates you set. The watcher opens a case as each one approaches.</p>
-          {err && <p className="text-xs text-rose-300">{err}</p>}
+          {err && <p className="text-xs text-dt-danger">{err}</p>}
           {!canManage && <p className="text-[11px] text-dt-muted">Adding an agreement needs a manager, owner or admin.</p>}
           <div className="flex justify-end gap-2 pt-1">
             <button onClick={onClose} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border text-dt-support hover:text-dt-body">Cancel</button>
@@ -168,7 +168,7 @@ function CaseDrawer({
       title={
         <span className="block">
           <span className="flex items-center gap-2 mb-1">
-            <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 uppercase tracking-wide">{motionLabel(kase.motion)}</span>
+            <span className="text-[10px] px-2 py-0.5 rounded bg-dt-accent-soft text-dt-accent-text uppercase tracking-wide">{motionLabel(kase.motion)}</span>
             <span className="text-[10px] px-2 py-0.5 rounded bg-dt-panel text-dt-support">{kase.party_side === 'buy' ? 'Vendor' : 'Customer'}</span>
             {kase.risk_level && <span className={`text-[10px] px-2 py-0.5 rounded bg-dt-card ${RISK_CLS[kase.risk_level]}`}>{kase.risk_level} risk</span>}
           </span>
@@ -193,7 +193,7 @@ function CaseDrawer({
           <p className="text-[11px] text-dt-muted mb-3">
             Every action runs through the approval gate — money and stage changes route to Human Tasks; safe logs may auto-apply. Nothing is written directly.
           </p>
-          {!canAct && <p className="text-xs text-amber-300 mb-3">No employee is assigned to this case, so actions are disabled.</p>}
+          {!canAct && <p className="text-xs text-dt-warn mb-3">No employee is assigned to this case, so actions are disabled.</p>}
           <div className="space-y-3">
             {/* Advance stage */}
             <div className="flex gap-2">
@@ -203,7 +203,7 @@ function CaseDrawer({
                 {stages.map(s => <option key={s.stage_key} value={s.stage_key}>{s.label}</option>)}
               </select>
               <button onClick={() => toStage && act('advance_stage', { to_stage: toStage })} disabled={!canAct || busy || !toStage}
-                className="text-xs px-3 py-1.5 rounded-lg border text-amber-300 border-amber-800/50 hover:border-amber-500 disabled:opacity-40 transition-all whitespace-nowrap">
+                className="text-xs px-3 py-1.5 rounded-lg border text-dt-warn border-dt-warn-border hover:border-dt-warn disabled:opacity-40 transition-all whitespace-nowrap">
                 Advance →
               </button>
             </div>
@@ -338,7 +338,7 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
         ))}
       </div>
 
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {error && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {loading ? (
         <LiveLoadingSkeleton rows={5} />
@@ -359,9 +359,9 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
             <div className="space-y-5">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <StatCard label="Renewable value" value={fmtMoneyK(metrics.renewable)} sub={`${agreements.length} agreement(s)`} />
-                <StatCard label="Open cases" value={String(cases.length)} sub="live continuity work" color="text-indigo-300" />
-                <StatCard label="Notice deadlines ≤60d" value={String(metrics.noticeSoon.length)} sub="act before the window closes" color={metrics.noticeSoon.length ? 'text-amber-300' : 'text-emerald-300'} />
-                <StatCard label="At-risk value" value={fmtMoneyK(metrics.atRiskValue)} sub={`${metrics.atRisk.length} case(s)`} color={metrics.atRisk.length ? 'text-rose-400' : 'text-emerald-300'} />
+                <StatCard label="Open cases" value={String(cases.length)} sub="live continuity work" color="text-dt-accent-text" />
+                <StatCard label="Notice deadlines ≤60d" value={String(metrics.noticeSoon.length)} sub="act before the window closes" color={metrics.noticeSoon.length ? 'text-dt-warn' : 'text-dt-ok'} />
+                <StatCard label="At-risk value" value={fmtMoneyK(metrics.atRiskValue)} sub={`${metrics.atRisk.length} case(s)`} color={metrics.atRisk.length ? 'text-rose-400' : 'text-dt-ok'} />
               </div>
               <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
                 <h3 className="text-sm font-semibold text-dt-title mb-3">Cases by motion</h3>
@@ -450,7 +450,7 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
                       {cases.map((c, i) => (
                         <tr key={c.objective_id} className={`border-b border-dt-border hover:bg-dt-panel transition-colors cursor-pointer ${i === cases.length - 1 ? 'border-b-0' : ''}`} onClick={() => setSelected(c)}>
                           <td className="py-3 px-4 font-medium text-dt-title max-w-xs truncate">{c.title || '—'}</td>
-                          <td className="py-3 px-4"><span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300">{motionLabel(c.motion)}</span></td>
+                          <td className="py-3 px-4"><span className="text-[10px] px-2 py-0.5 rounded bg-dt-accent-soft text-dt-accent-text">{motionLabel(c.motion)}</span></td>
                           <td className="py-3 px-4 text-dt-support">{c.counterparty_name || '—'}</td>
                           <td className="py-3 px-4 text-dt-support text-xs">{c.stage_key ? c.stage_key.replace(/_/g, ' ') : '—'}</td>
                           <td className="py-3 px-4 text-dt-support">{c.baseline_cents != null ? fmtMoneyK(c.baseline_cents) : '—'}</td>

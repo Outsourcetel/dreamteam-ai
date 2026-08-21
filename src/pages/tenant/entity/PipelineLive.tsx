@@ -39,11 +39,11 @@ import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../
 const inputCls = 'bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-indigo-500';
 
 const stageChip = (s: OppStage) =>
-  s === 'won' ? 'bg-emerald-500/15 text-emerald-300'
-  : s === 'lost' ? 'bg-red-500/15 text-red-300'
-  : s === 'negotiation' ? 'bg-emerald-500/15 text-emerald-300'
-  : s === 'proposal' ? 'bg-indigo-500/15 text-indigo-300'
-  : s === 'qualified' ? 'bg-sky-500/15 text-sky-300'
+  s === 'won' ? 'bg-dt-ok-soft text-dt-ok'
+  : s === 'lost' ? 'bg-dt-danger-soft text-dt-danger'
+  : s === 'negotiation' ? 'bg-dt-ok-soft text-dt-ok'
+  : s === 'proposal' ? 'bg-dt-accent-soft text-dt-accent-text'
+  : s === 'qualified' ? 'bg-dt-info-soft text-dt-info'
   : 'bg-dt-neutral-soft text-dt-support';
 
 const fmtAmount = (cents: number | null) => (cents == null ? '—' : fmtMoneyK(cents));
@@ -77,7 +77,7 @@ function SummaryStrip({ summary, stages }: { summary: PipelineSummaryRow[]; stag
       value: `${bystage(st.stage_key)?.opp_count ?? 0} · ${fmtAmount(bystage(st.stage_key)?.amount_cents ?? 0)}`,
       color: 'text-dt-body',
     })),
-    { label: 'Win rate (90d)', value: winRate == null ? '—' : `${winRate}%`, color: winRate == null ? 'text-dt-muted' : winRate >= 50 ? 'text-emerald-300' : 'text-amber-300' },
+    { label: 'Win rate (90d)', value: winRate == null ? '—' : `${winRate}%`, color: winRate == null ? 'text-dt-muted' : winRate >= 50 ? 'text-dt-ok' : 'text-dt-warn' },
   ];
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
@@ -165,7 +165,7 @@ function ImportOpportunitiesModal({ onClose, onImported }: { onClose: () => void
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-medium text-dt-support">CSV data</label>
-              <label className="text-xs text-indigo-400 hover:text-indigo-300 cursor-pointer">
+              <label className="text-xs text-dt-accent-text hover:underline cursor-pointer">
                 Upload file
                 <input type="file" accept=".csv,text/csv,text/plain" className="hidden"
                   onChange={e => {
@@ -198,10 +198,10 @@ function ImportOpportunitiesModal({ onClose, onImported }: { onClose: () => void
               {!requiredMapped && <p className="text-xs text-amber-400 mt-2">Map the required column(s) marked * to continue.</p>}
             </div>
           )}
-          {fatal && <div className="rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{fatal}</div>}
+          {fatal && <div className="rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{fatal}</div>}
           {result && (
             <div className="rounded-xl border border-dt-border-strong bg-dt-panel px-4 py-3 text-xs">
-              <p className="text-emerald-300 font-medium mb-1">{result.imported} row(s) imported.</p>
+              <p className="text-dt-ok font-medium mb-1">{result.imported} row(s) imported.</p>
               {result.errors.length > 0 && (
                 <ul className="list-disc ml-4 text-amber-400/80 space-y-0.5">
                   {result.errors.slice(0, 8).map(e => <li key={e.row}>Row {e.row}: {e.message}</li>)}
@@ -480,8 +480,8 @@ export function CustomerBDLive() {
       </div>
 
       <SorBanner />
-      {toast && <div className="mb-4 rounded-xl border border-emerald-800/50 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-300">✓ {toast}</div>}
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {toast && <div className="mb-4 rounded-xl border border-dt-ok-border bg-dt-ok-soft px-4 py-3 text-xs text-dt-ok">✓ {toast}</div>}
+      {error && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {loading ? <LiveLoadingSkeleton rows={5} /> : missingTables ? <MissingTablesNotice /> : (
         <>
@@ -514,12 +514,12 @@ export function CustomerBDLive() {
                         <td className={`${td} text-dt-support text-xs`}>{p.name}</td>
                         <td className={`${td} text-dt-support text-xs`}>{p.owner || 'Unassigned'}</td>
                         <td className={`${td} text-xs`}>
-                          <span className={`px-2 py-0.5 rounded-full ${p.source === 'native' ? 'bg-dt-neutral-soft text-dt-support' : 'bg-indigo-500/15 text-indigo-300'}`}>{p.source}</span>
+                          <span className={`px-2 py-0.5 rounded-full ${p.source === 'native' ? 'bg-dt-neutral-soft text-dt-support' : 'bg-dt-accent-soft text-dt-accent-text'}`}>{p.source}</span>
                         </td>
                         <td className={`${td} text-dt-muted text-xs whitespace-nowrap`}>{new Date(p.created_at).toLocaleDateString()}</td>
                         <td className={`${td} text-right`}>
                           <button onClick={() => void qualify(p)} disabled={qualifying === p.id}
-                            className="text-xs px-2.5 py-1 rounded-lg bg-sky-600/20 text-sky-300 hover:bg-sky-600/40 disabled:opacity-40 transition-colors whitespace-nowrap">
+                            className="text-xs px-2.5 py-1 rounded-lg bg-dt-info-soft text-dt-info hover:brightness-110 disabled:opacity-40 transition-colors whitespace-nowrap">
                             {qualifying === p.id ? 'Qualifying…' : 'Qualify →'}
                           </button>
                         </td>
@@ -628,8 +628,8 @@ export function CustomerSalesLive() {
         subtitle={`${liveTenantName || 'Your company'} · qualified deals through to won/lost — winning hands off to Onboarding automatically`}
       />
       <SorBanner />
-      {toast && <div className="mb-4 rounded-xl border border-emerald-800/50 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-300">✓ {toast}</div>}
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {toast && <div className="mb-4 rounded-xl border border-dt-ok-border bg-dt-ok-soft px-4 py-3 text-xs text-dt-ok">✓ {toast}</div>}
+      {error && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {loading ? <LiveLoadingSkeleton rows={5} /> : missingTables ? <MissingTablesNotice /> : (
         <>

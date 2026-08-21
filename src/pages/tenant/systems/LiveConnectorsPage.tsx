@@ -134,7 +134,7 @@ function ConnectWizard({ onClose, onDone, onCustom, reconnect }: { onClose: () =
         <p className="text-[11px] text-dt-muted mt-0.5">{m.tagline}</p>
         {m.implemented
           ? (
-            <p className={`text-[10px] mt-1 ${acts ? 'text-emerald-300' : 'text-dt-faint'}`}>
+            <p className={`text-[10px] mt-1 ${acts ? 'text-dt-ok' : 'text-dt-faint'}`}>
               {acts ? 'reads · acts (every action approval-gated)' : 'reads only'}
             </p>
           )
@@ -355,7 +355,7 @@ function ConnectWizard({ onClose, onDone, onCustom, reconnect }: { onClose: () =
                 </div>
               </div>
 
-              {err && <p className="text-xs text-red-300 mt-3">{err}</p>}
+              {err && <p className="text-xs text-dt-danger mt-3">{err}</p>}
               <div className="flex gap-3 mt-5">
                 <button disabled={busy} onClick={onClose} className="flex-1 px-3 py-2 rounded-lg bg-dt-panel text-dt-support hover:bg-dt-panel text-xs transition-colors disabled:opacity-50">
                   Cancel
@@ -415,8 +415,8 @@ function OAuthConnectSection({ provider, label, name, onClose }: {
       </div>
 
       {configured === false && (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 space-y-1.5">
-          <p className="text-[11px] text-amber-300 font-medium">One-time platform setup</p>
+        <div className="rounded-xl border border-dt-warn-border bg-dt-warn-soft p-3 space-y-1.5">
+          <p className="text-[11px] text-dt-warn font-medium">One-time platform setup</p>
           <p className="text-[11px] text-dt-support">Register the {label} developer app once, and add this exact redirect URL in its settings:</p>
           <code className="block text-[10px] text-dt-support bg-dt-page rounded p-1.5 break-all">{OAUTH_CALLBACK_URL}</code>
         </div>
@@ -434,7 +434,7 @@ function OAuthConnectSection({ provider, label, name, onClose }: {
         </div>
       )}
 
-      {err && <p className="text-xs text-red-300">{err}</p>}
+      {err && <p className="text-xs text-dt-danger">{err}</p>}
       <div className="flex gap-3">
         <button disabled={busy} onClick={onClose} className="flex-1 px-3 py-2 rounded-lg bg-dt-panel text-dt-support hover:bg-dt-panel text-xs disabled:opacity-50">Cancel</button>
         <button disabled={busy || configured !== true} onClick={() => void connect()}
@@ -482,10 +482,10 @@ function FieldMapEditor({ connector, onSave, isBusy }: {
 
 // ── Ingest control — filters + review-before-ingest queue ───────────
 const CAND_STATUS_META: Record<string, { label: string; cls: string }> = {
-  pending: { label: 'Awaiting review', cls: 'text-amber-300 bg-amber-500/10' },
-  approved: { label: 'Approved', cls: 'text-emerald-300 bg-emerald-500/10' },
+  pending: { label: 'Awaiting review', cls: 'text-dt-warn bg-dt-warn-soft' },
+  approved: { label: 'Approved', cls: 'text-dt-ok bg-dt-ok-soft' },
   rejected: { label: 'Excluded', cls: 'text-dt-support bg-dt-neutral-soft' },
-  ingested: { label: 'In knowledge', cls: 'text-indigo-300 bg-indigo-500/10' },
+  ingested: { label: 'In knowledge', cls: 'text-dt-accent-text bg-dt-accent-soft' },
 };
 const TYPE_LABEL: Record<string, string> = { pdf: 'PDF', doc: 'Doc', slide: 'Slides', sheet: 'Sheet', text: 'Text', other: 'Other' };
 
@@ -589,7 +589,7 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
                 const on = filters.allow_types?.includes(t.key) ?? false;
                 return (
                   <button key={t.key} onClick={() => toggleType(t.key)}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] border transition-colors ${on ? 'border-indigo-500 bg-indigo-500/15 text-indigo-200' : 'border-dt-border-strong text-dt-support hover:border-dt-border-strong'}`}>
+                    className={`px-2.5 py-1 rounded-lg text-[11px] border transition-colors ${on ? 'border-dt-accent bg-dt-accent-soft text-dt-accent-text' : 'border-dt-border-strong text-dt-support hover:border-dt-border-strong'}`}>
                     {t.label}
                   </button>
                 );
@@ -618,7 +618,7 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
             {pending.length > 0 && canDecideCandidates && (
               <>
                 <button disabled={isBusy} onClick={() => void decide(pending.map(c => c.external_ref), 'approved')}
-                  className="px-2.5 py-1.5 rounded-lg text-xs text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/15 disabled:opacity-50">Approve all</button>
+                  className="px-2.5 py-1.5 rounded-lg text-xs text-dt-ok border border-dt-ok-border hover:bg-dt-ok-soft disabled:opacity-50">Approve all</button>
                 <button disabled={isBusy} onClick={() => void decide(pending.map(c => c.external_ref), 'rejected')}
                   className="px-2.5 py-1.5 rounded-lg text-xs text-dt-support border border-dt-border-strong hover:border-dt-border-strong disabled:opacity-50">Exclude all</button>
               </>
@@ -655,7 +655,7 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
                     <div className="flex gap-1 flex-shrink-0">
                       {c.status !== 'approved' && (
                         <button disabled={isBusy} onClick={() => void decide([c.external_ref], 'approved')}
-                          className="px-2 py-0.5 rounded text-[10px] text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/15 disabled:opacity-50">Approve</button>
+                          className="px-2 py-0.5 rounded text-[10px] text-dt-ok border border-dt-ok-border hover:bg-dt-ok-soft disabled:opacity-50">Approve</button>
                       )}
                       {c.status !== 'rejected' && (
                         <button disabled={isBusy} onClick={() => void decide([c.external_ref], 'rejected')}
@@ -745,7 +745,7 @@ function LearnedToolsPanel({ onToast }: { onToast: (m: string) => void }) {
           </div>
           <textarea value={specText} onChange={e => setSpecText(e.target.value)} rows={5} placeholder="Paste the OpenAPI (v2/v3) JSON here"
             className="w-full px-3 py-2 rounded-lg bg-dt-panel border border-dt-border text-xs font-mono text-dt-body placeholder:text-dt-muted" />
-          {err && <div className="text-[11px] text-rose-300">{err}</div>}
+          {err && <div className="text-[11px] text-dt-danger">{err}</div>}
           <button disabled={busy || !specText.trim()} onClick={() => void learn()}
             className="px-3 py-1.5 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 transition-colors">
             {busy ? 'Working…' : 'Learn actions from this spec'}
@@ -760,9 +760,9 @@ function LearnedToolsPanel({ onToast }: { onToast: (m: string) => void }) {
                     <span className="text-sm text-dt-body">{a.label}</span>
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted">{a.execution?.method ?? '—'}</span>
                     {a.status === 'active'
-                      ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">published</span>
-                      : <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">draft — not usable yet</span>}
-                    {destructive && <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300">writes — always human-gated</span>}
+                      ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-ok-soft text-dt-ok">published</span>
+                      : <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-warn-soft text-dt-warn">draft — not usable yet</span>}
+                    {destructive && <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-danger-soft text-dt-danger">writes — always human-gated</span>}
                     <button disabled={busy} onClick={() => void flip(a.id, a.status === 'active' ? 'draft' : 'active')}
                       className="ml-auto px-2.5 py-1 rounded-lg text-[11px] bg-dt-border-strong hover:bg-dt-panel text-dt-title disabled:opacity-50 transition-colors">
                       {a.status === 'active' ? 'Unpublish' : 'Publish'}
@@ -1034,8 +1034,8 @@ export default function LiveConnectorsPage() {
         </div>
       )}
 
-      {toast && <div className="mb-4 rounded-xl border border-indigo-500/40 bg-indigo-500/10 px-4 py-3 text-xs text-indigo-200">{toast}</div>}
-      {error && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {toast && <div className="mb-4 rounded-xl border border-dt-accent-border bg-dt-accent-soft px-4 py-3 text-xs text-dt-accent-text">{toast}</div>}
+      {error && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {!loading && !missingTables && (
         <TemplateLibrary templates={templates} onUse={t => setUseTemplate(t)} onBuild={() => setShowBuilder(true)} />
@@ -1086,8 +1086,8 @@ export default function LiveConnectorsPage() {
                         <span className="text-sm text-dt-body">{a.label}</span>
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted">{a.category ?? 'general'}</span>
                         {destructive
-                          ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300">destructive — always human-gated</span>
-                          : <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300">gated by guardrails + trust dial</span>}
+                          ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-danger-soft text-dt-danger">destructive — always human-gated</span>
+                          : <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-ok-soft text-dt-ok">gated by guardrails + trust dial</span>}
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted">{a.scope}</span>
                         {a.description && <span className="text-[11px] text-dt-muted basis-full">{a.description}</span>}
                       </div>
@@ -1111,8 +1111,8 @@ export default function LiveConnectorsPage() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <h2 className="text-base font-semibold text-dt-title">{PROVIDER_ICON[c.provider]} {c.display_name || meta?.label || c.provider}</h2>
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support uppercase tracking-wide">{c.provider.replace('_', ' ')}</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">{CATEGORY_SHORT[c.category] ?? c.category}</span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${c.access_mode === 'fetch_only' ? 'bg-teal-500/15 text-teal-300' : 'bg-purple-500/15 text-purple-300'}`}>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-accent-soft text-dt-accent-text">{CATEGORY_SHORT[c.category] ?? c.category}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${c.access_mode === 'fetch_only' ? 'bg-teal-600 text-teal-100' : 'bg-purple-600 text-purple-100'}`}>
                         {c.access_mode === 'fetch_only' ? 'fetch-only · never stored' : 'ingest · working copy'}
                       </span>
                       {(() => { const st = connectionState(c); return <Chip tone={st.tone} dot title={st.means}>{st.label}</Chip>; })()}
@@ -1135,8 +1135,8 @@ export default function LiveConnectorsPage() {
                       })()}
                     </p>
                     {/* ── What broke, and who it stops ────────────────────────
-                        Was a bare `text-xs text-red-300` line carrying the raw
-                        error label and nothing else — true, and useless to the
+                        Was a bare, literal-red-tinted text-xs line carrying the
+                        raw error label and nothing else — true, and useless to the
                         person who has to decide whether it matters. The names
                         come from the SAME grants read just above, so the card
                         can say who is affected without inventing a link.
@@ -1197,7 +1197,7 @@ export default function LiveConnectorsPage() {
                       </button>
                     ) : (
                       <>
-                        <button disabled={isBusy} onClick={() => { setReconnectTarget(c); setShowConnect(true); }} className="px-3 py-1.5 rounded-lg text-xs text-emerald-300 border border-emerald-500/30 hover:bg-emerald-600/20 disabled:opacity-50 transition-colors">
+                        <button disabled={isBusy} onClick={() => { setReconnectTarget(c); setShowConnect(true); }} className="px-3 py-1.5 rounded-lg text-xs text-dt-ok border border-dt-ok-border hover:bg-dt-ok-soft disabled:opacity-50 transition-colors">
                           Reconnect
                         </button>
                         <button disabled={isBusy || !canManageConnectors} onClick={() => void doRemove(c)} className="px-3 py-1.5 rounded-lg text-xs text-red-400 border border-red-500/30 hover:bg-red-600/20 disabled:opacity-50 transition-colors">
@@ -1298,7 +1298,7 @@ export default function LiveConnectorsPage() {
                       {acts.map(a => (
                         <button key={a.id} onClick={() => void toggleAction(a)}
                           className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${a.enabled
-                            ? 'border-indigo-500/40 bg-indigo-500/10 text-indigo-300'
+                            ? 'border-dt-accent-border bg-dt-accent-soft text-dt-accent-text'
                             : 'border-dt-border-strong bg-dt-card text-dt-muted'}`}>
                           {ACTION_LABELS[a.action_key] ?? a.action_key} · {a.enabled ? 'on' : 'off'}
                         </button>
@@ -1321,7 +1321,7 @@ export default function LiveConnectorsPage() {
                       </button>
                       <span className="text-[11px] text-dt-faint">Fetched at question time — nothing stored, audit event only.</span>
                     </div>
-                    {rtErr && !rtResult && <p className="text-xs text-red-300 mt-2">{rtErr}</p>}
+                    {rtErr && !rtResult && <p className="text-xs text-dt-danger mt-2">{rtErr}</p>}
                     {rtResult?.connectorId === c.id && (
                       <div className="mt-3 space-y-2">
                         <p className="text-[11px] text-dt-muted">{rtResult.items.length} result(s){rtResult.latency ? ` in ${rtResult.latency}ms` : ''} — live from {meta.label}, not persisted.</p>
@@ -1331,7 +1331,7 @@ export default function LiveConnectorsPage() {
                               <span className="text-xs font-medium text-dt-body">{it.title}</span>
                               <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support">{it.type}</span>
                               <span className="text-[10px] text-dt-faint">ref {it.ref}</span>
-                              {it.url && <a href={it.url} target="_blank" rel="noreferrer" className="text-[10px] text-indigo-400 hover:text-indigo-300">open in source ↗</a>}
+                              {it.url && <a href={it.url} target="_blank" rel="noreferrer" className="text-[10px] text-dt-accent-text hover:underline">open in source ↗</a>}
                             </div>
                             {it.snippet && <p className="text-[11px] text-dt-support mt-1">{it.snippet}</p>}
                           </div>

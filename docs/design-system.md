@@ -296,13 +296,42 @@ are exempt via `COLORED_BG` — the `bg-{hue}-600 text-{hue}-100` recipe already
 sanctioned by the mapping table's "tint on an opaque same-family fill"
 exemption):
 
-| Tag | Recipe | Where |
-|---|---|---|
-| `control fabric` / `evidence-assessed` / `real metrics` / `governed, single-hop` / `default-deny` / `measured live` / `your baselines, never estimated` | `bg-teal-600 text-teal-100` | `EmployeeFileSections.tsx`, 7 section-header identity tags (was `bg-teal-500/15 text-teal-300`) |
-| `checklist` type badge (Human Tasks) | `bg-teal-600 text-teal-100` | `HumanTasksPage.tsx` `taskBadgeStyle` |
-| `AI-written` / `derived from this employee's actual work` | `bg-violet-600 text-violet-100` | `EmployeeFileSections.tsx`, provenance tags (was `bg-violet-500/15 text-violet-300`) |
-| `action_approval` type badge (Human Tasks) | `bg-fuchsia-600 text-fuchsia-100` | `HumanTasksPage.tsx` `taskBadgeStyle` |
-| `SIMULATION — not a real item` | `bg-purple-600 text-purple-100 border border-purple-500` | `DEActivityPage.tsx` — a meta/provenance flag distinct from every real ok/warn/danger status on the same row |
+| Tag | Recipe | Where | Reason |
+|---|---|---|---|
+| `control fabric` / `evidence-assessed` / `real metrics` / `governed, single-hop` / `default-deny` / `measured live` / `your baselines, never estimated` | `bg-teal-600 text-teal-100` | `EmployeeFileSections.tsx`, 7 section-header identity tags (was `bg-teal-500/15 text-teal-300`) | Repeats verbatim as a fixed visual signature across many unrelated sections — decoration, not a status |
+| `checklist` type badge (Human Tasks) | `bg-teal-600 text-teal-100` | `HumanTasksPage.tsx` `taskBadgeStyle` | Same teal identity family, reused for one more task-type badge |
+| `AI-written` / `derived from this employee's actual work` | `bg-violet-600 text-violet-100` | `EmployeeFileSections.tsx`, provenance tags (was `bg-violet-500/15 text-violet-300`) | Marks AI-authored vs. measured content — a provenance flag, not a status |
+| `action_approval` type badge (Human Tasks) | `bg-fuchsia-600 text-fuchsia-100` | `HumanTasksPage.tsx` `taskBadgeStyle` | Distinct task-TYPE color in an 11-member scheme; reusing `dt-accent` would collide with the real `approval_gate` type |
+| `SIMULATION — not a real item` | `bg-purple-600 text-purple-100 border border-purple-500` | `DEActivityPage.tsx` | A meta/provenance flag orthogonal to every real ok/warn/danger status the same row can carry |
+| `connector-verified` badge / `fetch_only` access-mode badge / `yours` scope badge | `bg-teal-600 text-teal-100` | `CustomerOnboardingLive.tsx`, `LiveConnectorsPage.tsx`, `TemplateBuilder.tsx` (Task 5T, Group B) | Same "verified/owned by you, not a status" teal identity as the rows above, reused across three systems/entity surfaces |
+| `server-run` badge + `▶ Run playbook` button | `bg-violet-600 text-violet-100` (button adds `border border-violet-500 hover:bg-violet-500`, converted from an outline button since bare/outline violet text has no theme-reactive `dt-*` token to fall back to) | `CustomerRenewalPage.tsx` (Task 5T, Group B) | A "playbook execution machinery" identity, distinct from teal's meaning, used consistently twice in this one file |
+| `Judgment` step-grade badge / `missing_data` gap-kind badge | `bg-fuchsia-600 text-fuchsia-100 border-fuchsia-500` | `LivePlaybookBuilder.tsx` (Task 5T, Group B) | Step-type/gap-kind identity, not a status; part of the plan's load-bearing Rail/Judgment/Guide family (Guide is already `dt-neutral` from an earlier ratchet) — missing_data reuses the same "AI/complexity-flavored" hue in a different, non-colliding context |
+| `Rail` step-grade badge | `bg-cyan-600 text-cyan-100 border-cyan-500` | `LivePlaybookBuilder.tsx` (Task 5T, Group B) | Sibling of `Judgment` above — the "mechanical/rule-based" step type needs its own hue to stay visually distinct from it and from `Guide` |
+| `ingest · working copy` access-mode badge | `bg-purple-600 text-purple-100` | `LiveConnectorsPage.tsx` (Task 5T, Group B) | Sibling of the teal `fetch_only` badge on the same connector card — a data-handling MODE identity, not a risk severity, so not reassigned to `dt-warn` |
+
+Rejected alternative for every Group B row above: reassigning the hue to
+whichever `dt-*` core semantic seemed closest by vibe (`dt-info` for teal,
+`dt-accent` for violet/purple, `dt-warn` for the "ingest" badge). Rejected
+because each of these is a fixed identity/mode/type marker that sits beside
+one or more of the five real semantics in the same UI (e.g. the `access_mode`
+badge sits next to a genuine `Chip tone={ok|warn|danger|neutral}` connection-state
+indicator) — folding it into a semantic token would either steal that
+semantic's meaning for an unrelated second purpose or make two different
+identities read as the same thing, exactly what the mapping table's
+"non-semantic identity hues keep their hue" rule exists to prevent.
+
+One reassignment, not a kept-hue survivor (Task 5T, Group B): `LivePlaybookBuilder.tsx`'s
+`DocStepRow` "decision" step-type card, its index badge, and its two inline
+`<code>` condition/value snippets were violet, bare (translucent card wash,
+no opaque same-family fill to exempt them). Converted fully to
+`bg-dt-accent-soft`/`border-dt-accent-border`/`text-dt-accent-text` — reusing
+this file's own existing `dt-accent` vocabulary (already used for its "SOP"
+badge) — rather than kept literal, because no theme-reactive `dt-violet-*`
+token exists and turning the whole card opaque was judged more visually
+disruptive than reusing an established token. This produces zero raw hits
+(a real `dt-*` conversion, not an exemption), so it needs no survivor row —
+recorded here only so the "decision" (accent) vs. "instruction" (`dt-info`)
+step-type distinction the plan calls load-bearing is traceable.
 
 **Hover/neutral vocabulary** (match the primitives, never invent):
 secondary-button hover border = `hover:border-dt-muted`; neutral status chip =
