@@ -18,7 +18,7 @@ import { unexecutableApprovalSql } from './unexecutable-approval.mjs';
 import { advisoryBoundarySql } from './advisory-boundary.mjs';
 import { trustProposerBoundarySql } from './trust-proposer-boundary.mjs';
 import { gapGateConductSql, auditedStepsWritesSql, snapshotGateSql, gapEvidenceSql } from './playbook-gap-probes.mjs';
-import { writePerimeterSql, silentNoopWriteSql } from './write-perimeter.mjs';
+import { writePerimeterSql, silentNoopWriteSql, sealedEvidenceSql } from './write-perimeter.mjs';
 import { triggerExecutePerimeterSql, TRIGGER_FN_SOURCE } from './trigger-execute-perimeter.mjs';
 // mig 817's ratchet — the REAL probe SQL, imported so these cases exercise the
 // query certify runs rather than a paraphrase of it.
@@ -1434,6 +1434,74 @@ const CASES = [
         // the table that came out of the database is.
         name: 'authenticated-write-perimeter ratchet (MANUAL, DDL-in-rollback: a NEW table was born truncatable before mig 715 and is not after)',
         manual: 'RUN against production this session. Before 715: a freshly created public table granted authenticated DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE. After 715: REFERENCES,SELECT,TRIGGER only. Both runs rolled back; pg_class confirmed no stray table and the live TRUNCATE count stayed 0. Regrowth OBSERVED, ratchet OBSERVED to hold.',
+      },
+    ];
+  })(),
+
+  // ── mig 840: evidence-tables-are-sealed ──────────────────────────────────
+  // Arms A/B/C and the denominator, driven through the REAL builder.
+  //
+  // ⚠ THE FIRST FOUR CASES DELIBERATELY DO NOT SYNTHESISE ANYTHING. They vary
+  // only the SEALED LIST and let the shipped default grantSource ask
+  // has_table_privilege about REAL tables on the REAL database, because the
+  // whole predicate of arm A lives in that source — substituting it would test
+  // a `select … from held` that cannot be wrong, and score a green for it.
+  // That is the mig 661 defect (a pin that could not fail because the check
+  // and the thing it checked had drifted apart) and this is the shape of it
+  // that a substitutable-source design invites.
+  //
+  // The two live controls are chosen because they are STABLE in OPPOSITE
+  // directions and will stay that way:
+  //   de_conversations                — written directly from 10 places in
+  //                                     shipped code, so its service_role
+  //                                     writes can never be revoked. Arm A
+  //                                     MUST fire on it.
+  //   discovery_capability_demand_log — write-sealed by mig 744:197 and the
+  //                                     only other sealed table here. Arm A
+  //                                     MUST stay silent on it.
+  // Verified live 2026-08-21: 6 violations and 0 violations respectively.
+  //
+  // The sealed control is doing double duty. It also proves the FORBIDDEN LIST
+  // is not vacuous: that table HOLDS SELECT (service_role=r/postgres), so a
+  // probe that treated any grant at all as a violation would fire on it. A
+  // silent run there is the only thing separating "sealed" from "mentioned".
+  ...(() => {
+    const viol = (sql, like) => `select 1 from (${sql}) x
+       where x.violation is not null${like ? ` and x.violation like '%${like}%'` : ''}`;
+    const UNSEALED = 'de_conversations';                  // arm A must fire
+    const SEALED   = 'discovery_capability_demand_log';   // arm A must not
+    // Arm C has no live example — no table on this database has had SELECT
+    // revoked from service_role — so it is the one arm that must synthesise
+    // its input. present = true with can_read = false is the state a
+    // `revoke all` with a forgotten `grant select` would leave behind.
+    const presence = (tbl, present, canRead) =>
+      `select '${tbl}'::text as tbl, ${present} as present, ${canRead} as can_read`;
+    const NO_HELD = `select null::text as tbl, null::text as priv where false`;
+    return [
+      {
+        name: 'evidence-tables-are-sealed arm A (REAL predicate, REAL tables: a service_role write grant on an unsealed table is caught, and a genuinely sealed table stays silent)',
+        fires: viol(sealedEvidenceSql({ sealed: [UNSEALED] }), `${UNSEALED}.INSERT`),
+        silent: viol(sealedEvidenceSql({ sealed: [SEALED] })),
+      },
+      {
+        name: 'evidence-tables-are-sealed arm A (the FORBIDDEN list is not vacuous — the sealed control HOLDS SELECT and must not be reported for it)',
+        fires: viol(sealedEvidenceSql({ sealed: [UNSEALED] }), 'TRUNCATE'),
+        silent: viol(sealedEvidenceSql({ sealed: [SEALED] }), 'SELECT'),
+      },
+      {
+        name: 'evidence-tables-are-sealed arm B (a sealed table that does not exist is a VIOLATION, not a silent pass — the seal would be guarding nothing)',
+        fires: viol(sealedEvidenceSql({ sealed: ['zz_definitely_not_a_table'] }), 'no such table exists'),
+        silent: viol(sealedEvidenceSql({ sealed: [SEALED] })),
+      },
+      {
+        name: 'evidence-tables-are-sealed arm C (OVER-revoked: a sealed table whose service_role SELECT is gone is caught — the seal stops writes, not reads)',
+        fires: viol(sealedEvidenceSql({ sealed: [SEALED], grantSource: NO_HELD, presenceSource: presence(SEALED, true, false) }), 'has lost SELECT'),
+        silent: viol(sealedEvidenceSql({ sealed: [SEALED], grantSource: NO_HELD, presenceSource: presence(SEALED, true, true) })),
+      },
+      {
+        name: 'evidence-tables-are-sealed DENOMINATOR (an empty seal list examines 0 tables, which is a VIOLATION — a probe that read nothing looks exactly like a clean one)',
+        fires: viol(sealedEvidenceSql({ sealed: [] }), 'no-comparisons'),
+        silent: viol(sealedEvidenceSql({ sealed: [SEALED] }), 'no-comparisons'),
       },
     ];
   })(),
