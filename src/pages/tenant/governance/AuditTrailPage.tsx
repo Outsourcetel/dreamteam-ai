@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../../context/AuthContext'
-import type { CompanyId } from '../../../data/companies'
 import type { Page } from '../../../types'
 import { PageHeader } from '../../../components/ui'
 import { Button, FilterBar, INPUT_CLS, SELECT_CLS } from '../../../design/primitives'
@@ -15,74 +14,9 @@ import Modal from '../../../components/Modal'
 // GOVERNANCE — Audit Trail (gov_audit)
 // Immutable, hash-chained event log of every DE action, human
 // approval, config change, and guardrail block.
-// Seed events are consistent with the per-DE audit logs in
-// WorkforceDEsPage (Alex tickets, Casey invoices, Riley onboarding,
-// Morgan KYC, Avery memos).
-// ═══════════════════════════════════════════════════════════════
-
-type ActionType = 'resolved' | 'escalated' | 'config_change' | 'approval' | 'guardrail_violation'
-
-interface AuditEvent {
-  id: string
-  timestamp: string // 'YYYY-MM-DD HH:MM'
-  actor: string
-  actorType: 'de' | 'human' | 'system'
-  actionType: ActionType
-  action: string
-  entity: string
-  outcome: string
-}
-
-const ACTION_TYPE_META: Record<ActionType, { label: string; style: string }> = {
-  resolved: { label: 'Resolved', style: 'bg-dt-ok-soft text-dt-ok' },
-  escalated: { label: 'Escalated', style: 'bg-dt-warn-soft text-dt-warn' },
-  config_change: { label: 'Config change', style: 'bg-dt-accent-soft text-dt-accent-text' },
-  approval: { label: 'Approval', style: 'bg-dt-info-soft text-dt-info' },
-  guardrail_violation: { label: 'Guardrail block', style: 'bg-dt-danger-soft text-dt-danger' },
-}
-
-const DE_NAMES: Record<CompanyId, string[]> = {
-  tcp: ['Alex', 'Casey', 'Riley'],
-  pwc: ['Morgan', 'Avery'],
-}
-
-const RETENTION: Record<CompanyId, string> = { tcp: '2 years', pwc: '7 years' }
-
-function actorAvatar(e: AuditEvent) {
-  if (e.actorType === 'de') {
-    return (
-      <span className="w-6 h-6 rounded-full bg-dt-accent-soft text-dt-accent-text flex items-center justify-center text-[10px] font-bold flex-shrink-0">
-        {e.actor.slice(0, 2).toUpperCase()}
-      </span>
-    )
-  }
-  if (e.actorType === 'human') {
-    return (
-      <span className="w-6 h-6 rounded-full bg-dt-neutral-soft text-dt-neutral flex items-center justify-center text-[10px] flex-shrink-0">◉</span>
-    )
-  }
-  return (
-    <span className="w-6 h-6 rounded-full bg-dt-panel text-dt-muted flex items-center justify-center text-[10px] flex-shrink-0">⊟</span>
-  )
-}
-
-const exportCsv = (events: AuditEvent[]) => {
-  const headers = ['Timestamp', 'Actor', 'Actor Type', 'Action Type', 'Action', 'Entity', 'Outcome']
-  const rows = events.map(e => [e.timestamp, e.actor, e.actorType, e.actionType, `"${e.action.replace(/"/g, '""')}"`, e.entity, e.outcome])
-  const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
-  const blob = new Blob([csv], { type: 'text/csv' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `audit-trail-${new Date().toISOString().slice(0, 10)}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
-// ═══════════════════════════════════════════════════════════════
-// LIVE mode — real audit_events: INSERT-only, hash-chained rows
-// written through the append_audit_event() RPC. "Verify chain"
-// asks the database to recompute every hash server-side.
+// Real audit_events: INSERT-only, hash-chained rows written through
+// the append_audit_event() RPC. "Verify chain" asks the database to
+// recompute every hash server-side.
 // ═══════════════════════════════════════════════════════════════
 
 const LIVE_CATEGORY_META: Record<AuditCategory, { label: string; style: string }> = {
