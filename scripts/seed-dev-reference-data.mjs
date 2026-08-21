@@ -42,10 +42,10 @@ const PROD_REF = 'rfsvmhcqeiyrxivbmpel';
 // them — the filter keeps the platform vocabulary and leaves customer content
 // behind. Learned 2026-08-21: review_time_standards (mig 691 seeds 11 platform
 // defaults, tenant_id NULL) was invisible to rule (a), dev had zero rows, and
-// tests/review-minutes.test.ts failed on every branch. 14 more tables hold
-// NULL-tenant platform rows in production (action_definitions: 73) and are
-// NOT yet listed — each needs its own copy-safety judgment (profiles must
-// never cross: its rows reference auth.users identities).
+// tests/review-minutes.test.ts failed on every branch. The 2026-08-21 sweep
+// then judged the 14 other tables holding NULL-tenant platform rows one by
+// one; 13 are listed below and profiles must never cross — its rows reference
+// auth.users identities that do not exist in dev.
 const TABLES = [
   // system_categories first: connectors.category is a FK to it, and
   // provision_tenant_baseline_internal creates a connector during signup — so
@@ -69,6 +69,34 @@ const TABLES = [
   'computer_use_runtimes',
   // Platform-default review minutes (mig 691). Tenant overrides stay behind.
   { name: 'review_time_standards', where: 'tenant_id is null' },
+  // ── NULL-tenant platform rows, judged table-by-table 2026-08-21 ───────────
+  // profiles also holds 2 NULL-tenant rows and is EXCLUDED FOREVER: its rows
+  // reference auth.users identities that do not exist in dev.
+  { name: 'skill_categories', where: 'tenant_id is null' },
+  { name: 'skill_catalog', where: 'tenant_id is null' },
+  { name: 'certification_types', where: 'tenant_id is null' },
+  { name: 'kpi_metric_catalog', where: 'tenant_id is null' },
+  { name: 'escalation_signals', where: 'tenant_id is null' },
+  { name: 'event_definitions', where: 'tenant_id is null' },
+  { name: 'analytics_query_defs', where: 'tenant_id is null' },
+  { name: 'work_item_framing', where: 'tenant_id is null' },
+  { name: 'de_training_modules', where: 'tenant_id is null' },
+  // scope='archetype' routing defaults; every NULL-tenant row has de_id NULL,
+  // so nothing points at a production employee.
+  { name: 'de_model_routes', where: 'tenant_id is null' },
+  // Before action_definitions: its template_id FKs adapter_templates. The
+  // definitions carry auth SHAPES (op maps, oauth token URLs), no credentials.
+  { name: 'adapter_templates', where: 'tenant_id is null' },
+  // The tool-offer authorization boundary (migs 642/643). scope='platform'
+  // rows are offered to every tenant, but the controls travel IN the rows —
+  // requires_role, status, and de_may_use_action gate against them — so
+  // copying reproduces production's platform posture, disabled rows included.
+  { name: 'action_definitions', where: 'tenant_id is null' },
+  { name: 'dunning_ladders', where: 'tenant_id is null' },
+  // The header's warning made good: rungs belong to a tenant through their
+  // PARENT. Only the platform ladder's rungs cross, after that ladder exists;
+  // on dev the same subquery scopes the verify count to those rungs.
+  { name: 'dunning_rungs', where: 'ladder_id in (select id from public.dunning_ladders where tenant_id is null)' },
 ];
 
 if (!process.argv.includes('--confirm')) {
