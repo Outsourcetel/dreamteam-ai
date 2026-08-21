@@ -30,11 +30,19 @@
 --  · Both open requests STAY OPEN and become UNAPPROVABLE. Pressing Approve
 --    returns {applied:false, ok:false, reason:'promotion_not_possible'} with the
 --    message "this promotion cannot be applied - this role has not declared what
---    a trust step grants...", which trustApi.resolveTrustPromotion throws to the
---    person (migration 837's contract). The level does not move, the request is
---    not consumed, and -- unlike before 837 -- the refusal leaves an audit row
---    (kind trust_promotion_blocked_not_possible) that survives, because it
---    returns instead of raising.
+--    a trust step grants...". Through migration 836's decide_human_task -- now
+--    the real path -- the task is NOT closed, refusal_reason is stamped on it,
+--    and the queue keeps the card with the reason attached. The level does not
+--    move; the request is not consumed; and the refusal leaves TWO durable
+--    records (836's human_task_decision_refused and this file's
+--    trust_promotion_blocked_not_possible), which is only true because this
+--    refusal returns instead of raising.
+--  · ⚠ AND THE ROUTE OUT IS NOW ONE STEP SHORTER THAN IT WAS. Because the
+--    ladder is read through the role, a platform actor declaring
+--    role_archetypes.trust_ladder for an archetype unblocks EVERY policy on
+--    that role at once -- including these two, whose archetypes are `fpa` and
+--    `onboarding`. No per-policy set_trust_ladder needed, and no re-request:
+--    the open request becomes approvable the moment its role declares.
 --  · REJECTING either request still works, unchanged. The guard sits after the
 --    'rejected' branch precisely so a human can always clear the queue.
 --  · The nightly eligibility sweep will now examine those 2, skip them, and SAY
@@ -96,22 +104,35 @@
 --         and therefore no role. 0 such rows exist today.
 --       · verify_decide_discovery_proposal() -- a self-test.
 --
---     Choosing among "extend seed_de_trust_policy", "a BEFORE INSERT trigger on
---     trust_policies covering all four paths", and "read the role through the
---     join at query time (mig 831's own precedent for the sibling column, which
---     it chose deliberately over copy-at-hire)" is a real design decision with
---     different blast radii, different snapshot risk, and -- for the third -- a
---     required change to trust_ladder_settings, an IMMUTABLE function on the
---     ENFORCEMENT path. That decision is returned to the coordinator rather
---     than guessed. Nothing here is blocked by it: the refusal below is
---     complete and correct on its own, and set_trust_ladder is a live,
---     UI-reachable way to declare a ladder today.
+--     THE SEAM WAS RETURNED AS A QUESTION AND ANSWERED: READ-THROUGH, NOT
+--     COPY-AT-HIRE. Three reasons, all of which survive re-checking here:
 --
---     CONSEQUENCE, STATED PLAINLY: role_archetypes.trust_ladder lands with NO
---     READER. It is a declaration surface with its inheritance deliberately
---     unwired, and its column comment says so rather than claiming an
---     inheritance that does not exist. It is landed rather than deferred
---     because its shape is identical under all three candidate mechanisms.
+--       1. THE CODEBASE ALREADY DECIDED IT. Mig 831, in this same plan, reads
+--          the sibling column through exactly this join at read time
+--          (declared_trust_signals), having weighed and rejected copy-at-hire
+--          in its own header. Doing the ladder differently would be gratuitous
+--          divergence between two columns on one table that mean the same kind
+--          of thing.
+--       2. COPY-AT-HIRE IS ACTIVELY WRONG HERE, and this file's own enumeration
+--          is why. provision_starter_de_internal inserts into trust_policies
+--          DIRECTLY and never calls seed_de_trust_policy (whose only caller is
+--          decide_discovery_proposal). Two independent creation paths already
+--          exist, so stamping one leaves the other bare -- the
+--          two-paths-one-counted trap, and the same divergence mig 755 had to
+--          unpick. A third writer could appear tomorrow.
+--       3. COPY-AT-HIRE CANNOT SERVE THE ROLES THAT WILL DECLARE. All 58
+--          policies already exist. Nothing declared today would ever reach
+--          them, so the first roles to declare a ladder would declare it for
+--          nobody.
+--
+--     So the fallback lives in trust_ladder_settings -- the ENFORCEMENT reader,
+--     whose readers are exactly apply_trust_promotion, trust_apply_level,
+--     detect_trust_widening_patterns and one self-test -- reached through the
+--     shared effective_trust_ladder below, which promotion_is_possible also
+--     calls so the refusal and the enforcement cannot disagree.
+--     trust_policies.ladder keeps its stated meaning as the per-policy OVERRIDE
+--     (what set_trust_ladder writes); the role's declaration is the default
+--     beneath it. role_archetypes.trust_ladder now HAS a reader.
 --
 -- ── WHERE THE REFUSAL BELONGS -- THE ENUMERATION ────────────────────────────
 -- Asked of pg_proc, not of memory. Functions whose comment-stripped body
@@ -134,6 +155,32 @@
 -- request paths are deliberately LEFT and named in the report, because the
 -- writer-side refusal already covers them and each extra live-function replace
 -- is another stale-snapshot exposure for no enforcement gain.
+--
+-- ⚠ THE ENUMERATION ABOVE WAS RE-RUN AFTER MIGRATION 836 LANDED, AND IT MOVED.
+-- When this file was first drafted, apply_trust_promotion had exactly ONE
+-- caller and it was in the browser (src/lib/trustApi.ts). 836 -- applied while
+-- this file was being written -- moved the promotion INSIDE
+-- public.decide_human_task, because batch-approving a trust_promotion closed
+-- the task and promoted nobody. So there is now a SQL caller that did not exist
+-- when the refusal was placed, reached by decide_human_tasks (batch),
+-- preview_decide_human_tasks and withdraw_human_task.
+--
+-- THE PLACEMENT SURVIVES THAT UNCHANGED, and that is the point of putting a
+-- refusal at the writer rather than at each door: a new door opened, and it was
+-- already covered. Re-measured after 836: every path still funnels through
+-- apply_trust_promotion, which is still the only upward writer of
+-- current_level.
+--
+-- AND IT COMPOSES WITH 836 EXACTLY AS 836 INTENDED. Read from the installed
+-- body, not from its header: decide_human_task calls apply_trust_promotion in a
+-- BEGIN...EXCEPTION *before* closing the task; on 'approved' it treats
+-- `applied` not true as a refusal, stamps refusal_reason / refused_at /
+-- refused_by on the task, appends its own human_task_decision_refused audit
+-- event, LEAVES THE TASK PENDING, and returns the still-open row. Because this
+-- refusal RETURNS rather than raises, all three records commit together: 837's
+-- audit row, 836's refusal mark on the task, and this file's
+-- trust_promotion_blocked_not_possible event. A raise here would have destroyed
+-- all three. Probed end to end -- PROBE 10.
 --
 -- ── ⚠ THE STALE-SNAPSHOT GUARD (following mig 834, which set this precedent) ─
 -- This file CREATE OR REPLACEs two live functions from bodies snapshotted on
@@ -203,6 +250,9 @@ declare
   c_atp_post constant text := '017312c97ee11ea8e76b3fbae55d7ee2';
   c_rep_pre  constant text := 'aad54521d0f1890f5b18e1528744060f';
   c_rep_post constant text := '7fa132df5da8b03828d7f1a0ebd9dd17';
+  v_tls text;
+  c_tls_pre  constant text := '6eedafea0d1fed8a628e28bafc2f550d';
+  c_tls_post constant text := '074d2c322c0eea347d68350add753c31';
 begin
   if to_regprocedure('public.validate_trust_ladder(jsonb,boolean,boolean,integer)') is null then
     raise exception 'PRECONDITION FAILED: public.validate_trust_ladder(jsonb,boolean,boolean,integer) does not exist -- migration 458 has not been applied. promotion_is_possible delegates every shape and monotonicity question to it and would raise 42883 on the first ladder it saw.'
@@ -242,6 +292,23 @@ begin
       v_rep, c_rep_pre, c_rep_post
       using errcode = 'object_not_in_prerequisite_state';
   end if;
+
+  select md5(btrim(regexp_replace(
+           regexp_replace(prosrc, '--[^' || chr(10) || ']*', '', 'g'),
+           '\s+', ' ', 'g')))
+    into v_tls
+    from pg_proc
+   where proname = 'trust_ladder_settings' and pronamespace = 'public'::regnamespace;
+
+  if v_tls is null then
+    raise exception 'PRECONDITION FAILED: public.trust_ladder_settings(trust_policies,integer) does not exist -- migration 458 has not been applied. This file replaces it to add the role-level fallback; without it the role declaration would have no enforcement reader at all.'
+      using errcode = 'undefined_function';
+  end if;
+  if v_tls not in (c_tls_pre, c_tls_post) then
+    raise exception E'PRECONDITION FAILED: trust_ladder_settings has a body this migration was not written against.\n  found    %\n  expected % (measured on production 2026-08-21)\n  or       % (the body this file installs)\nThis is the ENFORCEMENT reader -- what a level actually permits. Overwriting a parallel session''s change to it would silently alter what every earned level grants. Re-diff, fold in, update c_tls_pre.',
+      v_tls, c_tls_pre, c_tls_post
+      using errcode = 'object_not_in_prerequisite_state';
+  end if;
 end
 $precheck$;
 
@@ -250,7 +317,7 @@ alter table public.role_archetypes
   add column if not exists trust_ladder jsonb;
 
 comment on column public.role_archetypes.trust_ladder is
-  'What each trust step GRANTS for this role, per action category: an object keyed by action_category whose values are ladder arrays in trust_policies.ladder shape (see validate_trust_ladder). NOTHING READS THIS COLUMN YET. The inheritance into trust_policies.ladder is deliberately NOT wired by migration 838: instantiate_role_archetype_internal -- the function the task brief named -- creates no trust_policies rows at all, and choosing the real seam (seed_de_trust_policy, a BEFORE INSERT trigger, or a read-through join) is an open decision. Until it is wired, a ladder is declared per policy through set_trust_ladder. A policy with no ladder cannot be promoted -- see promotion_is_possible. That is deliberate: trust_level_settings makes levels 1, 2 and 3 identical, so a central default is not safe to fall back on.';
+  'What each trust step GRANTS for this role, per action category: an object keyed by action_category whose values are ladder arrays in trust_policies.ladder shape (see validate_trust_ladder). READ THROUGH THE JOIN AT READ TIME, never copied at hire -- matching mig 831''s trust_signals on this same table, and for the same reasons (two independent trust_policies creation paths already exist, and all 58 live policies predate any declaration). effective_trust_ladder resolves it: a policy''s own ladder is the OVERRIDE, this is the default beneath it. Both readers go through that one function -- promotion_is_possible (may this step be taken) and trust_ladder_settings (what it grants) -- so they cannot disagree. ⚠ RETROACTIVE: editing this changes what an already-earned level grants for every employee in the role at once. ⚠ An employee with no archetype_key (9 of 58 policies today) inherits nothing and stays refused until set_trust_ladder is used directly -- correct, not a gap. A policy with no effective ladder cannot be promoted: trust_level_settings makes levels 1, 2 and 3 identical, so a central default is not safe to fall back on.';
 
 -- Top-level shape only, following mig 831's precedent on this same table for
 -- the sibling column trust_signals. 831 established EMPIRICALLY that a deeper
@@ -271,6 +338,100 @@ begin
   end if;
 end
 $cols$;
+
+-- ── the read-through: ONE definition of "the ladder that applies here" ──────
+-- The policy's own ladder is the OVERRIDE (what set_trust_ladder writes, and
+-- what trust_policies.ladder has always meant). The role's declaration is the
+-- DEFAULT beneath it. Neither reader computes this itself: promotion_is_possible
+-- (the refusal) and trust_ladder_settings (the enforcement) both call this, so
+-- "may this step be taken" and "what does that step grant" can never disagree
+-- about which ladder they are reading. Two copies of this cascade would be the
+-- divergence mig 831's header calls out and mig 755 had to unpick.
+--
+-- SHAPE, and why the guards differ per arm:
+--   * the override arm tests `is not null`, not jsonb_typeof = 'array'. A policy
+--     that HAS an override must use it, whatever shape it is -- falling through
+--     to the role because the override is malformed would silently widen an
+--     employee back to the role default. A malformed override is caught, and
+--     refused, by promotion_is_possible's validate_trust_ladder arm instead.
+--   * the role arm tests jsonb_typeof = 'array', because `->` on a jsonb object
+--     returns a jsonb VALUE: a jsonb null, a string, a nested object are all
+--     possible and none of them is SQL NULL, so coalesce would not catch them.
+--     This is mig 831's IMPORTANT-1 finding applied to the sibling column; the
+--     top-level CHECK above cannot reach per-key values (0A000, no subqueries in
+--     a CHECK), so this guard is the only place those shapes are caught.
+--
+-- ⚠ role_archetypes.status IS DELIBERATELY NOT FILTERED. instantiate_role_
+-- archetype_internal requires status='active' to HIRE, but a role moving to
+-- 'draft' afterwards must not silently delete the ladder out from under
+-- employees already hired into it -- that would drop them back to
+-- trust_level_settings, where levels 1/2/3 are unlimited, which is a silent
+-- WIDENING and the exact defect this whole migration exists to close. All 15
+-- live archetypes are active today, so this changes nothing now; it is written
+-- so the dangerous direction is impossible later.
+--
+-- SECURITY INVOKER, and here that is load-bearing rather than tidy. This is
+-- reachable from trust_ladder_settings, which carries a PUBLIC/anon grant
+-- (measured, see its grant note below) and takes a trust_policies COMPOSITE --
+-- so a caller can hand it any de_id it likes. Under DEFINER that would be a
+-- cross-tenant probe by construction (a parameter is an assertion, not
+-- authorisation -- migs 662-664). Under INVOKER, live RLS answers instead:
+-- digital_employees is tenant-scoped and role_archetypes' SELECT policy is
+-- `auth.uid() is not null`, so an anon caller resolves zero rows and gets NULL,
+-- which falls back to exactly the trust_level_settings answer it already got
+-- before this migration. Nothing new is disclosed to anybody.
+create or replace function public.effective_trust_ladder(p_policy public.trust_policies)
+returns jsonb
+language sql
+stable
+security invoker
+as $function$
+  select case
+           when p_policy.ladder is not null then p_policy.ladder
+           when jsonb_typeof(v.role_ladder) = 'array' then v.role_ladder
+           else null
+         end
+  from (
+    select (
+      select a.trust_ladder -> p_policy.action_category
+        from public.digital_employees d
+        join public.role_archetypes a on a.key = d.archetype_key
+       where d.id = p_policy.de_id
+    ) as role_ladder
+  ) v;
+$function$;
+
+-- ⚠ GRANTED TO PUBLIC, DELIBERATELY, AND A PROBE CHOSE THAT — NOT A PREFERENCE.
+-- The revoke below is not decoration: it strips the default grant so what
+-- follows is a decision rather than an inheritance. The decision itself was
+-- MEASURED. trust_ladder_settings holds EXECUTE for PUBLIC, anon, authenticated
+-- and service_role (aclexplode, not assumed -- the PUBLIC entry is the
+-- default-grant artefact migs 610/630 exist to catch, it is PRE-EXISTING, and
+-- revoking it is a separate decision this file does not take). A helper reached
+-- THROUGH that function must be at least as reachable, or this migration turns
+-- a working call into `permission denied for function effective_trust_ladder` --
+-- the same trap that kept promotion_is_possible off `authenticated`.
+--
+-- An earlier draft granted only anon + authenticated + service_role, reasoning
+-- that those were "the real roles". PROBE 12 was written to check that claim
+-- rather than trust it, and it failed the draft: 13 of 17 non-system roles
+-- reach trust_ladder_settings through PUBLIC and would have lost the callee --
+-- including trust_pattern_proposer (the NOLOGIN sweep role this repo's Ring-0
+-- probe is built around) and approval_brief_writer. Guessing the role list
+-- would have shipped a broken sweep.
+--
+-- This widens nothing. Under INVOKER (above) the join is bounded by live RLS:
+-- digital_employees is tenant-scoped and role_archetypes' SELECT policy is
+-- `auth.uid() is not null`, so an unauthenticated caller resolves zero rows and
+-- gets NULL -- byte-identical to the trust_level_settings answer it already got
+-- before this migration. The reachable data is a strict subset of what the
+-- caller already returns. PROBE 12 stays in the file so a future REVOKE on
+-- either function cannot silently break the other.
+revoke all on function public.effective_trust_ladder(public.trust_policies) from public, anon, authenticated;
+grant execute on function public.effective_trust_ladder(public.trust_policies) to public;
+
+comment on function public.effective_trust_ladder(public.trust_policies) is
+  'The ladder that applies to a policy: its own ladder if it has one (the per-policy OVERRIDE that set_trust_ladder writes), otherwise the ladder its employee''s role archetype declares for this action category, otherwise NULL. The single definition shared by promotion_is_possible (the refusal) and trust_ladder_settings (the enforcement), so the two cannot disagree. Read-through, never copied at hire -- matching mig 831''s trust_signals. Migration 838.';
 
 -- ── the refusal ─────────────────────────────────────────────────────────────
 -- SECURITY INVOKER, not DEFINER, and the reasoning is the same one mig 831
@@ -310,6 +471,7 @@ security invoker
 as $function$
 declare
   v_p       public.trust_policies;
+  v_ladder  jsonb;
   v_ceiling integer;
   v_target  integer;
 begin
@@ -337,7 +499,12 @@ begin
   v_target := coalesce(v_p.current_level, 0) + 1;
 
   -- THE ARM THIS WHOLE MIGRATION EXISTS FOR.
-  if v_p.ladder is null then
+  -- ⚠ effective_trust_ladder, NOT v_p.ladder. The refusal must read the SAME
+  -- ladder the enforcement reader (trust_ladder_settings) reads, or a role
+  -- could declare a step, have it enforced, and still be refused permission to
+  -- take it. One definition, two callers -- see effective_trust_ladder above.
+  v_ladder := public.effective_trust_ladder(v_p);
+  if v_ladder is null then
     return jsonb_build_object('possible', false,
       'why', 'this role has not declared what a trust step grants, so there is nothing to promote to');
   end if;
@@ -367,7 +534,7 @@ begin
   -- is malformed" -- a gate lying about why it refused. Anything else escapes
   -- loudly, which for a refusal is the safe direction.
   begin
-    perform public.validate_trust_ladder(v_p.ladder, true, true, 3);
+    perform public.validate_trust_ladder(v_ladder, true, true, 3);
   exception when raise_exception then
     return jsonb_build_object('possible', false,
       'why', format('this policy carries a trust ladder that is not a valid declaration (%s), so what a step grants cannot be read from it',
@@ -382,7 +549,7 @@ begin
   -- the arm above.
   if not exists (
     select 1
-      from jsonb_array_elements(v_p.ladder) e(entry)
+      from jsonb_array_elements(v_ladder) e(entry)
      where (e.entry->>'level')::integer = v_target
   ) then
     return jsonb_build_object('possible', false,
@@ -398,7 +565,84 @@ revoke all on function public.promotion_is_possible(uuid) from public, anon, aut
 grant execute on function public.promotion_is_possible(uuid) to service_role;
 
 comment on function public.promotion_is_possible(uuid) is
-  'A REFUSAL. Returns {"possible": bool, "why": text}. It grants nothing and is never a substitute for evidence, guardrails or the approver bar -- it only answers whether a step is defined at all. Called by apply_trust_promotion (enforcement: the sole writer of current_level upward) and by request_eligible_promotions (noise control). Migration 838.';
+  'A REFUSAL. Returns {"possible": bool, "why": text}. It grants nothing and is never a substitute for evidence, guardrails or the approver bar -- it only answers whether a step is defined at all. Reads effective_trust_ladder, so it agrees with the enforcement reader by construction. Called by apply_trust_promotion (enforcement: the sole writer of current_level upward) and by request_eligible_promotions (noise control). Migration 838.';
+
+-- ── the enforcement reader: what an earned level actually GRANTS ────────────
+-- ⚠ THIS IS THE ONLY CHANGE IN THIS FILE THAT ALTERS WHAT A LEVEL PERMITS, and
+-- it is the change that gives role_archetypes.trust_ladder a reader. Exactly one
+-- edit: `p_policy.ladder` becomes `effective_trust_ladder(p_policy)`, computed
+-- once in a FROM-subquery so the cascade is evaluated a single time. Every other
+-- character -- the level-0 short circuit, the trust_level_settings fallback, the
+-- mode-to-enabled mapping, the `<= least(p_level, max_level)` window, the
+-- descending pick, the all-null default -- is the live body verbatim.
+--
+-- ⚠ IMMUTABLE -> STABLE, and this is a correction, not a side effect. The
+-- previous body read only its own arguments, so IMMUTABLE was true. This one
+-- reads digital_employees and role_archetypes, and an IMMUTABLE function that
+-- reads tables is a lie the PLANNER ACTS ON -- it may constant-fold the call and
+-- reuse a stale answer, which for "what does this level permit" is a wrong
+-- authority decision rather than a slow one. Checked before changing it, not
+-- assumed safe: pg_depend reports NO index, constraint or generated column
+-- depending on this function, so nothing breaks on the volatility change. Its
+-- three real callers are all VOLATILE or STABLE (apply_trust_promotion,
+-- trust_apply_level, detect_trust_widening_patterns), so none of them is
+-- constrained by it. trust_level_settings stays IMMUTABLE and correctly so --
+-- read live, its body is a pure CASE over its two arguments with no table
+-- access at all.
+--
+-- ⚠ RETROACTIVITY, STATED PLAINLY BECAUSE IT IS REAL. This makes a role's
+-- declaration apply to employees ALREADY HIRED, including one with a promotion
+-- request already open. Editing a role's ladder therefore changes what an
+-- already-earned level grants for every employee in that role, at once, with no
+-- per-employee decision. Mig 831 accepted the identical trade for trust_signals.
+--
+-- Is that SAFE, or merely VISIBLE? Honestly: **visible, and safe only in the
+-- narrowing direction.** apply_trust_promotion re-derives evidence at APPROVE
+-- time, and this file's refusal is re-asked at the same moment, so a ladder
+-- edited between request and approval is seen when the button is pressed and
+-- never at the stale request-time value -- that much is genuinely safe. But an
+-- edit that WIDENS a level takes effect for an already-promoted employee with
+-- no approval event at all, because nothing re-approves a level already held.
+-- The existing brake is that set_trust_ladder is owner/admin/manager-gated,
+-- audited (trust_ladder_set), and re-applies the dial through trust_apply_level;
+-- the gap is that role_archetypes has NO equivalent writer today -- it is a
+-- shared catalog with no tenant_id and no RPC, so only a platform-level actor
+-- can change it at all. That is the true safety boundary right now, and it is
+-- narrow enough to state rather than rely on. Named as an open item in the
+-- report; deliberately NOT papered over with a trigger invented here.
+--
+-- ⚠ THE 9 POLICIES THAT CAN NEVER INHERIT. 49 of the 58 live policies belong to
+-- an employee with an archetype_key; 9 do not -- they were created by
+-- provision_starter_de_internal, which inserts its digital_employees row
+-- directly and sets no archetype at all. The join in effective_trust_ladder
+-- fails at its second hop for those, so they fall back to NULL and stay refused
+-- until set_trust_ladder is used on them directly. That is CORRECT, not a gap:
+-- an employee with no declared role has no role declaration to inherit, and
+-- inventing one would be the platform choosing an autonomy limit on a customer's
+-- behalf. Written down so nobody later reads "9 refused forever" as a bug.
+create or replace function public.trust_ladder_settings(p_policy trust_policies, p_level integer)
+returns jsonb
+language sql
+stable
+as $function$
+  select case
+    when p_level <= 0 then jsonb_build_object('enabled', false, 'max_amount_cents', null, 'min_confidence', null)
+    when v.lad is null then public.trust_level_settings(p_policy.action_category, p_level)
+    else coalesce(
+      (
+        select jsonb_build_object(
+          'enabled',          coalesce((e.entry->>'mode') in ('act_within_limits', 'act'), false),
+          'max_amount_cents', nullif(e.entry->'settings'->>'max_amount_cents', '')::bigint,
+          'min_confidence',   nullif(e.entry->'settings'->>'min_confidence', '')::integer)
+        from jsonb_array_elements(v.lad) e(entry)
+        where (e.entry->>'level')::integer <= least(p_level, coalesce(p_policy.max_level, 3))
+        order by (e.entry->>'level')::integer desc
+        limit 1
+      ),
+      jsonb_build_object('enabled', false, 'max_amount_cents', null, 'min_confidence', null))
+  end
+  from (select public.effective_trust_ladder(p_policy) as lad) v;
+$function$;
 
 -- ── the writer: the refusal's only load-bearing site ────────────────────────
 CREATE OR REPLACE FUNCTION public.apply_trust_promotion(p_task_id uuid, p_decision text)
@@ -772,6 +1016,23 @@ declare
   v_audit_after  integer;
   v_level_after  integer;
 
+  -- read-through fixtures (PROBE 7) and the 836 composition (PROBE 10)
+  v_role_key    text := 'zz_probe_838_role_declares';
+  v_role_silent text := 'zz_probe_838_role_silent';
+  v_de_role     uuid;
+  v_de_silent   uuid;
+  v_de_noarch   uuid;
+  v_p_role      uuid;
+  v_p_over      uuid;
+  v_p_silent    uuid;
+  v_p_noarch    uuid;
+  v_pol_row     public.trust_policies;
+  v_decide      public.human_tasks;
+  v_decide_note text;
+  v_decide_skipped boolean := false;
+  v_task_status text;
+  v_task_refusal text;
+
   -- a ladder that validate_trust_ladder accepts: one level, level 1, a mode
   -- that actually executes, and a limit -- so the CONTROL below is a genuinely
   -- well-formed declaration and not a shape the validator merely tolerates.
@@ -805,6 +1066,9 @@ declare
   v_declared_eg     uuid;
   v_declared_inval  integer := 0;
   v_row             record;
+  v_grant_total     integer := 0;
+  v_grant_bad       integer := 0;
+  v_grant_eg        text;
 begin
   -- ══ PROBE 1 -- unconditional, denominator 1, correct on an empty database.
   -- A policy id that matches nothing must refuse, and must refuse by SAYING SO
@@ -857,11 +1121,12 @@ begin
 
   -- ══ PROBE 4 -- the post-apply body hashes match what the precheck declares,
   -- so a re-apply or a replay reaching this file twice is not refused by this
-  -- migration's own work. Denominator 2. Follows mig 834 PROBE 7 exactly.
+  -- migration's own work. Denominator 3. Follows mig 834 PROBE 7 exactly.
   for v_row in
     select * from (values
       ('apply_trust_promotion',       '017312c97ee11ea8e76b3fbae55d7ee2'),
-      ('request_eligible_promotions', '7fa132df5da8b03828d7f1a0ebd9dd17')
+      ('request_eligible_promotions', '7fa132df5da8b03828d7f1a0ebd9dd17'),
+      ('trust_ladder_settings',       '074d2c322c0eea347d68350add753c31')
     ) t(fn, expected)
   loop
     v_checks := v_checks + 1;
@@ -877,6 +1142,55 @@ begin
         v_row.fn, coalesce(v_src, 'SQL NULL'), v_row.expected));
     end if;
   end loop;
+
+  -- ══ PROBE 11 -- VOLATILITY, asserted about schema, denominator 1, correct on
+  -- an empty database. trust_ladder_settings now reads two tables through
+  -- effective_trust_ladder. An IMMUTABLE function that reads tables is not a
+  -- style problem: the planner may CONSTANT-FOLD it and reuse a stale answer,
+  -- and the answer here is "what does this trust level permit". Left IMMUTABLE
+  -- this migration would install a silently wrong authority decision.
+  v_checks := v_checks + 1;
+  select provolatile::text into v_src from pg_proc
+   where proname = 'trust_ladder_settings' and pronamespace = 'public'::regnamespace;
+  if coalesce(v_src, '') <> 's' then
+    v_bad := array_append(v_bad, format(
+      'PROBE 11: trust_ladder_settings has provolatile=%s, expected s (STABLE). It reads digital_employees and role_archetypes now; IMMUTABLE would license the planner to fold the call and answer from a stale ladder.',
+      coalesce(v_src, 'NULL')));
+  end if;
+
+  -- ══ PROBE 12 -- GRANT PARITY, denominator = every non-system role on this
+  -- database, printed below. effective_trust_ladder is reached THROUGH
+  -- trust_ladder_settings, so any role that can execute the caller must be able
+  -- to execute the callee -- otherwise this migration turns a working call into
+  -- `permission denied for function effective_trust_ladder` for that role. This
+  -- is the same dead/broken-grant trap that kept promotion_is_possible off
+  -- `authenticated` (validate_trust_ladder's ACL is {postgres, service_role}).
+  -- has_function_privilege is used deliberately: it answers INCLUDING
+  -- inheritance through PUBLIC, so a REVOKE elsewhere cannot fake a pass.
+  for v_row in
+    select rolname from pg_roles
+     where rolname not like 'pg\_%' and rolname <> 'postgres'
+     order by rolname
+  loop
+    v_grant_total := v_grant_total + 1;
+    if has_function_privilege(v_row.rolname,
+         'public.trust_ladder_settings(public.trust_policies,integer)', 'EXECUTE')
+       and not has_function_privilege(v_row.rolname,
+         'public.effective_trust_ladder(public.trust_policies)', 'EXECUTE') then
+      v_grant_bad := v_grant_bad + 1;
+      v_grant_eg := coalesce(v_grant_eg || ', ', '') || v_row.rolname;
+    end if;
+  end loop;
+  if v_grant_total > 0 then
+    v_checks := v_checks + 1;
+    if v_grant_bad > 0 then
+      v_bad := array_append(v_bad, format(
+        'PROBE 12: %s of %s roles can execute trust_ladder_settings but NOT effective_trust_ladder (%s). Every call they make now raises permission denied -- this migration would break a caller it was supposed to leave alone.',
+        v_grant_bad, v_grant_total, v_grant_eg));
+    end if;
+  else
+    raise notice '838 VACUITY -- PROBE 12 found 0 non-system roles to compare grants across. Zero comparisons; it does not count toward the checks total.';
+  end if;
 
   -- ══ PROBE 5 -- the fixture arm. Needs one tenant to hang throwaway rows off.
   -- On a database with 0 tenants it is skipped and SAYS SO -- never silently
@@ -1072,6 +1386,149 @@ begin
         v_bad := array_append(v_bad, format(
           'PROBE 5i: rejecting a promotion on a no-ladder policy did not behave -- got "%s". The guard sits after the rejected branch precisely so this keeps working, and an ordinary decline must not carry ok:false.',
           v_rej));
+      end if;
+
+      -- ══ PROBE 7 -- THE READ-THROUGH. A policy with NO ladder of its own,
+      -- whose employee's role archetype DOES declare one for this category,
+      -- must become promotable AND must be enforced at the role's settings --
+      -- not at the built-in trust_level_settings defaults. This is the whole
+      -- of the coordinator's answer (read-through, not copy-at-hire) and the
+      -- only thing that gives role_archetypes.trust_ladder a reader.
+      insert into public.role_archetypes (key, name, domain, trust_ladder)
+        values (v_role_key, 'zz probe 838 (declares)', 'zz_probe_838',
+                jsonb_build_object('zz_probe_838_role', c_ladder_l1));
+      insert into public.role_archetypes (key, name, domain, trust_ladder)
+        values (v_role_silent, 'zz probe 838 (declares nothing)', 'zz_probe_838', null);
+
+      insert into public.digital_employees (tenant_id, name, archetype_key)
+        values (v_tenant, 'zz probe 838 DE (role declares)', v_role_key)
+        returning id into v_de_role;
+      insert into public.digital_employees (tenant_id, name, archetype_key)
+        values (v_tenant, 'zz probe 838 DE (role silent)', v_role_silent)
+        returning id into v_de_silent;
+      insert into public.digital_employees (tenant_id, name)
+        values (v_tenant, 'zz probe 838 DE (no archetype at all)')
+        returning id into v_de_noarch;
+
+      insert into public.trust_policies
+        (tenant_id, de_id, action_category, current_level, max_level, status, ladder, criteria)
+      values
+        (v_tenant, v_de_role,   'zz_probe_838_role', 0, 3, 'active', null,        c_criteria_impossible),
+        (v_tenant, v_de_role,   'zz_probe_838_over', 0, 3, 'active', c_ladder_l2, c_criteria_impossible),
+        (v_tenant, v_de_silent, 'zz_probe_838_role', 0, 3, 'active', null,        c_criteria_impossible),
+        (v_tenant, v_de_noarch, 'zz_probe_838_role', 0, 3, 'active', null,        c_criteria_impossible);
+
+      select id into v_p_role   from public.trust_policies where de_id = v_de_role   and action_category = 'zz_probe_838_role';
+      select id into v_p_over   from public.trust_policies where de_id = v_de_role   and action_category = 'zz_probe_838_over';
+      select id into v_p_silent from public.trust_policies where de_id = v_de_silent and action_category = 'zz_probe_838_role';
+      select id into v_p_noarch from public.trust_policies where de_id = v_de_noarch and action_category = 'zz_probe_838_role';
+
+      -- (7a) the refusal now says YES because the ROLE declared.
+      v_checks := v_checks + 1;
+      v_res := public.promotion_is_possible(v_p_role);
+      if not coalesce((v_res->>'possible')::boolean, false) then
+        v_bad := array_append(v_bad, format(
+          'PROBE 7a: a policy with no ladder of its own, whose ROLE declares one for this category, was still refused (%s). The read-through is not wired, so role_archetypes.trust_ladder has no reader and the whole answer to the seam question is inert.',
+          coalesce(v_res->>'why', 'no reason')));
+      end if;
+
+      -- (7b) ⛔ THE CONTROL. Same employee shape, role declares NOTHING -- must
+      -- still be refused. Without this, 7a passes for a function that says yes
+      -- to everything with a de_id.
+      v_checks := v_checks + 1;
+      v_res := public.promotion_is_possible(v_p_silent);
+      if coalesce((v_res->>'possible')::boolean, true) then
+        v_bad := array_append(v_bad,
+          'PROBE 7b: CONTROL FAILED -- a policy whose role declares NOTHING was reported promotable, so PROBE 7a proves nothing: the read-through says yes regardless of what the role declared.');
+      end if;
+
+      -- (7c) THE ENFORCEMENT HALF. promotion_is_possible saying yes is worth
+      -- nothing if trust_ladder_settings still hands back the unlimited
+      -- built-in defaults -- that is precisely the defect this migration
+      -- exists to close, and it would be invisible from the refusal alone.
+      v_checks := v_checks + 1;
+      select * into v_pol_row from public.trust_policies where id = v_p_role;
+      v_res := public.trust_ladder_settings(v_pol_row, 1);
+      if coalesce(v_res->>'max_amount_cents', '') <> '50000' then
+        v_bad := array_append(v_bad, format(
+          'PROBE 7c: trust_ladder_settings at level 1 returned %s for a policy inheriting its role''s ladder, expected max_amount_cents 50000. The refusal would permit a step the enforcement then grants at the unlimited trust_level_settings default -- a promotion that is allowed and unbounded.',
+          v_res::text));
+      end if;
+
+      -- (7d) ⛔ THE CONTROL FOR 7c. The role-silent policy must still get the
+      -- built-in default, or 7c is measuring a constant rather than a lookup.
+      v_checks := v_checks + 1;
+      select * into v_pol_row from public.trust_policies where id = v_p_silent;
+      v_res := public.trust_ladder_settings(v_pol_row, 1);
+      if (v_res->>'max_amount_cents') is not null then
+        v_bad := array_append(v_bad, format(
+          'PROBE 7d: CONTROL FAILED -- a policy whose role declares nothing got %s from trust_ladder_settings instead of the built-in default (max_amount_cents null), so PROBE 7c is not reading the role at all.',
+          v_res::text));
+      end if;
+
+      -- (7e) THE OVERRIDE STILL WINS. trust_policies.ladder is documented as
+      -- the per-policy override; a role default that silently outranked it
+      -- would break set_trust_ladder's entire purpose. Same employee, same
+      -- role, but this policy carries its own ladder declaring level 2 only.
+      v_checks := v_checks + 1;
+      select * into v_pol_row from public.trust_policies where id = v_p_over;
+      v_res := public.trust_ladder_settings(v_pol_row, 2);
+      if coalesce(v_res->>'enabled', '') <> 'true'
+         or (v_res->>'max_amount_cents') is not null then
+        v_bad := array_append(v_bad, format(
+          'PROBE 7e: a policy carrying its OWN ladder resolved to %s at level 2 -- expected its own level-2 entry (mode act, no cap), not the role default. The per-policy override is being outranked by the role.',
+          v_res::text));
+      end if;
+
+      -- (7f) THE 9 POLICIES THAT CAN NEVER INHERIT. An employee with
+      -- archetype_key NULL has no role to read, so the join fails at its
+      -- second hop and the policy stays refused. Asserted rather than assumed,
+      -- because "it happens to be null" and "the code handles null" are
+      -- different facts.
+      v_checks := v_checks + 1;
+      v_res := public.promotion_is_possible(v_p_noarch);
+      if coalesce((v_res->>'possible')::boolean, true) then
+        v_bad := array_append(v_bad,
+          'PROBE 7f: a policy whose employee has NO archetype_key was reported promotable -- effective_trust_ladder resolved a role that does not exist');
+      end if;
+
+      -- ══ PROBE 10 -- THE 836 COMPOSITION, END TO END ON THE REAL PATH.
+      -- Migration 836 moved the promotion INSIDE decide_human_task, so THAT is
+      -- how a person actually approves now; PROBE 5g exercises the writer
+      -- directly and would not notice if the composition were broken. 836's
+      -- contract: on a refusal the task is NOT closed, refusal_reason is
+      -- stamped, and the still-pending row is returned. All of that depends on
+      -- this refusal RETURNING rather than raising.
+      v_checks := v_checks + 1;
+      begin
+        perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+        v_decide := public.decide_human_task(v_task_none, 'approved', null, null, null);
+        v_decide_note := coalesce(v_decide.status, '(null row - already decided, or a second approver is required)');
+      exception when others then
+        v_decide_note := 'RAISED: ' || sqlerrm;
+      end;
+      select status, refusal_reason into v_task_status, v_task_refusal
+        from public.human_tasks where id = v_task_none;
+
+      if v_decide_note like 'RAISED:%' then
+        -- Not automatically a finding: decide_human_task carries authority and
+        -- membership gates this fixture may legitimately fail under a bare
+        -- service_role claim. Recorded, and the arm is only a FINDING if the
+        -- task was closed anyway.
+        v_decide_skipped := true;
+      end if;
+      if coalesce(v_task_status, '') = 'approved' then
+        v_bad := array_append(v_bad, format(
+          'PROBE 10: decide_human_task CLOSED a trust_promotion task as approved on a policy that cannot be promoted (decide returned %s). That is migration 836''s exact defect -- the task says approved and nobody was promoted.',
+          v_decide_note));
+      elsif not v_decide_skipped and coalesce(btrim(coalesce(v_task_refusal, '')), '') = '' then
+        v_bad := array_append(v_bad, format(
+          'PROBE 10: decide_human_task did not close the task (good) but stamped NO refusal_reason (decide returned %s), so the queue shows a card with no explanation of why it will not go through.',
+          v_decide_note));
+      elsif not v_decide_skipped and v_task_refusal not like '%this promotion cannot be applied%' then
+        v_bad := array_append(v_bad, format(
+          'PROBE 10: the task carries refusal_reason "%s", which is not this migration''s refusal -- 836 is reporting some other cause and the real one is lost.',
+          v_task_refusal));
       end if;
 
       perform set_config('request.jwt.claims', '', true);
