@@ -352,6 +352,19 @@ disruptive than reusing an established token. This produces zero raw hits
 recorded here only so the "decision" (accent) vs. "instruction" (`dt-info`)
 step-type distinction the plan calls load-bearing is traceable.
 
+Another reassignment, not a kept-hue survivor (Task 5T, Group C):
+`AISessionPanel.tsx`'s applied-change chip (`isUndone ? muted : 'bg-teal-900
+/25 border-teal-800/60 text-teal-100'`, plus its undo link and hint text)
+was teal, but — unlike every OTHER kept-teal row in this table — it marks a
+genuine transient STATUS ("successfully applied, still undoable"), not a
+fixed category/identity tag. Converted fully to the `dt-ok` family
+(`bg-dt-ok-soft border-dt-ok-border text-dt-ok`, undo link to `text-dt-ok
+underline hover:brightness-110`), matching this file's already-shipped
+sibling `GovernanceAIPanel.tsx`. Zero raw hits remain, so no survivor row —
+recorded here so the one place this group departed from "non-core hue stays
+literal" is traceable to a reasoned distinction (status vs. identity), not
+an inconsistency.
+
 **Hover/neutral vocabulary** (match the primitives, never invent):
 secondary-button hover border = `hover:border-dt-muted`; neutral status chip =
 `bg-dt-neutral-soft text-dt-neutral`; deep inset wells = `bg-dt-inset`;
