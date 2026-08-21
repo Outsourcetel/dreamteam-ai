@@ -17,7 +17,7 @@ const SEVERITY_LABEL: Record<string, string> = { sev1: 'Critical (sev1)', sev2: 
 const SEVERITY_CLS: Record<string, string> = { sev1: 'text-rose-400', sev2: 'text-amber-300', sev3: 'text-indigo-300', sev4: 'text-dt-support' };
 const STATUS_LABEL: Record<string, string> = { ai_handling: 'AI handling', needs_human: 'Needs human', human_owned: 'Human owned', resolved: 'Resolved' };
 
-function StatCard({ label, value, sub, color = 'text-white' }: { label: string; value: string | number; sub?: string; color?: string }) {
+function StatCard({ label, value, sub, color = 'text-dt-title' }: { label: string; value: string | number; sub?: string; color?: string }) {
   return (
     <div className="bg-dt-card border border-dt-border rounded-xl p-4">
       <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">{label}</p>
@@ -37,7 +37,7 @@ function Breakdown({ title, data, labelOf, clsOf }: {
   const max = entries.reduce((m, [, n]) => Math.max(m, n), 0) || 1;
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
-      <h3 className="text-sm font-semibold text-white mb-3">{title}</h3>
+      <h3 className="text-sm font-semibold text-dt-title mb-3">{title}</h3>
       {entries.length === 0 ? (
         <p className="text-xs text-dt-muted">No data yet.</p>
       ) : (
@@ -81,7 +81,7 @@ const SupportCommandCenterPage = ({ setPage, embedded }: { setPage: (p: Page) =>
     <div className="p-6">
       {!embedded && <div className="mb-6 flex items-start justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-2xl font-bold text-white">Support Command Center</h1>
+          <h1 className="text-2xl font-bold text-dt-title">Support Command Center</h1>
           <p className="text-dt-support text-sm mt-1">
             {liveTenantName || 'Your company'} · One-glance view of the support operation — volume, status, severity and what needs a human.
           </p>
@@ -129,7 +129,7 @@ const SupportCommandCenterPage = ({ setPage, embedded }: { setPage: (p: Page) =>
                 labelOf={(k) => SEVERITY_LABEL[k] ?? k} clsOf={(k) => SEVERITY_CLS[k] ?? 'text-dt-support'} />
             ) : (
               <div className="rounded-2xl border border-dashed border-dt-border bg-dt-panel p-5">
-                <h3 className="text-sm font-semibold text-white mb-1">By severity</h3>
+                <h3 className="text-sm font-semibold text-dt-title mb-1">By severity</h3>
                 <p className="text-xs text-dt-muted">Deterministic triage isn't active yet. Once it's applied, conversations are auto-classified by severity and category at intake.</p>
               </div>
             )}

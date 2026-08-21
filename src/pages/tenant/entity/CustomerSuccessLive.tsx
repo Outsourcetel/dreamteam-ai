@@ -38,12 +38,12 @@ import type { Opportunity as PipelineOpportunity } from '../../../lib/pipelineAp
 const healthColor = (h: number) => (h >= 70 ? 'bg-emerald-500' : h >= 45 ? 'bg-amber-500' : 'bg-red-500');
 const healthText = (h: number) => (h >= 70 ? 'text-emerald-300' : h >= 45 ? 'text-amber-300' : 'text-red-300');
 
-const inputCls = 'bg-dt-panel border border-dt-border-strong text-white text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-indigo-500';
+const inputCls = 'bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-indigo-500';
 
 function StatusChip({ status }: { status: CustomerAccount['status'] }) {
   return (
     <span className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${
-      status === 'churned' ? 'bg-slate-600/50 text-dt-support'
+      status === 'churned' ? 'bg-dt-neutral-soft text-dt-support'
       : status === 'at_risk' ? 'bg-red-500/15 text-red-300'
       : 'bg-emerald-500/15 text-emerald-300'
     }`}>{status.replace('_', ' ')}</span>
@@ -59,7 +59,7 @@ function BreakdownPopover({ c }: { c: HealthComponents }) {
   ];
   return (
     <div className="absolute z-30 top-full left-0 mt-1.5 w-72 rounded-xl border border-dt-border-strong bg-dt-page shadow-2xl p-3">
-      <p className="text-[11px] font-semibold text-white mb-2">Health breakdown — score {c.score}</p>
+      <p className="text-[11px] font-semibold text-dt-title mb-2">Health breakdown — score {c.score}</p>
       <div className="space-y-1">
         {rows.map(r => (
           <div key={r.label} className="flex items-center justify-between text-[11px]">
@@ -136,7 +136,7 @@ function ContactsPanel({ accountId, accountName }: { accountId: string; accountN
   return (
     <div className="rounded-xl border border-dt-border bg-dt-inset p-3 mb-4">
       <div className="flex items-center justify-between gap-2 mb-2">
-        <p className="text-[11px] font-semibold text-white">Who to contact</p>
+        <p className="text-[11px] font-semibold text-dt-title">Who to contact</p>
         {form === null && canEdit && (
           <button onClick={() => { setForm({ ...BLANK_CONTACT }); setErr(null); }}
             className="text-[11px] px-2 py-1 rounded-lg bg-dt-panel hover:bg-dt-border text-dt-support transition-colors">
@@ -174,7 +174,7 @@ function ContactsPanel({ accountId, accountName }: { accountId: string; accountN
               </div>
               {canEdit && (
                 <div className="flex gap-1 shrink-0">
-                  <button onClick={() => edit(c)} className="text-[11px] px-1.5 py-0.5 rounded text-dt-muted hover:text-white transition-colors">Edit</button>
+                  <button onClick={() => edit(c)} className="text-[11px] px-1.5 py-0.5 rounded text-dt-muted hover:text-dt-body transition-colors">Edit</button>
                   <button onClick={() => void remove(c)} className="text-[11px] px-1.5 py-0.5 rounded text-dt-muted hover:text-rose-300 transition-colors">Remove</button>
                 </div>
               )}
@@ -290,7 +290,7 @@ function AccountDrawer({ account, onClose, onChanged }: {
 
         {/* Why this score */}
         <div className="rounded-xl border border-dt-border bg-dt-inset p-3 mb-4">
-          <p className="text-[11px] font-semibold text-white mb-1">Why this score</p>
+          <p className="text-[11px] font-semibold text-dt-title mb-1">Why this score</p>
           <p className="text-xs text-dt-support">{describeComponents(c)}</p>
           <p className="text-[10px] text-dt-faint mt-1.5">Health history is not tracked yet (v1 shows the latest computed breakdown only).</p>
         </div>
@@ -299,7 +299,7 @@ function AccountDrawer({ account, onClose, onChanged }: {
 
         {wonOpps.length > 0 && (
           <div className="rounded-xl border border-dt-border bg-dt-inset p-3 mb-4">
-            <p className="text-[11px] font-semibold text-white mb-1">Won from pipeline</p>
+            <p className="text-[11px] font-semibold text-dt-title mb-1">Won from pipeline</p>
             {wonOpps.map(o => (
               <p key={o.id} className="text-xs text-dt-support">
                 {o.name} · {o.amount_cents != null ? fmtMoneyK(o.amount_cents) : '—'}
@@ -313,7 +313,7 @@ function AccountDrawer({ account, onClose, onChanged }: {
         {onboarding && (
           <div className="rounded-xl border border-dt-border bg-dt-inset p-3 mb-4 flex items-center justify-between gap-2">
             <div>
-              <p className="text-[11px] font-semibold text-white">Onboarding project</p>
+              <p className="text-[11px] font-semibold text-dt-title">Onboarding project</p>
               <p className="text-xs text-dt-support">{onboarding.name} · {onboarding.status.replace('_', ' ')} · {onboarding.progress_pct}%</p>
             </div>
             <span className="text-[10px] text-dt-faint whitespace-nowrap">Customer → Onboarding</span>
@@ -378,7 +378,7 @@ function AccountDrawer({ account, onClose, onChanged }: {
 
         {/* Run playbook */}
         <div className="rounded-xl border border-dt-border bg-dt-inset p-3 mt-4">
-          <p className="text-[11px] font-semibold text-white mb-2">Run a playbook on this account</p>
+          <p className="text-[11px] font-semibold text-dt-title mb-2">Run a playbook on this account</p>
           {defs.length === 0 ? (
             <p className="text-xs text-dt-muted">No published playbooks yet — build one in Playbooks.</p>
           ) : (
@@ -401,7 +401,7 @@ function AccountDrawer({ account, onClose, onChanged }: {
 
 const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
   <div className="rounded-xl border border-dt-border bg-dt-inset p-3 mb-3">
-    <p className="text-[11px] font-semibold text-white mb-1.5">{title}</p>
+    <p className="text-[11px] font-semibold text-dt-title mb-1.5">{title}</p>
     {children}
   </div>
 );
@@ -439,7 +439,7 @@ function HealthConfigPanel({ weights, thresholds, lastComputed, onSaved, onRecom
   const slider = (key: keyof HealthWeights, label: string) => (
     <label key={key} className="block">
       <span className="flex justify-between text-[11px] text-dt-support mb-1">
-        <span>{label}</span><span className="text-white font-medium">{w[key]}</span>
+        <span>{label}</span><span className="text-dt-title font-medium">{w[key]}</span>
       </span>
       <input type="range" min={0} max={50} value={w[key]} className="w-full accent-indigo-500"
         onChange={e => setW({ ...w, [key]: Number(e.target.value) })} />
@@ -449,7 +449,7 @@ function HealthConfigPanel({ weights, thresholds, lastComputed, onSaved, onRecom
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card mb-5">
       <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-5 py-3 text-left">
-        <span className="text-sm font-semibold text-white">Health scoring config</span>
+        <span className="text-sm font-semibold text-dt-title">Health scoring config</span>
         <span className="text-xs text-dt-muted">
           {lastComputed ? `last computed ${new Date(lastComputed).toLocaleString()}` : 'not computed yet'} {open ? '▴' : '▾'}
         </span>
@@ -484,7 +484,7 @@ function HealthConfigPanel({ weights, thresholds, lastComputed, onSaved, onRecom
               {busy === 'save' ? 'Saving…' : 'Save config'}
             </button>
             <button onClick={() => void recompute()} disabled={busy !== null}
-              className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-white hover:border-dt-border-strong disabled:opacity-40 transition-colors">
+              className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body hover:border-dt-border-strong disabled:opacity-40 transition-colors">
               {busy === 'compute' ? 'Recomputing…' : 'Recompute now'}
             </button>
           </div>
@@ -604,7 +604,7 @@ export default function CustomerSuccessLive() {
         />
         {!missingTables && !loading && accounts.length > 0 && (
           <div className="flex gap-2">
-            <button onClick={() => setShowImport(true)} className="px-3 py-1.5 rounded-lg text-xs text-dt-support border border-dt-border-strong hover:border-dt-border-strong hover:text-white transition-colors">
+            <button onClick={() => setShowImport(true)} className="px-3 py-1.5 rounded-lg text-xs text-dt-support border border-dt-border-strong hover:border-dt-border-strong hover:text-dt-body transition-colors">
               + Import CSV
             </button>
             <button onClick={() => setShowAdd(true)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 transition-colors">
@@ -636,7 +636,7 @@ export default function CustomerSuccessLive() {
           {/* Header stats */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
             {[
-              { label: vocab.party_plural, value: String(stats.total), color: 'text-white' },
+              { label: vocab.party_plural, value: String(stats.total), color: 'text-dt-title' },
               { label: 'At risk', value: String(stats.atRisk), color: stats.atRisk > 0 ? 'text-red-300' : 'text-emerald-300' },
               { label: 'Avg health', value: String(stats.avgHealth), color: healthText(stats.avgHealth) },
               { label: `${vocab.value_metric} at risk`, value: fmtMoneyK(stats.arrAtRisk), color: stats.arrAtRisk > 0 ? 'text-red-300' : 'text-dt-support' },
@@ -656,7 +656,7 @@ export default function CustomerSuccessLive() {
 
           {/* Accounts table */}
           <div className="rounded-2xl border border-dt-border bg-dt-card p-5">
-            <h3 className="text-sm font-semibold text-white mb-1">Account health</h3>
+            <h3 className="text-sm font-semibold text-dt-title mb-1">Account health</h3>
             <p className="text-[11px] text-dt-muted mb-3">Click a health bar for the component breakdown · click a row for signal detail.</p>
             <div className="overflow-x-auto rounded-xl border border-dt-border">
               <table className="w-full text-sm border-collapse">
@@ -673,7 +673,7 @@ export default function CustomerSuccessLive() {
                     return (
                       <tr key={a.id} onClick={() => setDrawerAccount(a)}
                         className={`border-b border-dt-border transition-colors cursor-pointer ${risk ? 'bg-red-500/5 hover:bg-red-500/10' : 'hover:bg-dt-panel'} ${i === accounts.length - 1 ? 'border-b-0' : ''}`}>
-                        <td className={`${td} font-medium ${risk ? 'text-red-200' : 'text-white'}`}>{a.name}</td>
+                        <td className={`${td} font-medium ${risk ? 'text-red-200' : 'text-dt-title'}`}>{a.name}</td>
                         <td className={td} onClick={e => e.stopPropagation()}>
                           <div className="relative">
                             <button className="flex items-center gap-2 min-w-[110px] w-full"

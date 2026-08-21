@@ -256,7 +256,71 @@ const slateText = lines('text-slate-');
 // unselected card). That one got the ordinary dt-title heading treatment
 // instead, which reads correctly against both bg-dt-card (unselected) and
 // bg-indigo-500/10 (selected).
-const BASELINE = { 'bare text-white': 239, 'bg-slate': 31, 'border-slate': 6, 'text-slate': 2 };
+//
+// RATCHETED 2026-08-21 (Task 5, Support/Customers/Dashboard group).
+// SupportCommandCenterPage.tsx, CustomerSuccessLive.tsx, ImportCustomersModal.tsx
+// (sole consumer: CustomerSuccessLive.tsx's "+ Import CSV" button, confirmed
+// by grep), DashboardPage.tsx, and MissionPanel.tsx moved onto dt-* tokens.
+// SupportInboxPage.tsx, SupportHubPage.tsx, SupportHistoryReport.tsx,
+// CustomersHubPage.tsx, CustomerJourneyStubs.tsx, TeamMissionPanel.tsx and
+// WorkforceBoard.tsx were audited and found already clean — zero hits in all
+// four metrics — so they were left untouched (WorkforceBoard.tsx in
+// particular: its own file has zero hits even though its actual JSX
+// render-consumer is DEActivityPage.tsx, an out-of-group ops page — no
+// cross-group risk from leaving that page for a later pass).
+// SupportInboxPage.tsx's two `text-white` sit on `bg-dt-accent-strong`
+// (COLORED_BG-exempt) — the sent-reply chat bubble's solid accent fill,
+// exactly the "sent replies=solid accent" bubble rule this group's brief
+// named as load-bearing — and were confirmed untouched by design, not by
+// omission. Converted: 23 bare text-white (13 in CustomerSuccessLive.tsx —
+// section/card headings, a stat-tile default value, a slider readout and a
+// table row-primary-name -> dt-title, matching the stat-value and
+// row-primary-name precedents; the shared `inputCls` module constant's typed-
+// value text -> dt-body, matching the governance-group input precedent; 3
+// `hover:text-white` ghost-button/pill hovers -> hover:text-dt-body, matching
+// the Playbooks/Connected-systems ghost-button precedent — across
+// CustomerSuccessLive.tsx, ImportCustomersModal.tsx and MissionPanel.tsx one
+// each; 4 in SupportCommandCenterPage.tsx — a StatCard default value color
+// and 3 headings -> dt-title; 2 in ImportCustomersModal.tsx's textarea/select
+// typed-value text -> dt-body) and 3 bg-slate (CustomerSuccessLive.tsx's
+// already-translucent `bg-slate-600/50` churned StatusChip -> bg-dt-neutral-
+// soft, translucent-source bg-slate being soft-exempt by tier, matching its
+// already-soft `bg-red-500/15`/`bg-emerald-500/15` siblings; DashboardPage.tsx's
+// `taskBadgeStyle` fallback badge -> bg-dt-neutral-soft, matching its own
+// sibling entries which are all translucent `/20` tone chips, and the
+// Playbooks/Setup "neutral status chip" precedent; DashboardPage.tsx's
+// `healthDot` fallback dot -> bg-dt-border-strong, matching the Workforce
+// group's "small dot stays opaque" precedent — this function is dead code,
+// never called anywhere in the file, confirmed by grep, so converting it
+// carries zero visual risk either way but still closes the metric).
+// One additional real hazard fixed on judgment, not caught by the audit's
+// own count: ImportCustomersModal.tsx:157's tab-active ternary
+// (`tab === t ? 'bg-indigo-600 text-white' : 'text-dt-support hover:text-white'`)
+// put an opaque `bg-indigo-600` literal and a bare `hover:text-white` on the
+// SAME line — the audit's COLORED_BG check is line-based, so it auto-exempted
+// the whole line even though the inactive-tab branch has no background of
+// its own and the hover state would have gone invisible against a light
+// page. Converted `hover:text-white` -> `hover:text-dt-body` there, matching
+// the identical tab-bar shape already fixed the same way in the Playbooks
+// and Connected-systems groups.
+// Left out of this group on purpose, by name (per the brief's explicit
+// scope): ui.tsx (PageHeader/InHubContext/th/td), design/primitives.tsx,
+// GettingStartedGuide.tsx, OpsAlertsBanner.tsx, AISessionPanel.tsx (checked —
+// not actually imported by any file in this group) and LiveDataStates.tsx —
+// all generic/shared, reserved for the final group. Also excluded, because
+// the brief named specific files and these were not among them:
+// DEChatDock.tsx (14 hits; a global floating dock rendered once in App.tsx
+// for every authed non-DT user, not sole-consumer of any Support page);
+// SupportCallsPage.tsx and SupportTriageRulesPage.tsx (3 hits; Support hub
+// tab siblings); CustomerOnboardingLive.tsx (12), CustomerRenewalPage.tsx
+// (9), CommercialContinuityPage.tsx (11) and PipelineLive.tsx (13) — all
+// reachable from CustomersHubPage's other tabs (the last two via
+// CustomerJourneyStubs.tsx, itself a zero-styling routing stub with no hits
+// of its own), but not named in this group's brief; and DEActivityPage.tsx
+// (1 hit) — WorkforceBoard.tsx's actual JSX render-consumer, but an ops page
+// not named here. All left for a later pass. No `divide-slate-` hits in any
+// file in this group (checked by grep across the whole set).
+const BASELINE = { 'bare text-white': 216, 'bg-slate': 28, 'border-slate': 6, 'text-slate': 2 };
 const NOW = {
   'bare text-white': bareWhite.length,
   'bg-slate': slateBg.length,

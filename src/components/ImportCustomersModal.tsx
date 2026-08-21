@@ -154,7 +154,7 @@ export default function ImportCustomersModal({
               <button
                 key={t}
                 onClick={() => { setTab(t); setResult(null); setFatalError(null); }}
-                className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all ${tab === t ? 'bg-indigo-600 text-white' : 'text-dt-support hover:text-white'}`}
+                className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all ${tab === t ? 'bg-indigo-600 text-white' : 'text-dt-support hover:text-dt-body'}`}
               >
                 {t === 'accounts' ? vocab.party_plural : 'Support tickets'}
               </button>
@@ -182,7 +182,7 @@ export default function ImportCustomersModal({
               placeholder={tab === 'accounts'
                 ? 'name,arr,health,csm,status,renewal_date\nNorthfield Co,$210K,81,P. Sharma,active,2026-08-18'
                 : 'subject,body,status,priority\nAPI auth failure,Intermittent 401s after key rotation,open,p1'}
-              className="w-full bg-dt-page border border-dt-border-strong text-white text-xs font-mono rounded-xl px-3 py-2.5 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              className="w-full bg-dt-page border border-dt-border-strong text-dt-body text-xs font-mono rounded-xl px-3 py-2.5 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
             />
           </div>
 
@@ -201,7 +201,7 @@ export default function ImportCustomersModal({
                     <select
                       value={mapping[f.key] ?? -1}
                       onChange={e => setMapping(prev => ({ ...prev, [f.key]: Number(e.target.value) }))}
-                      className="bg-dt-page border border-dt-border-strong rounded text-xs text-white px-2 py-1 focus:outline-none focus:border-indigo-500 max-w-[140px]"
+                      className="bg-dt-page border border-dt-border-strong rounded text-xs text-dt-body px-2 py-1 focus:outline-none focus:border-indigo-500 max-w-[140px]"
                     >
                       <option value={-1}>— skip —</option>
                       {parsed.headers.map((h, i) => (

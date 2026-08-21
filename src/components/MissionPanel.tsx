@@ -379,7 +379,7 @@ export default function MissionPanel({ de }: { de: DigitalEmployee }) {
             {MISSION_TEMPLATES.map(t => (
               <button key={t.key} onClick={() => setDirective(t.directive)}
                 title={t.directive}
-                className="text-xs px-2.5 py-1 rounded-full border border-dt-border-strong text-dt-support hover:border-indigo-500 hover:text-white transition-colors">
+                className="text-xs px-2.5 py-1 rounded-full border border-dt-border-strong text-dt-support hover:border-indigo-500 hover:text-dt-body transition-colors">
                 {t.label}
               </button>
             ))}

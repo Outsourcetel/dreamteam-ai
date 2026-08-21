@@ -112,7 +112,7 @@ function healthDot(health: EntityHealth): string {
   if (health === 'active') return 'bg-emerald-400';
   if (health === 'degraded') return 'bg-amber-400';
   if (health === 'at_risk') return 'bg-red-400';
-  return 'bg-slate-600';
+  return 'bg-dt-border-strong';
 }
 
 function healthLabel(health: EntityHealth): string {
@@ -158,7 +158,7 @@ function taskBadgeStyle(type: TaskType): string {
   if (type === 'knowledge_revision') return 'bg-amber-500/20 text-amber-300';
   if (type === 'inquiry_review') return 'bg-sky-500/20 text-sky-300';
   if (type === 'action_approval') return 'bg-fuchsia-500/20 text-fuchsia-300';
-  return 'bg-slate-600 text-dt-support';
+  return 'bg-dt-neutral-soft text-dt-support';
 }
 
 function taskBadgeLabel(type: TaskType): string {
