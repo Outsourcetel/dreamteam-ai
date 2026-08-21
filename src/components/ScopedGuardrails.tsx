@@ -193,7 +193,7 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
             return (
               <div key={r.id + (inherited ? '-inh' : '')}
                 className={`flex items-center gap-2 text-xs rounded-lg border px-3 py-2 ${
-                  inherited ? 'border-dt-border bg-dt-page/30 opacity-60' : 'border-dt-border bg-dt-inset'}`}>
+                  inherited ? 'border-dt-border bg-dt-inset opacity-60' : 'border-dt-border bg-dt-inset'}`}>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded ${r.severity === 'blocking' ? 'bg-rose-500/15 text-rose-300' : 'bg-amber-500/15 text-amber-300'}`}>
                   {r.severity === 'blocking' ? 'blocks' : 'warns'}
                 </span>

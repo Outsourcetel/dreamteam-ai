@@ -55,7 +55,7 @@ function SubjectCard({ s }: { s: IdentitySubject }) {
     <div className="rounded-2xl border border-dt-border bg-dt-card mb-4 overflow-hidden">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-dt-panel/80 transition"
+        className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-dt-panel transition"
       >
         <div>
           <p className="text-sm font-semibold text-white">{s.label}{s.label !== s.name ? <span className="text-dt-muted font-normal"> ({s.name})</span> : null}</p>

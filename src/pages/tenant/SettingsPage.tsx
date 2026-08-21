@@ -604,7 +604,7 @@ const SettingsPage = ({
                 the platform console. Shown here read-only, because a customer
                 still needs to know which it is — it changes what happens when a
                 key is missing. */}
-            <div className="mb-5 rounded-xl border border-dt-border-strong bg-dt-panel/60 p-3.5">
+            <div className="mb-5 rounded-xl border border-dt-border-strong bg-dt-panel p-3.5">
               <div className="flex items-center justify-between gap-3 mb-1.5">
                 <p className="text-xs font-medium text-dt-support">Which account pays for this workspace's AI?</p>
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-600/50 text-dt-muted whitespace-nowrap">

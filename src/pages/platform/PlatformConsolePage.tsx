@@ -642,7 +642,7 @@ const PlatformConsolePage = ({
             </thead>
             <tbody className="divide-y divide-slate-700">
               {tenants.slice(0, revenueRowLimit).map((t) => (
-                <tr key={t.id} className="hover:bg-dt-panel/20 transition-all">
+                <tr key={t.id} className="hover:bg-dt-panel transition-all">
                   <td className="px-4 py-3 text-sm text-white">{t.name}</td>
                   <td className="px-4 py-3">
                     <Badge
@@ -934,7 +934,7 @@ const PlatformHealthPage = () => {
             </thead>
             <tbody className="divide-y divide-slate-700">
               {rows.map((r) => (
-                <tr key={r.connector_id} className="hover:bg-dt-panel/20 transition-all">
+                <tr key={r.connector_id} className="hover:bg-dt-panel transition-all">
                   <td className="px-4 py-3 text-sm text-white">{r.tenant_name}</td>
                   <td className="px-4 py-3 text-sm text-dt-support">{r.display_name || r.provider}</td>
                   <td className="px-4 py-3">{statusBadge(r)}</td>

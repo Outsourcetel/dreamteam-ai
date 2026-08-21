@@ -659,7 +659,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
         }
         views={reembed.enabled && reembed.pending > 0 ? (
           <span title="Search embeddings are being recomputed in the background. Search keeps working the whole time."
-            className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border border-dt-accent/40 bg-dt-accent-soft text-dt-accent-text">
+            className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border border-dt-accent-border bg-dt-accent-soft text-dt-accent-text">
             <span className="w-1.5 h-1.5 rounded-full bg-dt-accent animate-pulse" />
             {reembed.pending.toLocaleString()} re-indexing
           </span>
@@ -904,7 +904,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                     {expanded && (
                       <div className="px-3 pb-3 space-y-3">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div className="rounded-lg border border-dt-border bg-dt-card/60 p-3">
+                          <div className="rounded-lg border border-dt-border bg-dt-card p-3">
                             <p className="text-[10px] font-medium text-dt-muted uppercase tracking-wider mb-1">Current</p>
                             <p className="text-xs text-dt-support whitespace-pre-wrap max-h-48 overflow-y-auto">
                               {r.source_doc_id ? (expandedRevisionDoc ?? 'Loading…') : '(no existing document — this proposes a brand-new one)'}
@@ -1112,7 +1112,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
                   const k = skey(s);
                   const checked = scopeSel.has(k);
                   return (
-                    <label key={k} className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-dt-panel/60 cursor-pointer">
+                    <label key={k} className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-dt-panel cursor-pointer">
                       <input
                         type="checkbox"
                         checked={checked}

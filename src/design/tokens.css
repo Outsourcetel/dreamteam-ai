@@ -45,6 +45,7 @@
   --dt-accent-hover:  #6366f1; /* indigo-500 — primary button hover        */
   --dt-accent-soft:   #6366f11a; /* indigo-500/10 — selected row wash      */
   --dt-accent-text:   #a5b4fc; /* indigo-300 — accent-colored text         */
+  --dt-accent-border: #6366f14d; /* indigo-500/30 — chip/selected/ai borders */
 
   /* ── Semantics (each = text + soft bg + border recipe) ───────────────── */
   --dt-ok:        #34d399; --dt-ok-soft:     #10b9811a; --dt-ok-border:     #10b9814d;
@@ -126,6 +127,7 @@
   --dt-accent-hover:  #155eef;
   --dt-accent-soft:   #155eef14;
   --dt-accent-text:   #1146d4;
+  --dt-accent-border: #155eef4d;
 
   /* ── Semantics (solid pastels — alpha washes vanish on white) ── */
   --dt-ok:        #067647; --dt-ok-soft:     #e8f5ee; --dt-ok-border:     #b7dfc8;
@@ -168,6 +170,7 @@
   --dt-accent-hover:  #6366f1;
   --dt-accent-soft:   #6366f11a;
   --dt-accent-text:   #a5b4fc;
+  --dt-accent-border: #6366f14d;
 
   --dt-ok:        #34d399; --dt-ok-soft:     #10b9811a; --dt-ok-border:     #10b9814d;
   --dt-warn:      #fbbf24; --dt-warn-soft:   #f59e0b1a; --dt-warn-border:   #f59e0b4d;

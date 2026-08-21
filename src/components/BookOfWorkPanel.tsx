@@ -235,7 +235,7 @@ export default function BookOfWorkPanel({ deId }: { deId: string }) {
       {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
 
       {adding && (
-        <div className="mb-3 rounded-lg border border-dt-border-strong bg-dt-page/70 p-3 space-y-2">
+        <div className="mb-3 rounded-lg border border-dt-border-strong bg-dt-inset p-3 space-y-2">
           <select value={kind} onChange={e => setKind(e.target.value as WatcherKind)}
             className="w-full bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
             {CONFIGURABLE.map(k => <option key={k} value={k}>{WATCHER_KIND_META[k].label} — {WATCHER_KIND_META[k].hint}</option>)}
@@ -360,7 +360,7 @@ export default function BookOfWorkPanel({ deId }: { deId: string }) {
                 </p>
               )}
               {editing === w.id && (
-                <div className="mt-2 rounded-lg border border-dt-border-strong bg-dt-page/70 p-2.5 space-y-2">
+                <div className="mt-2 rounded-lg border border-dt-border-strong bg-dt-inset p-2.5 space-y-2">
                   <ResponseWindowFields
                     unit={edUnit} amount={edAmount} date={edDate}
                     onUnit={setEdUnit} onAmount={setEdAmount} onDate={setEdDate} />

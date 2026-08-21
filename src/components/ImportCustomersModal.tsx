@@ -194,7 +194,7 @@ export default function ImportCustomersModal({
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {fields.map(f => (
-                  <div key={f.key} className="flex items-center gap-2 bg-dt-panel/60 rounded-lg px-2.5 py-1.5">
+                  <div key={f.key} className="flex items-center gap-2 bg-dt-panel rounded-lg px-2.5 py-1.5">
                     <span className="text-xs text-dt-support flex-1 truncate">
                       {f.label}{f.required && <span className="text-rose-400"> *</span>}
                     </span>
@@ -249,7 +249,7 @@ export default function ImportCustomersModal({
             <div className="rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{fatalError}</div>
           )}
           {result && (
-            <div className="rounded-xl border border-dt-border-strong bg-dt-panel/60 px-4 py-3 text-xs">
+            <div className="rounded-xl border border-dt-border-strong bg-dt-panel px-4 py-3 text-xs">
               <p className="text-emerald-300 font-medium mb-1">{result.imported} row(s) imported.</p>
               {result.errors.length > 0 && (
                 <div className="text-amber-300">

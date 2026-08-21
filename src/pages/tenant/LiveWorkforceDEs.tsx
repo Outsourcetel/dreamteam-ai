@@ -222,7 +222,7 @@ function RosterPanel({ onSelect, setPage }: { onSelect: (de: DigitalEmployee) =>
               key={de.id}
               onOpen={() => onSelect(de)}
               avatar={
-                <div className="w-10 h-10 rounded-lg bg-dt-accent-soft border border-dt-accent/30 flex items-center justify-center text-dt-accent-text font-semibold flex-shrink-0">
+                <div className="w-10 h-10 rounded-lg bg-dt-accent-soft border border-dt-accent-border flex items-center justify-center text-dt-accent-text font-semibold flex-shrink-0">
                   {(de.persona_name || de.name).charAt(0).toUpperCase()}
                 </div>
               }

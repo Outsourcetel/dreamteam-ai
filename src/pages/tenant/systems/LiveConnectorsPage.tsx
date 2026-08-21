@@ -1044,7 +1044,7 @@ export default function LiveConnectorsPage() {
       {loading ? (
         <LiveLoadingSkeleton rows={4} />
       ) : missingTables ? (
-        <div className="rounded-xl border border-dt-border-strong bg-dt-card/80 p-5">
+        <div className="rounded-xl border border-dt-border-strong bg-dt-card p-5">
           <p className="text-sm font-medium text-dt-body mb-1">Connector tables not yet provisioned</p>
           <p className="text-xs text-dt-support">
             Run <code className="text-dt-support bg-dt-panel px-1 py-0.5 rounded">supabase/migrations/026_connector_hub_evidence.sql</code> in the Supabase SQL Editor, then reload.

@@ -193,7 +193,7 @@ function UnitRow({
               {unit.digital_employees.map((d) => (
                 <span
                   key={d.de_id}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-dt-inset border border-dt-accent/40 px-2 py-0.5 text-xs text-dt-body"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-dt-inset border border-dt-accent-border px-2 py-0.5 text-xs text-dt-body"
                   title={`${d.title || d.name} · trust: ${d.trust_level ?? 'unknown'}`}
                 >
                   <span className="text-dt-accent-text">◆</span>

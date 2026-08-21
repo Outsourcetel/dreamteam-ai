@@ -534,7 +534,7 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
                     <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1.5">Question</p>
                     <textarea value={replayQ} onChange={e => setReplayQ(e.target.value)} rows={2}
                       placeholder="Type any question, or pick one above and edit it…"
-                      className="w-full bg-dt-page/70 border border-dt-border rounded-lg px-3 py-2 text-sm text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500/50 resize-y" />
+                      className="w-full bg-dt-inset border border-dt-border rounded-lg px-3 py-2 text-sm text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500/50 resize-y" />
                   </div>
                   <div>
                     <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1.5">Counterfactual knowledge <span className="normal-case text-dt-faint">(optional — "what if it knew this?")</span></p>
@@ -550,7 +550,7 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
                       </label>
                       <input value={ckUrl} onChange={e => setCkUrl(e.target.value)} placeholder="…or paste a link"
                         onKeyDown={e => { if (e.key === 'Enter') void handleCkUrl(); }}
-                        className="flex-1 min-w-[160px] bg-dt-page/70 border border-dt-border rounded-md px-2 py-1 text-[11px] text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500/50" />
+                        className="flex-1 min-w-[160px] bg-dt-inset border border-dt-border rounded-md px-2 py-1 text-[11px] text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500/50" />
                       <button onClick={() => void handleCkUrl()} disabled={!!ckLoading || !ckUrl.trim()}
                         className="text-[11px] px-2 py-1 rounded-md border border-dt-border text-dt-support hover:text-indigo-200 hover:border-indigo-500/50 disabled:opacity-40">
                         {ckLoading === 'url' ? 'Fetching…' : 'Fetch'}
@@ -560,7 +560,7 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
                     {ckError && <p className="text-[11px] text-rose-300 mb-1.5">{ckError}</p>}
                     <textarea value={replayCk} onChange={e => setReplayCk(e.target.value)} rows={3}
                       placeholder="Paste a policy, fact, or article the employee doesn't have yet — the replay answers as if it did."
-                      className="w-full bg-dt-page/70 border border-dt-border rounded-lg px-3 py-2 text-sm text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500/50 resize-y" />
+                      className="w-full bg-dt-inset border border-dt-border rounded-lg px-3 py-2 text-sm text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500/50 resize-y" />
                   </div>
                   <button disabled={replayRunning || replayQ.trim().length < 4}
                     onClick={async () => {

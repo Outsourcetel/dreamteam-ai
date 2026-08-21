@@ -1058,7 +1058,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
             {filter !== 'all' && (
               <button
                 onClick={() => setFilter('all')}
-                className="px-3 py-1.5 rounded-full text-xs bg-dt-accent-soft border border-dt-accent/30 text-dt-accent-text hover:brightness-110 transition-colors">
+                className="px-3 py-1.5 rounded-full text-xs bg-dt-accent-soft border border-dt-accent-border text-dt-accent-text hover:brightness-110 transition-colors">
                 {FILTERS.find(f => f.id === filter)?.label ?? filter} · clear ✕
               </button>
             )}

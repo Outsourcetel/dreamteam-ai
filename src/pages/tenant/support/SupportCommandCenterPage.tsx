@@ -48,7 +48,7 @@ function Breakdown({ title, data, labelOf, clsOf }: {
                 <span className={clsOf ? clsOf(k) : 'text-dt-support'}>{labelOf ? labelOf(k) : k.replace(/_/g, ' ')}</span>
                 <span className="text-dt-support font-medium">{n}</span>
               </div>
-              <div className="h-1.5 rounded-full bg-dt-panel/60 overflow-hidden">
+              <div className="h-1.5 rounded-full bg-dt-panel overflow-hidden">
                 <div className="h-full rounded-full bg-indigo-500/60" style={{ width: `${Math.round((n / max) * 100)}%` }} />
               </div>
             </div>

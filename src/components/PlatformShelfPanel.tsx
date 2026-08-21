@@ -89,11 +89,11 @@ export default function PlatformShelfPanel({ tenantQuery }: { tenantQuery?: stri
         </button>
       )}
 
-      <div className="rounded-2xl border border-dt-border bg-dt-page/40 overflow-hidden mt-6">
+      <div className="rounded-2xl border border-dt-border bg-dt-inset overflow-hidden mt-6">
         {/* One quiet row. Not a tab, not a section header. */}
         <button
           onClick={() => setOpen(v => !v)}
-          className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-dt-card/40 transition-colors">
+          className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-dt-card transition-colors">
           <span className={`text-dt-muted text-[10px] transition-transform ${open ? 'rotate-90' : ''}`}>▶</span>
           <span className="text-xs text-dt-body">DreamTeam product guide</span>
           <span className="text-[11px] text-dt-muted">· {status.docs_published} articles</span>

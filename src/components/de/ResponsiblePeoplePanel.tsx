@@ -135,7 +135,7 @@ export default function ResponsiblePeoplePanel({ deId, deName }: { deId: string;
             const mine = rows.filter(r => r.relation === rel.key);
             const unassignedMembers = members.filter(m => !mine.some(r => r.user_id === m.user_id));
             return (
-              <div key={rel.key} className="border-t border-dt-border/60 pt-3 first:border-t-0 first:pt-0">
+              <div key={rel.key} className="border-t border-dt-border pt-3 first:border-t-0 first:pt-0">
                 <div className="flex items-baseline gap-2 flex-wrap">
                   <span className="text-xs font-medium text-dt-body">{rel.label}</span>
                   <span className="text-[11px] text-dt-muted">{rel.help}</span>

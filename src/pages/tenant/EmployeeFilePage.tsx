@@ -445,7 +445,7 @@ function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => v
       <PanelCard title="Open objectives"
         actions={!canManage ? undefined : <Button kind="ghost" size="sm" onClick={() => { setObjOpen(true); setObjEditId(null); setObjTitle(''); setObjPriority(3); }}>+ Set an objective</Button>}>
         {objOpen && canManage && (
-          <div className="mb-3 rounded-lg border border-dt-border-strong bg-dt-page/70 p-3 space-y-2">
+          <div className="mb-3 rounded-lg border border-dt-border-strong bg-dt-inset p-3 space-y-2">
             <input value={objTitle} onChange={e => setObjTitle(e.target.value)} autoFocus
               placeholder="What should this employee be working towards?"
               className="w-full bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
@@ -1236,7 +1236,7 @@ function RecordTab({ de, setPage, openTab }: { de: DigitalEmployee; setPage: (p:
                 </thead>
                 <tbody>
                   {runs.map((r, i) => (
-                    <tr key={i} className="border-b border-dt-border/50">
+                    <tr key={i} className="border-b border-dt-border">
                       <td className="py-1.5 pl-1 text-dt-support whitespace-nowrap">{relTime(r.started_at)}</td>
                       <td className="py-1.5 text-dt-body">{r.name === 'chat de-answer' ? 'Answered a question' : r.name === 'invoke_agent de-work' ? `Worked a task${r.turns ? ` (${r.turns} steps)` : ''}` : r.name}</td>
                       <td className="py-1.5">

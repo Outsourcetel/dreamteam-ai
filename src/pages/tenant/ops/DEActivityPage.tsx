@@ -122,7 +122,7 @@ function ActivityRow({ row }: { row: DEActivityRow }) {
     <div className={`rounded-lg border ${isSimulation ? 'border-purple-500/30' : 'border-dt-border'} bg-dt-card overflow-hidden`}>
       <button
         onClick={() => setExpanded(e => !e)}
-        className="w-full text-left px-3 py-2.5 flex items-center gap-3 hover:bg-dt-panel/80 transition-colors"
+        className="w-full text-left px-3 py-2.5 flex items-center gap-3 hover:bg-dt-panel transition-colors"
       >
         <span className="text-dt-muted text-[10px] w-4 flex-shrink-0">{expanded ? '▼' : '▶'}</span>
         <span className="font-mono text-[10px] text-dt-muted w-24 flex-shrink-0 hidden sm:block">{fmtTime(run.created_at)}</span>

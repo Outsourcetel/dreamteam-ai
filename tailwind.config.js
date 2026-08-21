@@ -37,6 +37,7 @@ export default {
           'accent-hover': 'var(--dt-accent-hover)',
           'accent-soft': 'var(--dt-accent-soft)',
           'accent-text': 'var(--dt-accent-text)',
+          'accent-border': 'var(--dt-accent-border)',
           ok: 'var(--dt-ok)', 'ok-soft': 'var(--dt-ok-soft)', 'ok-border': 'var(--dt-ok-border)',
           warn: 'var(--dt-warn)', 'warn-soft': 'var(--dt-warn-soft)', 'warn-border': 'var(--dt-warn-border)',
           danger: 'var(--dt-danger)', 'danger-soft': 'var(--dt-danger-soft)', 'danger-border': 'var(--dt-danger-border)',

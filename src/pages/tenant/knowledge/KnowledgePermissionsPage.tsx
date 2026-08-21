@@ -347,7 +347,7 @@ function PresetCard({ selected, disabled, title, body, onSelect }: {
       disabled={disabled || selected}
       className={`text-left rounded-xl border px-4 py-3 transition-colors disabled:cursor-default ${
         selected
-          ? 'border-dt-accent/40 bg-dt-accent-soft'
+          ? 'border-dt-accent-border bg-dt-accent-soft'
           : 'border-dt-border bg-dt-card hover:border-dt-border-strong disabled:opacity-60'}`}
     >
       <div className="flex items-center gap-2">

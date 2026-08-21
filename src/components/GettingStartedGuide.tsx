@@ -178,7 +178,7 @@ export default function GettingStartedGuide({
       </div>
 
       {/* Progress bar */}
-      <div className="h-1.5 rounded-full bg-dt-panel/60 mb-4 overflow-hidden">
+      <div className="h-1.5 rounded-full bg-dt-panel mb-4 overflow-hidden">
         <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 transition-all duration-500"
           style={{ width: state == null ? '4%' : `${Math.max(4, (doneCount / steps.length) * 100)}%` }} />
       </div>
@@ -188,7 +188,7 @@ export default function GettingStartedGuide({
           const isCurrent = i === currentIdx;
           return (
             <li key={s.title}
-              className={`rounded-xl px-4 py-3 transition-colors ${isCurrent ? 'bg-dt-card/80 border border-indigo-500/40' : 'bg-dt-panel border border-transparent'}`}>
+              className={`rounded-xl px-4 py-3 transition-colors ${isCurrent ? 'bg-dt-card border border-indigo-500/40' : 'bg-dt-panel border border-transparent'}`}>
               <div className="flex items-start gap-3">
                 <span className={`mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full text-[11px] font-bold ${
                   s.done ? 'bg-emerald-500/20 text-emerald-300' : isCurrent ? 'bg-indigo-500 text-white' : 'bg-dt-panel text-dt-support'

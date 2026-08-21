@@ -123,7 +123,7 @@ export default function WorkforceBoard({ setPage }: { setPage: (p: Page) => void
               const paused = r.lifecycle_status !== 'active';
               return (
                 <tr key={r.de_id} onClick={() => openFile(r.de_id)}
-                  className="cursor-pointer hover:bg-dt-panel/60 transition-colors">
+                  className="cursor-pointer hover:bg-dt-panel transition-colors">
                   <td className="py-2.5 pr-3">
                     <span className={`font-medium ${paused ? 'text-dt-muted' : 'text-dt-body'}`}>{r.persona_name ?? r.name}</span>
                     {r.department && <span className="text-xs text-dt-muted ml-2">{r.department}</span>}

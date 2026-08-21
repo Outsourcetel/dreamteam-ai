@@ -17,7 +17,7 @@ export function LiveLoadingSkeleton({ rows = 4 }: { rows?: number }) {
 
 export function MissingTablesNotice() {
   return (
-    <div className="rounded-xl border border-dt-border-strong bg-dt-card/80 p-5 flex items-start gap-3">
+    <div className="rounded-xl border border-dt-border-strong bg-dt-card p-5 flex items-start gap-3">
       <span className="text-dt-support text-lg flex-shrink-0">◇</span>
       <div>
         <p className="text-sm font-medium text-dt-body mb-1">Live data tables not yet provisioned</p>

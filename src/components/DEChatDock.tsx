@@ -517,7 +517,7 @@ export default function DEChatDock() {
                 <div className="absolute right-0 top-7 bg-dt-page border border-dt-border-strong rounded-lg py-1 w-40 shadow-xl">
                   <button
                     onClick={clearThread}
-                    className="w-full text-left px-3 py-1.5 text-xs text-dt-support hover:text-white hover:bg-dt-panel/50 transition-colors"
+                    className="w-full text-left px-3 py-1.5 text-xs text-dt-support hover:text-white hover:bg-dt-panel transition-colors"
                   >
                     Clear conversation
                   </button>

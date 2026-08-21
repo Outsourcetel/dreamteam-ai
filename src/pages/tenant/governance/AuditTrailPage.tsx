@@ -252,7 +252,7 @@ function TeamActivityLogPanel({ days }: { days: number | null }) {
                     <tr
                       key={row.id}
                       onClick={() => setDetailRow(row)}
-                      className="cursor-pointer hover:bg-dt-panel/30 transition-colors"
+                      className="cursor-pointer hover:bg-dt-panel transition-colors"
                     >
                       <td className="px-3 py-2.5 text-xs text-dt-support whitespace-nowrap">
                         {new Date(row.created_at).toLocaleString()}

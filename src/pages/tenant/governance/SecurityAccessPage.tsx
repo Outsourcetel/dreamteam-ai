@@ -230,7 +230,7 @@ function ApiKeysPanel({ tenantId }: { tenantId: string }) {
             <tr><td colSpan={6} className={`${td} text-dt-muted text-xs text-center py-6`}>No API keys yet.</td></tr>
           )}
           {keys.map(k => (
-            <tr key={k.id} className="hover:bg-dt-panel/20 transition-colors">
+            <tr key={k.id} className="hover:bg-dt-panel transition-colors">
               <td className={`${td} text-dt-body text-xs font-medium`}>{k.name}</td>
               <td className={`${td} text-dt-support text-xs font-mono`}>{k.display_hint}</td>
               <td className={`${td} text-dt-support text-xs`}>{k.scopes.length > 0 ? k.scopes.join(', ') : '—'}</td>
@@ -609,7 +609,7 @@ function SecurityActivityLogPanel({ canView }: { canView: boolean }) {
                 {visible.map(row => {
                   const fields = securityChangedFields(row)
                   return (
-                    <tr key={row.id} className="hover:bg-dt-panel/20 transition-colors">
+                    <tr key={row.id} className="hover:bg-dt-panel transition-colors">
                       <td className="px-3 py-2.5 text-xs text-dt-support whitespace-nowrap">{new Date(row.created_at).toLocaleString()}</td>
                       <td className="px-3 py-2.5 text-xs whitespace-nowrap">
                         <span className="text-white font-medium">{row.actor_name || 'Team member'}</span>
@@ -731,7 +731,7 @@ export default function SecurityAccessPage() {
               </thead>
               <tbody className="divide-y divide-slate-700/50">
                 {PERMISSION_AREAS.map(area => (
-                  <tr key={area} className="hover:bg-dt-panel/20 transition-colors">
+                  <tr key={area} className="hover:bg-dt-panel transition-colors">
                     <td className={`${td} text-dt-body text-xs`}>{area}</td>
                     {ALL_ROLES.map(r => {
                       const grants = ROLE_PERMISSIONS[r]
@@ -774,7 +774,7 @@ export default function SecurityAccessPage() {
                 <tr><td colSpan={5} className={`${td} text-dt-muted text-xs text-center py-6`}>No team members yet.</td></tr>
               )}
               {members.map(u => (
-                <tr key={u.userId} className="hover:bg-dt-panel/20 transition-colors">
+                <tr key={u.userId} className="hover:bg-dt-panel transition-colors">
                   <td className={td}>
                     <div className="flex items-center gap-2.5">
                       <span className="w-7 h-7 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center text-[10px] font-bold">

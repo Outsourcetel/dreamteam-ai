@@ -175,7 +175,7 @@ export default function ProofPage() {
 
         {/* ── CTA ── */}
         <section className="relative max-w-4xl mx-auto px-6 pb-16">
-          <div className="rounded-2xl border border-dt-accent/30 bg-dt-accent-soft p-6">
+          <div className="rounded-2xl border border-dt-accent-border bg-dt-accent-soft p-6">
             <h2 className="text-base font-semibold text-dt-title">See it live, not on slides</h2>
             <p className="text-sm text-dt-support mt-1.5 max-w-xl leading-relaxed">
               A 30-minute walkthrough covers the board, a live guardrail refusal, an employee's file, and
