@@ -158,7 +158,7 @@ function taskBadgeStyle(type: TaskType): string {
   if (type === 'knowledge_revision') return 'bg-amber-500/20 text-amber-300';
   if (type === 'inquiry_review') return 'bg-sky-500/20 text-sky-300';
   if (type === 'action_approval') return 'bg-fuchsia-500/20 text-fuchsia-300';
-  return 'bg-dt-neutral-soft text-dt-support';
+  return 'bg-dt-border-strong text-dt-title';
 }
 
 function taskBadgeLabel(type: TaskType): string {

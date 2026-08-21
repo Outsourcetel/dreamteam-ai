@@ -286,13 +286,23 @@ const slateText = lines('text-slate-');
 // already-translucent `bg-slate-600/50` churned StatusChip -> bg-dt-neutral-
 // soft, translucent-source bg-slate being soft-exempt by tier, matching its
 // already-soft `bg-red-500/15`/`bg-emerald-500/15` siblings; DashboardPage.tsx's
-// `taskBadgeStyle` fallback badge -> bg-dt-neutral-soft, matching its own
-// sibling entries which are all translucent `/20` tone chips, and the
-// Playbooks/Setup "neutral status chip" precedent; DashboardPage.tsx's
 // `healthDot` fallback dot -> bg-dt-border-strong, matching the Workforce
 // group's "small dot stays opaque" precedent — this function is dead code,
 // never called anywhere in the file, confirmed by grep, so converting it
 // carries zero visual risk either way but still closes the metric).
+// CORRECTED on review (Important finding): DashboardPage.tsx's
+// `taskBadgeStyle` fallback badge was first mapped to bg-dt-neutral-soft on
+// a "matches its translucent /20 siblings" consistency argument, but that
+// overrode the high-traffic rule the wrong way — TaskType has 11 members and
+// only 7 get explicit branches, so this fallback is the LIVE render path for
+// `training_feedback`, `trust_promotion`, `trust_demotion_notice` and
+// `checklist`, not a rare state. A softened chip diluting a
+// `trust_demotion_notice` badge's urgency is exactly the risk the
+// high-traffic rule exists to prevent. Corrected to the canonical opaque
+// `bg-dt-border-strong text-dt-title` (precedent: SecurityAccessPage.tsx:33
+// `tenant_user`, UserManagementPage.tsx:1018 Cancel button) — the same
+// "defaults keep opaque" pairing used throughout this file's own ratchet
+// notes above. The 7 explicit translucent `/20` branches are unchanged.
 // One additional real hazard fixed on judgment, not caught by the audit's
 // own count: ImportCustomersModal.tsx:157's tab-active ternary
 // (`tab === t ? 'bg-indigo-600 text-white' : 'text-dt-support hover:text-white'`)
