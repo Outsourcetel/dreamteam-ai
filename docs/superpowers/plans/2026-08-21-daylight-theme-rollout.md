@@ -363,6 +363,44 @@ git commit -m "fix(theme): pilot screens (Command Centre, Workforce, Support) ve
 
 ---
 
+### Task 4b: Make the alpha-modifier dt classes real — `--dt-accent-border`
+
+Confirmed from a production build (2026-08-21, dist CSS grep): **zero** CSS rules are emitted for any `dt-*/NN` class — `tailwind.config.js` wires dt colors as plain `var()` strings, which do not support Tailwind alpha modifiers. So `border-dt-accent/30` (Chip accent tone), `border-dt-accent/40` (EntityRow selected, Button kind `ai`) and every other `/NN` usage have never rendered, in either theme. Pre-existing on `main`; fixed here because both themes need the borders visible. The fix follows the system's own shape — every semantic tone already has a `-border` token; accent gets one too. No relative-color syntax, no browser-floor change.
+
+**Files:**
+- Modify: `src/design/tokens.css` (accent-border token in `:root`, `:root.light`, and `.dt-force-dark`)
+- Modify: `tailwind.config.js` (one line in the `dt` block)
+- Modify: `src/design/primitives.tsx` + every `/NN` call site the grep finds
+
+**Interfaces:**
+- Produces: `--dt-accent-border` + Tailwind `border-dt-accent-border`; zero `dt-*/NN` classes remain in `src/`. Task 6's `applyBranding` derives this token at runtime (its step already amended).
+
+- [ ] **Step 1: Add the token to all three blocks in `src/design/tokens.css`**
+
+`:root`: `--dt-accent-border: #6366f14d;` (indigo-500/30 — the value `border-dt-accent/30` always MEANT). `:root.light`: `--dt-accent-border: #155eef4d;`. `.dt-force-dark`: the dark value again.
+
+- [ ] **Step 2: Register it in `tailwind.config.js`** — in the `dt` color block, next to `'accent-soft'`: `'accent-border': 'var(--dt-accent-border)',`
+
+- [ ] **Step 3: Enumerate and convert every `/NN` dt usage**
+
+Run: `grep -rnE "(bg|border|text|ring)-dt-[a-z-]+/[0-9]+" src/ --include='*.tsx'`
+Convert by role: `border-dt-accent/30` and `border-dt-accent/40` → `border-dt-accent-border`; `bg-dt-accent/NN` → `bg-dt-accent-soft`; `hover:border-dt-accent` stays (no modifier). Any usage that maps to neither: convert by the tone's meaning and list it explicitly in the report. After conversion the grep returns zero lines.
+
+- [ ] **Step 4: Prove the rules now exist**
+
+Run: `npm run build`, then `grep -c "dt-accent-border" dist/assets/*.css` — expected ≥ 1. Gallery probe (`?dtpreview=1`, both themes): Chip accent tone and EntityRow selected show a computed `borderColor` that is NOT transparent/currentcolor-fallback, in both themes.
+
+- [ ] **Step 5: Guards, ratchet, commit**
+
+`npx tsc --noEmit` · `node scripts/design-drift.mjs` · `node scripts/audit-light-ready.mjs --strict` — clean, floors ratcheted if improved.
+
+```bash
+git add -A src/ tailwind.config.js
+git commit -m "fix(design): dt alpha-modifier classes never emitted CSS — accent gets a real border token"
+```
+
+---
+
 ### Task 5: Estate sweep — retire the dark-only classes
 
 The bulk of the work: drive `bare text-white` and the slate remnants toward zero across the remaining pages, using the same scripted-conversion playbook as the 2026-07-22 sweep (commits b883129/a445f7b), then verify page-by-page. Expect several sessions; the audit script is the progress meter and the ratchet.
@@ -513,6 +551,7 @@ And make the accent-text derivation theme-aware (readable on white means darker,
 
 ```ts
     root.style.setProperty('--dt-accent-text', LIGHT_SURFACES.has(key) ? mix(a, 0, 0.25) : mix(a, 255, 0.45));
+    root.style.setProperty('--dt-accent-border', a + '4d');
 ```
 
 - [ ] **Step 5: Add the tile to `src/design/BrandingCard.tsx`**
