@@ -74,7 +74,7 @@ Replace the existing block (comment + `color-scheme: light;` only) with:
   /* ── Semantics (solid pastels — alpha washes vanish on white) ── */
   --dt-ok:        #067647; --dt-ok-soft:     #e8f5ee; --dt-ok-border:     #b7dfc8;
   --dt-warn:      #b54708; --dt-warn-soft:   #fdf3e0; --dt-warn-border:   #f5d698;
-  --dt-danger:    #d92d20; --dt-danger-soft: #fdecea; --dt-danger-border: #f4b3ae;
+  --dt-danger:    #b42318; --dt-danger-soft: #fdecea; --dt-danger-border: #f4b3ae;
   --dt-info:      #0b6bab; --dt-info-soft:   #e7f3fb; --dt-info-border:   #b3d9f0;
   --dt-neutral:   #475467; --dt-neutral-soft:#f2f4f7; --dt-neutral-border:#e0e3e9;
 }
