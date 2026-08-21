@@ -671,10 +671,12 @@ const toneText = lines(`text-\\(${TONE_HUES}\\)-\\(100\\|200\\|300\\)\\b`)
 // Kept-hue judgment calls (non-core hues, opaque-fill-exempted, no new
 // TONE_FILL_SURVIVORS entries needed — doc §7 kept-hue table has the full
 // rows): AuditTrailPage.tsx's LIVE_CATEGORY_META event-type vocabulary
-// (playbook_step/evidence_step=teal, invoice=teal, connector_sync/
-// connector_action=cyan — five non-core-hue category badges in an
-// 11-member scheme, matching the HumanTasksPage precedent for "one more
-// entry in an already-established, purely-identity type scheme");
+// (playbook_step=violet, same "playbook execution machinery" identity as
+// CustomerRenewalPage.tsx's server-run badge/button; evidence_step=teal,
+// invoice=teal, connector_sync/connector_action=cyan — five non-core-hue
+// category badges in an 11-member scheme, matching the HumanTasksPage
+// precedent for "one more entry in an already-established, purely-identity
+// type scheme");
 // SecurityAccessPage.tsx's ROLE_COLORS (knowledge_manager=purple,
 // approver=cyan — a role-badge vocabulary where a distinct fixed color per
 // role is the point, explicitly named load-bearing by this group's brief);
