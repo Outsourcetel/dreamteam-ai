@@ -967,25 +967,44 @@ $function$
 -- success line below is visible on a real apply -- silence IS the pass, and the
 -- only thing that speaks is a failure.
 --
--- ── ELEVEN INVERSIONS, EACH RUN AGAINST PRODUCTION IN AN ABORTING TRANSACTION,
---    EACH RED WITH ITS OWN MESSAGE. A gate that cannot fail is theatre, and
---    "17 checks, 0 findings" is worth nothing until every one of them has been
---    seen to fail on purpose. Clean run first: 17 checks, 0 findings, exit 0.
---    Then, one at a time:
+-- ── EIGHTEEN INVERSIONS, EACH RUN AGAINST PRODUCTION IN AN ABORTING
+--    TRANSACTION, EACH RED WITH ITS OWN MESSAGE. A gate that cannot fail is
+--    theatre, and "30 checks, 0 findings" is worth nothing until every one of
+--    them has been seen to fail on purpose. Clean run first: 30 checks, 0
+--    findings, exit 0. Then, one at a time:
 --      1  ladder-null arm flipped to POSSIBLE ......... 5a + 6a + 5g RED
 --      2  target-level arm removed ................... 5c RED
 --      3  ceiling arm disabled ....................... 5d RED
 --      4  paused arm disabled ........................ 5e RED
 --      5  validate_trust_ladder not consulted ........ 5f RED (wrong reason)
---      6  refusal unwired from the WRITER ............ 3 + 5g RED
+--      6  refusal unwired from the WRITER ............ 3 + 5g + 10b RED
 --      7  refusal unwired from the sweep ............. 3 RED
---      8  promotion_is_possible refuses EVERYTHING ... 5b + 5h RED (controls)
+--      8  promotion_is_possible refuses EVERYTHING ... 5b + 5h + 7a RED
 --      9  the new CHECK made unfireable .............. 2 RED
 --     10  refusal audits under a different kind ...... 5g RED (row lost)
 --     11  refusal RAISES instead of returning ........ 5g RED (837's defect)
---    Inversions 6, 7, 10 and 11 also turned PROBE 4 red, which is the body-hash
---    arm noticing that the function it measured had changed -- correct, and
---    reported alongside rather than mistaken for the target finding.
+--     12  effective_trust_ladder ignores the ROLE .... 7a + 7c RED
+--     13  the ROLE outranks the policy override ...... 7e RED
+--     14  enforcement left on p_policy.ladder ........ 7c RED
+--     15  trust_ladder_settings left IMMUTABLE ....... 11 RED
+--     16  the new grant narrowed below its caller .... 12 RED
+--     17  the archetype join ignored ................. 7b + 7f RED
+--     18  PROBE 10a given a pattern that cannot match  10a RED
+--    Inversions 6, 7, 10, 11, 12, 13, 14, 15 and 17 also turned PROBE 4 red --
+--    the body-hash arm noticing that the function it measured had changed.
+--    Correct, and reported alongside rather than mistaken for the target.
+--
+--    ⚠ TWO OF THESE FOUND REAL DEFECTS IN THIS FILE RATHER THAN CONFIRMING IT.
+--    INV13 did NOT go red on the first attempt: PROBE 7e claimed to prove that
+--    a per-policy override outranks the role default, but the probe's own
+--    fixture had the role declaring nothing for the override's category -- so
+--    there was no conflict to win, and 7e would have passed no matter which arm
+--    won. It was theatre until the fixture was given a genuine collision.
+--    INV18's arm was written after PROBE 10a fired on a real mismatch during
+--    development: the pattern used Postgres's \m (start-of-word) as a CLOSING
+--    anchor where \M (end-of-word) was meant, so it could never match. Verified
+--    empirically against the live body -- \M true, \m false -- rather than
+--    reasoned about. Neither would have been caught by a clean run.
 do $verify$
 declare
   v_checks integer := 0;
@@ -1028,6 +1047,8 @@ declare
   v_p_noarch    uuid;
   v_pol_row     public.trust_policies;
   v_decide      public.human_tasks;
+  v_actor       uuid;
+  v_task_decide uuid;
   v_decide_note text;
   v_decide_skipped boolean := false;
   v_task_status text;
@@ -1119,6 +1140,39 @@ begin
     end if;
   end loop;
 
+  -- ══ PROBE 10a -- THE 836 COMPOSITION, AS A SCHEMA CONTRACT. Denominator 3,
+  -- unconditional, correct on an empty database. Migration 836 moved the
+  -- promotion INSIDE decide_human_task, so that is the path a person actually
+  -- approves through now. Its contract, on which this refusal depends: it calls
+  -- apply_trust_promotion, it treats `applied` not-true as a refusal, and it
+  -- stamps refusal_reason instead of closing the task. If a future migration
+  -- rewrites decide_human_task from a stale snapshot and drops any one of those,
+  -- this refusal starts being swallowed -- the task would close as approved with
+  -- nobody promoted, which is exactly the defect 836 exists to fix.
+  -- Comment-stripped first, so 836's own prose about these names cannot satisfy
+  -- the match.
+  select regexp_replace(prosrc, '--[^' || chr(10) || ']*', '', 'g') into v_src
+    from pg_proc
+   where proname = 'decide_human_task' and pronamespace = 'public'::regnamespace;
+
+  if v_src is null then
+    raise notice '838 VACUITY -- PROBE 10a found no public.decide_human_task on this database (migration 836 not applied). Zero comparisons; it does not count toward the checks total.';
+  else
+    for v_row in
+      select * from (values
+        ('\mapply_trust_promotion\s*\(', 'calls apply_trust_promotion at all -- the promotion is not part of the decision, so a batch approval closes the task and promotes nobody'),
+        ('>>\s*''applied''',              'reads the ''applied'' key -- it cannot tell a refusal from a success, so this migration''s refusal is swallowed and the task closes as approved'),
+        ('\mrefusal_reason\M',            'writes refusal_reason -- a refused promotion would leave the queue with no explanation of why it will not go through')
+      ) t(pat, why)
+    loop
+      v_checks := v_checks + 1;
+      if v_src !~ v_row.pat then
+        v_bad := array_append(v_bad, format(
+          'PROBE 10a: the installed decide_human_task no longer %s', v_row.why));
+      end if;
+    end loop;
+  end if;
+
   -- ══ PROBE 4 -- the post-apply body hashes match what the precheck declares,
   -- so a re-apply or a replay reaching this file twice is not refused by this
   -- migration's own work. Denominator 3. Follows mig 834 PROBE 7 exactly.
@@ -1203,7 +1257,34 @@ begin
   -- would not undo any of that. Aborting the subtransaction undoes all of it.
   -- PL/pgSQL variables are plain memory and are NOT rolled back, so v_checks
   -- and v_bad survive -- which is the only thing this arm needs to carry out.
-  select id into v_tenant from public.tenants order by created_at limit 1;
+  -- Prefer an OPERATIONAL tenant that actually has an active tenant-layer
+  -- member, because PROBE 10b needs a real identity to drive decide_human_task
+  -- (mig 830's pattern). Falls back to any tenant so the other PROBE 5 arms --
+  -- none of which need a member -- are not lost on a database that has none.
+  -- tenant_is_operational mirrors request_eligible_promotions' own filter
+  -- rather than a predicate that only matches because nothing is suspended.
+  select t.id into v_tenant
+    from public.tenants t
+   where public.tenant_is_operational(t.id)
+   order by (exists (select 1 from public.profiles p
+                      where p.tenant_id = t.id and p.layer = 'tenant'
+                        and coalesce(p.is_active, true))) desc,
+            t.created_at
+   limit 1;
+  if v_tenant is null then
+    select id into v_tenant from public.tenants order by created_at limit 1;
+  end if;
+
+  -- The identity PROBE 10b will act as. Discovered by query, never hardcoded,
+  -- and only ever a REAL active member of the fixture tenant -- nothing is
+  -- inserted into auth.users, and the whole arm is inside the subtransaction
+  -- that is deliberately rolled back, so no audit row is attributed to them.
+  select p.user_id into v_actor
+    from public.profiles p
+   where p.tenant_id = v_tenant and p.layer = 'tenant'
+     and coalesce(p.is_active, true)
+   order by p.user_id
+   limit 1;
 
   if v_tenant is null then
     raise notice '838 VACUITY -- no tenant exists on this database, so PROBE 5 (a-i) made ZERO comparisons: every arm about a real ladder, the end-to-end refusal at apply_trust_promotion, and its two controls are unexercised here. True and honest on an empty database, not a manufactured pass. PROBES 1-4 and 6 are unaffected.';
@@ -1217,6 +1298,13 @@ begin
       insert into public.human_tasks (tenant_id, type, title, detail, source)
         values (v_tenant, 'trust_promotion', 'zz probe 838 (with ladder)', 'zz probe 838', 'system')
         returning id into v_task_good;
+      -- A THIRD, UNTOUCHED pair for PROBE 10b. It cannot share v_task_none:
+      -- PROBE 5i rejects that one, and a successful rejection CLEARS
+      -- pending_task_id, so 10b would then meet 'no_pending_policy' and report a
+      -- refusal that has nothing to do with this migration.
+      insert into public.human_tasks (tenant_id, type, title, detail, source)
+        values (v_tenant, 'trust_promotion', 'zz probe 838 (decide path)', 'zz probe 838', 'system')
+        returning id into v_task_decide;
 
       insert into public.trust_policies
         (tenant_id, de_id, action_category, current_level, max_level, status, ladder, criteria, pending_task_id)
@@ -1226,7 +1314,8 @@ begin
         (v_tenant, null, 'zz_probe_838_gap',   0, 3, 'active', c_ladder_l2,  c_criteria_impossible, null),
         (v_tenant, null, 'zz_probe_838_ceil',  1, 1, 'active', c_ladder_l1,  c_criteria_impossible, null),
         (v_tenant, null, 'zz_probe_838_pause', 0, 3, 'paused', c_ladder_l1,  c_criteria_impossible, null),
-        (v_tenant, null, 'zz_probe_838_bad',   0, 3, 'active', c_ladder_bad, c_criteria_impossible, null);
+        (v_tenant, null, 'zz_probe_838_bad',   0, 3, 'active', c_ladder_bad, c_criteria_impossible, null),
+        (v_tenant, null, 'zz_probe_838_dec',   0, 3, 'active', null,         c_criteria_impossible, v_task_decide);
 
       select id into v_p_none  from public.trust_policies where tenant_id = v_tenant and action_category = 'zz_probe_838_none';
       select id into v_p_good  from public.trust_policies where tenant_id = v_tenant and action_category = 'zz_probe_838_good';
@@ -1396,7 +1485,14 @@ begin
       -- only thing that gives role_archetypes.trust_ladder a reader.
       insert into public.role_archetypes (key, name, domain, trust_ladder)
         values (v_role_key, 'zz probe 838 (declares)', 'zz_probe_838',
-                jsonb_build_object('zz_probe_838_role', c_ladder_l1));
+                jsonb_build_object('zz_probe_838_role', c_ladder_l1,
+                                   -- ⚠ THE ROLE MUST ALSO DECLARE THE OVERRIDE'S
+                                   -- CATEGORY, or PROBE 7e proves nothing: with no
+                                   -- role entry for it there is no conflict for the
+                                   -- override to win. Caught by inversion INV13,
+                                   -- which could not turn 7e red until this line
+                                   -- existed -- the probe was theatre before it.
+                                   'zz_probe_838_over', c_ladder_l1));
       insert into public.role_archetypes (key, name, domain, trust_ladder)
         values (v_role_silent, 'zz probe 838 (declares nothing)', 'zz_probe_838', null);
 
@@ -1492,43 +1588,63 @@ begin
           'PROBE 7f: a policy whose employee has NO archetype_key was reported promotable -- effective_trust_ladder resolved a role that does not exist');
       end if;
 
-      -- ══ PROBE 10 -- THE 836 COMPOSITION, END TO END ON THE REAL PATH.
-      -- Migration 836 moved the promotion INSIDE decide_human_task, so THAT is
-      -- how a person actually approves now; PROBE 5g exercises the writer
-      -- directly and would not notice if the composition were broken. 836's
-      -- contract: on a refusal the task is NOT closed, refusal_reason is
-      -- stamped, and the still-pending row is returned. All of that depends on
-      -- this refusal RETURNING rather than raising.
-      v_checks := v_checks + 1;
-      begin
-        perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
-        v_decide := public.decide_human_task(v_task_none, 'approved', null, null, null);
-        v_decide_note := coalesce(v_decide.status, '(null row - already decided, or a second approver is required)');
-      exception when others then
-        v_decide_note := 'RAISED: ' || sqlerrm;
-      end;
-      select status, refusal_reason into v_task_status, v_task_refusal
-        from public.human_tasks where id = v_task_none;
-
-      if v_decide_note like 'RAISED:%' then
-        -- Not automatically a finding: decide_human_task carries authority and
-        -- membership gates this fixture may legitimately fail under a bare
-        -- service_role claim. Recorded, and the arm is only a FINDING if the
-        -- task was closed anyway.
+      -- ══ PROBE 10b -- THE 836 COMPOSITION, DRIVEN END TO END ON THE REAL PATH.
+      -- PROBE 5g calls the writer directly and would not notice if the
+      -- composition were broken; this drives the door a person actually uses.
+      --
+      -- IDENTITY: migration 830's pattern in this same plan, verbatim in shape.
+      -- auth.uid() reads request.jwt.claim.sub FIRST (checked against its live
+      -- body, not assumed), so setting that GUC plus `set local role
+      -- authenticated` genuinely drives the authenticated path. NOTHING IS
+      -- FORGED IN auth.users -- v_actor is a real, active tenant-layer member
+      -- discovered by query above, never a hardcoded id, and the entire arm sits
+      -- inside the subtransaction that is deliberately rolled back, so no audit
+      -- row or task mark is attributed to that person past this statement.
+      -- request.jwt.claims is cleared first so identity comes from claim.sub
+      -- alone; otherwise the leftover service_role claim would send
+      -- apply_trust_promotion down its service branch and this would not be the
+      -- human path at all.
+      --
+      -- If no such member exists, the arm makes ZERO comparisons and is NOT
+      -- counted -- a probe that passes because its subject never ran is theatre.
+      if v_actor is null then
         v_decide_skipped := true;
+        v_decide_note := 'no active tenant-layer member exists for the fixture tenant';
+      else
+        begin
+          perform set_config('request.jwt.claims', '', true);
+          perform set_config('request.jwt.claim.sub', v_actor::text, true);
+          set local role authenticated;
+          v_decide := public.decide_human_task(v_task_decide, 'approved', null, null, null);
+          reset role;
+          v_decide_note := coalesce(v_decide.status, '(null row - already decided, or a second approver is required)');
+        exception when others then
+          reset role;
+          v_decide_note := 'RAISED: ' || sqlerrm;
+          v_decide_skipped := true;
+        end;
+        perform set_config('request.jwt.claim.sub', '', true);
       end if;
-      if coalesce(v_task_status, '') = 'approved' then
-        v_bad := array_append(v_bad, format(
-          'PROBE 10: decide_human_task CLOSED a trust_promotion task as approved on a policy that cannot be promoted (decide returned %s). That is migration 836''s exact defect -- the task says approved and nobody was promoted.',
-          v_decide_note));
-      elsif not v_decide_skipped and coalesce(btrim(coalesce(v_task_refusal, '')), '') = '' then
-        v_bad := array_append(v_bad, format(
-          'PROBE 10: decide_human_task did not close the task (good) but stamped NO refusal_reason (decide returned %s), so the queue shows a card with no explanation of why it will not go through.',
-          v_decide_note));
-      elsif not v_decide_skipped and v_task_refusal not like '%this promotion cannot be applied%' then
-        v_bad := array_append(v_bad, format(
-          'PROBE 10: the task carries refusal_reason "%s", which is not this migration''s refusal -- 836 is reporting some other cause and the real one is lost.',
-          v_task_refusal));
+      select status, refusal_reason into v_task_status, v_task_refusal
+        from public.human_tasks where id = v_task_decide;
+
+      if v_decide_skipped then
+        raise notice '838 VACUITY -- PROBE 10b could not reach decide_human_task on this database (%). The end-to-end composition with migration 836 made ZERO comparisons here and does NOT count toward the checks total; PROBE 10a (static contract) and PROBE 5g (the refusal payload) carry it instead.', v_decide_note;
+      else
+        v_checks := v_checks + 1;
+        if coalesce(v_task_status, '') = 'approved' then
+          v_bad := array_append(v_bad, format(
+            'PROBE 10b: decide_human_task CLOSED a trust_promotion task as approved on a policy that cannot be promoted (it returned %s). That is migration 836''s exact defect -- the task says approved and nobody was promoted.',
+            v_decide_note));
+        elsif coalesce(btrim(coalesce(v_task_refusal, '')), '') = '' then
+          v_bad := array_append(v_bad, format(
+            'PROBE 10b: the task was not closed (good) but carries NO refusal_reason (decide returned %s), so the queue shows a card with no explanation of why it will not go through.',
+            v_decide_note));
+        elsif v_task_refusal not like '%this promotion cannot be applied%' then
+          v_bad := array_append(v_bad, format(
+            'PROBE 10b: the task carries refusal_reason "%s", which is not this migration''s refusal -- 836 is reporting some other cause and the real one is lost.',
+            v_task_refusal));
+        end if;
       end if;
 
       perform set_config('request.jwt.claims', '', true);
