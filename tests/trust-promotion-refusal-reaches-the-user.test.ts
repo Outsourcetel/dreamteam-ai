@@ -41,6 +41,7 @@ import { describe, it, expect } from 'vitest';
 
 const LIB_PATH = 'src/lib/trustApi.ts';
 const MIGRATION_PATH = 'supabase/migrations/837_a_refusal_that_leaves_a_record.sql';
+const MIGRATION_838_PATH = 'supabase/migrations/838_a_role_declares_what_a_step_grants.sql';
 
 /** Comments are not code. Blanked rather than removed so this file cannot pass
  *  by matching the prose in the wrapper's own doc comment — which describes
@@ -95,6 +96,19 @@ const PROMOTED = { applied: true, new_level: 1 };
 const REJECTED = { applied: false, reason: 'rejected' };
 const NO_PENDING = { applied: false, reason: 'no_pending_policy' };
 
+// ── migration 838 adds a THIRD refusal on the same contract ─────────────────
+// A role that has not declared what a trust step grants cannot have its
+// employees promoted (promotion_is_possible). 838 wires that refusal into
+// apply_trust_promotion and — deliberately, having read this file first —
+// returns it in 837's shape rather than raising, so the audit row recording the
+// block survives. The gate above is `r?.ok === false`, so this reason is
+// covered by construction; what is NOT covered by construction is the server
+// still returning it, which the parity arm below pins to 838's own file.
+const NOT_POSSIBLE_REFUSAL = {
+  applied: false, ok: false, reason: 'promotion_not_possible',
+  message: 'this promotion cannot be applied - this role has not declared what a trust step grants, so there is nothing to promote to',
+};
+
 describe('resolveTrustPromotion puts the server refusal back on the error channel', () => {
   it('has a refusal gate whose consequent is a throw', () => {
     expect(GATE, `resolveTrustPromotion no longer refuses on the payload. Migration 837 made the self-approval and stale paths RETURN ok:false instead of raising, so this line is the ONLY thing standing between a governed refusal and a success message. See ${LIB_PATH}.`).toBeTruthy();
@@ -103,6 +117,10 @@ describe('resolveTrustPromotion puts the server refusal back on the error channe
   it('throws on BOTH paths that used to raise', () => {
     expect(refuses(SELF_APPROVAL_REFUSAL), 'a blocked self-approval must reach the user as an error').toBe(true);
     expect(refuses(STALE_REFUSAL), 'a stale-evidence refusal must reach the user as an error').toBe(true);
+  });
+
+  it('throws on migration 838\'s undeclared-ladder refusal too', () => {
+    expect(refuses(NOT_POSSIBLE_REFUSAL), 'a promotion refused because the role declares no trust ladder must reach the user as an error, not a silent 200').toBe(true);
   });
 
   it('does NOT throw on any path 837 left alone', () => {
@@ -134,6 +152,27 @@ describe('client and server agree on the refusal contract', () => {
       expect(SQL, `migration 837 no longer returns reason '${r.reason}'`).toContain(`'reason', '${r.reason}'`);
       expect(SQL, `migration 837 no longer returns the message pinned here for '${r.reason}'`).toContain(r.message);
     }
+  });
+
+  it('migration 838 returns the third reason and message this file pins', () => {
+    const SQL_838 = readFileSync(MIGRATION_838_PATH, 'utf8');
+    expect(SQL_838, `migration 838 no longer returns reason '${NOT_POSSIBLE_REFUSAL.reason}'`)
+      .toContain(`'reason', '${NOT_POSSIBLE_REFUSAL.reason}'`);
+    // The message is composed at runtime — format('this promotion cannot be
+    // applied - %s', <why>) — so the pinnable halves are the prefix the server
+    // builds and the `why` promotion_is_possible supplies for the arm this
+    // whole migration exists for. Both are asserted; the constant above is the
+    // concatenation a user actually sees.
+    expect(SQL_838, 'migration 838 no longer builds the refusal message prefix pinned here')
+      .toContain("'this promotion cannot be applied - %s'");
+    expect(SQL_838, 'promotion_is_possible no longer gives the undeclared-ladder reason pinned here')
+      .toContain('this role has not declared what a trust step grants, so there is nothing to promote to');
+    // ⚠ AND IT MUST RETURN, NOT RAISE. 837 measured that a raise here rolls the
+    // refusal's own audit row back. A future edit that "tidies" 838's return
+    // into a raise would restore that defect silently, and the arm above would
+    // still pass because the message literals would survive.
+    expect(SQL_838, 'migration 838 must RETURN its refusal, not raise it — see 837')
+      .toContain("return jsonb_build_object('applied', false, 'ok', false, 'reason', 'promotion_not_possible'");
   });
 
   it('keeps the literal scripts/audit-silent-refusals.mjs finds this function by', () => {
