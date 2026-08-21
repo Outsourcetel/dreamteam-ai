@@ -14,7 +14,7 @@
 import { supabase } from '../supabase';
 import { invokeEdge, EdgeFunctionError } from './invokeEdge';
 import { raise, requireTenantId, listTenantRows } from './liveShared';
-import { getSessionTenantId, isMissingTableError } from './customerApi';
+import { CustomerApiError, getSessionTenantId, isMissingTableError } from './customerApi';
 
 export type TrustCategory = 'invoice_auto_send' | 'answer_dock' | 'answer_widget';
 
@@ -378,11 +378,36 @@ export async function requestTrustPromotion(policyId: string): Promise<{ ok: boo
 
 /** decideHumanTask hook #4 — resolve a trust_promotion task.
  *  On approval the server re-verifies evidence is STILL eligible
- *  (stale-check) and blocks self-approval before moving the dial. */
+ *  (stale-check) and blocks self-approval before moving the dial.
+ *
+ *  ⚠⚠ THE REFUSAL ARRIVES AS DATA, AND THIS FUNCTION IS WHAT PUTS IT BACK ON
+ *  THE ERROR CHANNEL. Until migration 837 the two governed refusals — self
+ *  approval, and evidence gone stale — were `raise exception` in Postgres.
+ *  That threw here, which read as correct, but it also ABORTED THE
+ *  TRANSACTION THAT HAD JUST WRITTEN THE AUDIT ROW recording the refusal, one
+ *  statement earlier. Measured on production 2026-08-21: a real blocked
+ *  self-approval moved trust_promotion_blocked_self_approval by ZERO, while
+ *  the same function's audit write on the path that does NOT raise moved by
+ *  one. A raise cannot both abort and leave a durable write, so the refusal
+ *  now returns `ok:false` and the throw lives here instead.
+ *
+ *  Which means the ONE thing that must never be quietly deleted is the line
+ *  below. Without it this becomes exactly the defect
+ *  project_payload_refusal_sweep exists to catch: a 200 the UI reads as
+ *  success while nobody was promoted. It is pinned in two places —
+ *  scripts/audit-silent-refusals.mjs (run by `npm run certify`) classifies
+ *  this wrapper by that `ok === false … throw`, and
+ *  tests/trust-promotion-refusal-reaches-the-user.test.ts asserts it directly.
+ *
+ *  `ok` is present ONLY on a refusal. Success, an ordinary `rejected`
+ *  decision, and `no_pending_policy` do not carry it, so this throws on
+ *  exactly the two paths that used to raise — no more, no less. */
 export async function resolveTrustPromotion(taskId: string, decision: 'approved' | 'rejected'): Promise<{ applied: boolean }> {
   const { data, error } = await supabase.rpc('apply_trust_promotion', { p_task_id: taskId, p_decision: decision });
   if (error) raise('resolveTrustPromotion', error);
-  return data as { applied: boolean };
+  const r = data as { applied: boolean; ok?: boolean; reason?: string; message?: string } | null;
+  if (r?.ok === false) throw new CustomerApiError(r.message ?? `Trust promotion refused: ${r.reason ?? 'unknown reason'}`, false);
+  return r as { applied: boolean };
 }
 
 export interface TrustHistoryEvent {
