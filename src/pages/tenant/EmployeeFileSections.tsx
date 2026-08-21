@@ -3069,7 +3069,7 @@ function dialExceedsEarned(entry: TrustSurfaceEntry): boolean | null {
   const policy = entry.policy;
   const dial = entry.dial;
   if (!policy || !dial || !dial.enabled) return false;
-  const earned = earnedLadderSettings(policy, policy.current_level);
+  const earned = earnedLadderSettings({ ...policy, effective_ladder: policy.effective_ladder ?? null }, policy.current_level);
   if (earned === null) return null;
   if (!earned.enabled) return true;
   if (earned.max_amount_cents !== null && (dial.max_amount_cents ?? Infinity) > earned.max_amount_cents) return true;
@@ -3889,7 +3889,9 @@ export function DeTrustAutonomySection({ de, setPage, onUpdated }: {
         writebackCategory,
       );
       // Label it as an override when it exceeds the earned ladder level.
-      const earned = entry.policy ? earnedLadderSettings(entry.policy, entry.policy.current_level) : null;
+      const earned = entry.policy
+        ? earnedLadderSettings({ ...entry.policy, effective_ladder: entry.policy.effective_ladder ?? null }, entry.policy.current_level)
+        : null;
       const exceeds = earned !== null && row.enabled && (
         !earned.enabled
         || (earned.max_amount_cents !== null && (row.max_amount_cents ?? Infinity) > earned.max_amount_cents)

@@ -850,7 +850,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
     currentLevel: trustPolicy.current_level,
     targetLevel: trustPolicy.target_level,
     evidence: trustEvidence,
-    ladder: trustPolicy.ladder ?? null,
+    ladder: trustPolicy.effective_ladder ?? null,
   }) : null;
   const trustThin = trustEvidence ? isThinTrustEvidence(trustEvidence) : false;
   // ⚠ FIX ROUND 2: still checking, tri-state — see trustPolicy's own comment.

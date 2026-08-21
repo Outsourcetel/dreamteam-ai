@@ -441,6 +441,57 @@ grant execute on function public.effective_trust_ladder(public.trust_policies) t
 comment on function public.effective_trust_ladder(public.trust_policies) is
   'The ladder that applies to a policy: its own ladder if it has one (the per-policy OVERRIDE that set_trust_ladder writes), otherwise the ladder its employee''s role archetype declares for this action category, otherwise NULL. The single definition shared by promotion_is_possible (the refusal) and trust_ladder_settings (the enforcement), so the two cannot disagree. Read-through, never copied at hire -- matching mig 831''s trust_signals. Migration 838.';
 
+-- ── the same cascade, reachable from a browser ─────────────────────────────
+-- ⚠ THIS EXISTS BECAUSE THE CLIENT WAS ABOUT TO BECOME A THIRD DEFINITION.
+-- src/lib/trustApi.ts already reimplements the ladder compile in JS
+-- (earnedLadderSettings), and it reads trust_policies.ladder — the raw column,
+-- which is NULL for a policy inheriting its role's declaration. Two surfaces
+-- depend on that compile and BOTH were wrong after 838:
+--
+--   · EmployeeFileSections uses its return value to decide whether to append a
+--     `trust_manual_override` AUDIT EVENT. Fed the raw column, a dial set above
+--     the role's earned cap scored "within earned" and no audit row was written.
+--     Audit completeness, not cosmetics.
+--   · the promotion approval card ("what the step grants") renders from the same
+--     column on the ops queue and the mobile shell — the surface a person reads
+--     at the exact moment they grant autonomy.
+--
+-- The fix is NOT to teach the client the role join. That would be a third
+-- definition of what a step grants, in the language least able to enforce it,
+-- and 838 exists to stop there being two. The client asks the server instead,
+-- through this function, and feeds the answer to the compile it already had.
+--
+-- ARRAY, not one id at a time: the employee file renders every capability on
+-- one screen, and a per-policy round trip would be N requests to render one tab.
+--
+-- SECURITY INVOKER, so live RLS is the boundary: trust_policies carries
+-- trust_policies_tenant_read (qual tenant_id = auth_tenant_id()), so ids
+-- belonging to another workspace simply do not come back — a caller learns
+-- nothing by asking about them, and no row is fabricated for them. A policy id
+-- passed as a parameter is an assertion, not authorisation.
+--
+-- Granted to `authenticated` DELIBERATELY, and unlike promotion_is_possible that
+-- grant is not a dead one: this function's only callee is
+-- effective_trust_ladder, which carries a PUBLIC grant (see its own note above),
+-- so an authenticated caller can actually execute the whole chain. PROBE 13h
+-- asserts exactly that rather than trusting it.
+create or replace function public.effective_trust_ladders(p_policy_ids uuid[])
+returns table (policy_id uuid, effective_ladder jsonb)
+language sql
+stable
+security invoker
+as $function$
+  select p.id, public.effective_trust_ladder(p)
+    from public.trust_policies p
+   where p.id = any (coalesce(p_policy_ids, '{}'::uuid[]));
+$function$;
+
+revoke all on function public.effective_trust_ladders(uuid[]) from public, anon, authenticated;
+grant execute on function public.effective_trust_ladders(uuid[]) to authenticated, service_role;
+
+comment on function public.effective_trust_ladders(uuid[]) is
+  'Batch reader for effective_trust_ladder, so a browser can render what a step grants from the SAME cascade the server enforces instead of reimplementing the role join in JS. RLS-bounded (SECURITY INVOKER): ids from another workspace return no row. Migration 838.';
+
 -- ── the refusal ─────────────────────────────────────────────────────────────
 -- SECURITY INVOKER, not DEFINER, and the reasoning is the same one mig 831
 -- applied to declared_trust_signals in this same program -- but it matters MORE
@@ -1294,6 +1345,9 @@ declare
   v_grant_total     integer := 0;
   v_grant_bad       integer := 0;
   v_grant_eg        text;
+  v_batch_total     integer := 0;
+  v_batch_bad       integer := 0;
+  v_batch_eg        uuid;
 begin
   -- ══ PROBE 1 -- unconditional, denominator 1, correct on an empty database.
   -- A policy id that matches nothing must refuse, and must refuse by SAYING SO
@@ -1479,6 +1533,56 @@ begin
   elsif position('v_uses_conf := v_pol.action_category IN (''answer_dock'', ''answer_widget'')' in v_src) = 0 then
     v_bad := array_append(v_bad,
       'PROBE 13g: set_trust_ladder no longer derives its confidence/amount split as action_category IN (answer_dock, answer_widget). set_role_trust_ladder mirrors that expression verbatim and must be updated in the same commit, or the two writers will accept different ladders for the same category.');
+  end if;
+
+  -- ══ PROBE 13h -- THE BATCH READER. Two arms, both unconditional.
+  -- (i) GRANT CHAIN, denominator 2. effective_trust_ladders is granted to
+  -- authenticated so a browser can render what a step grants from the server's
+  -- own cascade. That grant is worthless unless authenticated can also execute
+  -- its callee, effective_trust_ladder -- the exact dead-grant trap that kept
+  -- promotion_is_possible off authenticated (validate_trust_ladder's ACL is
+  -- {postgres, service_role}). has_function_privilege answers INCLUDING
+  -- inheritance through PUBLIC, so this cannot be faked by a REVOKE elsewhere.
+  for v_row in
+    select * from (values
+      ('public.effective_trust_ladders(uuid[])', 'the client would get permission denied and silently lose the effective ladder'),
+      ('public.effective_trust_ladder(public.trust_policies)', 'the batch reader would raise permission denied on its own callee for every browser caller -- a grant that looks live and is dead')
+    ) t(sig, why)
+  loop
+    v_checks := v_checks + 1;
+    if not has_function_privilege('authenticated', v_row.sig, 'EXECUTE') then
+      v_bad := array_append(v_bad, format(
+        'PROBE 13h(i): authenticated cannot EXECUTE %s -- %s', v_row.sig, v_row.why));
+    end if;
+  end loop;
+
+  -- (ii) AGREEMENT, denominator = every live policy. The batch reader must give
+  -- the same answer as the single-row one for every row, or the browser renders
+  -- one ladder while the enforcement path reads another -- which is the whole
+  -- defect this function exists to close, moved one layer out.
+  v_batch_total := 0;
+  v_batch_bad := 0;
+  for v_row in
+    select p.id,
+           public.effective_trust_ladder(p) as one_at_a_time,
+           (select b.effective_ladder from public.effective_trust_ladders(array[p.id]) b) as batched
+      from public.trust_policies p
+  loop
+    v_batch_total := v_batch_total + 1;
+    if v_row.one_at_a_time is distinct from v_row.batched then
+      v_batch_bad := v_batch_bad + 1;
+      if v_batch_eg is null then v_batch_eg := v_row.id; end if;
+    end if;
+  end loop;
+  if v_batch_total > 0 then
+    v_checks := v_checks + 1;
+    if v_batch_bad > 0 then
+      v_bad := array_append(v_bad, format(
+        'PROBE 13h(ii): %s of %s live policies got a different answer from effective_trust_ladders than from effective_trust_ladder (e.g. %s) -- the browser would render a ladder the enforcement path does not read',
+        v_batch_bad, v_batch_total, v_batch_eg));
+    end if;
+  else
+    raise notice '838 VACUITY -- PROBE 13h(ii) found 0 trust_policies rows to compare the batch reader against. Zero comparisons; it does not count toward the checks total.';
   end if;
 
   -- ══ PROBE 5 -- the fixture arm. Needs one tenant to hang throwaway rows off.

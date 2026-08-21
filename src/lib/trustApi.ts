@@ -59,8 +59,20 @@ export interface TrustPolicy {
   requested_at: string | null;
   created_at: string;
   updated_at: string;
-  /** null = the engine's built-in level rewards (exactly the legacy behavior). */
+  /** The per-policy OVERRIDE, as stored. ⚠ NOT what the server enforces since
+   *  migration 838: a policy with no override of its own inherits the ladder its
+   *  employee's ROLE declares, resolved server-side by effective_trust_ladder.
+   *  Reading this column to decide what a step grants is the defect
+   *  tests/trust-ladder-client-reads-the-server-cascade.test.ts exists to catch.
+   *  It is still the right field for the ladder EDITOR, which edits the override.
+   *  null = no override. */
   ladder?: TrustLadderLevel[] | null;
+  /** What the server actually compiles for this policy: the override if it has
+   *  one, otherwise its role's declaration, otherwise null. Fetched from
+   *  effective_trust_ladders — never derived here, because a third definition of
+   *  the cascade is exactly what migration 838 exists to prevent. Present only
+   *  on policies loaded through a reader that fetches it. */
+  effective_ladder?: TrustLadderLevel[] | null;
   display_name?: string | null;
   max_level?: number;
   /** The evidence snapshot a promotion request was raised with (set by
@@ -98,7 +110,15 @@ export interface TrustSurfaceEntry {
 export async function listDeTrustSurface(deId: string): Promise<TrustSurfaceEntry[]> {
   const { data, error } = await supabase.rpc('list_de_trust_surface', { p_de_id: deId });
   if (error) raise('listDeTrustSurface', error);
-  return (data ?? []) as TrustSurfaceEntry[];
+  const entries = (data ?? []) as TrustSurfaceEntry[];
+  // Attach the SERVER's compiled ladder to every policy on the surface. The
+  // Trust tab decides from it whether a dial sits above what the employee has
+  // earned — and that decision writes a trust_manual_override audit row, so
+  // reading the override-only column here loses audit rows, not just labels.
+  const ladders = await getEffectiveTrustLadders(entries.map(e => e.policy?.id).filter((x): x is string => !!x));
+  return entries.map(e => (e.policy
+    ? { ...e, policy: { ...e.policy, effective_ladder: ladders.get(e.policy.id) ?? null } }
+    : e));
 }
 
 /** Idempotent, level-0, per-capability lazy seeding (manager+). Refused for
@@ -270,12 +290,19 @@ export function trustLevelName(policy: Pick<TrustPolicy, 'ladder'> | null | unde
  *  callers must render ABSENCE in that case, never a guess.
  *  The server ladder (trust_ladder_settings) is authoritative. */
 export function earnedLadderSettings(
-  policy: Pick<TrustPolicy, 'action_category' | 'ladder' | 'max_level'> | null | undefined,
+  policy: (Pick<TrustPolicy, 'action_category' | 'max_level'> & {
+    /** ⚠ REQUIRED, and non-optional ON PURPOSE. Passing a raw TrustPolicy (where
+     *  this field is optional) is now a TYPE ERROR, which is the point: a
+     *  runtime fallback to policy.ladder would leave every un-migrated call site
+     *  silently reading the override-only column, and silently wrong is exactly
+     *  how this defect shipped. Fetch it with getEffectiveTrustLadders. */
+    effective_ladder: TrustLadderLevel[] | null;
+  }) | null | undefined,
   level: number,
 ): { enabled: boolean; max_amount_cents: number | null; min_confidence: number | null } | null {
   if (!policy) return null;
   if (level <= 0) return { enabled: false, max_amount_cents: null, min_confidence: null };
-  const ladder = policy.ladder;
+  const ladder = policy.effective_ladder;
   if (ladder && ladder.length > 0) {
     const capped = Math.min(level, policy.max_level ?? 3);
     // Highest defined entry at or below the earned level wins (server
@@ -319,7 +346,36 @@ export async function listTrustPolicies(): Promise<TrustPolicy[]> {
 export async function getTrustPolicyById(id: string): Promise<TrustPolicy | null> {
   const { data, error } = await supabase.from('trust_policies').select('*').eq('id', id).maybeSingle();
   if (error) raise('getTrustPolicyById', error);
-  return (data as TrustPolicy | null) ?? null;
+  const policy = (data as TrustPolicy | null) ?? null;
+  if (!policy) return null;
+  // ⚠ SECOND ROUND TRIP, DELIBERATELY. Since migration 838 the stored `ladder`
+  // column is only the per-policy OVERRIDE; what the server enforces is the
+  // override OR the role's declaration, and that join lives in SQL. Every
+  // consumer of this policy that renders "what the step grants" reads
+  // effective_ladder, so it is attached here rather than at each call site.
+  const ladders = await getEffectiveTrustLadders([policy.id]);
+  return { ...policy, effective_ladder: ladders.get(policy.id) ?? null };
+}
+
+/** The ladder the SERVER compiles for each policy — the override if it has one,
+ *  otherwise the ladder its employee's role declares. One round trip for many
+ *  policies, because the employee file renders every capability on one screen.
+ *
+ *  ⚠ This is a FETCH, not a computation, and that is the whole design. The role
+ *  join is not reimplemented here: there are already two definitions of the
+ *  ladder compile (trust_ladder_settings in SQL, earnedLadderSettings below)
+ *  and migration 838 exists to stop there being two of the LADDER. RLS-bounded
+ *  server-side, so ids from another workspace simply do not come back. */
+export async function getEffectiveTrustLadders(policyIds: string[]): Promise<Map<string, TrustLadderLevel[] | null>> {
+  const out = new Map<string, TrustLadderLevel[] | null>();
+  const ids = Array.from(new Set(policyIds.filter(Boolean)));
+  if (ids.length === 0) return out;
+  const { data, error } = await supabase.rpc('effective_trust_ladders', { p_policy_ids: ids });
+  if (error) raise('getEffectiveTrustLadders', error);
+  for (const r of (data ?? []) as { policy_id: string; effective_ladder: TrustLadderLevel[] | null }[]) {
+    out.set(r.policy_id, r.effective_ladder ?? null);
+  }
+  return out;
 }
 
 export type TrustReadinessRow = {
