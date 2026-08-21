@@ -2,6 +2,9 @@ import { DEFAULT_ACCENT } from '../../design/branding';
 import React, { useState, useEffect } from 'react';
 import type { AuthUser, Tenant, PlatformPage, Page } from '../../types';
 import { Badge, StatCard, Modal } from '../../components';
+// Design System v1, direct — `components/Modal` above is the LEGACY adapter the
+// rest of this page still uses. New markup on this page imports from here.
+import { Modal as DtModal, Banner } from '../../design/primitives';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabase';
 import type { DBTenant, TenantProvisioningRequest, FeatureRegistryEntry, TenantFeatureOverride, PlatformConnectorHealthRow, TenantOverviewRow, DispatchHealth } from '../../lib/api';
@@ -405,6 +408,19 @@ const PlatformConsolePage = ({
             </button>
           </div>
         )}
+
+        {/* The write audit log belongs HERE and only here. This is the page
+            titled "Tenants & Remote Access" — the one place a session is
+            STARTED — so the record of what those sessions changed sits directly
+            under the control that begins one. It is also the only page branch
+            where the tenant list is in scope: the panel names workspaces from
+            `localDbTenants`, and on platform_security (deliberately ungated on
+            the tenant fetch) it would render a column of raw UUIDs. Collapsed
+            by default and lazy-loaded on expand, so it costs a query only when
+            somebody actually asks. `operatorUserId` labels the empty state; it
+            authorises nothing — see the panel header. */}
+        <RemoteAccessWriteAuditPanel dbTenants={localDbTenants} operatorUserId={user?.id} />
+
         {selectedTenant && (
           <Modal
             title={selectedTenant.name + ' — Detail'}
@@ -1049,12 +1065,37 @@ const RecentPlatformEventsPanel = ({ tenants }: { tenants: Tenant[] }) => {
 
 // ─────────────────────────────────────────────────────────────────
 // Remote Access write audit — every write made during a remote-access
-// session is logged server-side by the trg_remote_access_audit trigger
-// (migrations 062/063). This panel is the founder's actual window into
-// that log: who changed what, in which tenant, and (at a glance) which
-// fields changed. RLS on remote_access_write_log already restricts
-// SELECT to is_platform_admin(), so this query is safe as-is for any
-// platform-layer user viewing this page.
+// session is logged server-side by the log_remote_access_write trigger
+// (migrations 062/063; 74 triggers attached in production). This panel
+// is the founder's actual window into that log: who changed what, in
+// which tenant, and (at a glance) which fields changed.
+//
+// ⚠ THIS PANEL EXISTED, FULLY WRITTEN, AND WAS NEVER RENDERED — from the
+// day it was authored until 2026-08-21 (register item B-20). It is the
+// only reader of remote_access_write_log anywhere in the repo, so the
+// record of what platform operators changed inside customers' workspaces
+// was being written faithfully and shown to nobody. `noUnusedLocals` is
+// false in tsconfig.json, which is why nothing ever said so. If you are
+// about to remove the render site below, you are re-creating the defect.
+//
+// ⚠ AUTHORITY. The read is authorised in the DATABASE, not here:
+// remote_access_write_log has RLS enabled AND forced, a single SELECT
+// policy `resolve_platform_capability(auth.uid(), 'remote_access.audit')`,
+// no INSERT/UPDATE/DELETE policy at all, and no dependent view or
+// SECURITY DEFINER read path. Verified live 2026-08-21. Rendering this
+// panel therefore cannot leak anything the database would not hand over.
+//
+// ⚠ BUT AN UNAUTHORISED READ DOES NOT FAIL — it SUCCEEDS WITH 0 ROWS.
+// `authenticated` holds the SELECT grant, so PostgREST returns 200 [] and
+// RLS silently filters. Proven in production on 2026-08-21: the identical
+// statement under role `authenticated` returned 194 rows for a
+// platform_super_admin's sub and 0 for a tenant_owner's, neither erroring.
+// (anon is different — it has no grant and gets a hard 42501.) An empty
+// table here would therefore be indistinguishable from "no operator has
+// ever touched a customer's data" — the most reassuring possible reading
+// of "you are not allowed to know". So the panel asks the capability
+// question OUT LOUD before it draws an empty state. That probe is a
+// LABEL, never a gate: RLS is the gate, and it holds whatever this says.
 // ─────────────────────────────────────────────────────────────────
 interface RemoteAccessWriteLogRow {
   id: number;
@@ -1090,7 +1131,12 @@ const operationBadgeClasses: Record<string, string> = {
   DELETE: 'bg-red-500/15 text-red-300',
 };
 
-const RemoteAccessWriteAuditPanel = ({ dbTenants }: { dbTenants?: DBTenant[] }) => {
+const RemoteAccessWriteAuditPanel = ({ dbTenants, operatorUserId }: {
+  dbTenants?: DBTenant[];
+  /** The signed-in operator's own id, used ONLY to label the empty state
+   *  (see the header above). Never an authorisation input. */
+  operatorUserId?: string;
+}) => {
   const [expanded, setExpanded] = useState(false);
   const [rows, setRows] = useState<RemoteAccessWriteLogRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -1098,6 +1144,10 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants }: { dbTenants?: DBTenant[] }) 
   const [error, setError] = useState('');
   const [tenantFilter, setTenantFilter] = useState<string>('all');
   const [detailRow, setDetailRow] = useState<RemoteAccessWriteLogRow | null>(null);
+  // null = not asked yet / unanswerable. Only `false` earns the refusal copy,
+  // so a probe that itself fails degrades to the neutral empty state rather
+  // than accusing a legitimate operator of having no access.
+  const [canAudit, setCanAudit] = useState<boolean | null>(null);
 
   const tenantName = (tenantId: string): string => {
     const t = dbTenants?.find((dt) => dt.id === tenantId);
@@ -1107,13 +1157,26 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants }: { dbTenants?: DBTenant[] }) 
   const load = async () => {
     setLoading(true);
     setError('');
-    const { data, error: qError } = await supabase
-      .from('remote_access_write_log')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(100);
+    // Ask the capability question in the same breath as the read. Its answer
+    // never decides what is SHOWN — it decides what the absence of rows is
+    // allowed to CLAIM.
+    const capability = operatorUserId
+      ? supabase.rpc('resolve_platform_capability', {
+          p_user_id: operatorUserId,
+          p_capability: 'remote_access.audit',
+        })
+      : Promise.resolve({ data: null, error: null } as { data: boolean | null; error: null });
+    const [{ data: capData, error: capError }, { data, error: qError }] = await Promise.all([
+      capability,
+      supabase
+        .from('remote_access_write_log')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100),
+    ]);
     setLoading(false);
     setLoaded(true);
+    setCanAudit(capError || typeof capData !== 'boolean' ? null : capData);
     if (qError) {
       setError(qError.message);
       return;
@@ -1173,7 +1236,19 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants }: { dbTenants?: DBTenant[] }) 
                 </button>
               </div>
 
-              {visibleRows.length === 0 ? (
+              {visibleRows.length === 0 && rows.length === 0 && canAudit === false ? (
+                // The one case the old copy got dangerously wrong: no rows
+                // because the database refused, rendered as "nothing ever
+                // happened". Say which it is.
+                <Banner tone="warn" className="my-2">
+                  <span className="font-medium">You can't see this log.</span>{' '}
+                  Your platform account doesn't hold the{' '}
+                  <span className="font-mono text-xs">remote_access.audit</span> capability, so the
+                  database returns no rows to you. This is not the same as "no operator has changed
+                  anything" — writes may well exist. A platform super-admin can grant the capability
+                  on Team &amp; Permissions.
+                </Banner>
+              ) : visibleRows.length === 0 ? (
                 <p className="text-xs text-dt-muted py-6 text-center">
                   No remote-access writes recorded{tenantFilter !== 'all' ? ' for this tenant' : ''} yet.
                 </p>
@@ -1230,9 +1305,13 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants }: { dbTenants?: DBTenant[] }) 
       )}
 
       {detailRow && (
-        <Modal
+        // Design System v1 Modal, imported direct from src/design/primitives —
+        // NOT the legacy `components/Modal` default-export adapter the rest of
+        // this page still routes through.
+        <DtModal
           title={`${detailRow.table_name} · ${detailRow.operation}`}
           onClose={() => setDetailRow(null)}
+          size="2xl"
         >
           <div className="space-y-3 max-h-[60vh] overflow-y-auto">
             <div className="text-xs text-dt-support space-y-1">
@@ -1270,7 +1349,7 @@ const RemoteAccessWriteAuditPanel = ({ dbTenants }: { dbTenants?: DBTenant[] }) 
               )}
             </div>
           </div>
-        </Modal>
+        </DtModal>
       )}
     </div>
   );
