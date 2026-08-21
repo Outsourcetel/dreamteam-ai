@@ -198,7 +198,7 @@ export default function ActivityPage({ setPage }: { setPage: (p: Page) => void }
       />
       <p className="-mt-3 mb-5 text-xs text-dt-muted">
         Operational stream: what your workforce is doing right now. For the immutable compliance record, see the{' '}
-        <button onClick={() => setPage('gov_audit')} className="text-indigo-400 hover:text-indigo-300 transition-colors">
+        <button onClick={() => setPage('gov_audit')} className="text-dt-accent-text hover:underline transition-colors">
           Audit Trail →
         </button>
       </p>
@@ -258,7 +258,7 @@ export default function ActivityPage({ setPage }: { setPage: (p: Page) => void }
                         <span>{r.de}</span>
                         <span>· {r.entity}</span>
                         {link && (
-                          <button onClick={() => setPage(link.page)} className="text-indigo-400 hover:text-indigo-300 transition-colors ml-1">
+                          <button onClick={() => setPage(link.page)} className="text-dt-accent-text hover:underline transition-colors ml-1">
                             {link.label}
                           </button>
                         )}

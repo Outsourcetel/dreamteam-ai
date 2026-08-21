@@ -500,7 +500,7 @@ export default function DEChatDock() {
             {!isLive && (
               <button
                 onClick={() => { setOpen(false); handleSetPage('workforce_des'); }}
-                className="text-[11px] text-indigo-400 hover:text-indigo-300 transition-colors flex-shrink-0"
+                className="text-[11px] text-dt-accent-text hover:underline transition-colors flex-shrink-0"
               >
                 View profile
               </button>
@@ -593,8 +593,8 @@ export default function DEChatDock() {
                   )}
                   <div className={`max-w-[85%] rounded-xl px-3 py-2 ${
                     msg.role === 'user' ? 'bg-indigo-600 text-white'
-                    : msg.notice === 'llm_not_configured' ? 'bg-amber-500/10 border border-amber-500/30 text-amber-200'
-                    : msg.notice === 'error' ? 'bg-red-500/10 border border-red-500/30 text-red-200'
+                    : msg.notice === 'llm_not_configured' ? 'bg-dt-warn-soft border border-dt-warn-border text-dt-warn'
+                    : msg.notice === 'error' ? 'bg-dt-danger-soft border border-dt-danger-border text-dt-danger'
                     : 'bg-dt-panel text-dt-body'
                   }`}>
                     <div className="text-xs whitespace-pre-line leading-relaxed">{msg.text}</div>
@@ -611,7 +611,7 @@ export default function DEChatDock() {
                       <button
                         type="button"
                         onClick={() => setShowImportSite(true)}
-                        className="mt-2 w-full rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-3 py-2 text-[11px] font-medium text-indigo-200 transition-colors hover:bg-indigo-500/20 focus:outline-none focus:ring-2 focus:ring-dt-accent"
+                        className="mt-2 w-full rounded-lg border border-dt-accent-border bg-dt-accent-soft px-3 py-2 text-[11px] font-medium text-dt-accent-text transition-colors hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-dt-accent"
                       >
                         {msg.recovery.cta || 'Read my website'}
                       </button>
@@ -633,16 +633,16 @@ export default function DEChatDock() {
                       </label>
                     )}
                     {msg.blocked && (
-                      <div className="mt-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 px-2 py-1.5 text-[11px] text-amber-300">
+                      <div className="mt-1.5 rounded-lg bg-dt-warn-soft border border-dt-warn-border px-2 py-1.5 text-[11px] text-dt-warn">
                         🛡 Guardrail block{msg.blockedRule ? ` — "${msg.blockedRule}"` : ''}. The draft answer was withheld and recorded in the audit trail.
                       </div>
                     )}
                     {msg.escalated && !msg.blocked && (
-                      <div className="mt-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 px-2 py-1.5 text-[11px] text-amber-300">
+                      <div className="mt-1.5 rounded-lg bg-dt-warn-soft border border-dt-warn-border px-2 py-1.5 text-[11px] text-dt-warn">
                         I've escalated this to your team —{' '}
                         {canOpenTasks && <button
                           onClick={() => handleSetPage('ops_human_tasks')}
-                          className="underline underline-offset-2 hover:text-amber-100 transition-colors"
+                          className="underline underline-offset-2 hover:brightness-110 transition-colors"
                         >
                           view Human Tasks →
                         </button>}
@@ -654,7 +654,7 @@ export default function DEChatDock() {
                           <button
                             key={a.label}
                             onClick={() => handleSetPage(a.page)}
-                            className="text-[11px] text-indigo-400 hover:text-indigo-300 transition-colors"
+                            className="text-[11px] text-dt-accent-text hover:underline transition-colors"
                           >
                             {a.label}
                           </button>

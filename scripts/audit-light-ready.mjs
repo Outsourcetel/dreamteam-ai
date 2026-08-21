@@ -133,9 +133,30 @@ const slateText = lines('text-slate-');
 // blind spot already documented for bare text-white (see the
 // ImportCustomersModal.tsx tab-ternary note in this file's baseline
 // history); left as-is here for the same reason, not reintroduced.
+//
+// TONE_FILL_SURVIVORS (Task 5T, employee/DE/ops group): the first real
+// tone-tint survivor the estate conversion found, per the note above — one
+// line, doc §7. DEChatDock.tsx's chat-bubble className is a single ternary
+// spanning several lines: the `msg.role === 'user'` branch (a few lines up)
+// paints an OPAQUE `bg-indigo-600`, and a SEPARATE, later ternary in the same
+// message row (`msg.role === 'user' ? 'text-indigo-200' : 'text-dt-muted'`)
+// renders the timestamp on top of that same bubble. Both ternaries are
+// genuinely coupled — the timestamp only ever renders inside the bubble its
+// OWN role check paints — but COLORED_BG only looks within one line, so it
+// cannot see the opaque fill one physical element up. `text-indigo-200` is a
+// tint on that opaque same-family fill (the mapping table's own "leave it"
+// case), and literal indigo-600/indigo-200 is a fixed, non-theme-reactive
+// pair: converting the text half alone to a dt-* token would swap in a
+// LIGHT-theme value (dt-accent-text, a dark ink) against the still-literal
+// medium-bright indigo-600 fill, which is a real contrast regression the
+// original literal pairing did not have. Left as-is; not a missed line.
+const TONE_FILL_SURVIVORS = [
+  { file: 'DEChatDock.tsx', contains: "msg.role === 'user' ? 'text-indigo-200' : 'text-dt-muted'" },
+];
 const TONE_HUES = 'amber\\|indigo\\|emerald\\|rose\\|red\\|sky\\|teal\\|violet\\|purple\\|cyan\\|orange\\|fuchsia\\|pink\\|lime\\|yellow\\|green\\|blue';
 const toneText = lines(`text-\\(${TONE_HUES}\\)-\\(100\\|200\\|300\\)\\b`)
-  .filter(l => !new RegExp(COLORED_BG).test(l));
+  .filter(l => !new RegExp(COLORED_BG).test(l))
+  .filter(l => !excluded(l, TONE_FILL_SURVIVORS));
 
 // Baselines pinned 2026-08-21 (first measurement). Tighten in the SAME
 // commit that lowers a number — design-drift.mjs enforces its own version
@@ -517,7 +538,26 @@ const toneText = lines(`text-\\(${TONE_HUES}\\)-\\(100\\|200\\|300\\)\\b`)
 // number. `tone text-300` is PINNED, not floored at zero — calibrated
 // 2026-08-21 (Task 5T) at the measured count below; the estate conversion
 // that drives it toward zero is later groups' work (see plan Task 5T).
-const BASELINE = { 'bare text-white': 0, 'bg-slate': 0, 'border-slate': 0, 'text-slate': 0, 'tone text-300': 747 };
+//
+// RATCHETED 2026-08-21 (Task 5T, Group A — Employee/DE/ops). Converted onto
+// dt-* tokens: EmployeeFileSections.tsx (104), DeWorkbench.tsx (30),
+// ops/HumanTasksPage.tsx (30), ops/DEActivityPage.tsx (13),
+// OnboardingArchitectPage.tsx (9), EmployeeFilePage.tsx (8, auto-included —
+// unambiguously Employee-File, same directory level as EmployeeFileSections.tsx),
+// LiveWorkforceDEs.tsx (5, auto-included — the DE roster + Workforce Teams
+// board), ops/ActivityPage.tsx (2, auto-included — its own header comment
+// names it the pre-real-data placeholder for ops_de_activity/
+// DEActivityPage.tsx), components/DEChatDock.tsx (9), components/
+// GuardrailAdjudicationPanel.tsx (9), components/BookOfWorkPanel.tsx (8) —
+// 227 raw lines, 226 converted, 1 real survivor (DEChatDock.tsx timestamp
+// text on an opaque chat-bubble fill one ternary branch up — see
+// TONE_FILL_SURVIVORS above). Governance, knowledge, entity/customer,
+// systems, platform, intelligence/outcome and shared components (AISessionPanel,
+// Badge, ScopedGuardrails, HireEmployeeWizard, deHealthApi, CaseTimelinePanel,
+// de/ResponsiblePeoplePanel, de/DEActionDials, workforce/DraftApprovalCard,
+// WorkforceTrustDefaults, WorkforceBoard) were left for groups B/C — see the
+// group report for the full exclusion table.
+const BASELINE = { 'bare text-white': 0, 'bg-slate': 0, 'border-slate': 0, 'text-slate': 0, 'tone text-300': 520 };
 const NOW = {
   'bare text-white': bareWhite.length,
   'bg-slate': slateBg.length,

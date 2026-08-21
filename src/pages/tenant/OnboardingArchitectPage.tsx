@@ -40,7 +40,7 @@ function ProposalCard({ p, onApproved }: { p: ArchitectProposal; onApproved: () 
   return (
     <div className="rounded-xl border border-dt-border bg-dt-card p-4">
       <div className="flex items-start gap-3">
-        <div className="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-indigo-500/15 text-indigo-300 text-lg">{meta.icon}</div>
+        <div className="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-dt-accent-soft text-dt-accent-text text-lg">{meta.icon}</div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-[11px] uppercase tracking-wide text-dt-muted font-semibold">{meta.kind}</span>
@@ -63,7 +63,7 @@ function ProposalCard({ p, onApproved }: { p: ArchitectProposal; onApproved: () 
 
         <div className="flex-none">
           {state === 'approved' ? (
-            <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/15 px-3 py-1.5 text-[13px] font-medium text-emerald-300">✓ Created</span>
+            <span className="inline-flex items-center gap-1 rounded-lg bg-dt-ok-soft px-3 py-1.5 text-[13px] font-medium text-dt-ok">✓ Created</span>
           ) : (
             <button
               onClick={approve}
@@ -75,7 +75,7 @@ function ProposalCard({ p, onApproved }: { p: ArchitectProposal; onApproved: () 
           )}
         </div>
       </div>
-      {state === 'error' && <p className="mt-2 text-[12.5px] text-rose-300">{err}</p>}
+      {state === 'error' && <p className="mt-2 text-[12.5px] text-dt-danger">{err}</p>}
     </div>
   );
 }
@@ -144,7 +144,7 @@ export default function OnboardingArchitectPage({ setPage }: { setPage?: (p: Pag
                 <div className="text-[11px] uppercase tracking-wide text-dt-muted font-semibold mb-2">Need inspiration?</div>
                 <div className="flex flex-col gap-1.5">
                   {EXAMPLES.map((ex) => (
-                    <button key={ex} onClick={() => setDesc(ex)} className="text-left text-[13px] text-indigo-300/90 hover:text-indigo-200">“{ex}”</button>
+                    <button key={ex} onClick={() => setDesc(ex)} className="text-left text-[13px] text-dt-accent-text hover:underline">“{ex}”</button>
                   ))}
                 </div>
               </div>
@@ -152,7 +152,7 @@ export default function OnboardingArchitectPage({ setPage }: { setPage?: (p: Pag
           </div>
 
           {fatal && (
-            <div className="mt-4 rounded-xl border border-rose-400/20 bg-rose-400/5 p-4 text-[13.5px] text-rose-200">{fatal}</div>
+            <div className="mt-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft p-4 text-[13.5px] text-dt-danger">{fatal}</div>
           )}
 
           {busy && (
@@ -165,7 +165,7 @@ export default function OnboardingArchitectPage({ setPage }: { setPage?: (p: Pag
           {result && (
             <div className="mt-6">
               {result.status === 'rate_limited' ? (
-                <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-[13.5px] text-amber-200/90">
+                <div className="rounded-xl border border-dt-warn-border bg-dt-warn-soft p-4 text-[13.5px] text-dt-warn">
                   Ada got busy and couldn't finish this pass. Please try again in a minute.
                 </div>
               ) : result.proposals.length === 0 ? (
@@ -180,15 +180,15 @@ export default function OnboardingArchitectPage({ setPage }: { setPage?: (p: Pag
                     Ada read your brief but didn't propose anything this time. Try describing your needs with a bit more detail — what you do, and what you want handled.
                   </div>
                 ) : (
-                  <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 text-[13.5px] text-amber-200/90">
+                  <div className="rounded-xl border border-dt-warn-border bg-dt-warn-soft p-4 text-[13.5px] text-dt-warn">
                     Ada's run didn't finish on our side ({result.status ?? 'failed'}) — this is a platform hiccup, not a problem with your description. Please try again; if it keeps happening, your workspace admin should check the AI engine status.
                   </div>
                 )
               ) : (
                 <>
                   {result.summary && (
-                    <div className="rounded-xl border border-indigo-400/20 bg-indigo-500/[0.06] p-4">
-                      <div className="text-[11px] uppercase tracking-wide text-indigo-300 font-semibold">Ada proposes</div>
+                    <div className="rounded-xl border border-dt-accent-border bg-dt-accent-soft p-4">
+                      <div className="text-[11px] uppercase tracking-wide text-dt-accent-text font-semibold">Ada proposes</div>
                       <p className="mt-1 text-[13.5px] text-dt-body">{result.summary}</p>
                     </div>
                   )}
@@ -201,8 +201,8 @@ export default function OnboardingArchitectPage({ setPage }: { setPage?: (p: Pag
                     ))}
                   </div>
                   {approvedCount > 0 && (
-                    <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-4">
-                      <span className="text-[13.5px] text-emerald-200">
+                    <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dt-ok-border bg-dt-ok-soft p-4">
+                      <span className="text-[13.5px] text-dt-ok">
                         {approvedCount} item{approvedCount !== 1 ? 's' : ''} created. Find your new employees in the roster to finish setting them up.
                       </span>
                       {setPage && (

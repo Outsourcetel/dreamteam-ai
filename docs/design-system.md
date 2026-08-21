@@ -278,6 +278,32 @@ on a solid colored fill stays" rule — held by `scripts/audit-light-ready.mjs`'
 | `Sidebar.tsx` :320 | `style={{background: activeCompany.badgeColor}}` | Collapsed-sidebar company badge |
 | `LoginPage.tsx` :146,148,152,167 | `style={{background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e1b4b 100%)'}}` on the `leftPanel` | Desktop-only (`hidden lg:flex`) marketing hero — a fixed dark-navy gradient that does not participate in the light/dark theme at all, so `text-white` is correct in both app themes |
 
+**Sanctioned tone-tint text survivors** (Task 5T, Group A — employee/DE/ops;
+the first real survivor the fifth `tone text-300` metric's estate conversion
+found. Held by `scripts/audit-light-ready.mjs`'s `TONE_FILL_SURVIVORS`
+exclude list):
+
+| File : line | Fill | Reason |
+|---|---|---|
+| `DEChatDock.tsx` — the chat-bubble timestamp row (`msg.role === 'user' ? 'text-indigo-200' : 'text-dt-muted'`) | `bg-indigo-600` (a separate ternary a few lines up, same message row) | Both ternaries key off the same `msg.role === 'user'` check, so the timestamp only ever renders inside the bubble its own role paints — but `COLORED_BG` only looks within one physical line, so it cannot see the opaque fill one element up. `text-indigo-200` on an opaque same-family fill is the mapping table's own "leave it" case; converting only the text half to a `dt-*` token would swap in a light-theme-tuned value against the still-literal, non-theme-reactive `bg-indigo-600`, which is a real regression the original all-literal pairing did not have. |
+
+**Sanctioned kept-hue identity badges** (Task 5T, Group A — employee/DE/ops;
+non-semantic category/meta tags, not one of the five core semantics
+(warn/ok/danger/info/accent), so per the mapping table's "deliberate
+non-semantic identity" rule they keep their hue rather than being reassigned
+to a semantic token. Made opaque so they read correctly in both themes and
+are exempt via `COLORED_BG` — the `bg-{hue}-600 text-{hue}-100` recipe already
+sanctioned by the mapping table's "tint on an opaque same-family fill"
+exemption):
+
+| Tag | Recipe | Where |
+|---|---|---|
+| `control fabric` / `evidence-assessed` / `real metrics` / `governed, single-hop` / `default-deny` / `measured live` / `your baselines, never estimated` | `bg-teal-600 text-teal-100` | `EmployeeFileSections.tsx`, 7 section-header identity tags (was `bg-teal-500/15 text-teal-300`) |
+| `checklist` type badge (Human Tasks) | `bg-teal-600 text-teal-100` | `HumanTasksPage.tsx` `taskBadgeStyle` |
+| `AI-written` / `derived from this employee's actual work` | `bg-violet-600 text-violet-100` | `EmployeeFileSections.tsx`, provenance tags (was `bg-violet-500/15 text-violet-300`) |
+| `action_approval` type badge (Human Tasks) | `bg-fuchsia-600 text-fuchsia-100` | `HumanTasksPage.tsx` `taskBadgeStyle` |
+| `SIMULATION — not a real item` | `bg-purple-600 text-purple-100 border border-purple-500` | `DEActivityPage.tsx` — a meta/provenance flag distinct from every real ok/warn/danger status on the same row |
+
 **Hover/neutral vocabulary** (match the primitives, never invent):
 secondary-button hover border = `hover:border-dt-muted`; neutral status chip =
 `bg-dt-neutral-soft text-dt-neutral`; deep inset wells = `bg-dt-inset`;

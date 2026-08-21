@@ -40,18 +40,18 @@ const OUTCOME_CHIP: Record<string, [string, string]> = {
   ok: ['OK', 'bg-emerald-500/20 text-emerald-400'],
   skipped_not_connected: ['Not connected — skipped', 'bg-dt-border-strong text-dt-body'],
   failed: ['Failed', 'bg-red-500/20 text-red-400'],
-  denied_no_access: ['No access — blocked', 'bg-rose-500/20 text-rose-300'],
+  denied_no_access: ['No access — blocked', 'bg-dt-danger-soft text-dt-danger'],
 };
 // 'would_act'/'acted' added in migration 036 — the act-side siblings of
 // would_auto_send/needs_review. 'acted' is styled distinctly (solid
 // emerald) since it means something REALLY HAPPENED, not just intent.
 const DECISION_META: Record<InquiryDecisionKind, { label: string; cls: string }> = {
   would_auto_send: { label: 'Would auto-send', cls: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
-  needs_review: { label: 'Needs review', cls: 'bg-amber-500/20 text-amber-300 border-amber-500/30' },
+  needs_review: { label: 'Needs review', cls: 'bg-dt-warn-soft text-dt-warn border-dt-warn-border' },
   blocked_guardrail: { label: 'Blocked by guardrail', cls: 'bg-red-500/20 text-red-400 border-red-500/30' },
-  skipped_no_access: { label: 'No access', cls: 'bg-rose-500/20 text-rose-300 border-rose-500/30' },
-  would_act: { label: 'Would act — awaiting approval', cls: 'bg-amber-500/20 text-amber-300 border-amber-500/30' },
-  acted: { label: 'Acted', cls: 'bg-emerald-600/30 text-emerald-300 border-emerald-500/50' },
+  skipped_no_access: { label: 'No access', cls: 'bg-dt-danger-soft text-dt-danger border-dt-danger-border' },
+  would_act: { label: 'Would act — awaiting approval', cls: 'bg-dt-warn-soft text-dt-warn border-dt-warn-border' },
+  acted: { label: 'Acted', cls: 'bg-dt-ok-soft text-dt-ok border-dt-ok-border' },
 };
 const SOURCE_LABEL: Record<string, string> = {
   manual: 'Human-invoked',
@@ -63,9 +63,9 @@ const SOURCE_LABEL: Record<string, string> = {
 // human right now floats to the top, at-a-glance, and filters on click.
 type BucketKey = 'attention' | 'acted' | 'auto' | 'blocked' | 'all';
 const BUCKETS: Array<{ key: BucketKey; label: string; match: (d: InquiryDecisionKind | null) => boolean; cls: string; active: string }> = [
-  { key: 'attention', label: 'Needs a human', match: d => d === 'needs_review' || d === 'would_act', cls: 'text-amber-300', active: 'border-amber-500/60 bg-amber-500/10' },
-  { key: 'blocked', label: 'Blocked / no access', match: d => d === 'blocked_guardrail' || d === 'skipped_no_access', cls: 'text-rose-300', active: 'border-rose-500/60 bg-rose-500/10' },
-  { key: 'acted', label: 'Acted', match: d => d === 'acted', cls: 'text-emerald-300', active: 'border-emerald-500/60 bg-emerald-500/10' },
+  { key: 'attention', label: 'Needs a human', match: d => d === 'needs_review' || d === 'would_act', cls: 'text-dt-warn', active: 'border-dt-warn-border bg-dt-warn-soft' },
+  { key: 'blocked', label: 'Blocked / no access', match: d => d === 'blocked_guardrail' || d === 'skipped_no_access', cls: 'text-dt-danger', active: 'border-dt-danger-border bg-dt-danger-soft' },
+  { key: 'acted', label: 'Acted', match: d => d === 'acted', cls: 'text-dt-ok', active: 'border-dt-ok-border bg-dt-ok-soft' },
   { key: 'auto', label: 'Auto-sent', match: d => d === 'would_auto_send', cls: 'text-emerald-400', active: 'border-emerald-500/60 bg-emerald-500/10' },
   { key: 'all', label: 'All activity', match: () => true, cls: 'text-dt-support', active: 'border-indigo-500/60 bg-indigo-500/10' },
 ];
@@ -128,7 +128,7 @@ function ActivityRow({ row }: { row: DEActivityRow }) {
         <span className="font-mono text-[10px] text-dt-muted w-24 flex-shrink-0 hidden sm:block">{fmtTime(run.created_at)}</span>
         <span className="text-[11px] text-dt-support w-28 flex-shrink-0 truncate hidden md:block">{row.subject_name ?? '—'}</span>
         <span className="text-xs text-dt-title flex-1 min-w-0 truncate">{run.inquiry}</span>
-        {catLabel && <span className="hidden lg:inline"><Chip label={catLabel} cls="bg-indigo-500/15 text-indigo-300" /></span>}
+        {catLabel && <span className="hidden lg:inline"><Chip label={catLabel} cls="bg-dt-accent-soft text-dt-accent-text" /></span>}
         {decision?.confidence != null && <span className="text-[10px] text-dt-support w-9 text-right flex-shrink-0 tabular-nums">{decision.confidence}%</span>}
         {meta ? <Chip label={meta.label} cls={`border ${meta.cls}`} />
           : <Chip label="Answered" cls="bg-dt-panel text-dt-support" />}
@@ -141,7 +141,7 @@ function ActivityRow({ row }: { row: DEActivityRow }) {
             {row.subject_name && <span className="text-dt-support">· {row.subject_name}</span>}
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {isSimulation && <Chip label="SIMULATION — not a real item" cls="bg-purple-500/20 text-purple-300 border border-purple-500/40" />}
+            {isSimulation && <Chip label="SIMULATION — not a real item" cls="bg-purple-600 text-purple-100 border border-purple-500" />}
             {decision && <Chip label={SOURCE_LABEL[decision.source] ?? decision.source} cls="bg-dt-panel text-dt-support" />}
             {run.account_ref && <Chip label={`account ${run.account_ref}`} cls="bg-dt-panel text-dt-support" />}
           </div>
@@ -150,7 +150,7 @@ function ActivityRow({ row }: { row: DEActivityRow }) {
             <div>
               <p className="text-[11px] font-medium text-dt-support mb-1">Why</p>
               <p className="text-xs text-dt-title leading-relaxed">{decision.reasoning}</p>
-              {decision.human_task_id && <p className="text-[11px] text-amber-300 mt-1">A human review task was created for this.</p>}
+              {decision.human_task_id && <p className="text-[11px] text-dt-warn mt-1">A human review task was created for this.</p>}
             </div>
           )}
           {!decision && (
@@ -162,7 +162,7 @@ function ActivityRow({ row }: { row: DEActivityRow }) {
               <p className="text-[11px] font-medium text-emerald-400 mb-1">
                 {execution.receipt ? 'Receipt — what actually happened' : 'What this action will do (awaiting approval)'}
               </p>
-              <p className="text-xs text-emerald-200/90 leading-relaxed font-mono">{execution.receipt ?? execution.request_summary}</p>
+              <p className="text-xs text-dt-ok leading-relaxed font-mono">{execution.receipt ?? execution.request_summary}</p>
             </div>
           )}
 
@@ -262,7 +262,7 @@ export default function DEActivityPage({ setPage }: { setPage: (p: Page) => void
       <div className="p-6">
         <PageHeader title="DE at Work" subtitle="Live proactive-triage queue." />
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-5 max-w-xl">
-          <p className="text-sm text-amber-300 font-medium mb-1">Workspace still provisioning</p>
+          <p className="text-sm text-dt-warn font-medium mb-1">Workspace still provisioning</p>
           <p className="text-xs text-dt-support">Apply <code className="mx-1 text-dt-support">supabase/migrations/034_proactive_inquiry_triage.sql</code> in the Supabase SQL Editor, then reload.</p>
         </div>
       </div>

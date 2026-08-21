@@ -112,7 +112,7 @@ function DeKnowledgeScopePanel({ deId }: { deId: string }) {
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-dt-title">Knowledge scope</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">control fabric</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-600 text-teal-100">control fabric</span>
       </div>
       <p className="text-xs text-dt-muted">
         This employee reads every company-wide document, plus{' '}
@@ -185,23 +185,23 @@ export function DeIncidentsPanel({ de, setPage }: { de: DigitalEmployee; setPage
   const openCount = incidents.filter(i => i.status === 'open').length;
   const sevDot = (s: string) => s === 'critical' ? 'bg-rose-500' : s === 'warning' ? 'bg-amber-500' : 'bg-dt-border-strong';
   const statusChip = (s: string) =>
-    s === 'open' ? 'bg-amber-500/15 text-amber-300'
-    : s === 'reviewed' ? 'bg-indigo-500/15 text-indigo-300'
+    s === 'open' ? 'bg-dt-warn-soft text-dt-warn'
+    : s === 'reviewed' ? 'bg-dt-accent-soft text-dt-accent-text'
     : 'bg-dt-panel text-dt-muted';
 
   return (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-dt-title">Incidents</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300">durable record</span>
-        {openCount > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">{openCount} open</span>}
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-danger-soft text-dt-danger">durable record</span>
+        {openCount > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-warn-soft text-dt-warn">{openCount} open</span>}
       </div>
       <p className="text-xs text-dt-muted mb-5">
         Guardrail blocks, automatic trust demotions, failed eval runs, and human-rejected actions —
         captured every 5 minutes as reviewable records. Review or close each with a resolution note;
         every decision is audited.
       </p>
-      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      {error && <p className="text-xs text-dt-danger mb-2">{error}</p>}
 
       {incidents.length === 0 ? (
         <p className="text-xs text-dt-muted">No incidents on record — a clean history.</p>
@@ -236,7 +236,7 @@ export function DeIncidentsPanel({ de, setPage }: { de: DigitalEmployee; setPage
                       <div className="flex gap-2">
                         {inc.status === 'open' && (
                           <button onClick={() => void review(inc.id, 'reviewed')} disabled={busy || !canManage}
-                            className="px-2.5 py-1 rounded-lg bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 hover:bg-indigo-600/50 disabled:opacity-50">
+                            className="px-2.5 py-1 rounded-lg bg-dt-accent-soft border border-dt-accent-border text-dt-accent-text hover:brightness-110 disabled:opacity-50">
                             Mark reviewed
                           </button>
                         )}
@@ -255,7 +255,7 @@ export function DeIncidentsPanel({ de, setPage }: { de: DigitalEmployee; setPage
       )}
       {canOpenAudit && (
         <p className="mt-4 text-xs text-dt-muted">
-          <button onClick={() => setPage('gov_audit')} className="text-indigo-400 hover:text-indigo-300 transition-colors">
+          <button onClick={() => setPage('gov_audit')} className="text-dt-accent-text hover:underline transition-colors">
             View the full Audit Trail →
           </button>
         </p>
@@ -369,7 +369,7 @@ export function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-dt-title">Skills</h3><span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted" title="An honest record for your review — nothing reads it to gate or route work yet (truth audit docs/15).">record - not a gate yet</span>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">evidence-assessed</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-600 text-teal-100">evidence-assessed</span>
         {/* docs/31 Q8: the add-skill flow shipped in migs 205/206 and was used
             by nobody, ever — because its entry point was an 11px footnote
             link. Same flow, real button, where eyes actually land. */}
@@ -388,7 +388,7 @@ export function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
         What a skill <em>says</em> is documentation for whoever reads this file: nothing routes work
         by it, prompts with it, or gates the employee on it.
       </p>
-      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      {error && <p className="text-xs text-dt-danger mb-2">{error}</p>}
       {skills === null ? (
         <p className="text-xs text-dt-muted">Loading…</p>
       ) : skills.length === 0 ? (
@@ -411,11 +411,11 @@ export function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support">{catLabel(cat)}</span>
                   {/* Says plainly where the number came from. */}
                   {s.is_custom && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">rated by a person</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-info-soft text-dt-info">rated by a person</span>
                   )}
                   {assessed ? (
                     <span className={`ml-auto text-xs font-semibold ${
-                      s.proficiency! >= 4 ? 'text-emerald-300' : s.proficiency! >= 3 ? 'text-teal-300' : 'text-amber-300'}`}>
+                      s.proficiency! >= 4 ? 'text-dt-ok' : s.proficiency! >= 3 ? 'text-dt-info' : 'text-dt-warn'}`}>
                       L{s.proficiency} · {PROFICIENCY_NAME[s.proficiency!]}
                     </span>
                   ) : (
@@ -452,14 +452,14 @@ export function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
                         onClick={() => void rateSkill(s.skill_key, l)}
                         className={`text-[10px] w-6 h-6 rounded border transition-colors ${
                           s.proficiency === l
-                            ? 'bg-sky-500/20 border-sky-500/50 text-sky-200'
+                            ? 'bg-dt-info-soft border-dt-info-border text-dt-info'
                             : 'border-dt-border text-dt-muted hover:border-dt-border-strong hover:text-dt-support'}`}>
                         {l}
                       </button>
                     ))}
                     {s.proficiency != null && (
                       <button onClick={() => void rateSkill(s.skill_key, null)} disabled={saving || !canManage}
-                        className="text-[10px] text-dt-faint hover:text-rose-300 ml-1">Clear</button>
+                        className="text-[10px] text-dt-faint hover:text-dt-danger ml-1">Clear</button>
                     )}
                   </div>
                 )}
@@ -588,7 +588,7 @@ export function DeReviewsPanel({ de }: { de: DigitalEmployee }) {
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-dt-title">Performance reviews</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">real metrics</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-600 text-teal-100">real metrics</span>
       </div>
       {/* ⚠ This used to read "Quarterly reviews … a below-threshold verdict".
           Migration 765 ended both halves: a review measures a WINDOW it names
@@ -601,8 +601,8 @@ export function DeReviewsPanel({ de }: { de: DigitalEmployee }) {
         written consequence. No goals set means no verdict — never a judgment against
         numbers you did not choose.
       </p>
-      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
-      {narrativeError && <p className="text-xs text-amber-300 mb-2">{narrativeError}</p>}
+      {error && <p className="text-xs text-dt-danger mb-2">{error}</p>}
+      {narrativeError && <p className="text-xs text-dt-warn mb-2">{narrativeError}</p>}
 
       <div className="flex items-center gap-2 mb-1.5">
         {canConfigure && (
@@ -612,7 +612,7 @@ export function DeReviewsPanel({ de }: { de: DigitalEmployee }) {
           </button>
         )}
         <button onClick={() => void run(() => supabase.rpc('run_de_performance_review'))} disabled={busy || !canManage}
-          className="ml-auto text-[10px] text-indigo-400 hover:text-indigo-300 disabled:opacity-50">
+          className="ml-auto text-[10px] text-dt-accent-text hover:underline disabled:opacity-50">
           {busy ? 'Working…' : 'Run review now'}
         </button>
       </div>
@@ -644,7 +644,7 @@ export function DeReviewsPanel({ de }: { de: DigitalEmployee }) {
                 finally { setBusy(false); }
               }}
               disabled={busy}
-              className="ml-auto text-[10px] text-indigo-400 hover:text-indigo-300 disabled:opacity-50">
+              className="ml-auto text-[10px] text-dt-accent-text hover:underline disabled:opacity-50">
               Turn on & save
             </button>
             {settings?.enabled && (
@@ -671,8 +671,8 @@ export function DeReviewsPanel({ de }: { de: DigitalEmployee }) {
             <div key={r.id} className="rounded-xl border border-dt-border bg-dt-page p-3">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                  r.verdict === 'meets' ? 'bg-emerald-500/15 text-emerald-300'
-                  : r.verdict === 'below' ? 'bg-amber-500/15 text-amber-300'
+                  r.verdict === 'meets' ? 'bg-dt-ok-soft text-dt-ok'
+                  : r.verdict === 'below' ? 'bg-dt-warn-soft text-dt-warn'
                   : 'bg-dt-panel text-dt-support'}`}>
                   {r.verdict === 'insufficient_data' ? 'insufficient data' : r.verdict}
                 </span>
@@ -684,7 +684,7 @@ export function DeReviewsPanel({ de }: { de: DigitalEmployee }) {
                 {r.status === 'open' ? (
                   <button onClick={() => void run(() => supabase.rpc('acknowledge_de_performance_review', { p_review_id: r.id }))}
                     disabled={busy || !canManage}
-                    className="ml-auto text-[10px] text-indigo-400 hover:text-indigo-300">
+                    className="ml-auto text-[10px] text-dt-accent-text hover:underline">
                     Acknowledge
                   </button>
                 ) : (
@@ -700,7 +700,7 @@ export function DeReviewsPanel({ de }: { de: DigitalEmployee }) {
               {r.ai_narrative ? (
                 <div className="mt-2 rounded-lg border border-dt-border bg-dt-inset p-2.5">
                   <div className="flex items-center gap-1.5 mb-1">
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300">AI-written</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-600 text-violet-100">AI-written</span>
                     <span className="text-[10px] text-dt-faint">
                       {r.ai_narrative_model}{r.ai_narrative_at ? ` · ${r.ai_narrative_at.slice(0, 10)}` : ''}
                     </span>
@@ -716,7 +716,7 @@ export function DeReviewsPanel({ de }: { de: DigitalEmployee }) {
                 </div>
               ) : settings?.enabled && canManage ? (
                 <button onClick={() => void narrate(r.id)} disabled={narrating === r.id}
-                  className="mt-1.5 text-[10px] text-indigo-400 hover:text-indigo-300 disabled:opacity-50">
+                  className="mt-1.5 text-[10px] text-dt-accent-text hover:underline disabled:opacity-50">
                   {narrating === r.id ? 'Writing…' : 'Explain this review'}
                 </button>
               ) : null}
@@ -833,7 +833,7 @@ export function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-dt-title">Development program</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">evidence-grounded</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-info-soft text-dt-info">evidence-grounded</span>
       </div>
       <p className="text-xs text-dt-muted mb-4">
         Proposed from real 8-week performance data (escalation rate, confidence, error rate, guardrail patterns) — or added manually.
@@ -841,7 +841,7 @@ export function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
         Run-error and guardrail patterns stay with you — no automated fix honestly covers them.
         While one is open, this employee shows as "Improving."
       </p>
-      {err && <div className="mb-3 rounded-lg border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{err}</div>}
+      {err && <div className="mb-3 rounded-lg border border-dt-danger-border bg-dt-danger-soft px-3 py-2 text-xs text-dt-danger">{err}</div>}
 
       <div className="flex gap-2 mb-3">
         <button onClick={scan} disabled={scanning || !canManage} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors disabled:opacity-50">
@@ -868,24 +868,24 @@ export function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
       ) : (
         <div className="space-y-1.5 mb-3">
           {open.map(item => (
-            <div key={item.id} className={`rounded-lg px-3 py-2 text-xs ${item.item_type === 'pip' ? 'bg-amber-500/5 border border-amber-500/30' : 'bg-dt-inset'}`}>
+            <div key={item.id} className={`rounded-lg px-3 py-2 text-xs ${item.item_type === 'pip' ? 'bg-dt-warn-soft border border-dt-warn-border' : 'bg-dt-inset'}`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded mr-1.5 ${item.item_type === 'pip' ? 'bg-amber-500/15 text-amber-300' : 'bg-dt-panel text-dt-support'}`}>{typeLabel(item.item_type, item.source)}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded mr-1.5 ${item.item_type === 'pip' ? 'bg-dt-warn-soft text-dt-warn' : 'bg-dt-panel text-dt-support'}`}>{typeLabel(item.item_type, item.source)}</span>
                   <span className="text-dt-support">{item.description}</span>
                 </div>
                 <div className="flex gap-1 flex-shrink-0">
                   {item.status === 'proposed' && (
-                    <button onClick={() => setStatus(item.id, 'in_progress')} disabled={busy || !canManage} className="text-[10px] px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 hover:bg-sky-500/25">Start</button>
+                    <button onClick={() => setStatus(item.id, 'in_progress')} disabled={busy || !canManage} className="text-[10px] px-2 py-0.5 rounded bg-dt-info-soft text-dt-info hover:brightness-110">Start</button>
                   )}
-                  <button onClick={() => setStatus(item.id, 'completed')} disabled={busy || !canManage} className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25">Complete</button>
+                  <button onClick={() => setStatus(item.id, 'completed')} disabled={busy || !canManage} className="text-[10px] px-2 py-0.5 rounded bg-dt-ok-soft text-dt-ok hover:brightness-110">Complete</button>
                   <button onClick={() => setStatus(item.id, 'dismissed')} disabled={busy || !canManage} className="text-[10px] px-2 py-0.5 rounded bg-dt-panel text-dt-muted hover:bg-dt-panel">Dismiss</button>
                 </div>
               </div>
               {/* A PIP is a formal plan with a deadline and a written consequence
                   — both stored since mig 129 and displayed nowhere until now. */}
               {item.item_type === 'pip' && (item.due_date || item.consequence) && (
-                <p className="text-[11px] text-amber-200/80 mt-1.5">
+                <p className="text-[11px] text-dt-warn mt-1.5">
                   {item.due_date && <>Due {fmtDue(item.due_date)}.</>}
                   {item.due_date && item.consequence && ' '}
                   {item.consequence && <>If not met: {item.consequence}</>}
@@ -898,7 +898,7 @@ export function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
                 (item.attempts?.length ?? 0) > 0 ? (
                   <div className="mt-1.5 space-y-0.5">
                     {(item.attempts ?? []).slice(-3).reverse().map((a, i) => (
-                      <p key={i} className="text-[11px] text-sky-200/80">{attemptLine(a, outcomes)}</p>
+                      <p key={i} className="text-[11px] text-dt-info">{attemptLine(a, outcomes)}</p>
                     ))}
                   </div>
                 ) : (
@@ -916,11 +916,11 @@ export function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
       {failed.length > 0 && (
         <div className="space-y-1.5 mb-3">
           {failed.map(item => (
-            <div key={item.id} className="rounded-lg border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs">
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 mr-1.5">{typeLabel(item.item_type, item.source)} · failed</span>
-              <span className="text-rose-200/90">{item.description}</span>
-              {item.consequence && <p className="text-[11px] text-rose-300/80 mt-1">Written consequence: {item.consequence}</p>}
-              <p className="text-[10px] text-rose-300/60 mt-1">The deadline passed without recovery. The incident this raised is on this employee's record.</p>
+            <div key={item.id} className="rounded-lg border border-dt-danger-border bg-dt-danger-soft px-3 py-2 text-xs">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-danger-soft text-dt-danger mr-1.5">{typeLabel(item.item_type, item.source)} · failed</span>
+              <span className="text-dt-danger">{item.description}</span>
+              {item.consequence && <p className="text-[11px] text-dt-danger mt-1">Written consequence: {item.consequence}</p>}
+              <p className="text-[10px] text-dt-danger mt-1">The deadline passed without recovery. The incident this raised is on this employee's record.</p>
             </div>
           ))}
         </div>
@@ -970,7 +970,7 @@ function EditDEModal({ de, onClose, onSaved }: { de: DigitalEmployee; onClose: (
   return (
     <Modal title={`Edit ${de.persona_name || de.name}`} onClose={onClose}>
       <div className="space-y-3">
-        {err && <div className="rounded-lg border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{err}</div>}
+        {err && <div className="rounded-lg border border-dt-danger-border bg-dt-danger-soft px-3 py-2 text-xs text-dt-danger">{err}</div>}
         <label className="block text-xs text-dt-support">Name
           <input value={name} onChange={e => setName(e.target.value)} className="mt-1 w-full rounded-lg bg-dt-page border border-dt-border px-3 py-2 text-sm text-dt-body" />
         </label>
@@ -1032,15 +1032,15 @@ function RetireDEModal({ de, onClose, onRetired }: { de: DigitalEmployee; onClos
         <p className="text-xs text-dt-support">
           Retirement is terminal — a retired employee cannot be reactivated. Configuration locks read-only and the full history is retained.
         </p>
-        {err && <div className="rounded-lg border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{err}</div>}
+        {err && <div className="rounded-lg border border-dt-danger-border bg-dt-danger-soft px-3 py-2 text-xs text-dt-danger">{err}</div>}
         {readiness === null ? (
           <p className="text-xs text-dt-muted">Checking for open dependencies…</p>
         ) : readiness.ready ? (
-          <div className="rounded-lg border border-emerald-800/50 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
+          <div className="rounded-lg border border-dt-ok-border bg-dt-ok-soft px-3 py-2 text-xs text-dt-ok">
             No open dependencies — clear to retire.
           </div>
         ) : (
-          <div className="rounded-lg border border-amber-800/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-300 space-y-1">
+          <div className="rounded-lg border border-dt-warn-border bg-dt-warn-soft px-3 py-2 text-xs text-dt-warn space-y-1">
             <p className="font-medium">Cannot retire yet — resolve first:</p>
             {readiness.blockers.map(b => <p key={b.kind}>• {b.message}</p>)}
           </div>
@@ -1150,14 +1150,14 @@ function ColleaguesHelpPanel({ de }: { de: DigitalEmployee }) {
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-dt-title">Who can this employee ask for help?</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">governed, single-hop</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-600 text-teal-100">governed, single-hop</span>
       </div>
       <p className="text-[11px] text-dt-muted mb-3">
         A governed, one-question handoff to a colleague — the answer comes from the OTHER employee's own
         access, never widening this one's. No chains, no fan-out. Nothing here happens automatically:
         you grant help; {name} may then use it.
       </p>
-      {err && <div className="mb-2 rounded-lg border border-rose-800/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{err}</div>}
+      {err && <div className="mb-2 rounded-lg border border-dt-danger-border bg-dt-danger-soft px-3 py-2 text-xs text-dt-danger">{err}</div>}
 
       {asRequester === null ? (
         <p className="text-xs text-dt-muted">Loading…</p>
@@ -1172,7 +1172,7 @@ function ColleaguesHelpPanel({ de }: { de: DigitalEmployee }) {
               {asRequester.map(g => (
                 <div key={g.id} className="flex items-center justify-between rounded-lg bg-dt-inset px-3 py-1.5 text-xs">
                   <span className="text-dt-support">{nameById[g.target_de_id] || 'Unknown'} <span className="text-dt-faint">· {g.category}</span></span>
-                  <button onClick={() => toggleGrant(g)} disabled={busy || !canEditGrants} className={`text-[10px] px-2 py-0.5 rounded ${g.active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-dt-panel text-dt-muted'}`}>
+                  <button onClick={() => toggleGrant(g)} disabled={busy || !canEditGrants} className={`text-[10px] px-2 py-0.5 rounded ${g.active ? 'bg-dt-ok-soft text-dt-ok' : 'bg-dt-panel text-dt-muted'}`}>
                     {g.active ? 'active' : 'inactive'}
                   </button>
                 </div>
@@ -1329,7 +1329,7 @@ function DeGovernancePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: 
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-dt-title">Governance</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">config v{de.config_version}</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-info-soft text-dt-info">config v{de.config_version}</span>
         {retired && <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support">retired — read-only</span>}
       </div>
       <p className="text-xs text-dt-muted mb-4">
@@ -1426,7 +1426,7 @@ function DeSystemAccessPanel({ deId, setPage }: { deId: string; setPage: (p: Pag
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-dt-title">What this employee can touch</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">default-deny</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-600 text-teal-100">default-deny</span>
       </div>
       <p className="text-[11px] text-dt-muted mb-3">
         System access via the Control Fabric — a grant is necessary, never sufficient, for a write
@@ -1441,13 +1441,13 @@ function DeSystemAccessPanel({ deId, setPage }: { deId: string; setPage: (p: Pag
           {grants.map(g => (
             <span key={g.id} className="text-xs px-2.5 py-1 rounded-lg bg-dt-page border border-dt-border text-dt-support">
               {g.resource_category ?? 'specific connector'}
-              <span className={`ml-2 font-semibold ${g.permission === 'write_back' ? 'text-amber-300' : 'text-teal-300'}`}>{g.permission.replace('_', '-')}</span>
+              <span className={`ml-2 font-semibold ${g.permission === 'write_back' ? 'text-dt-warn' : 'text-dt-ok'}`}>{g.permission.replace('_', '-')}</span>
             </span>
           ))}
         </div>
       )}
       {canOpenDataAccess && (
-        <button onClick={() => setPage('gov_data_access')} className="mt-3 text-xs text-indigo-400 hover:text-indigo-300">
+        <button onClick={() => setPage('gov_data_access')} className="mt-3 text-xs text-dt-accent-text hover:underline">
           Manage under Governance → Data Access →
         </button>
       )}
@@ -1489,7 +1489,7 @@ function DeVoicePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: D
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-dt-title">Voice &amp; Conversation</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">feeds every answer</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-accent-soft text-dt-accent-text">feeds every answer</span>
         {!voice.trim() && <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-page text-dt-muted border border-dt-border">using house voice</span>}
       </div>
       <p className="text-[11px] text-dt-muted mb-3">
@@ -1497,7 +1497,7 @@ function DeVoicePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: D
         and it uses the house voice: reads the room, matches the person's register, skips the padding.
         This never loosens the facts; every factual claim still comes from the knowledge documents.
       </p>
-      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      {error && <p className="text-xs text-dt-danger mb-2">{error}</p>}
       <div className="space-y-2">
         <textarea value={voice} disabled={busy} onChange={e => setVoice(e.target.value)} rows={3}
           placeholder={'Voice — e.g. Calm and precise. Never more than three sentences unless asked for detail. Plain English, no jargon, no exclamation marks.'}
@@ -1562,14 +1562,14 @@ function DeIdentityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-dt-title">Identity & Purpose</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">feeds every answer</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-accent-soft text-dt-accent-text">feeds every answer</span>
       </div>
       <p className="text-[11px] text-dt-muted mb-3">
         The title and purpose written here go straight into this employee's working instructions —
         every customer answer is given in this identity. Responsibilities also unlock the lifecycle's
         identity criterion.
       </p>
-      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      {error && <p className="text-xs text-dt-danger mb-2">{error}</p>}
       <div className="space-y-2">
         <input type="text" value={title} disabled={busy} onChange={e => setTitle(e.target.value)}
           placeholder="Display title — e.g. Customer Support Specialist"
@@ -1652,7 +1652,7 @@ function DeAvailabilityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated
         Off-schedule, this employee stops picking up inbox work — its team backup or the specialist
         desk covers, exactly like when it's paused. Reactive Q&A (widget/chat) stays available.
       </p>
-      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      {error && <p className="text-xs text-dt-danger mb-2">{error}</p>}
       <div className="flex items-center gap-2 flex-wrap">
         <select value={mode} disabled={busy} onChange={e => setMode(e.target.value)}
           className="bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
@@ -1686,7 +1686,7 @@ function DeAvailabilityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated
             return (
               <button key={day} disabled={busy}
                 onClick={() => setDays(prev => on ? prev.filter(d => d !== day) : [...prev, day].sort())}
-                className={`text-[10px] px-2 py-1 rounded-lg border ${on ? 'border-indigo-500 bg-indigo-500/15 text-indigo-200' : 'border-dt-border bg-dt-page text-dt-faint'}`}>
+                className={`text-[10px] px-2 py-1 rounded-lg border ${on ? 'border-dt-accent bg-dt-accent-soft text-dt-accent-text' : 'border-dt-border bg-dt-page text-dt-faint'}`}>
                 {label}
               </button>
             );
@@ -1778,11 +1778,11 @@ function DeReplyModePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-dt-title">Customer replies</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">external chat</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-accent-soft text-dt-accent-text">external chat</span>
       </div>
       <p className="text-[11px] text-dt-support mb-2">How this employee's answers reach customers in the support chat. Guardrails and the confidence floor always apply either way.</p>
       {front && (
-        <p className={`text-[11px] mb-4 px-3 py-2 rounded-lg ${front.id === de.id ? 'bg-emerald-500/10 text-emerald-300' : 'bg-dt-inset text-dt-muted'}`}>
+        <p className={`text-[11px] mb-4 px-3 py-2 rounded-lg ${front.id === de.id ? 'bg-dt-ok-soft text-dt-ok' : 'bg-dt-inset text-dt-muted'}`}>
           {front.id === de.id
             ? '★ This employee currently fronts your public chat widget — every widget visitor talks to them.'
             : `Your public chat widget is currently fronted by ${front.name} (one employee fronts it for the whole workspace — the oldest set to auto-send). This setting governs this employee's own replies in the dock, and the widget only if they become the front.`}
@@ -1906,7 +1906,7 @@ function DeAnswerSafeguardsPanel({ de }: { de: DigitalEmployee }) {
               on={{ title: 'Hold for approval', desc: 'Every answer waits as a "Reply to approve" task until a teammate signs it off.' }}
             />
             {cfg.reply_mode_enabled && (
-              <p className="text-[11px] text-amber-300/90 mt-2">
+              <p className="text-[11px] text-dt-warn mt-2">
                 Nobody is answered until someone clears the queue — check Human tasks regularly,
                 or {who} will look unresponsive.
               </p>
@@ -1974,7 +1974,7 @@ function DeModelPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: D
         The Claude model this employee thinks with. Every listed model has verified pricing, so the
         Economics and cost numbers stay real whichever you choose. Takes effect on the next answer.
       </p>
-      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      {error && <p className="text-xs text-dt-danger mb-2">{error}</p>}
       <div className="flex items-center gap-2 flex-wrap">
         <select value={selected} disabled={busy} onChange={e => setSelected(e.target.value)}
           className="flex-1 min-w-[260px] bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50">
@@ -2088,14 +2088,14 @@ export function DeKpisPanel({ de }: { de: DigitalEmployee }) {
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-dt-title">Goals & KPIs</h3><span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-muted" title="An honest record for your review — nothing reads it to gate or route work yet (truth audit docs/15).">record - not a gate yet</span>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">measured live</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-600 text-teal-100">measured live</span>
       </div>
       <p className="text-[11px] text-dt-muted mb-3">
         Targets you set against metrics this workspace tracks. Built-in metrics are computed from real
         activity at view time — never stored, stale, or invented. Metrics you define yourself show a
         value once you record a reading.
       </p>
-      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      {error && <p className="text-xs text-dt-danger mb-2">{error}</p>}
       {kpis === null ? (
         <p className="text-xs text-dt-muted">Loading…</p>
       ) : kpis.length === 0 ? (
@@ -2115,7 +2115,7 @@ export function DeKpisPanel({ de }: { de: DigitalEmployee }) {
             <div key={k.kpi_id} className="flex items-center gap-2 text-xs flex-wrap">
               <span className={`px-1.5 py-0.5 rounded text-[10px] ${
                 k.met === null ? 'bg-dt-panel text-dt-muted'
-                : k.met ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>
+                : k.met ? 'bg-dt-ok-soft text-dt-ok' : 'bg-dt-warn-soft text-dt-warn'}`}>
                 {k.met === null ? 'no data yet' : k.met ? 'on target' : 'off target'}
               </span>
               <span className="text-dt-support">{k.name}</span>
@@ -2135,13 +2135,13 @@ export function DeKpisPanel({ de }: { de: DigitalEmployee }) {
               {metric?.source === 'manual' && (
                 <button onClick={() => { setReading({ key: k.metric_key, name: k.name }); setReadingValue(''); }}
                   disabled={busy || !canManage}
-                  className="text-[10px] text-indigo-400 hover:text-indigo-300">
+                  className="text-[10px] text-dt-accent-text hover:underline">
                   Record value
                 </button>
               )}
               <button onClick={() => void run(() => supabase.rpc('set_de_kpi', { p_de_id: de.id, p_metric_key: k.metric_key, p_name: k.name, p_target: null, p_direction: k.direction }))}
                 disabled={busy || !canManage}
-                className="ml-auto text-[10px] text-dt-faint hover:text-rose-300">
+                className="ml-auto text-[10px] text-dt-faint hover:text-dt-danger">
                 Remove
               </button>
             </div>
@@ -2191,7 +2191,7 @@ export function DeKpisPanel({ de }: { de: DigitalEmployee }) {
       </div>
 
       {!defining ? (
-        <button onClick={() => setDefining(true)} className="mt-2 text-[11px] text-indigo-400 hover:text-indigo-300">
+        <button onClick={() => setDefining(true)} className="mt-2 text-[11px] text-dt-accent-text hover:underline">
           + Track a metric of your own
         </button>
       ) : (
@@ -2284,7 +2284,7 @@ export function DeEconomicsPanel({ de }: { de: DigitalEmployee }) {
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-dt-title">Economics</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300">your baselines, never estimated</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-600 text-teal-100">your baselines, never estimated</span>
         <button onClick={() => setShowConfig(s => !s)}
           className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body">
           {showConfig ? 'Cancel' : 'Baselines…'}
@@ -2295,11 +2295,11 @@ export function DeEconomicsPanel({ de }: { de: DigitalEmployee }) {
         only from baselines <span className="text-dt-support">you</span> configure — how long a human
         takes per task and what a human FTE costs. The platform never invents these.
       </p>
-      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      {error && <p className="text-xs text-dt-danger mb-2">{error}</p>}
 
       {showConfig && (
         <div className="mb-4 rounded-xl border border-dt-border bg-dt-page p-3 space-y-2">
-          <p className="text-[10px] uppercase tracking-wide text-amber-300/80">Workspace-wide — applies to every employee</p>
+          <p className="text-[10px] uppercase tracking-wide text-dt-warn">Workspace-wide — applies to every employee</p>
           <div className="grid grid-cols-2 gap-2">
             <label className="text-[11px] text-dt-muted">Human minutes per inbox item
               <input type="number" min={0.1} step={0.5} value={inqMin} disabled={busy || !canManage} onChange={e => setInqMin(e.target.value)} placeholder="e.g. 6"
@@ -2356,7 +2356,7 @@ export function DeEconomicsPanel({ de }: { de: DigitalEmployee }) {
             </div>
           </div>
           {eco.unconfigured.length > 0 && (
-            <p className="text-[11px] text-amber-300/90">
+            <p className="text-[11px] text-dt-warn">
               Configure to calculate: {eco.unconfigured.map(u => u.split('_').join(' ')).join(', ')} — set them under “Baselines…”.
             </p>
           )}
@@ -2432,10 +2432,10 @@ function DeLifecyclePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-dt-title">Lifecycle</h3>
         <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-          isOperational ? 'bg-emerald-500/15 text-emerald-300'
-          : isPaused ? 'bg-amber-500/15 text-amber-300'
+          isOperational ? 'bg-dt-ok-soft text-dt-ok'
+          : isPaused ? 'bg-dt-warn-soft text-dt-warn'
           : isClosed ? 'bg-dt-panel text-dt-muted'
-          : 'bg-indigo-500/15 text-indigo-300'}`}>
+          : 'bg-dt-accent-soft text-dt-accent-text'}`}>
           {STAGE_LABELS[stage] ?? stage}
         </span>
       </div>
@@ -2444,14 +2444,14 @@ function DeLifecyclePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
         Assigned or beyond, and each advance checks real criteria. Reactive Q&A stays available
         pre-launch — that is the proving ground.
       </p>
-      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      {error && <p className="text-xs text-dt-danger mb-2">{error}</p>}
 
       {/* Stage ladder */}
       <div className="flex flex-wrap items-center gap-1 mb-4">
         {LIFECYCLE_CHAIN.map((s, i) => (
           <span key={s} className="flex items-center gap-1">
             <span className={`text-[10px] px-2 py-1 rounded-lg border ${
-              s === stage ? 'border-indigo-500 bg-indigo-500/15 text-indigo-200 font-semibold'
+              s === stage ? 'border-dt-accent bg-dt-accent-soft text-dt-accent-text font-semibold'
               : chainIdx >= 0 && i < chainIdx ? 'border-dt-border bg-dt-page text-emerald-400'
               : 'border-dt-border bg-dt-page text-dt-faint'}`}>
               {chainIdx >= 0 && i < chainIdx ? '✓ ' : ''}{STAGE_LABELS[s]}
@@ -2460,7 +2460,7 @@ function DeLifecyclePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
           </span>
         ))}
         {(stage === 'improving' || isPaused || isClosed) && (
-          <span className="text-[10px] px-2 py-1 rounded-lg border border-amber-600/40 bg-amber-500/10 text-amber-300 ml-1">
+          <span className="text-[10px] px-2 py-1 rounded-lg border border-dt-warn-border bg-dt-warn-soft text-dt-warn ml-1">
             {STAGE_LABELS[stage]}
           </span>
         )}
@@ -2645,9 +2645,9 @@ function DeDeploymentStagePanel({ de }: { de: DigitalEmployee }) {
         <h3 className="text-base font-semibold text-dt-title">Supervision stage</h3>
         {stage && (
           <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-            stage === 'live' ? 'bg-emerald-500/15 text-emerald-300'
+            stage === 'live' ? 'bg-dt-ok-soft text-dt-ok'
             : stage === 'retired' ? 'bg-dt-panel text-dt-muted'
-            : 'bg-amber-500/15 text-amber-300'}`}>
+            : 'bg-dt-warn-soft text-dt-warn'}`}>
             {DEPLOYMENT_LABELS[stage] ?? stage}
           </span>
         )}
@@ -2658,15 +2658,15 @@ function DeDeploymentStagePanel({ de }: { de: DigitalEmployee }) {
         reason, and is written to the audit trail.
       </p>
 
-      {error && <p className="text-xs text-rose-300 mb-2" data-testid="stage-promotion-error">{error}</p>}
-      {done && <p className="text-xs text-emerald-300 mb-2" data-testid="stage-promotion-done">{done}</p>}
+      {error && <p className="text-xs text-dt-danger mb-2" data-testid="stage-promotion-error">{error}</p>}
+      {done && <p className="text-xs text-dt-ok mb-2" data-testid="stage-promotion-done">{done}</p>}
 
       {/* Stage ladder */}
       <div className="flex flex-wrap items-center gap-1 mb-3">
         {DEPLOYMENT_LADDER.map((s, i) => (
           <span key={s} className="flex items-center gap-1">
             <span className={`text-[10px] px-2 py-1 rounded-lg border ${
-              s === stage ? 'border-indigo-500 bg-indigo-500/15 text-indigo-200 font-semibold'
+              s === stage ? 'border-dt-accent bg-dt-accent-soft text-dt-accent-text font-semibold'
               : idx >= 0 && i < idx ? 'border-dt-border bg-dt-page text-emerald-400'
               : 'border-dt-border bg-dt-page text-dt-faint'}`}>
               {idx >= 0 && i < idx ? '✓ ' : ''}{DEPLOYMENT_LABELS[s]}
@@ -2690,11 +2690,11 @@ function DeDeploymentStagePanel({ de }: { de: DigitalEmployee }) {
           without it — so an empty one cannot be submitted from here either. */}
       {stage && next && !closed && (
         confirming ? (
-          <div className="rounded-xl border border-amber-600/40 bg-amber-500/10 px-4 py-3">
-            <p className="text-xs text-amber-200 font-medium">
+          <div className="rounded-xl border border-dt-warn-border bg-dt-warn-soft px-4 py-3">
+            <p className="text-xs text-dt-warn font-medium">
               Move {de.name} from {DEPLOYMENT_LABELS[stage]} to {DEPLOYMENT_LABELS[next]}?
             </p>
-            <p className="text-[11px] text-amber-200/80 mt-1">{DEPLOYMENT_MEANS[next]}</p>
+            <p className="text-[11px] text-dt-warn mt-1">{DEPLOYMENT_MEANS[next]}</p>
             <p className="text-[11px] text-dt-support mt-2">Reason on the record: “{trimmed}”</p>
             <div className="mt-3 flex items-center gap-2 flex-wrap">
               <button
@@ -2850,7 +2850,7 @@ export function DeEscalationPanel({ deId }: { deId: string }) {
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-dt-title">Escalation rules</h3>
-        <span className={`text-[10px] px-1.5 py-0.5 rounded ${isPersonal ? 'bg-indigo-500/15 text-indigo-300' : 'bg-dt-panel text-dt-support'}`}>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded ${isPersonal ? 'bg-dt-accent-soft text-dt-accent-text' : 'bg-dt-panel text-dt-support'}`}>
           {isPersonal ? 'personal' : 'workspace default'}
         </span>
       </div>
@@ -2858,7 +2858,7 @@ export function DeEscalationPanel({ deId }: { deId: string }) {
         When this employee hands work to a human no matter how confident it is. Guardrails always
         outrank these; the confidence floor lives on the trust dial below.
       </p>
-      {error && <p className="text-xs text-rose-300 mb-2">{error}</p>}
+      {error && <p className="text-xs text-dt-danger mb-2">{error}</p>}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <p className="text-[11px] uppercase tracking-wide text-dt-muted mb-1">Frustration threshold</p>
@@ -2919,11 +2919,11 @@ export function DeEscalationPanel({ deId }: { deId: string }) {
                   <p className="text-[10px] text-dt-muted mt-0.5 font-mono">{describeRule(r)}</p>
                 </div>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded whitespace-nowrap ${
-                  r.action === 'escalate' ? 'bg-amber-500/15 text-amber-300' : 'bg-sky-500/15 text-sky-300'}`}>
+                  r.action === 'escalate' ? 'bg-dt-warn-soft text-dt-warn' : 'bg-dt-info-soft text-dt-info'}`}>
                   {r.action === 'escalate' ? 'hand to a human' : 'needs approval'}
                 </span>
                 <button onClick={() => void persistRules(customRules.filter((_, j) => j !== i))} disabled={busy || !canManage}
-                  className="text-[10px] text-dt-faint hover:text-rose-300">Remove</button>
+                  className="text-[10px] text-dt-faint hover:text-dt-danger">Remove</button>
               </div>
             ))}
           </div>
@@ -2971,7 +2971,7 @@ export function DeEscalationPanel({ deId }: { deId: string }) {
                 )}
                 {sigOf(c.signal)?.help && <span className="text-[10px] text-dt-faint">{sigOf(c.signal)!.help}</span>}
                 {conds.length > 1 && (
-                  <button onClick={() => setConds(cs => cs.filter((_, j) => j !== i))} className="text-[10px] text-dt-faint hover:text-rose-300">×</button>
+                  <button onClick={() => setConds(cs => cs.filter((_, j) => j !== i))} className="text-[10px] text-dt-faint hover:text-dt-danger">×</button>
                 )}
               </div>
             );
@@ -3216,7 +3216,7 @@ function LadderEditorDrawer({ entry, deName, onClose, onSaved }: {
                 {policy.current_level === i + 1 && <Chip tone="accent">current</Chip>}
                 {i === levels.length - 1 && levels.length > 1 && (
                   <button onClick={() => setLevels(prev => prev.slice(0, -1))}
-                    className="ml-auto text-[11px] text-dt-muted hover:text-rose-300 transition-colors">Remove</button>
+                    className="ml-auto text-[11px] text-dt-muted hover:text-dt-danger transition-colors">Remove</button>
                 )}
               </div>
               <div className="flex items-center gap-3 flex-wrap">
@@ -3357,7 +3357,7 @@ function TrustSurfaceCard({ entry, ev, draft, saving, saved, requesting, request
           <button
             onClick={onRequestPromotion}
             disabled={!ev.eligible || requesting || policy.pending_task_id !== null}
-            className="text-xs px-3 py-1.5 rounded-lg border text-emerald-300 border-emerald-800/50 hover:border-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex-shrink-0"
+            className="text-xs px-3 py-1.5 rounded-lg border text-dt-ok border-dt-ok-border hover:border-dt-ok disabled:opacity-40 disabled:cursor-not-allowed transition-all flex-shrink-0"
             title={ev.eligible ? 'Sends a promotion request to Human Tasks — a teammate approves it' : 'Evidence has not yet met every criterion'}
           >
             {requesting ? 'Requesting…' : requested ? 'Requested ✓' : `Request promotion to ${trustLevelName(policy, policy.target_level)}`}
@@ -3421,7 +3421,7 @@ function TrustSurfaceCard({ entry, ev, draft, saving, saved, requesting, request
         )}
         {canOverride && (
           <button onClick={onSaveDial} disabled={saving}
-            className="text-xs px-3 py-1.5 rounded-lg border text-indigo-300 border-indigo-800/50 hover:border-indigo-500 disabled:opacity-50 transition-all">
+            className="text-xs px-3 py-1.5 rounded-lg border text-dt-accent-text border-dt-accent-border hover:border-dt-accent disabled:opacity-50 transition-all">
             {saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save override'}
           </button>
         )}
@@ -3606,7 +3606,7 @@ function TrustPlanComposerPanel({ deId, deName, surface, onApplied }: {
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-dt-title">Describe how you want trust to work</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">compiles to a draft · you approve every change</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-accent-soft text-dt-accent-text">compiles to a draft · you approve every change</span>
       </div>
       <p className="text-[11px] text-dt-muted mb-3">
         Write the plan in plain words — what {deName} may do alone, up to what limits, and what evidence
@@ -3705,7 +3705,7 @@ function TrustPlanComposerPanel({ deId, deName, surface, onApplied }: {
                   </p>
                 )}
                 {st?.status === 'error' && (
-                  <p className="mt-2 text-[11px] text-rose-300">Not applied — {st.message}</p>
+                  <p className="mt-2 text-[11px] text-dt-danger">Not applied — {st.message}</p>
                 )}
               </div>
             );
@@ -3730,18 +3730,18 @@ function TrustPlanComposerPanel({ deId, deName, surface, onApplied }: {
           )}
 
           {draft.guardrail_suggestions.length > 0 && (
-            <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
-              <p className="text-xs font-semibold text-amber-300 mb-1">Guardrail suggestions — not applied here</p>
-              <p className="text-[11px] text-amber-200/90 mb-2">
+            <div className="rounded-xl border border-dt-warn-border bg-dt-warn-soft p-4">
+              <p className="text-xs font-semibold text-dt-warn mb-1">Guardrail suggestions — not applied here</p>
+              <p className="text-[11px] text-dt-warn mb-2">
                 Absolute prohibitions are guardrails, not trust levels — guardrails outrank every ladder.
                 Nothing below is applied by this page: add the ones you want on the Governance tab, where
                 guardrails get their own review.
               </p>
               <ul className="space-y-1.5">
                 {draft.guardrail_suggestions.map((g, i) => (
-                  <li key={i} className="text-[11px] text-amber-100/90">
+                  <li key={i} className="text-[11px] text-dt-warn">
                     {g.description}
-                    {g.rationale && <span className="text-amber-200/70"> — {g.rationale}</span>}
+                    {g.rationale && <span className="text-dt-warn"> — {g.rationale}</span>}
                   </li>
                 ))}
               </ul>
@@ -3975,7 +3975,7 @@ export function DeTrustAutonomySection({ de, setPage, onUpdated }: {
 
   return (
     <div className="space-y-6">
-      {error && <div className="rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{error}</div>}
+      {error && <div className="rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{error}</div>}
 
       {/* Lifecycle — the governance gate (DE-B4) */}
       <DeLifecyclePanel de={de} onUpdated={onUpdated} />
@@ -4002,12 +4002,12 @@ export function DeTrustAutonomySection({ de, setPage, onUpdated }: {
           Read via the existing get_de_gate_status RPC (the EmployeeFilePage
           read); when the status cannot be read, nothing is claimed. */}
       {gate?.gated && (
-        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3">
-          <p className="text-xs font-medium text-amber-300">
+        <div className="rounded-xl border border-dt-warn-border bg-dt-warn-soft px-4 py-3">
+          <p className="text-xs font-medium text-dt-warn">
             The records gate is clamping every dial on this page — until it clears, {name} drafts for
             approval no matter what the dials below say.
           </p>
-          <ul className="mt-1 text-xs text-amber-200/90 space-y-0.5">
+          <ul className="mt-1 text-xs text-dt-warn space-y-0.5">
             {gate.reasons.map(r => <li key={r}>· {GATE_REASON_COPY[r] ?? r}</li>)}
           </ul>
         </div>
@@ -4022,7 +4022,7 @@ export function DeTrustAutonomySection({ de, setPage, onUpdated }: {
       <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
         <div className="mb-1 flex items-center gap-2 flex-wrap">
           <h3 className="text-base font-semibold text-dt-title">What {name} may do alone</h3>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300">derived from this employee's actual work</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-600 text-violet-100">derived from this employee's actual work</span>
         </div>
         <p className="text-[11px] text-dt-muted mb-2">
           These cards come from what {name} actually does — its answer channels, the actions reachable
@@ -4036,7 +4036,7 @@ export function DeTrustAutonomySection({ de, setPage, onUpdated }: {
         </p>
 
         {seedNote && <p className="text-[11px] text-amber-400/80 mb-3">{seedNote}</p>}
-        {trustError && <div className="mb-4 rounded-xl border border-rose-800/50 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">{trustError}</div>}
+        {trustError && <div className="mb-4 rounded-xl border border-dt-danger-border bg-dt-danger-soft px-4 py-3 text-xs text-dt-danger">{trustError}</div>}
 
         {surface === null ? (
           <EmptyState icon="🔒" headline="The trust surface could not be loaded">
@@ -4066,7 +4066,7 @@ export function DeTrustAutonomySection({ de, setPage, onUpdated }: {
         <p className="mt-4 text-[11px] text-dt-muted">
           Every change is recorded as a config_change event on the audit trail.{' '}
           {canOpenAuditFromPlan && (
-            <button onClick={() => setPage('gov_audit')} className="text-indigo-400 hover:text-indigo-300 transition-colors">
+            <button onClick={() => setPage('gov_audit')} className="text-dt-accent-text hover:underline transition-colors">
               View Audit Trail →
             </button>
           )}
@@ -4157,13 +4157,13 @@ function AttachedProceduresPanel({ deId, setPage }: { deId: string; setPage: (p:
     <div className="rounded-2xl border border-dt-border bg-dt-card p-6">
       <div className="mb-1 flex items-center gap-2 flex-wrap">
         <h3 className="text-base font-semibold text-dt-title">Attached procedures</h3>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">steers autonomous work</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-accent-soft text-dt-accent-text">steers autonomous work</span>
       </div>
       <p className="text-[11px] text-dt-muted mb-4">
         Published procedures attached here are injected into this employee's working brief — up to four, newest first.
         Drafts show below but only published ones steer work.
       </p>
-      {error && <p className="text-xs text-rose-300 mb-3">{error}</p>}
+      {error && <p className="text-xs text-dt-danger mb-3">{error}</p>}
       {defs === null ? (
         <p className="text-xs text-dt-muted">Loading procedures…</p>
       ) : (
@@ -4174,12 +4174,12 @@ function AttachedProceduresPanel({ deId, setPage }: { deId: string; setPage: (p:
             <div className="divide-y divide-dt-border mb-3">
               {mine.map(d => (
                 <div key={d.id} className="flex items-center gap-3 py-2.5">
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${d.status === 'published' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>{d.status}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${d.status === 'published' ? 'bg-dt-ok-soft text-dt-ok' : 'bg-dt-warn-soft text-dt-warn'}`}>{d.status}</span>
                   <span className="text-sm text-dt-body flex-1 truncate">{d.name}</span>
                   <span className="text-[11px] text-dt-muted">v{d.version} · {Array.isArray(d.steps) ? d.steps.length : 0} steps</span>
-                  <button onClick={() => setPage('systems_playbooks')} className="text-xs text-indigo-400 hover:text-indigo-300">Open in builder</button>
+                  <button onClick={() => setPage('systems_playbooks')} className="text-xs text-dt-accent-text hover:underline">Open in builder</button>
                   <button disabled={busy || !canBindProcedures} onClick={() => void act(() => setDefinitionDeBinding(d.id, null))}
-                    className="text-xs text-dt-muted hover:text-rose-300 disabled:opacity-40">Detach</button>
+                    className="text-xs text-dt-muted hover:text-dt-danger disabled:opacity-40">Detach</button>
                 </div>
               ))}
             </div>

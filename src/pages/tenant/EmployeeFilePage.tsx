@@ -483,19 +483,19 @@ function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => v
                   <span className="text-[11px] text-dt-faint">P{o.priority}{o.due_at ? ` · due ${fmt(o.due_at)}` : ''}</span>
                   {o.attention_flag && (
                     <button onClick={() => setWakesOpen(w => ({ ...w, [o.id]: !w[o.id] }))}
-                      className="text-[10px] text-dt-faint hover:text-amber-300">
+                      className="text-[10px] text-dt-faint hover:text-dt-warn">
                       {wakesOpen[o.id] ? 'Hide check-ins' : 'Why?'}
                     </button>
                   )}
                   {canManage && (
                     <>
                       <button onClick={() => { setObjOpen(true); setObjEditId(o.id); setObjTitle(o.title); setObjPriority(o.priority || 3); }}
-                        className="text-[10px] text-dt-faint hover:text-indigo-300">Edit</button>
+                        className="text-[10px] text-dt-faint hover:text-dt-accent-text">Edit</button>
                       {/* This list is already filtered to open | in_progress | blocked
                           (the statuses de_objectives can actually hold while live), so
                           every row gets the Done brake. */}
                       <button onClick={() => void handleCloseObjective(o)}
-                        className="text-[10px] text-dt-faint hover:text-emerald-300">Done</button>
+                        className="text-[10px] text-dt-faint hover:text-dt-ok">Done</button>
                     </>
                   )}
                 </div>
@@ -875,7 +875,7 @@ function RoleTemplatePanel({
 
   if (done) {
     return (
-      <div className="mt-3 rounded-xl border border-emerald-800/50 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
+      <div className="mt-3 rounded-xl border border-dt-ok-border bg-dt-ok-soft px-3 py-2 text-xs text-dt-ok">
         Applied the {done.archetypeName} template — {done.watchersCreated} watcher{done.watchersCreated === 1 ? '' : 's'},
         {' '}{done.guardrailsCreated} role guardrail{done.guardrailsCreated === 1 ? '' : 's'},
         {' '}{done.systemsInstalled} connected system{done.systemsInstalled === 1 ? '' : 's'}
@@ -929,7 +929,7 @@ function RoleTemplatePanel({
           {choice && kits && (
             <p className="text-[11px] text-dt-muted">{kits.find(k => k.key === choice)?.description}</p>
           )}
-          {error && <p className="text-xs text-red-300">{error}</p>}
+          {error && <p className="text-xs text-dt-danger">{error}</p>}
           <div className="flex items-center gap-2">
             <Button kind="primary" size="sm" onClick={() => void apply()} disabled={!choice || busy}>
               {busy ? 'Applying…' : 'Apply'}
@@ -1193,7 +1193,7 @@ function RecordTab({ de, setPage, openTab }: { de: DigitalEmployee; setPage: (p:
           <span className="text-dt-muted">Answers to:</span>
           {primaryName
             ? <span className="text-dt-body font-medium">{primaryName}</span>
-            : <span className="text-amber-300">Nobody assigned</span>}
+            : <span className="text-dt-warn">Nobody assigned</span>}
           <span className="text-dt-faint">→ Governance</span>
         </button>
       )}
@@ -1406,11 +1406,11 @@ export default function EmployeeFilePage({ setPage }: { setPage: (p: Page) => vo
 
       {/* mig 258 — the records gate, explained where the record lives. */}
       {gate?.gated && (
-        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3">
-          <p className="text-xs font-medium text-amber-300">
+        <div className="rounded-xl border border-dt-warn-border bg-dt-warn-soft px-4 py-3">
+          <p className="text-xs font-medium text-dt-warn">
             Autonomy is gated by {name}'s employment record — every answer and action is routed to a human until it's resolved.
           </p>
-          <ul className="mt-1 text-xs text-amber-200/90 space-y-0.5">
+          <ul className="mt-1 text-xs text-dt-warn space-y-0.5">
             {gate.reasons.map(r => (
               <li key={r}>
                 · {r === 'stale_certification' ? 'Certification is stale — the configuration changed after the last exam. Re-run the certification exam to refresh it.'
