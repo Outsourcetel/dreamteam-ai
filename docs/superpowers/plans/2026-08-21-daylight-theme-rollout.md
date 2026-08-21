@@ -637,6 +637,20 @@ Post-deploy: verify production login screen renders light; grep the deployed bun
 
 ---
 
+### Task 5T: The tone-text sweep — the dimension the audit never measured
+
+Found by the final whole-branch review (2026-08-21): the estate carries ~749 lines of `text-{tone}-100|200|300` (amber-300 ×153, indigo-300 ×148, emerald-300 ×136, rose-300 ×116, red-300 ×84, + ~110 more) — dark-only semantic text at ~1.3–2.5:1 on white, invisible to the four original audit metrics. "Audit at 0" was satisfiable while the estate was not light-ready. This sweep closes the gap BEFORE the migration apply exposes the Daylight tile to tenant admins.
+
+**Files:**
+- Modify: `scripts/audit-light-ready.mjs` — fifth ratcheted metric `tone text-300` counting `text-(amber|indigo|emerald|rose|red|sky|teal|violet|purple|cyan|orange|fuchsia|pink|lime|yellow|green|blue)-(100|200|300)` lines NOT carrying an opaque same-line colored fill (reuse the opacity-aware COLORED_BG) and NOT inside `.dt-force-dark`-classed markup files' §7 exclusions; calibrate the baseline honestly, prove falsifiability.
+- Modify: estate-wide per the worklist, Task-5 group pattern (2–3 groups, one review gate each).
+
+**Mapping:** by SEMANTIC family — `text-amber-*` → `text-dt-warn`, `text-emerald-*` → `text-dt-ok`, `text-rose-*|red-*` → `text-dt-danger`, `text-sky-*` → `text-dt-info`, `text-indigo-*` → `text-dt-accent-text`; other hues → nearest semantic BY MEANING (violet/purple step-grade families keep their hue via a judgment entry — a raw tone on a token surface converts to the nearest dt text token; a tone on a solid same-hue fill stays). Tone families never reassigned. Survivors → §7 + exclusion, never slack.
+
+**Done when:** fifth metric at 0 with documented survivors; guards clean; per-group reviews passed.
+
+---
+
 ## Deferred (explicitly out of scope, recorded so it isn't lost)
 
 - **Command Deck theme + Operator toggle:** a `:root.deck` token block (carbon palette, `--dt-font-mono` for numerals, radius/density tokens), `deck` in both `LIGHT_SURFACES`-style lists as a dark family, a per-USER toggle (profile-backed, not workspace-wide) in the header. Everything in Tasks 1–2 was shaped so this is additive.
