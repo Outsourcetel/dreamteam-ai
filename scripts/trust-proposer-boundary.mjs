@@ -506,6 +506,54 @@ select 'orphan-proposal — ' || o.slug || ' / ' || coalesce(o.title, '(untitled
 
 union all
 
+-- ── 13. REFUSAL UNWIRED — mig 838's promotion_is_possible is a REFUSAL: a
+--      role that has not declared what a trust step grants cannot have its
+--      employees promoted. It is wired into apply_trust_promotion, the sole
+--      writer of trust_policies.current_level upward, and consulted by
+--      request_eligible_promotions so the sweep does not file cards nobody
+--      can action.
+--
+--      ⚠ THIS IS THE SAME SHAPE AS ARM 8, AND FOR A REASON THAT ALREADY
+--      NEARLY HAPPENED. 838 carries a body-hash precondition that refuses to
+--      apply if apply_trust_promotion has drifted — and it FIRED on its first
+--      dry run, because a parallel session had applied mig 837 to that same
+--      function in the interim. Without it 838 would have applied cleanly and
+--      silently reverted 837. But that guard protects 838's OWN apply and
+--      nothing after it: a LATER migration that CREATE OR REPLACEs
+--      apply_trust_promotion from a snapshot taken before 838 removes this
+--      refusal with no error, no diff anybody reads, and no test that fails.
+--      The promotion path would go back to granting an unbounded step for
+--      every role that has declared nothing — which is every role today.
+--
+--      ⚠ GATED ON THE CALLEE EXISTING, exactly as arm 8's newer writer is.
+--      Before 838 there is nothing to unwire, and reporting a missing call to
+--      a function that does not exist would turn every environment behind 838
+--      — a fresh build, dev mid-replay — red for a defect it does not have.
+--      Also gated on the CALLER existing, so a missing function is not
+--      reported as "no longer calls".
+--
+--      f.src is comment-stripped by live_fns, so this cannot be satisfied by
+--      prose naming the function it looks for — including 838's own header
+--      comments inside those very bodies, which do name it repeatedly. ──────
+select 'refusal-unwired — ' || w.caller || ' no longer calls '
+       || 'promotion_is_possible. ' || w.why as violation,
+       null::text as note
+  from (values
+    ('apply_trust_promotion',
+     'This is the ONLY place a promotion is actually stopped — the sole writer of current_level upward. Without the call every policy becomes promotable again, including the ones whose role has declared nothing about what the step grants, which is the unbounded-by-default hole mig 838 exists to close.'),
+    ('request_eligible_promotions',
+     'The nightly eligibility sweep is filing promotion requests that can never be approved — a human queue full of cards that fail on the button. Enforcement is unaffected (apply_trust_promotion still refuses), so this is noise, not a breach — but it is the visible half, and it is how a silent unwiring of the other half usually shows up first.')
+  ) w(caller, why)
+ where exists (select 1 from live_fns g
+                where g.sig = 'promotion_is_possible(p_policy_id uuid)')
+   and exists (select 1 from live_fns f where f.sig like w.caller || '(%')
+   and not exists (
+         select 1 from live_fns f
+          where f.sig like w.caller || '(%'
+            and f.src ~ '\\mpromotion_is_possible\\s*\\(')
+
+union all
+
 -- ── The denominator, surfaced on every run (violation NULL: printed, never
 --    failed on). Zero open proposals is a legal state — the line says so. ───
 select null::text as violation,
@@ -517,7 +565,15 @@ select null::text as violation,
        || ' pending trust_promotion task(s) in the orphan scan; detector '
        || 'currently reports '
        || (select count(*) from public.detect_trust_widening_patterns(null))
-       || ' qualifying group(s) awaiting a proposal' as note
+       || ' qualifying group(s) awaiting a proposal; refusal wiring: '
+       || case when exists (select 1 from live_fns g
+                             where g.sig = 'promotion_is_possible(p_policy_id uuid)')
+               then (select count(*) from (values ('apply_trust_promotion'),
+                                                  ('request_eligible_promotions')) w(caller)
+                      where exists (select 1 from live_fns f where f.sig like w.caller || '(%'))::text
+                    || ' of 2 call site(s) present and checked against promotion_is_possible'
+               else 'NOT CHECKED — promotion_is_possible is not installed (mig 838 not applied), so arm 13 compared nothing'
+          end as note
   from counted c
 `;
 }
