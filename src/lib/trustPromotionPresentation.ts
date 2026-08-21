@@ -145,6 +145,58 @@ export function extractPolicyEvidence(pendingEvidence: unknown): TrustPromotionE
   };
 }
 
+/** Whether the raw `human_tasks.detail` still has something to say once the
+ *  curated card below it has rendered.
+ *
+ *  ── THE DEFECT THIS ANSWERS (final whole-feature review, 2026-08-21) ───────
+ *  Both surfaces render `task.detail` ABOVE the evidence card. For a
+ *  criteria-shaped request that text is the SQL-composed sentence
+ *  "Evidence met all criteria: … . Approving widens autonomy one step — still
+ *  capped by guardrails." — so the approver reads the criteria twice, in two
+ *  voices, and the first voice promises a cap the second deliberately
+ *  declines to claim. Measured on production: trust_level_settings
+ *  ('action_execute', N) returns max_amount_cents NULL for every N >= 1, so
+ *  the trust ladder caps nothing for that category. (Guardrails DO still gate
+ *  independently — decide_action_execution stops destructive actions, blocked
+ *  phrases/topics, and amounts over require_approval_over_cents before it
+ *  reads the dial — but that is a different mechanism on a different path,
+ *  and "capped" without naming which mechanism reads as a bound on the step
+ *  being approved.)
+ *
+ *  ── WHY THIS IS SCOPED, NOT "HIDE IT FOR THIS TASK TYPE" ──────────────────
+ *  The pattern-detector's detail (migration 710) is NOT a duplicate: it
+ *  carries the citation list — a date, an approver and a landed receipt per
+ *  cited decision — and NOTHING else on either surface reproduces it. The
+ *  card reads `policy_evidence` (criteria counts); the advisory brief
+ *  (migration 705) states the count, never the receipts. Hiding the detail
+ *  for the whole task type would delete real evidence from the strongest
+ *  proposal shape. So: hidden only when the evidence carries no `pattern`
+ *  object and the flat criteria array the card renders IS the whole story.
+ *
+ *  ── FAILS TOWARD SHOWING MORE ─────────────────────────────────────────────
+ *  Anything unrecognised returns false (keep the detail). The Task-1b lesson
+ *  applies in spirit: a shape nobody anticipated must not silently fall
+ *  through into the branch that hides evidence.
+ *
+ *  Covers migration 025's `request_trust_promotion` too — the human "Request
+ *  promotion" button writes the same flat shape and the same sentence, and
+ *  that function is already applied, so the surface is the only place its
+ *  copy can be reconciled without replacing an applied function. */
+export function detailIsRedundantBesideCard(pendingEvidence: unknown): boolean {
+  if (!pendingEvidence || typeof pendingEvidence !== 'object' || Array.isArray(pendingEvidence)) return false;
+  const top = pendingEvidence as Record<string, unknown>;
+  // A pattern-wrapped proposal's detail carries citations the card does not.
+  // ANY non-nullish `pattern` key keeps the detail, not just an object one:
+  // the first draft required `typeof === 'object'`, which let a malformed
+  // `{pattern: 'nope', criteria: [...]}` fall through into the HIDE branch —
+  // the one direction that deletes evidence. A shape nobody anticipated must
+  // land on "show more", and a bare presence test is the version of this rule
+  // that cannot be wrong in the expensive direction.
+  if (top.pattern !== undefined && top.pattern !== null) return false;
+  // Flat, criteria-shaped: everything the detail says, the card says better.
+  return Array.isArray(top.criteria);
+}
+
 // Legacy level names (trustApi.ts's TRUST_LEVEL_LABELS) — level 0 is always
 // the implicit human-gated floor and is never itself a stored ladder entry.
 const LEVEL_FALLBACK = ['Human-gated', 'Level 1', 'Level 2', 'Level 3'];

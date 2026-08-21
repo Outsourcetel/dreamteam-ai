@@ -30,7 +30,7 @@ import type { ApprovalBrief } from '../../../lib/approvalBriefsApi';
 // tests/trust-promotion.test.ts).
 import { getTrustPolicyById } from '../../../lib/trustApi';
 import type { TrustPolicy } from '../../../lib/trustApi';
-import { trustPromotionCardCopy, isThinTrustEvidence, extractPolicyEvidence } from '../../../lib/trustPromotionPresentation';
+import { trustPromotionCardCopy, isThinTrustEvidence, extractPolicyEvidence, detailIsRedundantBesideCard } from '../../../lib/trustPromotionPresentation';
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -858,6 +858,19 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   // before this settles is deciding having seen nothing, on the exact pane
   // the evidence block sits in.
   const trustLoading = selected?.type === 'trust_promotion' && trustPolicy === undefined;
+  // ⚠ FINAL REVIEW (2026-08-21): the raw task.detail is rendered ABOVE the
+  // evidence card, and for a criteria-shaped request it is the SQL-composed
+  // sentence the card supersedes — the same evidence in two voices, the first
+  // of which promises a cap the ladder does not grant. Suppressed only when
+  // BOTH are true: the card actually rendered (trustCopy is non-null, so a
+  // load error, an unlinked policy or an unreadable snapshot all still show
+  // the detail), and the evidence carries no cited decisions. The rule lives
+  // in the shared module so mobile cannot drift from it — see
+  // detailIsRedundantBesideCard's own header for why a pattern-shaped
+  // proposal keeps its detail (the receipts are only there).
+  const trustDetailRedundant = selected?.type === 'trust_promotion'
+    && !!trustCopy
+    && detailIsRedundantBesideCard(trustPolicy?.pending_evidence);
 
   return (
     <div className="p-6">
@@ -1335,7 +1348,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                     run-on paragraph — the words are still reachable, but the
                     boundary between two different reports is not, which is
                     most of what makes the second one findable. */}
-                {selected.detail && <p className="text-xs text-dt-support mb-3 whitespace-pre-wrap">{selected.detail}</p>}
+                {selected.detail && !trustDetailRedundant && <p className="text-xs text-dt-support mb-3 whitespace-pre-wrap">{selected.detail}</p>}
                 {/* ⚠ READ IT BEFORE YOU SEND IT. `detail` carries the draft cut
                     to 240 characters; approving now delivers the WHOLE thing,
                     so the whole thing is what the approver sees. */}

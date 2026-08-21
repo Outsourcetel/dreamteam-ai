@@ -38,6 +38,10 @@
 // weaker than arm 2, adequate for what they check, and not claimed otherwise.
 import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
+// See tests/helpers/jsxAttribute.ts for why the behavioural helpers live in a
+// plain module rather than in this file: importing them FROM a .test.ts
+// double-registers that file's suites in the importer.
+import { attributeExpression, evalAttributeExpression } from './helpers/jsxAttribute';
 
 const PAGE_PATH = 'src/pages/tenant/ops/HumanTasksPage.tsx';
 
@@ -120,6 +124,47 @@ describe('Approve cannot resolve before the evidence has finished loading', () =
     expect(tag).toContain('deciding || trustLoading');
   });
 
+  it('and the gate BEHAVES: the real disabled= expression is true while loading and false when settled', () => {
+    // ⚠ FINAL REVIEW (2026-08-21). The arm above is still a substring test,
+    // and the coordinator's own note conceded it "would pass for an inverted
+    // gate". It is worse than that concession: `disabled={!(deciding ||
+    // trustLoading)}` — a total inversion — CONTAINS the literal sequence
+    // `deciding || trustLoading`, so the arm above passes for it. This arm
+    // lifts the actual expression out of the source and evaluates it, which
+    // is the only thing that can tell a gate from its negation without a
+    // renderer.
+    //
+    // ⛔ INVERSION RUNS, measured across this file + the mobile one (26 arms):
+    //   * disabled={!(deciding || trustLoading || …)} — a TOTAL inversion —
+    //     reddened THIS arm and nothing else. 25 of 26 still passed, the
+    //     substring arm above among them. That is the review finding
+    //     reproduced exactly, and the reason this arm exists.
+    //   * dropping trustLoading from the gate entirely reddened BOTH arms.
+    const at = SRC.indexOf("onClick={() => void decide(selected, 'approved')}");
+    const tag = enclosingOpenTag(SRC, 'button', at);
+    const expr = attributeExpression(tag, 'disabled');
+    const scope = (over: Record<string, unknown>) => ({
+      deciding: false,
+      trustLoading: false,
+      // A trust_promotion task: not a checklist, so the third disjunct is
+      // false and the two under test are the only things that can move.
+      selected: { type: 'trust_promotion', checklist_state: [] },
+      ...over,
+    });
+    // SETTLED: nothing in flight, evidence loaded -> Approve must be live.
+    expect(evalAttributeExpression(expr, scope({}))).toBe(false);
+    // LOADING: the evidence has not arrived -> Approve must be dead.
+    expect(evalAttributeExpression(expr, scope({ trustLoading: true }))).toBe(true);
+    // And the pre-existing half of the same gate still holds.
+    expect(evalAttributeExpression(expr, scope({ deciding: true }))).toBe(true);
+    // The checklist disjunct this arm deliberately holds constant is still
+    // wired — asserted here so holding it constant above is a choice, not an
+    // accidental blind spot.
+    expect(evalAttributeExpression(expr, scope({
+      selected: { type: 'checklist', checklist_state: [{ done: false }] },
+    }))).toBe(true);
+  });
+
   it('the button label says so while checking, same wording as the checklist/evidence copy elsewhere', () => {
     const at = SRC.indexOf("onClick={() => void decide(selected, 'approved')}");
     const tag = enclosingOpenTag(SRC, 'button', at);
@@ -175,5 +220,47 @@ describe('batch selection excludes trust_promotion — the small half of item 4'
     // follows, not gating this branch itself.
     const afterTernaryElse = SRC.slice(at, SRC.indexOf(') : batchSelectable(task) && (', at) + 40);
     expect(afterTernaryElse).toContain('batchSelectable(task) && (');
+  });
+});
+
+describe('the raw task.detail no longer restates the card beside it (final review)', () => {
+  // ⚠ THE DEFECT: task.detail renders ABOVE the evidence card, and for a
+  // criteria-shaped request it is the SQL-composed sentence "Evidence met all
+  // criteria: … . Approving widens autonomy one step — still capped by
+  // guardrails." The approver read the evidence twice, in two voices, and the
+  // first promised a cap the trust ladder does not grant (measured:
+  // trust_level_settings('action_execute', N) returns max_amount_cents NULL
+  // for every N >= 1). Suppressed here; the pattern detector's detail, which
+  // carries citation receipts nothing else reproduces, is deliberately kept.
+  it('the detail paragraph is guarded by trustDetailRedundant, not rendered unconditionally', () => {
+    // ⛔ INVERSION: reverting this site to an unguarded {selected.detail &&}
+    // reddened this arm alone (1 of 26).
+    const at = SRC.indexOf('{selected.detail &&');
+    expect(at, 'the raw detail render site was not found').toBeGreaterThan(-1);
+    const line = SRC.slice(at, at + 200);
+    expect(line).toContain('!trustDetailRedundant');
+  });
+
+  it('trustDetailRedundant is DERIVED, and requires the card to have actually rendered', () => {
+    // Three conjuncts, all load-bearing: the task type (this rule is only
+    // about trust_promotion), !!trustCopy (a load error, an unlinked policy
+    // or an unreadable snapshot must ALL still show the detail — hiding it
+    // there would leave the approver with nothing at all), and the shared
+    // predicate (which is what keeps a pattern-shaped proposal's receipts on
+    // screen).
+    // ⛔ INVERSION: deleting the '&& !!trustCopy' conjunct reddened this arm
+    // alone (1 of 26) — the conjunct that keeps the detail on screen when the
+    // card could not render.
+    const at = SRC.indexOf('const trustDetailRedundant =');
+    expect(at, 'trustDetailRedundant is not declared as a derived const').toBeGreaterThan(-1);
+    const statement = SRC.slice(at, SRC.indexOf(';', at) + 1);
+    expect(statement).toContain("'trust_promotion'");
+    expect(statement).toContain('!!trustCopy');
+    expect(statement).toContain('detailIsRedundantBesideCard');
+  });
+
+  it('the rule comes from the shared module — no second copy of it on this surface', () => {
+    expect(SRC).toContain("from '../../../lib/trustPromotionPresentation'");
+    expect(SRC).toContain('detailIsRedundantBesideCard');
   });
 });

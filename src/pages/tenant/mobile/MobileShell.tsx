@@ -37,7 +37,7 @@ import type { Page } from '../../../types';
 // same pure module (tests/trust-promotion.test.ts already proves it).
 import { getTrustPolicyById } from '../../../lib/trustApi';
 import type { TrustPolicy } from '../../../lib/trustApi';
-import { trustPromotionCardCopy, isThinTrustEvidence, extractPolicyEvidence } from '../../../lib/trustPromotionPresentation';
+import { trustPromotionCardCopy, isThinTrustEvidence, extractPolicyEvidence, detailIsRedundantBesideCard } from '../../../lib/trustPromotionPresentation';
 import { listDigitalEmployees } from '../../../lib/digitalEmployeesApi';
 
 // ⚠ APPROVING SOMETHING YOU HAVE NOT READ is the failure this product exists
@@ -195,6 +195,17 @@ export default function MobileShell({ setPage }: { setPage: (p: Page) => void })
   }) : null;
   const trustThin = trustEvidence ? isThinTrustEvidence(trustEvidence) : false;
   const trustLoading = open?.type === 'trust_promotion' && trustPolicy === undefined;
+  // ⚠ FINAL REVIEW (2026-08-21): identical rule to the desktop ops queue, from
+  // the SAME shared predicate — the "Why it stopped" paragraph below renders
+  // the raw task.detail above the evidence card, and for a criteria-shaped
+  // request that is the SQL-composed sentence the card supersedes, promising a
+  // cap the trust ladder does not grant. Suppressed only when the card
+  // actually rendered AND the evidence carries no cited decisions; a
+  // pattern-shaped proposal keeps its detail, because the receipts live
+  // nowhere else. See detailIsRedundantBesideCard's own header.
+  const trustDetailRedundant = open?.type === 'trust_promotion'
+    && !!trustCopy
+    && detailIsRedundantBesideCard(trustPolicy?.pending_evidence);
 
   const decide = async (task: DBHumanTask, decision: 'approved' | 'rejected',
                         capture?: { reasonCode?: DecisionReasonCode; note?: string }) => {
@@ -250,10 +261,12 @@ export default function MobileShell({ setPage }: { setPage: (p: Page) => void })
         </div>
         <div className="p-5 space-y-5 flex-1">
           <h1 className="text-[22px] font-semibold text-dt-title leading-snug">{open.title}</h1>
-          <div>
-            <p className="text-[14px] text-dt-muted mb-1">Why it stopped</p>
-            <p className="text-[16px] text-dt-body leading-relaxed">{open.detail}</p>
-          </div>
+          {!trustDetailRedundant && (
+            <div>
+              <p className="text-[14px] text-dt-muted mb-1">Why it stopped</p>
+              <p className="text-[16px] text-dt-body leading-relaxed">{open.detail}</p>
+            </div>
+          )}
           <div className="rounded-xl border border-dt-border bg-dt-card divide-y divide-dt-border">
             {[
               ['Raised', ago(open.created_at)],

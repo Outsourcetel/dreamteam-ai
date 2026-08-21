@@ -29,6 +29,10 @@
 // unused constant.)
 import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
+// The two behavioural helpers are shared, not copied: they are the thing
+// that separates a gate from its negation, and two hand-kept copies of that
+// would be exactly the second source of truth Task 6 spent a round removing.
+import { attributeExpression, evalAttributeExpression } from './helpers/jsxAttribute';
 
 const PAGE_PATH = 'src/pages/tenant/mobile/MobileShell.tsx';
 
@@ -146,6 +150,42 @@ describe('the "Read it" screen shows the evidence, not just the raw task text', 
     const tag = enclosingOpenTag(OPEN_VIEW, 'Button', at);
     expect(tag).toContain("(open.type === 'trust_promotion' && trustLoading)");
   });
+
+  it('and the gate BEHAVES: the real disabled= expression is true while loading and false when settled', () => {
+    // ⚠ FINAL REVIEW (2026-08-21), mirrored from the desktop file, which owns
+    // the two helpers. Round 2's concession — "a bare toMatch(/trustLoading/)
+    // would also pass for an inverted gate" — understated it: the literal
+    // sequence this file now requires is ALSO contained in
+    // `disabled={!(busy || draft === undefined || (open.type ===
+    // 'trust_promotion' && trustLoading))}`, a total inversion. Evaluating
+    // the expression is the only assertion that separates the two.
+    //
+    // ⛔ INVERSION RUN: disabled={!(busy || draft === undefined || (open.type
+    // === trust_promotion && trustLoading))} reddened THIS arm and nothing
+    // else — 25 of 26 arms across both gate files still passed, including the
+    // substring arm directly above.
+    const at = OPEN_VIEW.indexOf("onClick={() => void decide(open, 'approved')}");
+    const tag = enclosingOpenTag(OPEN_VIEW, 'Button', at);
+    const expr = attributeExpression(tag, 'disabled');
+    const scope = (over: Record<string, unknown>) => ({
+      busy: false,
+      trustLoading: false,
+      draft: null,          // settled: looked, found nothing (undefined = still looking)
+      open: { type: 'trust_promotion' },
+      ...over,
+    });
+    expect(evalAttributeExpression(expr, scope({}))).toBe(false);
+    expect(evalAttributeExpression(expr, scope({ trustLoading: true }))).toBe(true);
+    // The two pre-existing halves of the same gate still hold.
+    expect(evalAttributeExpression(expr, scope({ busy: true }))).toBe(true);
+    expect(evalAttributeExpression(expr, scope({ draft: undefined }))).toBe(true);
+    // And the trust half is SCOPED to trust_promotion, not applied to every
+    // task — a gate that disabled Approve on every type while trustLoading
+    // happened to be true would also pass the two rows above.
+    expect(evalAttributeExpression(expr, scope({
+      open: { type: 'action_approval' }, trustLoading: true,
+    }))).toBe(false);
+  });
 });
 
 describe('trustPolicy is tri-state, not a resolved value plus a separate flag (fix round 2)', () => {
@@ -176,5 +216,38 @@ describe('trustPolicy is tri-state, not a resolved value plus a separate flag (f
     expect(at, 'the catch handler\'s own error message was not found').toBeGreaterThan(-1);
     const nearby = SRC.slice(at, at + 200);
     expect(nearby).toContain('setTrustPolicy(null)');
+  });
+});
+
+describe('the raw task.detail no longer restates the card beside it (final review)', () => {
+  // Same defect, same rule, same shared predicate as the desktop ops queue —
+  // see tests/human-tasks-trust-promotion-gate.test.ts for the measurement
+  // that settled the "still capped by guardrails" claim. Applied to BOTH
+  // surfaces or to neither: a reconciliation that lands on one is just the
+  // contradiction relocated.
+  it('the "Why it stopped" block is guarded by trustDetailRedundant, not rendered unconditionally', () => {
+    // ⛔ INVERSION: replacing the guard with {true && (…)} reddened this arm
+    // alone (1 of 26).
+    const at = OPEN_VIEW.indexOf('Why it stopped');
+    expect(at, 'the mobile raw-detail block was not found').toBeGreaterThan(-1);
+    // The guard sits on the wrapper immediately above the label.
+    const before = OPEN_VIEW.slice(Math.max(0, at - 200), at);
+    expect(before).toContain('!trustDetailRedundant');
+    // And the paragraph it guards is still the raw task detail.
+    expect(OPEN_VIEW.slice(at, at + 200)).toContain('open.detail');
+  });
+
+  it('trustDetailRedundant is DERIVED, and requires the card to have actually rendered', () => {
+    const at = SRC.indexOf('const trustDetailRedundant =');
+    expect(at, 'trustDetailRedundant is not declared as a derived const').toBeGreaterThan(-1);
+    const statement = SRC.slice(at, SRC.indexOf(';', at) + 1);
+    expect(statement).toContain("'trust_promotion'");
+    expect(statement).toContain('!!trustCopy');
+    expect(statement).toContain('detailIsRedundantBesideCard');
+  });
+
+  it('the rule comes from the shared module — no second copy of it on this surface', () => {
+    expect(SRC).toContain("from '../../../lib/trustPromotionPresentation'");
+    expect(SRC).toContain('detailIsRedundantBesideCard');
   });
 });

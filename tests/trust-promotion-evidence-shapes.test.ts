@@ -12,11 +12,25 @@
 // deliberately broken copy of the corresponding logic and observed to fail
 // for the RIGHT reason before being kept (see the inversion notes inline) —
 // a checker that cannot fail is theatre.
+//
+// ── FINAL WHOLE-FEATURE REVIEW (2026-08-21) — two gaps closed here ──────────
+// 1. trustPromotionCardCopy had exactly TWO assertions in the whole suite
+//    (tests/trust-promotion.test.ts), both on `.detail`, both on fixtures
+//    carrying no window_days, no computed_at and no ladder. So `.title`,
+//    `.meta`, the "in the last N days" qualifier, the "(as measured on …)"
+//    date and the entire ladder path were unpinned — on the very code fix
+//    round 2 added to stop the card stating falsehoods. Pinned below,
+//    table-driven, in the file that already has the right fixtures.
+// 2. detailIsRedundantBesideCard is new, decides whether a whole paragraph of
+//    evidence is shown or hidden on two surfaces, and had no coverage at all.
 import { describe, it, expect } from 'vitest';
 import {
   extractPolicyEvidence, isThinTrustEvidence, humanDecidedCount,
+  trustPromotionCardCopy, detailIsRedundantBesideCard,
 } from '../src/lib/trustPromotionPresentation';
-import type { TrustPromotionEvidence } from '../src/lib/trustPromotionPresentation';
+import type {
+  TrustPromotionEvidence, TrustPromotionCardInput, TrustPromotionLadderLevel,
+} from '../src/lib/trustPromotionPresentation';
 
 // The REAL pending_evidence blob for the one trust_promotion request live in
 // production (tenant 5bb802e1), queried read-only on 2026-08-21 — see
@@ -183,6 +197,173 @@ describe('isThinTrustEvidence — table-driven, including the case the whole tas
       // opposite of what the inverted code returns) — the gate genuinely
       // discriminates, it does not just happen to agree with one fixture.
       expect(isThinTrustEvidence(evidence)).toBe(expected);
+    });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// trustPromotionCardCopy — the parts nothing pinned before.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A ladder as trust_policies.ladder stores one — level, name, mode. */
+const LADDER: TrustPromotionLadderLevel[] = [
+  { level: 1, name: 'Assisted', mode: 'act_with_approval' },
+  { level: 2, name: 'Supervised', mode: 'act_within_limits' },
+];
+
+/** Real evidence, dated and windowed — the shape the live payload has. */
+const DATED: TrustPromotionEvidence = {
+  corroborated_successes: 0, corroborated_refusals: 1, pending_reviews: 2,
+  window_days: 30, computed_at: '2026-08-11T23:25:38.715843+00:00',
+  criteria: [
+    { key: 'human_samples', actual: 4, required: 3, met: true },
+    { key: 'guardrail_blocks', actual: 0, required: 0, met: true },
+    { key: 'eval_pass_rate', actual: 0.5, required: 0.9, met: false },
+  ],
+};
+
+/** The same numbers with the two fix-round-2 fields ABSENT — the shape every
+ *  pre-existing fixture had, and the one that must degrade to no qualifier and
+ *  no date rather than to "undefined". */
+const UNDATED: TrustPromotionEvidence = {
+  corroborated_successes: 0, corroborated_refusals: 1, pending_reviews: 2,
+  criteria: DATED.criteria,
+};
+
+const cardInput = (over: Partial<TrustPromotionCardInput> = {}): TrustPromotionCardInput => ({
+  employeeName: 'Morgan', category: 'action_execute',
+  currentLevel: 0, targetLevel: 1, evidence: DATED, ...over,
+});
+
+describe('trustPromotionCardCopy — title, meta, window qualifier and ladder, table-driven', () => {
+  // ⛔ INVERSION RUNS, all four executed against this file before the table
+  //    was kept, with the measured failure counts out of 56:
+  //      * title loses its `from X to Y` half            -> 5 failed
+  //      * windowPhrase reverted to an unconditional
+  //        " to date" (the pre-fix-round-2 overclaim)    -> 7 failed
+  //      * meta drops the `(as measured on …)` clause    -> 8 failed
+  //      * formatDate loses its Number.isNaN guard       -> 10 failed
+  //    Each red set is distinct, and none of them is the whole table — the
+  //    rows discriminate rather than all keying on one string.
+  const cases: Array<[string, TrustPromotionCardInput, RegExp | string, 'title' | 'detail' | 'meta', boolean]> = [
+    // ── title ──────────────────────────────────────────────────────────────
+    ['title names the employee, the category and BOTH level names',
+      cardInput(), 'Trust promotion — Morgan: action execute from Human-gated to Level 1', 'title', true],
+    ['title uses the LADDER own names when the policy carries one',
+      cardInput({ ladder: LADDER, currentLevel: 1, targetLevel: 2 }),
+      'Trust promotion — Morgan: action execute from Assisted to Supervised — acts on its own, within limits', 'title', true],
+    ['a ladder level with no matching entry falls back to the generic name, never to "undefined"',
+      cardInput({ ladder: LADDER, currentLevel: 2, targetLevel: 3 }),
+      'Trust promotion — Morgan: action execute from Supervised to Level 3', 'title', true],
+    ['an unknown mode string names the level without inventing a grant clause',
+      cardInput({ ladder: [{ level: 1, name: 'Trial', mode: 'not_a_mode' }] }),
+      'Trust promotion — Morgan: action execute from Human-gated to Trial', 'title', true],
+    // ── the window qualifier ───────────────────────────────────────────────
+    ['a dated payload scopes its counts to the window',
+      cardInput(), /In the last 30 days: /, 'detail', true],
+    ['an UNDATED payload states the counts without claiming a window',
+      // 3, not 4: human_samples already SUMS the corroborated arms, so the
+      // decided-by-a-human count is 4 - 0 successes - 1 refusal. Pinned here
+      // because this table's first draft asserted 1 and went red — the
+      // subtraction is exactly the kind of arithmetic a copy change breaks.
+      cardInput({ evidence: UNDATED }), 'The count behind this: 3 human-decided reviews, 1 system-corroborated refusal.', 'detail', true],
+    ['an undated payload never renders the words "in the last"',
+      cardInput({ evidence: UNDATED }), /in the last/i, 'detail', false],
+    ['an undated payload never renders "undefined"',
+      cardInput({ evidence: UNDATED }), /undefined/, 'detail', false],
+    ['the thin branch carries the qualifier too when the window is known',
+      cardInput({ evidence: { corroborated_successes: 0, corroborated_refusals: 0, pending_reviews: 0, window_days: 14,
+                              criteria: [{ key: 'human_samples', actual: 0, required: 3, met: false }] } }),
+      'There are no approved actions in the last 14 days behind this request', 'detail', true],
+    ['the thin branch WITHOUT a window makes no absolute "to date" claim',
+      cardInput({ evidence: { corroborated_successes: 0, corroborated_refusals: 0, pending_reviews: 0,
+                              criteria: [{ key: 'human_samples', actual: 0, required: 3, met: false }] } }),
+      /to date/i, 'detail', false],
+    // ── meta: the count AND the date ───────────────────────────────────────
+    ['meta counts met criteria out of the total and dates the snapshot',
+      cardInput(), '2 of 3 criteria met (as measured on 2026-08-11)', 'meta', true],
+    ['meta omits the date entirely when computed_at is absent — never "on undefined"',
+      cardInput({ evidence: UNDATED }), 'as measured on', 'meta', false],
+    ['meta omits the date when computed_at is unparsable rather than rendering NaN',
+      cardInput({ evidence: { ...DATED, computed_at: 'not-a-date' } }), 'as measured on', 'meta', false],
+    ['meta still counts the criteria when the date is unusable',
+      cardInput({ evidence: { ...DATED, computed_at: 'not-a-date' } }), '2 of 3 criteria met', 'meta', true],
+    ['meta says so plainly when there are no criteria at all',
+      cardInput({ evidence: { criteria: [] } }), 'No criteria recorded', 'meta', true],
+  ];
+
+  for (const [label, input, expected, field, shouldMatch] of cases) {
+    it(label, () => {
+      const value = trustPromotionCardCopy(input)[field];
+      if (typeof expected === 'string') {
+        if (shouldMatch) expect(value).toContain(expected);
+        else expect(value).not.toContain(expected);
+      } else if (shouldMatch) {
+        expect(value).toMatch(expected);
+      } else {
+        expect(value).not.toMatch(expected);
+      }
+    });
+  }
+
+  it('renders the REAL production payload end to end — title, detail and meta together', () => {
+    // Morgan's wrapped shape, through the normalizer, exactly as a surface
+    // does it. Pins the whole pipeline rather than three isolated functions,
+    // and is the only arm here whose expected strings come from real data.
+    const ev = extractPolicyEvidence(MORGAN_PENDING_EVIDENCE)!;
+    const copy = trustPromotionCardCopy({
+      employeeName: 'Morgan', category: 'action_execute',
+      currentLevel: 0, targetLevel: 1, evidence: ev, ladder: null,
+    });
+    expect(copy.title).toBe('Trust promotion — Morgan: action execute from Human-gated to Level 1');
+    expect(copy.detail).toContain('In the last 30 days: 4 human-decided reviews.');
+    expect(copy.meta).toBe('5 of 5 criteria met (as measured on 2026-08-11)');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// detailIsRedundantBesideCard — whether the raw human_tasks.detail still has
+// something to say once the curated card has rendered. Getting this wrong in
+// the TRUE direction deletes the pattern detector's citation list (dates,
+// approvers, landed receipts) from both surfaces, and nothing else carries it.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('detailIsRedundantBesideCard — table-driven, and it fails toward showing MORE', () => {
+  // ⛔ INVERSION RUN: replacing the body with a bare
+  // `return !!pendingEvidence` — the blunt "hide it for this task type"
+  // shortcut the final review offered as an option — turned 19 of the 56
+  // assertions in this file red, including every row whose whole point is
+  // that the pattern detector's receipts must survive.
+  //
+  // ⚠ THIS TABLE ALREADY CAUGHT ONE REAL DEFECT IN THE CODE IT PINS. The
+  // first implementation guarded with `top.pattern && typeof top.pattern ===
+  // 'object'`, so `{pattern: 'nope', criteria: [...]}` fell through into the
+  // HIDE branch — the one direction that deletes evidence. The row below is
+  // the row that went red; the guard is now a bare presence test.
+  const cases: Array<[string, unknown, boolean]> = [
+    ['the pattern-wrapped shape — the receipts live ONLY in the raw detail',
+      MORGAN_PENDING_EVIDENCE, false],
+    ['the flat criteria shape (mig 828 and mig 025) — the card says everything the detail says',
+      FLAT_PENDING_EVIDENCE, true],
+    ['a bare pattern key with no policy_evidence still keeps its detail',
+      { pattern: { decisions: [] } }, false],
+    ['pattern present ALONGSIDE top-level criteria still keeps its detail',
+      { pattern: { n_approved: 3 }, criteria: [{ key: 'human_samples', actual: 3, required: 3, met: true }] }, false],
+    ['pattern present but not an object — unrecognised, so show the detail',
+      { pattern: 'nope', criteria: [] }, false],
+    ['null', null, false],
+    ['undefined', undefined, false],
+    ['a bare string', 'not an object', false],
+    ['a bare number', 42, false],
+    ['an array', [1, 2, 3], false],
+    ['an empty object — no criteria to render, so the detail is all there is', {}, false],
+    ['criteria present but not an array', { criteria: 'nope' }, false],
+    ['an empty criteria array still counts as the flat shape the card renders',
+      { criteria: [] }, true],
+  ];
+
+  for (const [label, input, expected] of cases) {
+    it(`${label} -> ${expected ? 'hide the raw detail' : 'KEEP the raw detail'}`, () => {
+      expect(detailIsRedundantBesideCard(input)).toBe(expected);
     });
   }
 });
