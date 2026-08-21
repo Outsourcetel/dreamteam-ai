@@ -173,7 +173,7 @@ export function TemplateBuilderModal({ onClose, onDone }: {
                   {CATEGORIES.map(cat => (
                     <button key={cat} onClick={() => { setCategory(cat); setOps({}); setTestOpName(''); }}
                       className={`text-left rounded-xl border p-2.5 transition-colors ${category === cat ? 'border-indigo-500/60 bg-indigo-500/10' : 'bg-dt-page border-dt-border hover:border-indigo-500/40'}`}>
-                      <p className="text-xs font-semibold text-white">{CATEGORY_SHORT[cat]}</p>
+                      <p className="text-xs font-semibold text-dt-title">{CATEGORY_SHORT[cat]}</p>
                       <p className="text-[10px] text-dt-muted mt-0.5">{CATEGORY_LABELS[cat]}</p>
                     </button>
                   ))}
@@ -460,7 +460,7 @@ export function TemplateLibrary({ templates, onUse, onBuild }: {
     <div className="rounded-2xl border border-dt-border bg-dt-card p-5 mb-6">
       <div className="flex items-start justify-between flex-wrap gap-2 mb-3">
         <div>
-          <h2 className="text-sm font-semibold text-white">Template library — connect anything with a REST API</h2>
+          <h2 className="text-sm font-semibold text-dt-title">Template library — connect anything with a REST API</h2>
           <p className="text-xs text-dt-muted mt-0.5">A template turns a system's API into configuration: pick one, enter your credentials, done. Or build your own in five guided steps — no code.</p>
         </div>
         <button onClick={onBuild} className="px-3 py-1.5 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500 text-white">+ Build a custom template</button>
@@ -472,7 +472,7 @@ export function TemplateLibrary({ templates, onUse, onBuild }: {
           {templates.map(t => (
             <div key={t.id} className="rounded-xl border border-dt-border bg-dt-page p-3 flex flex-col">
               <div className="flex items-center gap-2 flex-wrap">
-                <p className="text-xs font-semibold text-white">{t.name}</p>
+                <p className="text-xs font-semibold text-dt-title">{t.name}</p>
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">{CATEGORY_SHORT[t.category]}</span>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded ${t.scope === 'platform' ? 'bg-dt-panel text-dt-support' : 'bg-teal-500/15 text-teal-300'}`}>{t.scope === 'platform' ? 'community' : 'yours'}</span>
                 {t.status === 'draft' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">draft</span>}

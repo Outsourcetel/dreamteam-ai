@@ -76,8 +76,17 @@ const files = (pat) => Number(sh(`grep -rlE "${pat}" ${G} | wc -l`));
 // removed that distinct variant string entirely (bg-slate-600 with no
 // opacity suffix still exists elsewhere, untouched, so this is a real drop,
 // not a fluke of the pattern).
+//
+// RATCHETED 2026-08-21 (Task 5, Connected systems group).
+// LiveConnectorsPage's rejected-candidate chip carried the estate's only
+// `bg-slate-500/10` — converting it to bg-dt-neutral-soft removed that
+// distinct variant string entirely (bg-slate-500 and bg-slate-500/20 still
+// exist elsewhere, untouched, so this is a real drop). The three converted
+// `bg-slate-600` action buttons did NOT move this metric: bg-slate-600
+// (bare) and its /40, /50 opacity siblings are still present elsewhere in
+// the estate, unconverted.
 const BASELINE = {
-  'bg-slate variants': 6, 'border-slate variants': 2, 'radius variants': 13,
+  'bg-slate variants': 5, 'border-slate variants': 2, 'radius variants': 13,
   'card padding variants': 9, 'local StatCard-likes (files)': 6,
   'hand-rolled dialogs': 0, 'hand-rolled toasts': 0,
   'inline style objects': 42, 'raw hex colors': 18,

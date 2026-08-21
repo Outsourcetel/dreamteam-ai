@@ -78,7 +78,35 @@ const slateText = lines('text-slate-');
 // `focus:border-slate-500` (line 97, shared input/select class) is the doc
 // §7 sanctioned control-shade/focus-ring exception already named above and
 // was deliberately left untouched — it is not part of this group's ratchet.
-const BASELINE = { 'bare text-white': 386, 'bg-slate': 50, 'border-slate': 6, 'text-slate': 2 };
+//
+// RATCHETED 2026-08-21 (Task 5, Connected systems group).
+// src/pages/tenant/systems/LiveConnectorsPage.tsx and its sole-consumer
+// TemplateBuilder.tsx (imported ONLY by LiveConnectorsPage — confirmed by
+// grep — despite living in the same systems/ directory as the already-done
+// LivePlaybookBuilder.tsx) moved onto dt-* tokens. McpServersPage.tsx (the
+// third page in this route group) was audited and found already fully
+// converted — zero hits in any of the four metrics — so it was left
+// untouched. AISessionPanel and LiveDataStates, imported by
+// LiveConnectorsPage, are shared across 40 files and are not sole-consumer;
+// left alone as out of scope. Converted: 20 bare text-white (card/section
+// titles -> dt-title; a search-result-row item label -> dt-body, matching
+// the "list item -> dt-body" precedent; 7 `hover:text-white` on
+// ghost-style Cancel/back links -> hover:text-dt-body, matching the
+// primitives.tsx `ghost` variant) and 4 bg-slate (3 `bg-slate-600
+// hover:bg-dt-panel text-white` opaque action buttons — "Save app
+// credentials", the per-row learned-tool Publish/Unpublish toggle, and the
+// per-connector "Sync tickets" button — each a default/high-frequency
+// control in its own context, not a rare fallback, so they keep the
+// opaque `bg-dt-border-strong text-dt-title` pairing rather than a
+// softened `-soft` token, per the SecurityAccessPage `tenant_user` chip
+// precedent; and the "Excluded"/rejected ingest-candidate status chip's
+// `bg-slate-500/10` -> `bg-dt-neutral-soft`, keeping its already-token'd
+// `text-dt-support`, matching the LivePlaybookBuilder "Guide" chip
+// precedent). The one `divide-slate-700/60` list divider (uncounted by
+// this audit's metrics, per the brief's separate grep instruction) became
+// `divide-dt-border`, matching the same file's own `divide-y
+// divide-dt-border` used two sections above it.
+const BASELINE = { 'bare text-white': 366, 'bg-slate': 46, 'border-slate': 6, 'text-slate': 2 };
 const NOW = {
   'bare text-white': bareWhite.length,
   'bg-slate': slateBg.length,
