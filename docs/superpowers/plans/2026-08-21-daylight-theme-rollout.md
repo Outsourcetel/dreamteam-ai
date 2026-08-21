@@ -383,7 +383,7 @@ Confirmed from a production build (2026-08-21, dist CSS grep): **zero** CSS rule
 
 - [ ] **Step 3: Enumerate and convert every `/NN` dt usage**
 
-Run: `grep -rnE "(bg|border|text|ring)-dt-[a-z-]+/[0-9]+" src/ --include='*.tsx'`
+Run: `grep -rnE "(bg|border|text|ring|divide|outline|shadow|decoration|from|to|via)-dt-[a-z-]+/[0-9]+" src/ --include='*.tsx'`
 Convert by role: `border-dt-accent/30` and `border-dt-accent/40` → `border-dt-accent-border`; `bg-dt-accent/NN` → `bg-dt-accent-soft`; `hover:border-dt-accent` stays (no modifier). Any usage that maps to neither: convert by the tone's meaning and list it explicitly in the report. After conversion the grep returns zero lines.
 
 - [ ] **Step 4: Prove the rules now exist**
