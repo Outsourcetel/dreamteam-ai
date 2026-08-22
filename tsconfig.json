@@ -15,7 +15,23 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
+    // `strict` stays false: the full set costs 20 errors today, concentrated in
+    // three files. But FOUR of its member flags cost ZERO right now — measured
+    // 2026-08-22, one flag at a time against the real tree — so they are enabled
+    // individually below. That turns them from "something we might do one day"
+    // into a ratchet: the tree already complies, and the day someone writes code
+    // that does not, the build says so instead of the number quietly growing.
+    //
+    // The two that are NOT free are recorded here so the next person starts from
+    // a measurement rather than a guess:
+    //     npx tsc --noEmit --noImplicitAny      → 23 errors
+    //     npx tsc --noEmit --strictNullChecks   → 19 errors
+    // Both are worth doing and neither is a one-sitting job.
     "strict": false,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true
