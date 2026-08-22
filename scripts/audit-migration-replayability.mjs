@@ -52,7 +52,7 @@
 //   node scripts/audit-migration-replayability.mjs --files a.sql,b.sql
 // ============================================================================
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const arg = (name) => {
   const i = process.argv.indexOf(name);
@@ -85,6 +85,128 @@ if (!files.length) {
 }
 
 console.log(`checking ${files.length} new migration(s) can run somewhere that is not production:\n`);
+
+// ══ PRE-FLIGHT: the static sweep ═══════════════════════════════════════════
+//
+// WHY THIS EXISTS ALONGSIDE THE DRY RUN. The dry run is the stronger check —
+// it PROVES the defect rather than resembling it — but it needs credentials and
+// a current dev project, so in a CI checkout without secrets it proves nothing
+// at all. This half needs neither, and catches the same shape before the file
+// is ever applied. Cheap, offline, and it runs first.
+//
+// WHY IT WAS ADDED. A sweep of the whole corpus on 2026-08-22 found this
+// pattern at 99 assertion sites across 57 files — against the THREE this
+// script's own header names. The gate never saw them because it only ever
+// diffs what the branch ADDS, so a migration stops being checked the moment it
+// lands. The historical 57 cannot be repaired (the ledger keys on filename AND
+// checksum, so editing an applied file breaks certify's checksum section) —
+// which makes "before it lands" the only moment this is fixable, and makes a
+// credential-free arm worth having.
+//
+// SCOPE, deliberately narrow. It reads ONLY apply-time `do $tag$ … $tag$`
+// blocks. A `create function … as $tag$ … $tag$` body runs at CALL time and is
+// irrelevant to replay — conflating the two was the first wrong answer this
+// sweep produced, and it turned 99 real sites into 422 mostly-false ones.
+//
+// It also skips any DO block doing source surgery (building SQL as a string to
+// replace another function's body): the assertions in those live inside string
+// literals and are data, not code.
+const SCHEMA_SRC = /\b(pg_proc|pg_class|pg_indexes|pg_index|pg_policies|pg_policy|pg_constraint|pg_attribute|pg_type|pg_trigger|pg_namespace|pg_tables|pg_views|pg_matviews|pg_extension|pg_settings|pg_enum|pg_depend|pg_roles|pg_default_acl|information_schema|to_regclass|to_regproc|to_regtype|has_table_privilege|has_function_privilege|has_schema_privilege|pg_get_functiondef|pg_get_expr|pg_get_constraintdef|pg_get_indexdef|obj_description|pg_catalog|cron\.job)\b/i;
+const SOURCE_SURGERY = /\b(pg_get_functiondef|array_to_string\s*\(\s*ARRAY|replace\s*\(\s*v_src|v_src\s*:=|v_new\s*:=|v_def\s*:=)\b/i;
+const NOT_A_TABLE = new Set(['unnest', 'jsonb_array_elements', 'jsonb_array_elements_text',
+  'jsonb_each', 'generate_series', 'regexp_split_to_table', 'string_to_table']);
+
+/** Byte ranges of apply-time DO blocks — NOT function bodies. */
+function applyTimeBlocks(src) {
+  const out = [];
+  const re = /(^|[\s;])do\s+(?:language\s+\w+\s+)?(\$[a-z_]*\$)/gi;
+  let m;
+  while ((m = re.exec(src)) !== null) {
+    const tag = m[2], s = m.index + m[0].length, e = src.indexOf(tag, s);
+    if (e === -1) continue;
+    out.push([s, e]);
+    re.lastIndex = e + tag.length;
+  }
+  return out;
+}
+
+function staticFindings(file) {
+  const src = readFileSync(file, 'utf8');
+  const hits = [];
+  for (const [s, e] of applyTimeBlocks(src)) {
+    const body = src.slice(s, e);
+    if (SOURCE_SURGERY.test(body)) continue;
+    const baseLine = src.slice(0, s).split('\n').length;
+    const lines = body.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const raw = lines[i], low = raw.toLowerCase();
+      if (/^\s*'/.test(raw) || /''/.test(raw)) continue;        // quoted SQL being assembled
+      const win = lines.slice(i, i + 4).join(' ').toLowerCase().replace(/\s+/g, ' ');
+      if (!/\braise\s+exception/.test(win) || SCHEMA_SRC.test(win)) continue;
+      const back = lines.slice(Math.max(0, i - 18), i + 1).join(' ').toLowerCase().replace(/\s+/g, ' ');
+      let kind = null;
+      if (/\bif\s+not\s+exists\s*\(\s*select/.test(low)) kind = 'if-not-exists → raise';
+      else if (/\bif\s+\w+\s+is\s+null\s+then\b/.test(low)
+               && /\bselect\b.*\binto\b.*\bfrom\b/.test(back) && !SCHEMA_SRC.test(back)) kind = 'select-into … is null → raise';
+      else if (/\bif\s+\w+\s*(=\s*0|<\s*[1-9]\d*|<=\s*0)\s/.test(low)
+               && /\bfrom\b/.test(back) && !SCHEMA_SRC.test(back)) kind = 'count must be non-zero → raise';
+      if (!kind) continue;
+      const tbls = [...back.matchAll(/\bfrom\s+(?:public\.)?([a-z_][a-z0-9_]*)/g)]
+        .map((x) => x[1]).filter((t) => !NOT_A_TABLE.has(t));
+      if (!tbls.length) continue;
+      const tbl = tbls[tbls.length - 1];
+      // A lookup PINNED TO A LITERAL IDENTITY cannot be about this migration's
+      // own work: an INSERT mints its own uuid, so a hardcoded one names a row
+      // that existed before the file ran. Same for a hardcoded tenant slug.
+      //
+      // ⚠ THIS OVERRIDE EXISTS BECAUSE THE EXEMPTION BELOW LET A REAL ONE
+      // THROUGH. Positive-controlling this sweep against seven hand-verified
+      // files caught six; 475 escaped, because it happens to
+      // `insert into digital_employees` at line 76 and so was exempted at line
+      // 156 — where it asserts on the literal uuid 39521a06-…, a production row
+      // it certainly does not create. File-level "does it write this table" is
+      // too coarse on its own.
+      const pinsLiteralIdentity =
+        /'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'/i.test(back) ||
+        /\bslug\s*=\s*'[^']+'/i.test(back);
+      // Otherwise: if THIS migration writes the table it asserts on, the rows
+      // exist wherever it runs and the assertion is about its own work.
+      if (!pinsLiteralIdentity
+          && new RegExp(`\\b(insert\\s+into|update)\\s+(public\\.)?${tbl}\\b`, 'i').test(src)) continue;
+      hits.push({ line: baseLine + i, kind, table: tbl, text: raw.trim().replace(/\s+/g, ' ').slice(0, 120) });
+    }
+  }
+  return hits;
+}
+
+const staticHits = files.flatMap((f) => staticFindings(f).map((h) => ({ file: f, ...h })));
+if (staticHits.length) {
+  console.log(`✗ ${staticHits.length} apply-time assertion(s) read data the migration does not create:\n`);
+  for (const h of staticHits) {
+    console.log(`   ${h.file}:${h.line}`);
+    console.log(`     [${h.kind}] reads \`${h.table}\`, which this file never writes`);
+    console.log(`     ${h.text}`);
+  }
+  console.log(`
+Assert the ABSENCE OF A VIOLATION, never the PRESENCE OF AN EXAMPLE:
+
+    ✗  if not exists (select 1 from t where <the good thing>) then raise ...
+    ✓  if exists     (select 1 from t where <the bad thing>)  then raise ...
+
+The second is vacuously true on empty data and still catches every real
+violation. The first demands production's rows in order to pass.
+
+⚠ IF YOU ARE HERE BECAUSE A VACUOUS PROOF WOULD BE THEATRE — that is the right
+instinct and it has a legal outlet. Build the fixture INSIDE the migration,
+assert against it, and roll it back in the same transaction. Non-vacuous AND
+replayable. Reaching for production's rows is the one option that is neither.
+
+An assertion about SCHEMA (pg_proc, pg_indexes, information_schema, a constraint
+definition) is always fine and is not flagged here — it describes what this
+migration itself installed, which is true wherever it runs.`);
+  process.exit(1);
+}
+console.log(`  ✓ static pre-flight: no apply-time assertion reads data it does not create\n`);
 
 // ⚠ NOT EVERY DRY-RUN FAILURE IS THIS DEFECT, and the first version of this
 // script accused a migration that was innocent. 798 failed on dev with

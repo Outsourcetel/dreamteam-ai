@@ -33,27 +33,52 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm install
+      - run: npm ci
       # `npm run build` is `tsc --noEmit && vite build` — the typecheck is
       # the real gate and needs no secrets (VITE_* only affect runtime).
       - run: npm run build
       # Pure unit tests: no database, no secrets, no excuse to skip them.
-      # Widened from ONE file to THREE. contract-parity in particular is the
-      # only guard on the browser/edge twin copies and ran in no automation.
-      # NOT four: approval-learning-capture LOOKS offline and is not — it
-      # imports helpers/testTenant -> setup.ts, which throws without .env.test.
-      # That was caught by running certify in a real credential-free clone;
-      # locally it passes, because this machine has the file. Anything added
-      # here must be proven in a clone, never on a developer's box.
+      #
+      # ⚠ REWRITTEN 2026-08-22. This used to be a hand-maintained ALLOWLIST of
+      # five filenames, and it had stopped tracking the tree: of 40 test files,
+      # 33 run with no credential at all, and CI was executing 5 of them —
+      #
+      #     was:  5 files /  56 tests
+      #     now: 33 files / 717 tests      (same 3.6s, same zero secrets)
+      #
+      # An allowlist fails SILENTLY when a test file is added: the file simply
+      # never runs and nothing says so. `test:unit` is now
+      # `vitest run --config vitest.offline.config.ts`, a DENYLIST of the seven
+      # files that genuinely throw without .env.test or SUPABASE_ACCESS_TOKEN —
+      # so a new test runs by default and coverage can only be lost by a
+      # deliberate line in a reviewable diff.
+      #
+      # The seven were derived by running the whole suite in a credential-free
+      # checkout and reading which files failed, NOT by reasoning about which
+      # look live — the previous comment here said "THREE" when the answer had
+      # been five for months. Re-derive the same way before editing that list.
       - run: npm run test:unit
 
       # ── The real gate, minus what needs credentials ──────────────────────
-      # certify has nine sections; four need nothing but this checkout. Those
-      # four ran on nobody's machine automatically until now: in the 30 days
-      # before this was added there were 855 commits and 15 recorded runs.
+      # certify has 21 sections; SIX need nothing but this checkout. Those
+      # ran on nobody's machine automatically until this job existed: in the 30
+      # days before it was added there were 855 commits and 15 recorded runs.
       # The banner it prints says explicitly that this is a SUBSET and names
       # how many sections did not run, so a green tick here can never be
       # mistaken for a full certification.
+      #
+      # ⚠ The counts above said "nine sections; four" until 2026-08-22 and were
+      # four and two behind respectively. `migration-numbering` was added to the
+      # offline set the same day — it is credential-free, runs in 0.0s, is
+      # proven able to fail, and is the ratchet CLAUDE.md relies on to stop a
+      # 24th duplicate migration number, yet it had only ever run by hand.
+      #
+      # ⚠ `edge-typecheck` now FAILS when `deno check` cannot run, instead of
+      # counting zero errors and passing. If this job goes red there, deno
+      # could not resolve its https imports on the runner — cache ~/.cache/deno
+      # or vendor them. Do not "fix" it by reverting the liveness guard: a green
+      # tick that means "none of the 66 edge functions were read" is the exact
+      # shape this file's header exists to forbid.
       - run: npm run certify:offline
 
       # ── Security: what we SHIP must be clean ────────────────────────────
@@ -88,7 +113,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm install
+      - run: npm ci
       - name: Require secrets
         # Shape, not just presence. See scripts/ci-require-secrets.sh for why
         # a value that is merely non-empty is not a value that works.
@@ -107,7 +132,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm install
+      - run: npm ci
       - name: Require token
         # Shape, not just presence. See scripts/ci-require-secrets.sh for why
         # a value that is merely non-empty is not a value that works.
@@ -144,7 +169,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm install
+      - run: npm ci
       - name: Require credentials
         # Shape, not just presence. See scripts/ci-require-secrets.sh for why
         # a value that is merely non-empty is not a value that works.

@@ -188,14 +188,65 @@ export const INPUT_CLS = 'w-full rounded-lg bg-dt-inset border border-dt-border-
  *  are the same height — every hand-rolled filter row in the app had picked
  *  its own padding and they never lined up. */
 export const SELECT_CLS = 'rounded-lg bg-dt-inset border border-dt-border-strong px-3 py-2 text-sm text-dt-support focus:outline-none focus:ring-2 focus:ring-dt-accent focus:border-transparent';
-export function Field({ label, hint, error, children }:
-  { label: string; hint?: string; error?: string; children: React.ReactNode }) {
+/**
+ * A labelled form field.
+ *
+ * ── WHY THIS DOES DOM SURGERY ──────────────────────────────────────────────
+ * Until 2026-08-22 this rendered a bare `<label>` as a SIBLING of its control,
+ * with no `htmlFor` and no id — so the label named nothing. Field is used 79
+ * times across 18 files, which made this one primitive the single largest
+ * contributor to an estate-wide count of 536 of 581 form controls carrying no
+ * accessible name at all. A screen reader reached them as "edit, blank".
+ *
+ * WCAG 2.1 AA (4.1.2 Name, Role, Value) is a procurement gate for the enterprise
+ * buyers this product is sold to, so this is a sales blocker as much as an
+ * accessibility one — and fixing it here fixes 79 call sites without touching
+ * any of them.
+ *
+ * ── WHY NOT JUST WRAP THE CHILDREN IN THE LABEL ────────────────────────────
+ * A wrapping `<label>` associates implicitly and needs no ids — but it changes
+ * the DOM shape every one of those 79 call sites is laid out against. Cloning
+ * an id in preserves the existing markup exactly.
+ *
+ * ── WHY THE `type` TEST ────────────────────────────────────────────────────
+ * `children` is an arbitrary node. Putting the id on whatever happens to be
+ * first would frequently land it on a layout `<div>`, and `<label for>` pointing
+ * at a non-control is invalid and does not focus anything — worse than the bug
+ * it replaces, and invisible in testing. So the id is injected only into a real
+ * control (`input`/`select`/`textarea`) or a composite component that can
+ * forward it; anything else is left exactly as it was, unassociated but
+ * unbroken. An `id` the caller already set always wins.
+ */
+export function Field({ label, hint, error, children, htmlFor }:
+  { label: string; hint?: string; error?: string; children: React.ReactNode; htmlFor?: string }) {
+  const uid = React.useId();
+  const only = React.Children.count(children) === 1 ? React.Children.toArray(children)[0] : null;
+  const el = React.isValidElement(only) ? (only as React.ReactElement<Record<string, unknown>>) : null;
+  const isControl = el !== null && (
+    (typeof el.type === 'string' && ['input', 'select', 'textarea'].includes(el.type)) ||
+    typeof el.type === 'function' || typeof el.type === 'object'
+  );
+
+  const hintId = hint ? `${uid}-hint` : undefined;
+  const errId = error ? `${uid}-err` : undefined;
+  const described = [hintId, errId].filter(Boolean).join(' ') || undefined;
+
+  const controlId = htmlFor ?? (isControl ? (el!.props.id as string | undefined) ?? uid : undefined);
+  const control = isControl
+    ? React.cloneElement(el!, {
+        id: controlId,
+        'aria-describedby': [el!.props['aria-describedby'], described].filter(Boolean).join(' ') || undefined,
+        'aria-invalid': error ? true : el!.props['aria-invalid'],
+      })
+    : children;
+
   return (
     <div>
-      <label className="block text-sm font-medium text-dt-body mb-1">{label}</label>
-      {hint && <p className="text-xs text-dt-muted mb-1.5">{hint}</p>}
-      {children}
-      {error && <p className="text-xs text-dt-danger mt-1">{error}</p>}
+      <label htmlFor={controlId} className="block text-sm font-medium text-dt-body mb-1">{label}</label>
+      {hint && <p id={hintId} className="text-xs text-dt-muted mb-1.5">{hint}</p>}
+      {control}
+      {/* role="alert" so a validation failure is announced, not just drawn. */}
+      {error && <p id={errId} role="alert" className="text-xs text-dt-danger mt-1">{error}</p>}
     </div>
   );
 }

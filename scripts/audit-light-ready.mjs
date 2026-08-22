@@ -180,6 +180,38 @@ const toneText = lines(`text-\\(${TONE_HUES}\\)-\\(100\\|200\\|300\\)\\b`)
   .filter(l => !new RegExp(COLORED_BG).test(l))
   .filter(l => !excluded(l, TONE_FILL_SURVIVORS));
 
+// ── The mid-tones, added 2026-08-22 ────────────────────────────────────────
+//
+// THE GAP THIS CLOSES. Every metric above was pinned at 0 and this file
+// reported "✓ within baseline" throughout — while an estate sweep found 802
+// theme-blind colour declarations across 73 files, of which the ~315 at
+// `text-{hue}-400/500` are the ones that actually FAIL WCAG AA on the two
+// light surface families a customer can select in Company Setup:
+//
+//     emerald 1.92:1   amber 1.67:1   teal 1.86:1   red 2.77:1   indigo 2.98:1
+//     (AA floor 4.5:1; the SAME classes measure 5.8-10.3:1 on Midnight)
+//
+// The pins were not wrong, they were NARROW. 100/200/300 are light tints, which
+// is what you reach for on a dark ground — so a sweep for those found the
+// already-converted surface and nothing else. 400/500 are the mid-tones that
+// look correct on Midnight and go unreadable the moment the ground turns white,
+// which is precisely why they survived every previous pass.
+//
+// `tailwind.config.js` remaps ONLY the `slate` ramp — its own comment says so —
+// so indigo/emerald/amber/teal/rose here are stock Tailwind, tuned for dark.
+//
+// COLORED_BG still exempts: text on a tinted chip sits on its own ground, not
+// the page's, and its contrast is a different calculation.
+const toneTextMid = lines(`text-\\(${TONE_HUES}\\)-\\(400\\|500\\)\\b`)
+  .filter(l => !new RegExp(COLORED_BG).test(l))
+  .filter(l => !excluded(l, TONE_FILL_SURVIVORS));
+
+// Border tones fail the same way — a 1px rule at 1.9:1 on white is invisible
+// rather than merely low-contrast, so a card loses its edge entirely.
+const toneBorderMid = lines(`border-\\(${TONE_HUES}\\)-\\(400\\|500\\)\\b`)
+  .filter(l => !new RegExp(COLORED_BG).test(l))
+  .filter(l => !excluded(l, TONE_FILL_SURVIVORS));
+
 // Baselines pinned 2026-08-21 (first measurement). Tighten in the SAME
 // commit that lowers a number — design-drift.mjs enforces its own version
 // of this rule for exactly the reason recorded there.
@@ -688,13 +720,20 @@ const toneText = lines(`text-\\(${TONE_HUES}\\)-\\(100\\|200\\|300\\)\\b`)
 // AI-written/provenance-scope identity already sanctioned for
 // EmployeeFileSections.tsx); LiveKnowledgeLibrary.tsx's "New doc proposed"/
 // "Specialist" badges (teal ×2, the same non-status identity marker).
-const BASELINE = { 'bare text-white': 0, 'bg-slate': 0, 'border-slate': 0, 'text-slate': 0, 'tone text-300': 0 };
+// ⚠ 'tone text-400/500' and 'tone border-400/500' are pinned at their MEASURED
+// value, not at 0 — the estate has not been converted yet and a 0 pin would be
+// a permanently-red tick everyone learns to route around. They are a RATCHET:
+// the number may only fall, and the commit that lowers it must lower the pin.
+const BASELINE = { 'bare text-white': 0, 'bg-slate': 0, 'border-slate': 0, 'text-slate': 0, 'tone text-300': 0,
+  'tone text-400/500': 279, 'tone border-400/500': 269 };
 const NOW = {
   'bare text-white': bareWhite.length,
   'bg-slate': slateBg.length,
   'border-slate': slateBorder.length,
   'text-slate': slateText.length,
   'tone text-300': toneText.length,
+  'tone text-400/500': toneTextMid.length,
+  'tone border-400/500': toneBorderMid.length,
 };
 
 const strict = process.argv.includes('--strict');
@@ -705,7 +744,7 @@ for (const k of Object.keys(BASELINE)) {
   const b = BASELINE[k], n = NOW[k];
   const mark = n > b ? '▲ REGRESSION' : n < b ? '▼ improved (pin it!)' : '· unchanged';
   if (n > b) regressions++;
-  console.log(`${k.padEnd(20)} baseline ${String(b).padStart(4)} → now ${String(n).padStart(4)}  ${mark}`);
+  console.log(`${k.padEnd(22)} baseline ${String(b).padStart(4)} → now ${String(n).padStart(4)}  ${mark}`);
 }
 if (showFiles) {
   console.log('\n── bare text-white worklist ──');

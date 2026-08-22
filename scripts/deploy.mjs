@@ -2,21 +2,22 @@
 /**
  * deploy.mjs — one command to ship DB + edge functions to production.
  *
- * Applies pending SQL migrations (via the service-role `exec_sql` RPC) and
- * deploys Supabase edge functions, then verifies. Reads credentials from a
+ * Deploys Supabase edge functions, then verifies. Reads credentials from a
  * gitignored `.env.local` so nothing secret is ever committed or pasted.
+ *
+ * ⚠ IT DOES NOT APPLY MIGRATIONS. That path called an `exec_sql` RPC that
+ * exists in no schema and read a `_supabase_migrations` table that exists in
+ * no schema; it was removed 2026-08-22 rather than reimplemented, because the
+ * commit/merge guards a migration must pass live in scripts/db-query.mjs.
+ * Use:  node scripts/db-query.mjs --file supabase/migrations/<file>.sql
  *
  * SET UP ONCE (see scripts/DEPLOY_SETUP.md):
  *   1. .env.local holds SUPABASE_SERVICE_ROLE_KEY + SUPABASE_ACCESS_TOKEN
  *   2. settings.local.json allows: Bash(node scripts/deploy.mjs:*)
  *
  * THEN, FOREVER:
- *   node scripts/deploy.mjs                      # pending migrations + deploy de-work
- *   node scripts/deploy.mjs --mig 244_x.sql      # a specific migration only
- *   node scripts/deploy.mjs --since 243          # migrations numbered > 243
+ *   node scripts/deploy.mjs                          # deploy de-work
  *   node scripts/deploy.mjs --fn de-work de-answer   # deploy specific functions
- *   node scripts/deploy.mjs --no-functions       # migrations only
- *   node scripts/deploy.mjs --no-migrations --fn de-work   # deploy only
  */
 import { createClient } from '@supabase/supabase-js';
 import { execSync } from 'node:child_process';
@@ -44,7 +45,13 @@ const takeList = (flag) => {
 const migOnly       = takeList('--mig');
 const sinceArg      = takeList('--since');
 const fnList        = takeList('--fn');
-const doMigrations  = !args.includes('--no-migrations');
+// Functions-only is now the DEFAULT, not an opt-out. The migration path is gone
+// (see applyMigrations below), so leaving it on by default would mean the bare
+// `node scripts/deploy.mjs` — the command this repo's runbook has always named —
+// died every time. Instead the refusal fires only for someone reaching for the
+// old flags, which is exactly who needs to read it. `--no-migrations` is still
+// accepted so existing muscle memory and any pinned command keep working.
+const doMigrations  = (migOnly !== null || sinceArg !== null) && !args.includes('--no-migrations');
 const doFunctions   = !args.includes('--no-functions');
 const FUNCTIONS     = fnList && fnList.length ? fnList : ['de-work'];
 const migDir        = path.join(process.cwd(), 'supabase', 'migrations');
@@ -53,43 +60,48 @@ const numOf = (f) => { const m = f.match(/^(\d+)_/); return m ? parseInt(m[1], 1
 function die(msg) { console.error(`\n❌ ${msg}`); process.exit(1); }
 
 async function applyMigrations() {
-  if (!URL) die('SUPABASE_URL missing — add it (or VITE_SUPABASE_URL) to .env.local');
-  if (!SERVICE) die('SUPABASE_SERVICE_ROLE_KEY missing — add it to .env.local (Supabase dashboard → Settings → API → service_role)');
-  const sb = createClient(URL, SERVICE, { auth: { persistSession: false } });
-
-  const files = fs.readdirSync(migDir).filter(f => f.endsWith('.sql')).sort();
-
-  // Which files to apply.
-  let pending;
-  if (migOnly && migOnly.length) {
-    pending = migOnly.map(m => m.endsWith('.sql') ? m : `${m}.sql`);
-    for (const f of pending) if (!fs.existsSync(path.join(migDir, f))) die(`migration not found: ${f}`);
-  } else {
-    // Determine the highest already-applied migration number.
-    let appliedMax = null;
-    const { data, error } = await sb.from('_supabase_migrations').select('name');
-    if (!error && Array.isArray(data)) {
-      appliedMax = data.reduce((mx, r) => Math.max(mx, numOf(r.name || '')), -1);
-    }
-    let since;
-    if (sinceArg && sinceArg.length) since = parseInt(sinceArg[0], 10);
-    else if (appliedMax !== null && appliedMax >= 0) since = appliedMax;
-    else die('Cannot determine applied state (no readable _supabase_migrations). Re-run with --mig <file> or --since <N>.');
-    pending = files.filter(f => numOf(f) > since);
-    console.log(`Migrations: ${files.length} on disk, applying ${pending.length} newer than #${since}`);
-  }
-
-  if (pending.length === 0) { console.log('  ✓ no pending migrations'); return; }
-  for (const f of pending) {
-    const sql = fs.readFileSync(path.join(migDir, f), 'utf-8');
-    process.stdout.write(`  → ${f} … `);
-    const { error } = await sb.rpc('exec_sql', { sql });
-    if (error) die(`${f} FAILED: ${error.message}`);
-    // Record it (non-fatal if the tracking table isn't present).
-    await sb.from('_supabase_migrations').insert([{ name: f, executed_at: new Date().toISOString() }]).then(() => {}, () => {});
-    console.log('ok');
-  }
-  console.log(`  ✓ applied ${pending.length} migration(s)`);
+  // ── THIS PATH NEVER WORKED, AND IS NOT BEING REPAIRED IN PLACE ───────────
+  //
+  // Removed 2026-08-22. Both halves of the old body were dead against the real
+  // database, and had been since it was written:
+  //
+  //   * it read `_supabase_migrations`, which exists in no schema — the ledger
+  //     is `public.schema_migrations` (mig 364). That read always errored, so
+  //     `appliedMax` stayed null and every run without an explicit --mig/--since
+  //     died at "Cannot determine applied state".
+  //   * it applied SQL through `sb.rpc('exec_sql', { sql })`. Measured across
+  //     all 859 migrations: `grep -rln "function.*exec_sql" supabase/migrations/`
+  //     returns ZERO files. The function has never existed in any schema.
+  //
+  // It failed closed and loud, so nothing was ever silently mis-applied — but
+  // scripts/DEPLOY_SETUP.md documented it as THE deploy command, and docs/47's
+  // Phase 2 recorded this as closed by deleting the OTHER broken runner
+  // (apply-migration.mjs) while this one kept the identical defect.
+  //
+  // ── WHY IT IS NOT SIMPLY POINTED AT THE WORKING PATH ────────────────────
+  // Applying a migration is not "run this SQL". CLAUDE.md makes it a governed
+  // act, and every guard lives in scripts/db-query.mjs: the file must be
+  // COMMITTED (an applied-but-uncommitted migration is unrecoverable), and
+  // byte-identical on origin/main (production is one shared database and main
+  // is the one source of truth that can rebuild it). Eighteen migrations were
+  // recovered from unmerged branches on 2026-08-20 precisely because a runner
+  // satisfied a weaker check.
+  //
+  // Giving deploy.mjs a second, guard-free way in would recreate that. So the
+  // migration path is REMOVED rather than reimplemented, and this refuses
+  // loudly with the command that is actually correct.
+  die(
+    'deploy.mjs no longer applies migrations — that path was dead (it called a\n' +
+    '   nonexistent `exec_sql` RPC and read a nonexistent `_supabase_migrations`\n' +
+    '   table), and re-adding it would bypass the commit/merge guards in\n' +
+    '   db-query.mjs that exist because production is one shared database.\n\n' +
+    '   Apply a migration with:\n' +
+    '       node scripts/db-query.mjs --file supabase/migrations/<NNN>_<slug>.sql\n\n' +
+    '   Claim its number first with:\n' +
+    '       npm run migrate:next -- <slug>\n\n' +
+    '   Then re-run this for the edge functions only:\n' +
+    '       node scripts/deploy.mjs --no-migrations --fn <name> [<name> ...]',
+  );
 }
 
 // ── Functions that authenticate themselves and must NOT sit behind the

@@ -832,12 +832,36 @@ interface DefRunRow {
   parent_run_id?: string | null;
 }
 
+/**
+ * Persist the run. THROWS on a failed write — deliberately, as of 2026-08-22.
+ *
+ * This discarded its `error` at all ~40 call sites, on the function whose own
+ * header promises "state is persisted after every step so runs survive crashes".
+ * The worst shape it produced: at the human-gate park, the `human_tasks` row
+ * commits, this write fails silently, `playbook_runs.waiting_task_id` stays
+ * NULL — and `resume_playbook_on_task` keys on exactly that column. Approving
+ * the task could then never resume the run, while the function returned
+ * `{status:'waiting_approval'}` over an orphaned one. The other direction is
+ * worse: a failed save after a `connector_action` leaves `current_step` behind,
+ * so the next `advance` re-sends the external call — a duplicate invoice or
+ * dunning email.
+ *
+ * Throwing is the right escalation because a run whose state did not persist is
+ * a run whose reported status is a lie, and continuing means acting on it. The
+ * outer serve() handler catches, calls reportEdgeError and returns 500; the
+ * step-level catch marks the step failed and re-attempts one save, which throws
+ * again and propagates — one retry, no loop.
+ */
 async function saveRun(admin: SupabaseClient, run: DefRunRow) {
   if (run.preview) return; // preview traces are returned in-memory, never persisted
-  await admin.from('playbook_runs').update({
+  const { error } = await admin.from('playbook_runs').update({
     status: run.status, current_step: run.current_step, steps: run.steps,
     waiting_task_id: run.waiting_task_id, context: run.context,
   }).eq('id', run.id);
+  if (error) {
+    throw new Error(`playbook_runs save failed for run ${run.id} at step ${run.current_step} `
+      + `(status=${run.status}, waiting_task_id=${run.waiting_task_id ?? 'null'}): ${error.message}`);
+  }
 }
 
 /** Resolve "step:<index>" or "step:<index>.<field>" against recorded

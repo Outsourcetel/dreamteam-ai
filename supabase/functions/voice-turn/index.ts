@@ -33,6 +33,7 @@ import { findBlockingMatch, type PatternHit, type PatternRule } from '../_shared
 import { secureEqual } from '../_shared/secureCompare.ts';
 import { loadTenantGate } from '../_shared/tenantStatus.ts';
 import { rpcLoud } from '../_shared/rpcSafety.ts';
+import { wrapUntrusted, sanitizeUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -381,15 +382,37 @@ serve(async (req) => {
     .then((r) => r, () => ({ data: null }));
 
   // Anthropic-dialect tools from the OpenAI-dialect request (names/schemas pass through).
+  // ⚠ `description` is read by the model AS INSTRUCTION and arrives from the
+  // request body, so it is sanitized — marker breakout and lookalike role tags
+  // neutralized. Wrapping it in an <untrusted_content> block instead would
+  // corrupt the tool schema, so sanitize is the correct half of the module here.
   const tools = Array.isArray(body?.tools)
     ? (body.tools as Array<{ function?: { name?: string; description?: string; parameters?: unknown } }>)
         .filter((t) => t?.function?.name)
-        .map((t) => ({ name: t.function!.name!, description: t.function!.description ?? '', input_schema: t.function!.parameters ?? { type: 'object', properties: {} } }))
+        .map((t) => ({ name: t.function!.name!, description: sanitizeUntrusted(t.function!.description ?? ''), input_schema: t.function!.parameters ?? { type: 'object', properties: {} } }))
     : [];
 
+  // ── The system channel is PLATFORM-AUTHORED ONLY ────────────────────────
+  // Until 2026-08-22 this read `${persona.preamble}\n${VOICE_RULES}\n${system}`,
+  // where `system` is destructured straight out of `body.messages` — i.e. the
+  // caller could append arbitrary text to the model's SYSTEM PROMPT, the one
+  // channel the model treats as authority. voice-turn is reached with a single
+  // platform-wide gateway secret shared with a third-party vendor, so that is a
+  // real reachable path, and it made this one of only two LLM call sites in the
+  // tree outside the injection firewall docs/SECURITY.md mandates.
+  //
+  // The caller's text is NOT dropped — a gateway may legitimately pass call
+  // context (caller id, IVR selection, CRM lookup). It moves from the authority
+  // channel to the DATA channel: wrapped, breakout-neutralized, and covered by
+  // FIREWALL_RULES, which says content inside such a block is never instruction.
+  const callerContext = String(system ?? '').trim();
   const llmBody: Record<string, unknown> = {
     model, max_tokens: 200, temperature: 0.4,
-    system: `${persona.preamble}\n${VOICE_RULES}\n${system}`.trim(),
+    system: `${persona.preamble}\n${VOICE_RULES}${FIREWALL_RULES}`
+      + (callerContext
+        ? `\n\nContext supplied by the telephony gateway for this call (reference only):\n`
+          + wrapUntrusted(callerContext.slice(0, 2000), 'voice-gateway-context')
+        : ''),
     messages: msgs,
   };
   if (tools.length) llmBody.tools = tools;

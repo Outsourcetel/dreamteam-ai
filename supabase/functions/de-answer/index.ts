@@ -33,7 +33,7 @@ import { buildTurns, parseCustomerState, stateSignals, CUSTOMER_STATE_SPEC } fro
 import { findBlockingMatch } from '../_shared/guardrailMatch.ts';
 import { adjudicateRegexHit, type AdjHit } from '../_shared/guardrailAdjudicator.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
-import { budgetBlocked } from '../_shared/rpcSafety.ts';
+import { budgetBlocked, rpcLoud } from '../_shared/rpcSafety.ts';
 import { rankDocs, parseAnswerEnvelope } from '../_shared/answerEnvelope.ts';
 import { checkAnswerGuardrails, GUARDRAIL_RESOLVER_ERROR } from '../_shared/answerGuardrails.ts';
 import { classifyAndRoute, chooseAnswerer, triageColumns, type Answerer, type RoutedTopic } from '../_shared/topicRouting.ts';
@@ -783,8 +783,15 @@ serve(async (req) => {
         // Outcome metering (#15): a delivered cached answer is a resolution.
         // 682: same rule as the activity event above — an exam answer is not
         // business activity, and it must never bill.
+        // rpcLoud, not a bare `.rpc()`. All seven metering call sites across
+        // de-answer and widget-ask were bare until 2026-08-22, and `.rpc()` is a
+        // thenable that RESOLVES on a Postgres error — so a failed metering write
+        // shipped the answer, returned 200, and never billed. Silent revenue loss
+        // with nothing in the log. It also REJECTS on transport failure, which the
+        // bare form turned into a 500 for a customer whose answer was already
+        // complete. rpcLoud handles both: logs, returns null, never throws.
         if (convId) {
-          await admin.rpc('record_billable_outcome', {
+          await rpcLoud(admin, 'record_billable_outcome', {
             p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId,
             p_kind: 'resolution', p_source: 'chat', p_origin: isExam ? 'exercise' : 'production',
           });
@@ -1190,7 +1197,7 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
         // (consistent with widget-ask; without this, chat blocks silently
         // inflated the honest resolution rate).
         if (convId) {
-          await admin.rpc('record_billable_outcome', {
+          await rpcLoud(admin, 'record_billable_outcome', {
             p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId,
             p_kind: 'escalation', p_source: 'chat', p_origin: isExam ? 'exercise' : 'production',   // 682
           });
@@ -1388,7 +1395,7 @@ ${wrapUntrusted(context, 'knowledge-documents')}${memoryContext}${FIREWALL_RULES
     // escalation meters FREE. Idempotent per conversation; never in replay.
     // 682: never billable from an exam either — the origin stamp forces it.
     if (!replayMode && convId) {
-      await admin.rpc('record_billable_outcome', {
+      await rpcLoud(admin, 'record_billable_outcome', {
         p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId,
         p_kind: escalate ? 'escalation' : 'resolution', p_source: 'chat',
         p_origin: isExam ? 'exercise' : 'production',

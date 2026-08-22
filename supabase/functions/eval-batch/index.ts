@@ -25,6 +25,7 @@ import { getAIKey } from '../_shared/aiKeys.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { budgetBlocked } from '../_shared/rpcSafety.ts';
+import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -234,8 +235,22 @@ serve(async (req) => {
       if (!u?.user) return json({ error: 'unauthorized' }, 401);
       createdBy = u.user.id;
       const { data: prof } = await admin.from('profiles').select('tenant_id, layer, role').eq('user_id', u.user.id).maybeSingle();
-      const allowed = prof?.layer === 'platform' || (prof?.tenant_id === tenantId && ['tenant_owner', 'tenant_admin', 'tenant_manager'].includes(String(prof?.role)));
-      if (!allowed) return json({ error: 'forbidden' }, 403);
+      // ⚠ The platform half of this test used to be a bare `prof?.layer === 'platform'`,
+      // accepting any platform profile for any asserted tenant_id with no Remote
+      // Access start event, no time window and no audit row — while doSubmit()
+      // below reads that tenant's de_messages content. Routed through the same
+      // helper the other 32 functions use, so a platform operator now needs a
+      // real, recent, audited session for THIS tenant.
+      const resolved = await resolveTenantWithRemoteAccess(admin, u.user.id, prof?.tenant_id, prof?.layer, tenantId);
+      if (!resolved || resolved !== tenantId) return json({ error: 'not_authorized_for_tenant' }, 403);
+      // The role floor still applies to ordinary members. A platform operator
+      // inside an audited session is not a member of this workspace and carries
+      // a platform role, so it is checked only on the membership path — which is
+      // the behaviour this function already had.
+      if (prof?.layer !== 'platform'
+          && !['tenant_owner', 'tenant_admin', 'tenant_manager'].includes(String(prof?.role))) {
+        return json({ error: 'forbidden' }, 403);
+      }
     }
     const { data: budget, error: budgetErr } = await admin.rpc('check_tenant_ai_budget', { p_tenant_id: tenantId });
     if (budgetBlocked(budgetErr, budget)) return json({ error: 'ai_budget_exceeded' }, 429);

@@ -61,7 +61,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm install
+      - run: npm ci
 
       - name: Require credentials
         # Same shape check the other dev-touching jobs use: a value that is

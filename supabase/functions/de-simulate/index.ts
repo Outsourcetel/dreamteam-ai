@@ -26,6 +26,7 @@ import { hasLLMProvider, llmMessages } from '../_shared/llm.ts';
 import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { budgetBlocked } from '../_shared/rpcSafety.ts';
+import { resolveTenantWithRemoteAccess } from '../_shared/resolveTenant.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -130,7 +131,21 @@ serve(async (req) => {
       const { data: u } = await admin.auth.getUser(jwt);
       if (!u?.user) return json({ error: 'unauthorized' }, 401);
       const { data: prof } = await admin.from('profiles').select('tenant_id, layer').eq('user_id', u.user.id).maybeSingle();
-      if (!(prof?.layer === 'platform' || prof?.tenant_id === tenant_id)) return json({ error: 'forbidden' }, 403);
+      // ⚠ This used to read `prof?.layer === 'platform' || prof?.tenant_id === tenant_id`.
+      // The first half accepted ANY profile marked platform for ANY asserted
+      // tenant_id — no Remote Access start event, no 12-hour window, no check
+      // that it was the operator's most recent session, and NO audit row. This
+      // function then reads that tenant's employees, knowledge and conversations
+      // on the RLS-bypassing service client, so the audit trail that Remote
+      // Access exists to produce was simply absent for every such call.
+      //
+      // 32 sibling functions already resolve through the helper below, which
+      // requires `resolve_remote_access_tenant` to confirm a real, recent,
+      // audited session. Note the helper returns the caller's OWN tenant when
+      // they have one, so the equality check is the caller's job, not the
+      // helper's — dropping it would let a tenant member assert another tenant.
+      const resolved = await resolveTenantWithRemoteAccess(admin, u.user.id, prof?.tenant_id, prof?.layer, tenant_id);
+      if (!resolved || resolved !== tenant_id) return json({ error: 'not_authorized_for_tenant' }, 403);
     }
 
     // The DE must belong to the asserted tenant — the auth block only proves

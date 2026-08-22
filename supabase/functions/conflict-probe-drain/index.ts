@@ -25,6 +25,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { llmMessages } from '../_shared/llm.ts';
+import { wrapUntrusted, FIREWALL_RULES } from '../_shared/injectionSafety.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
 import { serviceCaller } from '../_shared/serviceCaller.ts';
 
@@ -73,8 +74,18 @@ function lexicalSignals(a: string, b: string): string[] {
 // ── Bounded LLM adjudication (shared failover client, strict JSON) ──
 async function adjudicate(admin: SupabaseClient, aText: string, bText: string):
   Promise<{ relation: string; confidence: number; rationale: string } | null> {
-  const system = 'You compare two text snippets from ONE company knowledge base. Decide their relationship and reply with STRICT JSON only, no prose. Schema: {"relation":"duplicate"|"conflict"|"complementary"|"unrelated","confidence":0-1,"rationale":"<=200 chars"}. "conflict" = they contradict on a fact, number, date, or policy. "duplicate" = same information restated. "complementary" = same topic, compatible, additive. "unrelated" = different topics.';
-  const user = `SNIPPET A:\n${aText.slice(0, 1500)}\n\nSNIPPET B:\n${bText.slice(0, 1500)}`;
+  // Injection firewall (docs/SECURITY.md: "New LLM call sites must use this
+  // module — no ad-hoc markers"). Both snippets are INGESTED KNOWLEDGE — tenant
+  // documents, site imports, connector syncs — i.e. exactly the untrusted class
+  // this module exists for, and this was one of only two LLM call sites in the
+  // tree that skipped it. A poisoned document could otherwise steer the verdict
+  // (suppressing its own contradiction by asking for "unrelated") and write
+  // attacker-chosen text into the `rationale` an admin later reads in the
+  // conflict queue.
+  const system = 'You compare two text snippets from ONE company knowledge base. Decide their relationship and reply with STRICT JSON only, no prose. Schema: {"relation":"duplicate"|"conflict"|"complementary"|"unrelated","confidence":0-1,"rationale":"<=200 chars"}. "conflict" = they contradict on a fact, number, date, or policy. "duplicate" = same information restated. "complementary" = same topic, compatible, additive. "unrelated" = different topics.'
+    + FIREWALL_RULES;
+  const user = `SNIPPET A:\n${wrapUntrusted(aText.slice(0, 1500), 'kb-chunk-a')}\n\n`
+    + `SNIPPET B:\n${wrapUntrusted(bText.slice(0, 1500), 'kb-chunk-b')}`;
   let res: Response;
   try {
     // Haiku-class: this classifies a PAIR of neighbouring chunks that vector

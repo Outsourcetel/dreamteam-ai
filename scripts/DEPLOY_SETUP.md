@@ -13,21 +13,41 @@ The reason deployments need a one-time human setup at all: a safety layer
 permission to run credential commands. So a human wires those two things once;
 after that the AI just runs the pre-approved commands.
 
-## ⛔ Broken — do not use
+## ⛔ Removed 2026-08-22 — the history, kept because it explains the shape
 
-`node scripts/deploy.mjs` **with migrations enabled**. It does two impossible
-things:
+`node scripts/deploy.mjs` **with migrations enabled** did two impossible things:
 
-- reads a ledger table that does not exist — `deploy.mjs:70` queries
-  `_supabase_migrations`;
-- applies SQL through an RPC that does not exist — `deploy.mjs:86` calls
-  `exec_sql`.
+- read a ledger table that does not exist — it queried `_supabase_migrations`;
+- applied SQL through an RPC that does not exist — it called `exec_sql`.
 
 `npm run migrate:apply` (`scripts/apply-migration.mjs`) had the same two faults
-plus a third — it used the ANON key, which cannot run DDL at all. It has been
+plus a third — it used the ANON key, which cannot run DDL at all. It was
 **deleted** (2026-08-09) along with its npm script, rather than documented as
 broken: a runner that cannot work is a trap for whoever finds it first, and
 documentation is a weaker guard than absence.
+
+**That reasoning was right and was applied to only one of the three runners.**
+Two survived it:
+
+- `deploy.mjs`'s `applyMigrations()` kept the identical `exec_sql` defect while
+  this file went on calling `deploy.mjs` the one-command deploy. Its migration
+  path is now **removed**: deploy.mjs is functions-only by default, and passing
+  the old `--mig` / `--since` flags refuses with the correct command rather than
+  failing obscurely. `--no-migrations` is still accepted and is now a no-op.
+- `apply-migration.js` — note the `.js`, a *different file* from the `.mjs`
+  deleted in August — was still at the repo root. It is CommonJS in a
+  `"type": "module"` package and died on line 12 with
+  `ReferenceError: require is not defined in ES module scope`. Now **deleted**.
+
+**The only supported way to apply a migration** is `scripts/db-query.mjs`,
+because that is where the guards live: the file must be committed, and
+byte-identical on `origin/main`, before it will touch production.
+
+```bash
+npm run migrate:next -- what_it_does        # claim the number (refuses offline)
+node scripts/db-query.mjs --file supabase/migrations/<NNN>_what_it_does.sql
+node scripts/deploy.mjs --fn de-work        # edge functions, separately
+```
 
 Measured against production today:
 

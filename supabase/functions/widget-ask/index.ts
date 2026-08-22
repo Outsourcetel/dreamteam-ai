@@ -38,7 +38,7 @@ import { recallIdentityMemory, rememberIdentity, type IdentityVerdict } from '..
 import { buildTurns, parseCustomerState, stateSignals, CUSTOMER_STATE_SPEC, type CustomerState, type Turn } from '../_shared/conversation.ts';
 import { findBlockingMatch } from '../_shared/guardrailMatch.ts';
 import { reportEdgeError } from '../_shared/errorReport.ts';
-import { budgetBlocked } from '../_shared/rpcSafety.ts';
+import { budgetBlocked, rpcLoud } from '../_shared/rpcSafety.ts';
 import { rankDocs, parseAnswerEnvelope } from '../_shared/answerEnvelope.ts';
 import { checkAnswerGuardrails, loadBlockingRules, matchBlockingRule, GUARDRAIL_RESOLVER_ERROR } from '../_shared/answerGuardrails.ts';
 import { classifyAndRoute, chooseAnswerer, triageColumns, NEVER_FRONTS_CUSTOMER_CHAT, type RoutedTopic } from '../_shared/topicRouting.ts';
@@ -560,7 +560,7 @@ serve(async (req) => {
         await admin.from('human_tasks').insert({ tenant_id: tenantId, type: 'escalation', source: 'de', title: `Guardrail block (${channel} · ${who}) — ${truncatedQ}`, detail: `Answer blocked by guardrail "${blockedBy.rule}". Draft (conf ${conf}%): ${ans}`, related_table: convId ? 'de_conversations' : null, related_id: convId });
         await auditEvent(admin, tenantId, persona.name, 'de', `BLOCKED — ${channel} answer matched guardrail "${blockedBy.rule}"; withheld + escalated`, 'guardrail_block', { rule_id: blockedBy.id, rule: blockedBy.rule, question: truncatedQ, channel });
         // Outcome metering (#15): a guardrail block hands off to a human — FREE.
-        if (convId) await admin.rpc('record_billable_outcome', { p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId, p_kind: 'escalation', p_source: 'widget' });
+        if (convId) await rpcLoud(admin, 'record_billable_outcome', { p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId, p_kind: 'escalation', p_source: 'widget' });
         await recordDecision({ decision: 'blocked_guardrail', conf, srcs: [], blocked: true, guardrailRuleId: blockedBy.id, note: `Answer blocked by guardrail "${blockedBy.rule}" and withheld; escalated to human.` });
         await recordChecks(admin, tenantId, convId, subjectDeId, [
           ...knowledgeChecks(srcs),
@@ -595,7 +595,7 @@ serve(async (req) => {
         // violation on source_category, swallowed. Superseded by recordDecision
         // via record_inquiry_decision — mig 442.)
         // Outcome metering (#15): human takes over — FREE.
-        if (convId) await admin.rpc('record_billable_outcome', { p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId, p_kind: 'escalation', p_source: 'widget' });
+        if (convId) await rpcLoud(admin, 'record_billable_outcome', { p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId, p_kind: 'escalation', p_source: 'widget' });
         await recordDecision({
           decision: (lowConf || escalationRuleHit) ? 'needs_review' : 'would_auto_send',
           conf, srcs, taskId: escTask?.id ?? null,
@@ -638,7 +638,7 @@ serve(async (req) => {
       await auditEvent(admin, tenantId, persona.name, 'de', `Resolved a ${channel} question${endUserTag ? ` from ${endUserTag}` : ''}${cached ? ' from cache' : ''}`, 'resolved', { confidence: conf, conversation_id: convId, channel, cached });
       // Outcome metering (#15): an auto-sent, guardrail-clean answer is the
       // billable RESOLUTION (per-conversation idempotent, escalations free).
-      if (convId) await admin.rpc('record_billable_outcome', { p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId, p_kind: 'resolution', p_source: 'widget' });
+      if (convId) await rpcLoud(admin, 'record_billable_outcome', { p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId, p_kind: 'resolution', p_source: 'widget' });
       // T2.3: persist a durable memory for the VERIFIED caller (no-op unless this
       // turn was verified). The Q&A pair is the remembered interaction.
       await rememberIdentity(admin, {
@@ -915,7 +915,7 @@ Write the answer as plain text — NOT as JSON; prior assistant turns are shown 
               await auditEvent(admin, tenantId, persona.name, 'de', `BLOCKED — ${channel} answer matched guardrail "${rule.rule}"; withheld + escalated`, 'guardrail_block', { rule_id: rule.id, rule: rule.rule, question: truncatedQ, channel });
               // Count the streamed block as an escalation outcome (audit: mid-stream
               // blocks were missing from the resolution-rate denominator).
-              if (convId) await admin.rpc('record_billable_outcome', { p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId, p_kind: 'escalation', p_source: 'widget' });
+              if (convId) await rpcLoud(admin, 'record_billable_outcome', { p_tenant_id: tenantId, p_de_id: subjectDeId, p_conversation_id: convId, p_kind: 'escalation', p_source: 'widget' });
               emit('blocked', { conversation_id: convId, blocked: true, rule: rule.rule, answer: GUARDRAIL_BLOCK_MESSAGE, confidence: 0, sources: [], needs_escalation: true, status: 'needs_human', delivery: 'blocked', language: null });
             };
 

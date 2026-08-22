@@ -287,6 +287,62 @@ function fromGemini(d: Record<string, unknown>, requestedModel: string): Record<
 
 const ADVANCE_STATUSES = new Set([401, 403, 408, 429, 500, 502, 503, 504, 529]);
 
+// ── Timeouts, and why the two halves differ ──────────────────────────────
+//
+// THE DEFECT THIS CLOSES. Until 2026-08-22 not one provider fetch in this file
+// carried a signal, and Deno's fetch has NO default timeout. The failure that
+// matters is not a provider returning 503 — the catch below already handles
+// that and advances the chain. It is a provider that ACCEPTS THE CONNECTION AND
+// NEVER ANSWERS. That fetch never settles, never throws, so the catch never
+// runs, the three healthy fallback providers are never tried, and every Digital
+// Employee is offline until the platform wall clock kills the isolate.
+//
+// Which is the exact outage this module's own header says it exists to prevent:
+// "the reason an Anthropic org outage takes every Digital Employee offline at
+// once". A failover chain that cannot detect a hang is a decoration.
+//
+// UNARY gets a whole-exchange deadline — the response arrives in one piece, so
+// "slow" and "hung" are the same thing to the caller.
+//
+// STREAMING gets a HEADERS-ONLY deadline, cleared the moment the response
+// object resolves. AbortSignal.timeout() would be wrong here: it aborts the
+// body too, so a legitimately long generation would be cut off mid-answer at
+// the timeout. What we want to detect is a provider that never starts talking,
+// not one that talks for a while.
+//
+// THE CHAIN BUDGET exists because per-attempt timeouts multiply: four providers
+// at 60s each is 240s, comfortably past the edge-function wall clock, and the
+// last provider would be killed by the platform rather than tried. Each attempt
+// gets whatever is left of the budget, so the chain as a whole stays bounded and
+// the LAST provider still gets a real chance.
+const envInt = (name: string, fallback: number): number => {
+  const raw = Deno.env.get(name);
+  const n = raw ? Number(raw) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+const REQUEST_TIMEOUT_MS = envInt('LLM_REQUEST_TIMEOUT_MS', 60_000);
+const STREAM_HEADERS_TIMEOUT_MS = envInt('LLM_STREAM_HEADERS_TIMEOUT_MS', 25_000);
+const CHAIN_BUDGET_MS = envInt('LLM_CHAIN_BUDGET_MS', 140_000);
+/** Floor so the tail of the chain gets a usable attempt rather than a token one. */
+const MIN_ATTEMPT_MS = 5_000;
+
+/** Whole-exchange timeout. The AbortError lands in the existing catch, which
+ *  advances the chain unchanged — no new error path to keep in sync. */
+function attemptSignal(deadline: number, perAttemptMs: number): AbortSignal {
+  const remaining = deadline - Date.now();
+  return AbortSignal.timeout(Math.max(MIN_ATTEMPT_MS, Math.min(perAttemptMs, remaining)));
+}
+
+/** Headers-only timeout: fires if the provider never responds, and is disarmed
+ *  as soon as it does, so the body may take as long as it honestly needs. */
+function headersTimeout(deadline: number, perAttemptMs: number) {
+  const ac = new AbortController();
+  const remaining = deadline - Date.now();
+  const ms = Math.max(MIN_ATTEMPT_MS, Math.min(perAttemptMs, remaining));
+  const timer = setTimeout(() => ac.abort(new DOMException(`no response headers in ${ms}ms`, 'TimeoutError')), ms);
+  return { signal: ac.signal, disarm: () => clearTimeout(timer) };
+}
+
 function jsonResponse(payload: unknown, status: number, provider: string): Response {
   return new Response(JSON.stringify(payload), {
     status,
@@ -309,6 +365,7 @@ export async function llmMessages(admin: SupabaseClient, body: Record<string, un
         : 'No AI engine key configured (Settings → AI Engine).' } }, 401, 'none');
   }
   let firstFailure: { status: number; text: string; provider: Provider } | null = null;
+  const deadline = Date.now() + CHAIN_BUDGET_MS;
 
   for (let i = 0; i < cfg.providers.length; i++) {
     const provider = cfg.providers[i];
@@ -319,6 +376,7 @@ export async function llmMessages(admin: SupabaseClient, body: Record<string, un
           method: 'POST',
           headers: { 'x-api-key': cfg.anthropicKey!, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
           body: JSON.stringify(body),
+          signal: attemptSignal(deadline, REQUEST_TIMEOUT_MS),
         });
         if (res.ok) {
           if (i > 0) await noteFailover(admin, firstFailure, provider, label);
@@ -335,6 +393,7 @@ export async function llmMessages(admin: SupabaseClient, body: Record<string, un
           method: 'POST',
           headers: { 'Authorization': `Bearer ${cfg.bedrockKey!}`, 'content-type': 'application/json', 'accept': 'application/json' },
           body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', ...rest }),
+          signal: attemptSignal(deadline, REQUEST_TIMEOUT_MS),
         });
         if (res.ok) {
           const d = await res.json();
@@ -346,6 +405,7 @@ export async function llmMessages(admin: SupabaseClient, body: Record<string, un
           method: 'POST',
           headers: { 'Authorization': `Bearer ${cfg.openaiKey!}`, 'content-type': 'application/json' },
           body: JSON.stringify(toOpenAIBody(body, cfg.openaiModel)),
+          signal: attemptSignal(deadline, REQUEST_TIMEOUT_MS),
         });
         if (res.ok) {
           if (i > 0) await noteFailover(admin, firstFailure, provider, label);
@@ -356,6 +416,7 @@ export async function llmMessages(admin: SupabaseClient, body: Record<string, un
           method: 'POST',
           headers: { 'x-goog-api-key': cfg.googleKey!, 'content-type': 'application/json' },
           body: JSON.stringify(toGeminiBody(body)),
+          signal: attemptSignal(deadline, REQUEST_TIMEOUT_MS),
         });
         if (res.ok) {
           const normalized = fromGemini(await res.json(), String(body.model ?? cfg.googleModel));
@@ -541,17 +602,24 @@ export async function* llmStream(
 ): AsyncGenerator<LlmStreamEvent> {
   const cfg = await resolveChain(admin, tenantId);
   const tStart = Date.now();
+  const deadline = tStart + CHAIN_BUDGET_MS;
   for (let i = 0; i < cfg.providers.length; i++) {
     const provider = cfg.providers[i];
     if (provider !== 'anthropic' && provider !== 'bedrock') break; // unary tiers — handled by the fallback
     let res: Response;
+    // Disarmed the instant the response object resolves — see headersTimeout.
+    // A generation that legitimately runs long must not be cut off by the guard
+    // that exists to catch one that never starts.
+    const guard = headersTimeout(deadline, STREAM_HEADERS_TIMEOUT_MS);
     try {
       if (provider === 'anthropic') {
         res = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: { 'x-api-key': cfg.anthropicKey!, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
           body: JSON.stringify({ ...body, stream: true }),
+          signal: guard.signal,
         });
+        guard.disarm();
         if (res.ok && res.body) {
           if (i > 0) await noteFailover(admin, null, provider, `${label}:stream`);
           meta.provider = provider; meta.mode = 'stream'; meta.headersMs = Date.now() - tStart;
@@ -569,7 +637,9 @@ export async function* llmStream(
           method: 'POST',
           headers: { 'Authorization': `Bearer ${cfg.bedrockKey!}`, 'content-type': 'application/json' },
           body: JSON.stringify({ anthropic_version: 'bedrock-2023-05-31', ...rest }),
+          signal: guard.signal,
         });
+        guard.disarm();
         if (res.ok && res.body) {
           if (i > 0) await noteFailover(admin, null, provider, `${label}:stream`);
           meta.provider = provider; meta.mode = 'stream'; meta.headersMs = Date.now() - tStart;
@@ -590,6 +660,11 @@ export async function* llmStream(
       const msg = e instanceof Error ? e.message : String(e);
       console.error(`[llm] ${label}: ${provider} stream network error: ${msg}`);
       if (!meta.why) meta.why = `${provider}:network:${msg.slice(0, 160)}`;
+    } finally {
+      // Idempotent. The happy path already disarmed; this covers the throw
+      // before that line and every `break` out of the try, so no timer outlives
+      // its attempt and fires against a later provider's request.
+      guard.disarm();
     }
   }
 

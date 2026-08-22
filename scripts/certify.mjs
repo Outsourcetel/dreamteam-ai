@@ -878,7 +878,7 @@ function shell(name, cmd, args) {
 // It was in `sections` but not in this Set, so it ran only inside a full
 // credentialed certify, i.e. on a laptop, by hand. Proven credential-free and
 // proven able to fail (inject a duplicate → "1 NEW duplicate migration number(s)").
-const OFFLINE_SECTIONS = new Set(['typecheck', 'edge-typecheck', 'design-drift', 'migration-append', 'migration-numbering', 'suite']);
+const OFFLINE_SECTIONS = new Set(['typecheck', 'edge-typecheck', 'design-drift', 'light-ready', 'migration-append', 'migration-numbering', 'suite']);
 
 const sections = [
   shell('typecheck', 'npx', ['tsc', '--noEmit']),
@@ -1653,6 +1653,15 @@ const sections = [
     // calls to the deployed function plus a create/delete round trip.
     shell('branch-parity', 'node', ['scripts/playbook-branch-parity.mjs']),
     shell('design-drift', 'node', ['scripts/design-drift.mjs']),
+    // Added to certify 2026-08-22. It existed, was proven able to fail, and ran
+    // in NEITHER certify nor CI — grepping for "light-ready" in this file and
+    // .github/workflows/ returned nothing, so the only thing standing between a
+    // light-theme regression and production was someone remembering to type it.
+    //
+    // It also could not fail as invoked: process.exit(1) is guarded by
+    // `strict &&`, and package.json omitted --strict (unlike its two siblings),
+    // so it printed regressions and exited 0. Both halves fixed the same day.
+    shell('light-ready', 'npm', ['run', '-s', 'audit:light-ready']),
     // `v_bad := v_bad || 'a sentence'` is ambiguous — anyarray||anyarray wins
     // over anyarray||anyelement for an unknown literal, so it raises 22P02
     // instead of appending. PL/pgSQL resolves types at FIRST EXECUTION, so the
@@ -1664,13 +1673,21 @@ const sections = [
     // Credential-free, so it runs in --offline too.
     shell('migration-append', 'node', ['scripts/migration-append-check.mjs']),
     // OFFLINE runs only the credential-free test files. `npx vitest run` sweeps
-    // ALL of tests/**, and two of those hard-throw at module load without
-    // credentials — knowledge-acl-invariants.test.ts:29 (adminTokenAvailable)
-    // and setup.ts (.env.test), neither of which exists in a CI checkout. So a
-    // bare vitest run in --offline mode would have gone red on every push for a
-    // MISSING-SECRET reason, which is the "tick everyone learns to ignore"
-    // failure this whole phase exists to remove. Caught by mutation-testing the
-    // gate rather than by CI failing later.
+    // ALL of tests/**, and SEVEN of those hard-throw at module load without
+    // credentials (helpers/testTenant.ts -> setup.ts for .env.test, or
+    // adminTokenAvailable for SUPABASE_ACCESS_TOKEN), neither of which exists in
+    // a CI checkout. So a bare vitest run in --offline mode would have gone red
+    // on every push for a MISSING-SECRET reason, which is the "tick everyone
+    // learns to ignore" failure this whole phase exists to remove. Caught by
+    // mutation-testing the gate rather than by CI failing later.
+    //
+    // ⚠ UPDATED 2026-08-22, and the number above moved from "two" to "seven"
+    // because it was re-derived rather than trusted. `test:unit` is no longer a
+    // five-file allowlist — it is `vitest run --config vitest.offline.config.ts`,
+    // which excludes exactly those seven and runs EVERYTHING else. That took this
+    // section from 5 files / 56 tests to 33 files / 717 tests without adding a
+    // single credential. See vitest.offline.config.ts for how the seven were
+    // derived and why a denylist is the right shape.
     OFFLINE
       ? shell('suite', 'npm', ['run', '-s', 'test:unit'])
       : shell('suite', 'npx', ['vitest', 'run']),
