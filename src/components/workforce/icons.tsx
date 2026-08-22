@@ -33,11 +33,16 @@ export const BookOpen = make(
   <><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" /></>
 );
 export const TrendingUp = make(<><path d="m22 7-8.5 8.5-5-5L2 17" /><path d="M16 7h6v6" /></>);
-export const TrendingDown = make(<><path d="m22 17-8.5-8.5-5 5L2 7" /><path d="M16 17h6v-6" /></>);
 export const DollarSign = make(
   <><path d="M12 2v20" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></>
 );
 export const MessageSquare = make(<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />);
-export const Lightbulb = make(
-  <><path d="M15 14c.2-1 .7-1.7 1.5-2.5A6 6 0 1 0 6 7c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" /><path d="M9 18h6" /><path d="M10 22h4" /></>
-);
+
+// ⚠ Two icons were DELETED 2026-08-22, both with zero render sites:
+//   Lightbulb      drawn only by <SuggestionAlert/>, the placeholder that
+//                  rendered a hardcoded CSAT recommendation to every tenant
+//                  and went with it.
+//   TrendingDown   the unused half of a pair — TrendingUp has one consumer.
+// Recoverable at dc822e0. This file is a hand-rolled icon set, so an unused
+// export here is 4 lines of SVG nobody has ever seen, not an API surface
+// somebody might be about to call.
