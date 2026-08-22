@@ -16,41 +16,25 @@ export type KAudience = 'All DEs' | 'Customer DEs' | 'Specialist DEs' | 'Humans 
 export const K_TYPES = ['Reference', 'Procedural', 'Regulatory', 'Institutional', 'Customer (PII)', 'Competitive', 'Training'] as const;
 export type KType = (typeof K_TYPES)[number];
 
-export interface KArticle {
-  id: string;
-  title: string;
-  collection: string;
-  entity: KEntity;
-  type: KType;
-  audience: KAudience;
-  confidence: number;
-  lastVerified: string; // yyyy-mm-dd
-  usedBy: string[]; // DE names
-  access: { de: string; level: 'read' | 'read_write' }[];
-  versions: { version: string; date: string; note: string }[];
-}
-
-const v = (n: string, d: string, note: string) => ({ version: n, date: d, note });
-
-const TODAY = new Date('2026-07-03');
-export const daysSince = (d: string) => Math.round((TODAY.getTime() - new Date(d).getTime()) / 86400000);
-export const isStale = (a: KArticle) => daysSince(a.lastVerified) > 90;
-
-const typeBadge: Record<KType, string> = {
-  'Reference': 'bg-sky-500/20 text-sky-400',
-  'Procedural': 'bg-indigo-500/20 text-indigo-400',
-  'Regulatory': 'bg-red-500/20 text-red-400',
-  'Institutional': 'bg-amber-500/20 text-amber-400',
-  'Customer (PII)': 'bg-purple-500/20 text-purple-400',
-  'Competitive': 'bg-pink-500/20 text-pink-400',
-  'Training': 'bg-teal-500/20 text-teal-400',
-};
-
-const entityBadge: Record<KEntity, string> = {
-  Customer: 'bg-indigo-500/20 text-indigo-400',
-  Vendor: 'bg-amber-500/20 text-amber-400',
-  Workforce: 'bg-teal-500/20 text-teal-400',
-};
+// ⚠ The preview browser's remaining scaffolding was DELETED 2026-08-22, for the
+// same reason and by the same rule as FilterSelect below. Removed, all verified
+// as definition-only with no reference anywhere in src/:
+//
+//   KArticle    the preview's row shape. Its only consumer was isStale.
+//   v()         a version-tuple helper for the preview's fixture data. Zero calls.
+//   TODAY       `new Date('2026-07-03')` — a FROZEN clock. Nothing read it but
+//               daysSince, and a hardcoded "today" is a bug waiting for a reader.
+//   daysSince   only ever called by isStale.
+//   isStale     zero call sites.
+//   typeBadge   } the preview's per-row colour maps. Zero reads; the live page
+//   entityBadge } (LiveKnowledgeLibrary) has its own.
+//   DEAvatars   zero render sites.
+//
+// Recoverable at 5c76d8a.
+//
+// ⚠ What survives below is NOT dead and must not be swept with it:
+// KEntity/KAudience/KType/K_TYPES are imported by KnowledgeGapsPage, and
+// ConfidenceBar by KnowledgeQualityPage.
 
 export function ConfidenceBar({ value }: { value: number }) {
   const color = value >= 90 ? 'bg-emerald-400' : value >= 70 ? 'bg-amber-400' : 'bg-red-400';
@@ -65,16 +49,6 @@ export function ConfidenceBar({ value }: { value: number }) {
   );
 }
 
-export function DEAvatars({ names }: { names: string[] }) {
-  if (names.length === 0) return <span className="text-xs text-dt-faint">—</span>;
-  return (
-    <div className="flex -space-x-1.5">
-      {names.map(n => (
-        <div key={n} title={n} className="w-6 h-6 rounded-full bg-indigo-600 border border-dt-border flex items-center justify-center text-white text-[10px] font-bold">{n[0]}</div>
-      ))}
-    </div>
-  );
-}
 
 // ⚠ FilterSelect was DELETED 2026-08-21. This file is a five-line wrapper —
 // everything it renders is <LiveKnowledgeLibrary/> — and that page has carried
@@ -82,11 +56,10 @@ export function DEAvatars({ names }: { names: string[] }) {
 // FilterBar primitive) since it replaced the preview browser. FilterSelect was
 // the preview's bespoke recipe: zero render sites, and the design system names
 // SELECT_CLS-inside-FilterBar as what a facet dropdown must be instead.
-// Recoverable at fe6081a6.
-//
-// ⚠ The rest of this file is NOT dead and must not be swept with it:
-// KEntity/KAudience/KType/K_TYPES are imported by KnowledgeGapsPage and
-// ConfidenceBar by KnowledgeQualityPage.
+// Recoverable at fe6081a6. (The rest of the preview scaffolding followed it on
+// 2026-08-22 — see the note above the survivors at the top of this file, which
+// is where the "what is still live" list now lives, next to the things it
+// describes rather than sixty lines away from them.)
 
 const KnowledgeLibraryPage = ({ setPage }: { setPage?: (p: import('../../../types').Page) => void }) => {
   return <LiveKnowledgeLibrary setPage={setPage} />;

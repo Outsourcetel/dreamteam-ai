@@ -524,8 +524,30 @@ export function currentPhase(items: TemplateItem[], state: ProjectItemState[]): 
   return PHASES[PHASES.length - 1].key;
 }
 
-export function daysUntil(dateStr: string | null): number | null {
-  if (!dateStr) return null;
-  const d = new Date(dateStr + 'T00:00:00');
-  return Math.ceil((d.getTime() - Date.now()) / 86_400_000);
-}
+/**
+ * Whole days until a date. RE-EXPORTED, not reimplemented — as of 2026-08-22.
+ *
+ * There were two live `daysUntil` in this app and they did not agree:
+ *
+ *   here (removed)          new Date(s + 'T00:00:00') parsed in LOCAL time,
+ *                           differenced against Date.now() — an instant, not a
+ *                           midnight — then Math.ceil.
+ *   ./continuityFormat      both endpoints anchored to UTC calendar midnight,
+ *                           then Math.round.
+ *
+ * They diverge by a full day whenever the local calendar date differs from the
+ * UTC one (any user east of UTC in their morning, or west of it in their
+ * evening) and across a DST boundary, where a naive millisecond difference is
+ * not a whole number of days at all.
+ *
+ * That is not cosmetic: it flips the "Go-lives in 14d" tile on
+ * CustomerOnboardingLive and the <=60-day notice filter on
+ * CommercialContinuityPage — two counts a person acts on.
+ *
+ * The continuityFormat version is the correct one and says why in its own
+ * comment, so this is a deletion, not a merge. Both callers pass a Postgres
+ * `date` column, which PostgREST renders as YYYY-MM-DD, so the stricter
+ * pattern it requires is satisfied — and it now returns null for a malformed
+ * value instead of NaN.
+ */
+export { daysUntil } from './continuityFormat';

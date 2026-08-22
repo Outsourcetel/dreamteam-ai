@@ -12,19 +12,27 @@
  * both are parsed here.
  *
  * Actions:
- *   { action: 'handshake', source_id }
+ *   { action: 'handshake', connector_id }
  *     Full initialize → tools/list. Stores a tool-list SUMMARY
- *     (names + descriptions, no payloads) on the specialist source row
+ *     (names + descriptions, no payloads) on the connector row
  *     (config.mcp), audits the handshake. Honest structured failure on
  *     unreachable/broken servers.
- *   { action: 'call_tool', source_id, tool, args? }
- *     initialize → tools/call. FETCH-ONLY semantics: the result is
- *     returned to the caller and audited; NOTHING is persisted.
+ *   { action: 'call_tool', connector_id, tool, args? }
+ *     CLOSED — returns 403. Calling an MCP tool directly would bypass the
+ *     action gate (approval, guardrails, trust dial, spend caps). Register the
+ *     tool as a governed action_definition instead.
  *
  * Auth to the MCP server: optional bearer secret from
- * specialist_source_secrets_decrypted, a service-role-only view over
- * Vault-encrypted storage (migration 088), sent under the configured
- * header name (default Authorization: Bearer …).
+ * connector_secrets_decrypted, a service-role-only view over Vault-encrypted
+ * storage, sent under the configured header name (default Authorization: Bearer …).
+ *
+ * ⚠ THIS HEADER WAS STALE UNTIL 2026-08-22 and described a function that no
+ * longer existed. It documented `source_id` as the parameter and
+ * specialist_source_secrets_decrypted as the credential source — both belong to
+ * the specialist-source path, which migration 611 removed along with the
+ * specialist role. A caller following it got a 410. `source_id` is still
+ * ACCEPTED, but only to answer it with that 410 and an explanation; the live
+ * parameter is `connector_id`.
  */
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
@@ -94,13 +102,14 @@ async function rpc(
   };
   if (sessionId) hdrs['Mcp-Session-Id'] = sessionId;
   // SSRF guard at the actual fetch chokepoint. `endpoint` comes from
-  // specialist_sources.config, which ANY member of the tenant can write
-  // (RLS policy specialist_sources_tenant_isolation, migration 024) --
-  // unlike connectors.base_url there is no DB-level CHECK behind it, so
-  // this is the only thing standing between a tenant user and a fetch
-  // against loopback / RFC1918 / cloud-metadata addresses. Callers also
-  // pre-check on the way in; this re-checks per request (endpoint is a
-  // parameter and every MCP call funnels through here).
+  // connectors.config.mcp_url / base_url, writable by a tenant admin, so this
+  // is what stands between a tenant user and a fetch against loopback /
+  // RFC1918 / cloud-metadata addresses. Callers also pre-check on the way in;
+  // this re-checks per request (endpoint is a parameter and every MCP call
+  // funnels through here).
+  // (Was described as specialist_sources.config until 2026-08-22 — that table
+  // was dropped in migration 611; the guard itself is unchanged and still the
+  // one that matters.)
   if (!isSafeExternalUrl(endpoint)) {
     return { ok: false, error: 'endpoint blocked by safety policy (must be a public http(s) address)' };
   }
@@ -308,24 +317,19 @@ serve(async (req) => {
           secretText = String(parsed.token ?? parsed.api_key ?? parsed.access_token ?? '') || null;
         } catch { secretText = cSecret.secret; }
       }
-    } else {
-      // Specialist-source path (unchanged). Specialists are Digital Employees
-      // now (migrations 208/211); resolve the source's tenant via its owner.
-      const { data: src } = await admin.from('specialist_sources')
-        .select('id, source_type, config, specialist_de_id')
-        .eq('id', sourceId).maybeSingle();
-      const { data: srcDe } = src?.specialist_de_id
-        ? await admin.from('digital_employees').select('tenant_id').eq('id', src.specialist_de_id).maybeSingle()
-        : { data: null };
-      const srcTenant = (srcDe as { tenant_id?: string } | null)?.tenant_id;
-      if (!src || srcTenant !== tenantId) return json({ error: 'source_not_found' }, 404);
-      if (src.source_type !== 'mcp_server') return json({ error: 'not_an_mcp_source' }, 400);
-      cfg = (src.config ?? {}) as Record<string, unknown>;
-      endpoint = String(cfg.endpoint ?? '');
-      const { data: sSecret } = await admin.from('specialist_source_secrets_decrypted')
-        .select('secret').eq('source_id', sourceId).maybeSingle();
-      secretText = sSecret?.secret ?? null;
     }
+    // ⚠ The `else` that stood here was UNREACHABLE and queried two DROPPED
+    // tables (specialist_sources, specialist_source_secrets_decrypted, gone with
+    // the specialist role in migration 611). Removed 2026-08-22.
+    //
+    // Proven, not assumed: `!sourceId && !connectorId` returns 400 above, and
+    // `sourceId && !connectorId` returns 410 above, so by this line connectorId
+    // is always a non-empty string and the else could never be entered. The 410
+    // is the real, reachable answer for a source_id caller and it stays.
+    //
+    // This was the last of the code->schema gap the debt map opened with. The
+    // first, media_assets, had LIVE callers and was restored; this one had none,
+    // which is why it is deleted rather than revived. Recoverable at 5c76d8a.
     if (!endpoint) return json({ error: 'no_endpoint_configured' }, 400);
     // Reject unsafe endpoints up front with an actionable message (rpc()
     // re-checks at the fetch itself). Without this, a tenant member could
@@ -379,7 +383,7 @@ serve(async (req) => {
         p_action: actionText, p_category: 'connector_sync',
         p_detail: {
           kind: 'mcp', endpoint,
-          ...(connectorId ? { connector_id: connectorId } : { source_id: sourceId }),
+          connector_id: connectorId,   // always set by this line — see the note above
           ...detail,
         },
       });
@@ -390,9 +394,8 @@ serve(async (req) => {
       const s = await mcpSession(endpoint, headers);
       const ms = Date.now() - started;
       // Persist the handshake record onto whichever row this call is for.
-      const persistMcp = (meta: Record<string, unknown>) => (connectorId
-        ? admin.from('connectors').update({ config: { ...cfg, mcp: meta } }).eq('id', connectorId)
-        : admin.from('specialist_sources').update({ config: { ...cfg, mcp: meta } }).eq('id', sourceId));
+      const persistMcp = (meta: Record<string, unknown>) =>
+        admin.from('connectors').update({ config: { ...cfg, mcp: meta } }).eq('id', connectorId);
 
       if (!s.ok) {
         // Honest structured failure — recorded on the row too.

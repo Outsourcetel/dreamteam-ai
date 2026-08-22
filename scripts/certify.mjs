@@ -1608,6 +1608,18 @@ const sections = [
     const regressions = [], improvements = [], added = [];
     for (const [fn, n] of Object.entries(counts)) {
       const ceiling = pinned[fn];
+      // ⚠ AN UNPINNED FUNCTION IS HELD AT ZERO, WHICH IS STRICTER THAN A PIN —
+      // do not "fix" the two currently unpinned entries by pinning them.
+      // `fns` above is the DIRECTORY LISTING, so every function on disk is
+      // checked whether or not the baseline names it; only the CEILING comes
+      // from the baseline. An unpinned function therefore fails this gate on its
+      // first error, while a pinned one is allowed its recorded number.
+      //
+      // Recorded 2026-08-22, because an audit read "64 pinned, 66 on disk" as a
+      // blind spot and the natural remedy — pin the other two at whatever they
+      // currently measure — would LOOSEN the gate. Measured that day:
+      // platform-tenant-delete and review-narrate are the two, and both are held
+      // at 0 by this line.
       if (ceiling === undefined) { if (n > 0) added.push(`${fn}: NEW function with ${n} error(s)`); continue; }
       if (n > ceiling) regressions.push(`${fn}: ${n} error(s), ceiling ${ceiling}`);
       else if (n < ceiling) improvements.push(`${fn}: ${ceiling} -> ${n}`);

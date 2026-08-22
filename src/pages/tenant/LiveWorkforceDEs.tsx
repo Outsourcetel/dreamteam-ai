@@ -55,16 +55,6 @@ export function useCanManageDe(): boolean {
   return isDTUser || ['tenant_owner', 'tenant_admin'].includes(authedUser?.role ?? '');
 }
 
-/** One line, same wording everywhere, so "you cannot edit this" never reads as
- *  a bug. Rendered by a panel when the viewer may look but not change. */
-export function ReadOnlyNote({ what }: { what: string }) {
-  return (
-    <p className="text-[11px] text-dt-muted mb-2">
-      You can see {what} here, but changing it needs an owner or admin.
-    </p>
-  );
-}
-
 // ── Roster + "Add a Digital Employee" — the generic persona-creation
 // capability (migration 037). Domain-agnostic: creates ANY future DE,
 // not just Account/Finance/etc. Simple enough for a non-technical

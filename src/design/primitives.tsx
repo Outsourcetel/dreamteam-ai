@@ -251,6 +251,31 @@ export function Field({ label, hint, error, children, htmlFor }:
   );
 }
 
+/**
+ * "You may look, but not change" — one sentence, one place.
+ *
+ * MOVED HERE 2026-08-22 from src/pages/tenant/LiveWorkforceDEs.tsx, where it was
+ * exported and had ZERO render sites — while BrowserOperatorPage.tsx:534 carried
+ * a hand-rolled copy of the same sentence. So the component was not dead, it was
+ * unadopted, and deleting it (the first read of the audit finding) would have
+ * removed the right answer and left the duplicate standing.
+ *
+ * A page module is the wrong home for shared copy anyway: importing it would
+ * have made one page depend on another. Read-only wording is a design-system
+ * concern — "same words everywhere, so 'you cannot edit this' never reads as a
+ * bug" is exactly the promise a primitive exists to keep.
+ *
+ * `className` is here so a caller can own its own spacing; the default suits a
+ * note under a panel heading.
+ */
+export function ReadOnlyNote({ what, className = 'mb-2' }: { what: string; className?: string }) {
+  return (
+    <p className={`text-[11px] text-dt-muted ${className}`}>
+      You can see {what} here, but changing it needs an owner or admin.
+    </p>
+  );
+}
+
 /* ── TabBar — the hub/profile tab strip ─────────────────────────────────── */
 export function TabBar<T extends string>({ tabs, active, onSelect }:
   { tabs: { key: T; label: string; badge?: React.ReactNode }[]; active: T; onSelect: (k: T) => void }) {

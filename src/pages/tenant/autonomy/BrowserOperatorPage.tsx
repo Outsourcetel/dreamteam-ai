@@ -7,7 +7,7 @@ import {
   type CredentialPolicy, type DeLite, type DeOperateConfig, type OperateSystem,
 } from '../../../lib/browserOperatorApi';
 import {
-  Chip, Banner, Button, Field, INPUT_CLS, EmptyState, Modal, Drawer, TimelineStep, type Tone,
+  Chip, Banner, Button, Field, INPUT_CLS, EmptyState, Modal, Drawer, TimelineStep, ReadOnlyNote, type Tone,
 } from '../../../design/primitives';
 import { useAuth } from '../../../context/AuthContext';
 import { presentError } from '../../../lib/presentError';
@@ -531,9 +531,7 @@ function SystemCard({ deId, s, connectors, onChange }: { deId: string; s: Operat
           {s.operate_only && <Button kind="ghost" size="sm" disabled={busy} className="ml-auto hover:text-dt-danger" onClick={() => run(() => deleteOperateBinding(s.id))}>Delete</Button>}
         </div>
       ) : (
-        <p className="text-[11px] text-dt-muted mt-3">
-          You can see how this system is connected, but changing it — or its stored login — needs an owner or admin.
-        </p>
+        <ReadOnlyNote what="how this system is connected, and its stored login" className="mt-3" />
       )}
 
       {showLogin && <LoginForm systemId={s.id} onDone={() => { setShowLogin(false); onChange(); }} onCancel={() => setShowLogin(false)} />}
