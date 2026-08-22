@@ -40,6 +40,7 @@ import type { TrustPolicy } from '../../../lib/trustApi';
 import { trustPromotionCardCopy, isThinTrustEvidence, extractPolicyEvidence, detailIsRedundantBesideCard } from '../../../lib/trustPromotionPresentation';
 import { listDigitalEmployees } from '../../../lib/digitalEmployeesApi';
 import { presentError } from '../../../lib/presentError';
+import { timeAgoLong } from '../../../lib/dateFormat';
 
 // ⚠ APPROVING SOMETHING YOU HAVE NOT READ is the failure this product exists
 // to prevent, so a task carrying DRAFTED CONTENT never gets an inline
@@ -60,15 +61,7 @@ const READ_FIRST: HumanTaskType[] = [
 ];
 const readFirst = (t: DBHumanTask) => READ_FIRST.includes(t.type);
 
-function ago(iso: string): string {
-  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins} min ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} ${hrs === 1 ? 'hour' : 'hours'} ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days} ${days === 1 ? 'day' : 'days'} ago`;
-}
+const ago = (iso: string) => timeAgoLong(iso);
 
 export default function MobileShell({ setPage }: { setPage: (p: Page) => void }) {
   const { liveTenantName, authedUser } = useAuth();

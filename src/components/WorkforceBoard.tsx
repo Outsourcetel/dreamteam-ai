@@ -4,6 +4,7 @@ import { useOpenEmployeeFile } from '../lib/employeeFileRoute';
 import TeamMissionPanel from './TeamMissionPanel';
 import { Banner, Chip, PanelCard, type Tone } from '../design/primitives';
 import type { Page } from '../types';
+import { fmtDateTime } from '../lib/dateFormat';
 
 // The workforce board (docs/17 C2) — every employee's now / next / blocked
 // on one card, whether or not it has a live work row this second. This is
@@ -14,6 +15,11 @@ const NEXT_ICON: Record<string, string> = {
   work_item: '📋', case_wait: '⏸', watcher: '👁', objective_wake: '🔁',
 };
 
+// ⚠ FUTURE-facing — "in 20 min", "due now" — which is why it is not one of
+// dateFormat's variants: every one of those measures time SINCE. It shares the
+// absolute tail, so there is no ninth copy of that option bag, and it is the
+// only relative-future formatter in the estate, so there is nothing for its
+// rounding to disagree with.
 export function fmtWhen(iso: string | null | undefined): string {
   if (!iso) return 'when its turn comes';
   const ms = new Date(iso).getTime() - Date.now();
@@ -22,7 +28,7 @@ export function fmtWhen(iso: string | null | undefined): string {
   if (m < 60) return `in ${m} min`;
   const h = Math.round(m / 60);
   if (h < 24) return `in ${h} h`;
-  return new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return fmtDateTime(iso);
 }
 
 export default function WorkforceBoard({ setPage }: { setPage: (p: Page) => void }) {

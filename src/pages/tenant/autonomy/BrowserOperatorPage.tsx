@@ -11,6 +11,7 @@ import {
 } from '../../../design/primitives';
 import { useAuth } from '../../../context/AuthContext';
 import { presentError } from '../../../lib/presentError';
+import { timeAgo } from '../../../lib/dateFormat';
 
 // ⚠ WHO MAY DO WHAT HERE.
 //
@@ -52,14 +53,7 @@ const STATUS: Record<string, { label: string; tone: Tone; pulse?: boolean }> = {
 const ENGINE_LABEL: Record<BrowserEngine, string> = { browser_dom: 'Reads the page', browser_vision: 'Sees the screen', desktop: 'Full desktop' };
 const CRED_LABEL: Record<CredentialPolicy, string> = { none: 'No login', vault_injected: 'Vault login', human_login: 'You log in' };
 
-function timeAgo(iso: string | null): string {
-  if (!iso) return '—';
-  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
-}
+
 
 const BrowserOperatorPage = ({ setPage }: { setPage: (p: Page) => void }) => {
   const canOperate = useCanOperate();

@@ -24,6 +24,7 @@ import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDat
 import AISessionPanel from '../../../components/AISessionPanel';
 import PlatformShelfPanel from '../../../components/PlatformShelfPanel';
 import ImportSiteModal from '../../../components/ImportSiteModal';
+import { fmtDate as fmtDateOf } from '../../../lib/dateFormat';
 
 // ============================================================
 // Live Knowledge Library — the tenant's real knowledge_docs.
@@ -31,7 +32,7 @@ import ImportSiteModal from '../../../components/ImportSiteModal';
 // answers from, so the page is honest about that relationship.
 // ============================================================
 
-const fmtDate = (iso: string) => new Date(iso).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
+const fmtDate = fmtDateOf;
 
 interface EditorState {
   id: string | null; // null = new doc

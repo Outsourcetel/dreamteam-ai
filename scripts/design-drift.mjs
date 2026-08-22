@@ -13,6 +13,10 @@ const G = `src/ --include='*.tsx' --exclude-dir=design`;
 // than widen G (which would move nine pinned numbers at once, in a commit that
 // is not about them), the one metric that needs .ts gets its own glob.
 const G_ALL = `src/ --include='*.tsx' --include='*.ts' --exclude-dir=design`;
+// src/lib/dateFormat.ts IS the date layer, the way src/design is the design
+// layer — its own arithmetic is the canonical copy, not drift.
+const G_DATE = `src/ --include='*.tsx' --include='*.ts' --exclude-dir=design --exclude=dateFormat.ts`;
+const countDate = (pat) => Number(sh(`grep -rhF "${pat}" ${G_DATE} ${NO_COMMENTS} | wc -l`));
 const countAll = (pat) => Number(sh(`grep -rhE "${pat}" ${G_ALL} ${NO_COMMENTS} | wc -l`));
 // Defined below NO_COMMENTS (hoisting would read as if the order mattered).
 let uniq;
@@ -186,6 +190,26 @@ const BASELINE = {
   // a design decision about which dt-* recipe it becomes, so this is pinned as
   // a worklist, not swept.
   'bare hue fills': 318,
+  // ── hand-rolled date math, ADDED 2026-08-22 ────────────────────────────
+  // Eight relative-time helpers and nine copies of one absolute option bag
+  // existed before src/lib/dateFormat.ts, and they DISAGREED about the same
+  // instant — this is a correctness metric wearing a consistency metric's
+  // clothes:
+  //   · connectorApi.fmtSince rounded where the other seven floored, so 90
+  //     minutes read "2 hr ago" on Connected Systems and "1h ago" everywhere
+  //     else.
+  //   · the same function took its count from Math.round(hrs/24) and its
+  //     plural from `hrs < 48`, so 36 hours rendered "2 day".
+  //   · EmployeeFilePage.relTime and SupportCallsPage.when had no
+  //     under-a-minute branch: a ten-second-old row read "0m ago".
+  //   · OpsAlertsBanner.age was hour-granularity, so a 45-minute-old ops
+  //     alert claimed to have just arrived.
+  //
+  // The ONE that remains is not a formatter: KnowledgeQualityPage's
+  // freshnessDays returns a NUMBER that badge thresholds compare against. It
+  // is pinned at 1 rather than floored at 0 so that the day it becomes 0 —
+  // or 2 — somebody has to say which.
+  'hand-rolled date math': 1,
 };
 const NOW = {
   'bg-slate variants': uniq('bg-slate-[0-9/]*'),
@@ -223,6 +247,9 @@ const NOW = {
   // variant count by two (77 → 75) and the occurrence count by 262. A uniq()
   // here would have called that a rounding error.
   'bare hue fills': countQuoted(HUE),
+  // grep -F: this is a literal, and the parens and dots in it are not a regex
+  // anyone should have to escape correctly to trust the number.
+  'hand-rolled date math': countDate('Date.now() - new Date('),
 };
 
 let regressions = 0;

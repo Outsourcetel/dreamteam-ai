@@ -1740,14 +1740,12 @@ export function connectorErrorLabel(err: string | undefined | null): string {
     : err);
 }
 
+/** ⚠ WAS eight lines of Math.round, which is why this delegates now: at 90
+ *  minutes it said "2 hr ago" while every other surface said "1h ago", and its
+ *  day line took the count from `Math.round(hrs/24)` and the plural from
+ *  `hrs < 48`, so 36 hours rendered "2 day". See src/lib/dateFormat.ts. */
 export function fmtSince(iso: string | null): string {
-  if (!iso) return 'never';
-  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins} min ago`;
-  const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs} hr${hrs === 1 ? '' : 's'} ago`;
-  return `${Math.round(hrs / 24)} day${hrs < 48 ? '' : 's'} ago`;
+  return timeAgoLong(iso, { empty: 'never' });
 }
 
 // ── Declarative Adapter Framework (migration 028) ──────────────────
@@ -1757,6 +1755,7 @@ import type {
   AdapterDefinition, AdapterTemplate,
 } from './adapterTemplates';
 import { validateAdapterDefinition, AUTH_META } from './adapterTemplates';
+import { timeAgoLong } from './dateFormat';
 
 /** Platform library + this tenant's own templates (RLS does the scoping). */
 export async function listAdapterTemplates(): Promise<AdapterTemplate[]> {

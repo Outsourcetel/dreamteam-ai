@@ -12,6 +12,7 @@ import {
   getKnowledgeConflicts, getKnowledgeConflictStatus, resolveKnowledgeConflict,
 } from '../../../lib/knowledgeApi';
 import type { KnowledgeDoc, KnowledgeDocCitationStats, ScopeSubject, CoverageDemand, KnowledgeConflict } from '../../../lib/knowledgeApi';
+import { staleness } from '../../../lib/dateFormat';
 
 // ============================================================
 // Quality & Coverage — everything on this page is REAL: per-tag
@@ -31,13 +32,7 @@ function freshnessDays(doc: KnowledgeDoc): number {
 }
 
 // WS10 coverage-vs-demand helpers.
-const fmtAgo = (iso: string) => {
-  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
-  if (days < 1) return 'today';
-  if (days < 30) return `${days}d`;
-  if (days < 365) return `${Math.floor(days / 30)}mo`;
-  return `${Math.floor(days / 365)}y`;
-};
+const fmtAgo = staleness;
 const COVERAGE_BADGE: Record<string, { cls: string; label: string }> = {
   covered: { cls: 'bg-dt-ok-soft text-dt-ok', label: 'Covered' },
   weak: { cls: 'bg-dt-warn-soft text-dt-warn', label: 'Thin' },

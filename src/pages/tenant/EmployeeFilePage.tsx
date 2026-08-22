@@ -43,6 +43,7 @@ import {
   type RoleArchetype, type AppliedRoleKit,
 } from '../../lib/hireApi';
 import { presentError } from '../../lib/presentError';
+import { timeAgo, fmtDateTime } from '../../lib/dateFormat';
 
 // ═══════════════════════════════════════════════════════════════
 // Employee File — ONE page per Digital Employee, with a URL other
@@ -54,8 +55,7 @@ import { presentError } from '../../lib/presentError';
 // clicks deep in the roster detail panel.
 // ═══════════════════════════════════════════════════════════════
 
-const fmt = (iso: string | null | undefined) =>
-  iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+const fmt = fmtDateTime;
 
 const TRUST_TONE: Record<string, Tone> = { supervised: 'warn', established: 'info', trusted: 'accent', autonomous: 'ok' };
 const WORK_TONE: Record<string, { tone: Tone; pulse?: boolean }> = {
@@ -1062,13 +1062,7 @@ function LifetimeLedger({ de, setPage }: { de: DigitalEmployee; setPage: (p: Pag
 // Three datasets the file was sitting on but never showed: evidence-earned
 // skills, the run-by-run execution log (which model served each answer —
 // the failover, per reply), and the lived-experience ledger.
-const relTime = (iso: string) => {
-  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  if (s < 604800) return `${Math.floor(s / 86400)}d ago`;
-  return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
-};
+const relTime = (iso: string) => timeAgo(iso, { absoluteAfterDays: 7 });
 const isFallbackModel = (m: string | null) => !!m && /bedrock|anthropic\.|openai|gpt|gemini|google/i.test(m);
 
 // Humanize an agentic transcript turn (raw Anthropic content blocks) into

@@ -28,6 +28,7 @@ import type { ApprovalBrief } from '../../../lib/approvalBriefsApi';
 import { getTrustPolicyById } from '../../../lib/trustApi';
 import type { TrustPolicy } from '../../../lib/trustApi';
 import { trustPromotionCardCopy, isThinTrustEvidence, extractPolicyEvidence, detailIsRedundantBesideCard } from '../../../lib/trustPromotionPresentation';
+import { duration, timeAgoLong } from '../../../lib/dateFormat';
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -144,14 +145,7 @@ const FILTERS: { id: TaskType | 'all'; label: string }[] = [
 
 // ── LIVE mode: real human_tasks from Supabase ─────────────────────
 
-function taskAge(iso: string): string {
-  const mins = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
-  if (mins < 60) return `${mins} min`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} hr${hrs === 1 ? '' : 's'}`;
-  const days = Math.floor(hrs / 24);
-  return `${days} day${days === 1 ? '' : 's'}`;
-}
+const taskAge = duration;
 
 function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
   const [tasks, setTasks] = useState<DBHumanTask[]>([]);
@@ -1255,7 +1249,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                   </div>
                   <div className="flex items-center justify-between bg-dt-page rounded-lg px-3 py-2">
                     <span className="text-dt-muted">Raised</span>
-                    <span className="text-dt-support">{taskAge(selected.created_at)} ago</span>
+                    <span className="text-dt-support">{timeAgoLong(selected.created_at)}</span>
                   </div>
                   {selected.related_table === 'renewal_invoices' && (
                     <div className="flex items-center justify-between bg-dt-page rounded-lg px-3 py-2">
@@ -1554,7 +1548,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                       <Chip tone={blocked.status === 'waiting_human' ? 'warn' : 'neutral'}>{blocked.status.replace(/_/g, ' ')}</Chip>
                       {blocked.waitingSince && (
                         <span className="text-[11px] text-dt-muted">
-                          waiting {Math.max(0, Math.round((Date.now() - new Date(blocked.waitingSince).getTime()) / 3.6e6))}h
+                          waiting {duration(blocked.waitingSince)}
                         </span>
                       )}
                       {blocked.queuedBehind > 0 && (

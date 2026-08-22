@@ -17,6 +17,7 @@ import {
   type SupportConversation, type SupportMessage,
 } from '../../../lib/supportInboxApi';
 import type { Page } from '../../../types';
+import { timeAgoCompact, fmtDateTime } from '../../../lib/dateFormat';
 
 // The support inbox — the human side of the unified conversation=ticket.
 // Live (Supabase Realtime): new customer messages, DE drafts and escalations
@@ -69,18 +70,10 @@ const previewOf = (raw?: string) => (raw ?? '')
 const titleOf = (c: SupportConversation) =>
   c.end_user_name || c.subject || (c.channel === 'dock' ? 'A colleague asked' : 'Unnamed customer');
 
-const fmtTime = (iso: string | null) => iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+const fmtTime = (iso: string | null) => fmtDateTime(iso, { empty: '' });
 // Relative time for the list — "now / 5m / 3h / 2d", falling back to a date
 // beyond a week. Ops scan recency, not clock times.
-const fmtRel = (iso: string | null) => {
-  if (!iso) return '';
-  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 60) return 'now';
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h`;
-  if (s < 604800) return `${Math.floor(s / 86400)}d`;
-  return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
-};
+const fmtRel = (iso: string | null) => timeAgoCompact(iso, { empty: '', absoluteAfterDays: 7 });
 
 export default function SupportInboxPage({ setPage: _setPage, embedded }: { setPage: (p: Page) => void; embedded?: boolean }) {
   const { authedUser } = useAuth();

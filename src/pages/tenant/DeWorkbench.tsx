@@ -13,6 +13,7 @@ import {
 import { extractPdf, extractUrl } from '../../lib/knowledgeApi';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../components/LiveDataStates';
 import { presentError } from '../../lib/presentError';
+import { fmtDateTime } from '../../lib/dateFormat';
 
 // docs/17 C5: name the regulations each pack is DESIGNED to support (honest
 // wording — posture, never a compliance certification claim).
@@ -44,7 +45,7 @@ const SECTIONS = [
 ] as const;
 type Section = typeof SECTIONS[number]['key'];
 
-const fmt = (iso: string | null) => iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+const fmt = fmtDateTime;
 
 // Wave-2 (truth audit docs/15): the Reasoning tab promised "every step and
 // why" but rendered raw tool slugs + truncated JSON. Humanize both.

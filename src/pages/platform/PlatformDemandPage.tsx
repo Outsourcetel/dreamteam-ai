@@ -7,6 +7,7 @@ import {
   fetchCapabilityDemand, capabilityLabel,
   type CapabilityDemandReport, type DemandFailure, type DemandReadResult, type DemandRow,
 } from '../../lib/platformDemandApi';
+import { fmtDateTimeYear } from '../../lib/dateFormat';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Platform › Customer Demand
@@ -81,12 +82,7 @@ const dateOf = (iso: string | null | undefined): string => {
   return t.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
-const dateTimeOf = (iso: string | null | undefined): string => {
-  if (!iso) return '—';
-  const t = new Date(iso);
-  if (Number.isNaN(t.getTime())) return '—';
-  return t.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-};
+const dateTimeOf = fmtDateTimeYear;
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 

@@ -19,6 +19,7 @@ import PlatformEmailKeyPanel from '../../components/PlatformEmailKeyPanel';
 import PlatformAIEnginePanel from '../../components/PlatformAIEnginePanel';
 import PlatformTeamPage from './PlatformTeamPage';
 import PlatformDemandPage from './PlatformDemandPage';
+import { timeAgoLong } from '../../lib/dateFormat';
 
 const dbTenantToTenant = (t: DBTenant): Tenant => ({
   id: t.id,
@@ -747,20 +748,8 @@ const PlatformConsolePage = ({
 // once on mount via a ref so a re-render of the parent's tenants array
 // (a new object identity every render) doesn't cause a refetch loop.
 // ─────────────────────────────────────────────────────────────────
-const relativeTime = (iso: string | null | undefined): string => {
-  if (!iso) return '';
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return '';
-  const diffMs = Date.now() - then;
-  const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins} min ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} hr ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 7) return `${days} day${days === 1 ? '' : 's'} ago`;
-  return new Date(iso).toLocaleDateString();
-};
+const relativeTime = (iso: string | null | undefined): string =>
+  timeAgoLong(iso, { empty: '', absoluteAfterDays: 7 });
 
 // ─────────────────────────────────────────────────────────────────
 // System Health — the old page was 100% fabricated (fake uptime,

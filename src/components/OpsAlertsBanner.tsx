@@ -25,6 +25,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabase';
 import { Button } from '../design/primitives';
+import { timeAgoLong } from '../lib/dateFormat';
 
 interface OpsAlert {
   id: string;
@@ -60,13 +61,10 @@ const CRITICAL_KINDS = new Set([
 const isCritical = (kind: string) =>
   CRITICAL_KINDS.has(kind) || kind.startsWith('cron_job_broken:');
 
-const age = (iso: string) => {
-  const h = Math.floor((Date.now() - new Date(iso).getTime()) / 3_600_000);
-  if (h < 1) return 'just now';
-  if (h < 24) return `${h}h ago`;
-  const d = Math.floor(h / 24);
-  return `${d} day${d === 1 ? '' : 's'} ago`;
-};
+// ⚠ WAS hour-granularity: anything under 60 minutes read "just now", so a
+// 45-minute-old ops alert claimed to have just arrived. It now says
+// "45 minutes ago".
+const age = timeAgoLong;
 
 export default function OpsAlertsBanner() {
   const [alerts, setAlerts] = useState<OpsAlert[]>([]);

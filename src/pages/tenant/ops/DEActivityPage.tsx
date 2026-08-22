@@ -12,6 +12,7 @@ import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDat
 import WorkforceBoard from '../../../components/WorkforceBoard';
 import WorkforceEconomicsPanel from '../../../components/WorkforceEconomicsPanel';
 import { useAuth } from '../../../context/AuthContext';
+import { fmtDateTime } from '../../../lib/dateFormat';
 
 // ============================================================
 // "DE at work" — the live proactive-triage queue (migration 034),
@@ -26,7 +27,7 @@ import { useAuth } from '../../../context/AuthContext';
 // DOM small; the 8s live refresh is unchanged.
 // ============================================================
 
-const fmtTime = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+const fmtTime = fmtDateTime;
 
 const STEP_ICON: Record<string, string> = {
   account_context: '🏢', knowledge_search: '📚', history_check: '🕓', prior_experience: '🧠', mcp_tool: '🔧', compose: '🧾',

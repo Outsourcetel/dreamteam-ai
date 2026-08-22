@@ -11,6 +11,7 @@ import {
 import { listKnowledgeDocs } from '../../../lib/knowledgeApi';
 import { CustomerApiError } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
+import { fmtDateTimeYear } from '../../../lib/dateFormat';
 
 // ============================================================
 // Live Proving Ground (R3) — golden Q&A suites run against the
@@ -20,8 +21,7 @@ import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDat
 // as 'blocked_llm' — the suite is ready and proves the loop.
 // ============================================================
 
-const fmtTime = (iso: string) =>
-  new Date(iso).toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+const fmtTime = fmtDateTimeYear;
 
 const CATEGORIES: GoldenCategory[] = ['knowledge', 'procedure', 'guardrail', 'escalation', 'calibration'];
 

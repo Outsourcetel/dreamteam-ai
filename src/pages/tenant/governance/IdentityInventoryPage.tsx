@@ -4,6 +4,7 @@ import { CATEGORY_SHORT } from '../../../lib/categoryContracts';
 import { fetchIdentityInventory, IdentitySubject } from '../../../lib/identityInventoryApi';
 import { PERMISSION_LABELS, AccessPermission } from '../../../lib/accessGrantsApi';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDataStates';
+import { fmtDateTime } from '../../../lib/dateFormat';
 
 // ============================================================
 // GOVERNANCE — Identity & Credentials (migration 044).
@@ -16,8 +17,7 @@ import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDat
 // value — only whether one is stored, and its health.
 // ============================================================
 
-const fmtDate = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : null;
+const fmtDate = (iso: string | null) => fmtDateTime(iso, { empty: '' });
 
 const PERMISSION_PLAIN: Record<AccessPermission, string> = {
   search: 'can search',

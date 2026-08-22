@@ -5,6 +5,7 @@ import type { VoiceCall, VoiceCallMessage } from '../../../lib/voiceApi';
 import { LiveLoadingSkeleton, LiveErrorNotice } from '../../../components/LiveDataStates';
 import { Button, Chip, EmptyState, PanelCard, StatTile, Banner } from '../../../design/primitives';
 import { presentError } from '../../../lib/presentError';
+import { timeAgoLong } from '../../../lib/dateFormat';
 
 // ============================================================
 // Calls — review what the voice channel actually did (docs/42).
@@ -27,13 +28,7 @@ function duration(sec: number | null): string {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
 }
 
-function when(iso: string): string {
-  const mins = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
-  if (mins < 60) return `${mins} min ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} hr${hrs === 1 ? '' : 's'} ago`;
-  return `${Math.floor(hrs / 24)} day${Math.floor(hrs / 24) === 1 ? '' : 's'} ago`;
-}
+const when = timeAgoLong;
 
 /** A transcript is a dialogue; rendering it as a paragraph makes it unreadable
  *  and hides who said what — which is the whole point of reviewing a call. */

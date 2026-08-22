@@ -18,6 +18,7 @@ import { summariseWork, type WorkSummary } from '../../lib/workSummary';
 import { listDigitalEmployees, type DigitalEmployee } from '../../lib/digitalEmployeesApi';
 import { useOpenEmployeeFile } from '../../lib/employeeFileRoute';
 import { presentError } from '../../lib/presentError';
+import { timeAgoLong } from '../../lib/dateFormat';
 
 // ⚠ The preview command centre's scaffolding was DELETED 2026-08-22, all
 // verified zero-reader by `tsc --noUnusedLocals`:
@@ -91,14 +92,7 @@ function activityBorderColor(type: ActivityType): string {
 
 // ── LIVE dashboard: KPIs and cards computed from real data ───────
 
-function liveActivityAge(iso: string): string {
-  const mins = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins} min ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} hr${hrs === 1 ? '' : 's'} ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
+const liveActivityAge = timeAgoLong;
 
 function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
   const { liveTenantName, currentTenant, authedUser } = useAuth();

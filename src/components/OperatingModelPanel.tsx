@@ -4,6 +4,7 @@ import type { DigitalEmployee } from '../lib/digitalEmployeesApi';
 import { getOperatingModel, type OperatingModel } from '../lib/missionApi';
 import BookOfWorkPanel from './BookOfWorkPanel';
 import { Banner, Chip, PanelCard, type Tone } from '../design/primitives';
+import { fmtDateTime } from '../lib/dateFormat';
 
 // "How I operate" — the composed operating-model read (audit gap #1): the
 // employee's job as one legible page. This renders get_de_operating_model(),
@@ -24,8 +25,10 @@ const KIND_META: Record<string, { label: string; tone: Tone }> = {
   inbox: { label: 'live inbox — always listening', tone: 'ok' },
 };
 
-const fmt = (iso: string | null | undefined) =>
-  iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : null;
+// Empty renders as '' rather than the estate's '—' because three call sites
+// below branch on this value's TRUTHINESS ("next check …" vs "no next check
+// scheduled"), and '—' is truthy.
+const fmt = (iso: string | null | undefined) => fmtDateTime(iso, { empty: '' });
 
 export default function OperatingModelPanel({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => void }) {
   const [model, setModel] = useState<OperatingModel | null>(null);
