@@ -763,6 +763,43 @@ function edgeErrorCounts() {
     if (m && counts[m[1]] !== undefined) counts[m[1]]++;
     else unattributed++;
   }
+
+  // ── LIVENESS. Added 2026-08-22, because this section could not fail. ──────
+  // Errors are counted by splitting stderr on /^(?=TS\d+ )/m. When `deno check`
+  // does not RUN — no npx, no network, a proxy that cannot tunnel to deno.land,
+  // a registry outage — it emits no `TS…` blocks at all, so every count is 0,
+  // the ratchet sees an improvement, and the section PASSES. Proven: two
+  // blatant type errors were injected into emit-event/index.ts and this
+  // reported `PASS edge-typecheck (1.9s)` with EXIT=0.
+  //
+  // `r.status` and `r.error` were never inspected — unlike shell() at the
+  // bottom of this file, which every other section goes through and which does
+  // check `r.status === 0`. This section is the one that did not.
+  //
+  // deno check exits NON-ZERO when it finds type errors, which is the expected
+  // and healthy case, so a bare status check would be wrong. The distinction
+  // that matters is "the tool ran and reported" vs "the tool never ran": if it
+  // found nothing AND could not have found anything, that is not a clean bill.
+  // The signal must be POSITIVE EVIDENCE THAT CHECKING HAPPENED — never the mere
+  // absence of an error, and never "the output was non-empty". My first version
+  // of this guard accepted any non-empty output and therefore still passed on a
+  // proxy that cannot reach deno.land, which is the same defect one layer up.
+  // deno emits `Check file:///…` when it checks, and `TS…` blocks when it finds
+  // faults; either proves it ran. Nothing else does.
+  if (r.error || r.status === null) {
+    throw new Error(`edge-typecheck DID NOT RUN — deno check failed to execute (${r.error?.message ?? 'no exit status; likely timeout'}).`);
+  }
+  const resolutionFailure = /error:\s*(Import|Module not found|Relative import)/i.test(out) ||
+                            /failed to (fetch|load|resolve)/i.test(out) ||
+                            /unsuccessful tunnel|error sending request for url/i.test(out);
+  const checkedSomething = blocks.length > 0 || /Check file:\/\/\//.test(out);
+  if (resolutionFailure || !checkedSomething) {
+    throw new Error(
+      `edge-typecheck DID NOT RUN — deno check exited ${r.status} without type-checking anything ` +
+      `(${resolutionFailure ? 'module resolution failed — no network to deno.land/esm.sh?' : 'no "Check file://" lines and no TS diagnostics'}). ` +
+      `A green tick here would mean "no type errors in 66 edge functions" when the truth is "none of them were read".\n` +
+      out.slice(0, 600));
+  }
   return { counts, total: blocks.length, unattributed, fns };
 }
 
@@ -835,7 +872,13 @@ function shell(name, cmd, args) {
 // gate on every push instead of waiting for someone to remember. It is a SUBSET,
 // never a substitute — the banner says which mode ran, because a bar that does
 // not say what it skipped is the false-green this whole exercise exists to kill.
-const OFFLINE_SECTIONS = new Set(['typecheck', 'edge-typecheck', 'design-drift', 'migration-append', 'suite']);
+// `migration-numbering` added 2026-08-22. It reads only
+// readdirSync('supabase/migrations') — no credential, no network, 0.0s — and it
+// is the ratchet CLAUDE.md relies on to stop a 24th duplicate number landing.
+// It was in `sections` but not in this Set, so it ran only inside a full
+// credentialed certify, i.e. on a laptop, by hand. Proven credential-free and
+// proven able to fail (inject a duplicate → "1 NEW duplicate migration number(s)").
+const OFFLINE_SECTIONS = new Set(['typecheck', 'edge-typecheck', 'design-drift', 'migration-append', 'migration-numbering', 'suite']);
 
 const sections = [
   shell('typecheck', 'npx', ['tsc', '--noEmit']),

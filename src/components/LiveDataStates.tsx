@@ -15,17 +15,24 @@ export function LiveLoadingSkeleton({ rows = 4 }: { rows?: number }) {
   );
 }
 
+// ⚠ THIS IS CUSTOMER-FACING COPY, on 15 surfaces including the Command Centre,
+// Approvals, Audit Trail and Compliance. Until 2026-08-22 it named a file in
+// this repository — `supabase/migrations/011_customer_entity.sql` — and told the
+// reader to open "the Supabase SQL Editor". A customer has no repository, no
+// Supabase project and no SQL Editor; the sentence disclosed our stack, implied
+// the workspace was half-built, and named an action nobody on their side can
+// take. Keep this text about THEIR workspace and OUR responsibility. The
+// migration filename belongs in the operator's logs, never on their screen.
 export function MissingTablesNotice() {
   return (
     <div className="rounded-xl border border-dt-border-strong bg-dt-card p-5 flex items-start gap-3">
       <span className="text-dt-support text-lg flex-shrink-0">◇</span>
       <div>
-        <p className="text-sm font-medium text-dt-body mb-1">Live data tables not yet provisioned</p>
+        <p className="text-sm font-medium text-dt-body mb-1">This workspace isn't set up for customer records yet</p>
         <p className="text-xs text-dt-support leading-relaxed">
-          Your workspace is connected, but the Customer data tables haven't been created in the
-          database yet. Ask your administrator to run{' '}
-          <code className="text-dt-support bg-dt-panel px-1 py-0.5 rounded">supabase/migrations/011_customer_entity.sql</code>{' '}
-          in the Supabase SQL Editor, then reload this page.
+          Your workspace is connected, but customer records haven't been switched on for it.
+          That's something we enable — contact support and we'll turn it on, usually the same
+          working day. Nothing you've entered has been lost.
         </p>
       </div>
     </div>

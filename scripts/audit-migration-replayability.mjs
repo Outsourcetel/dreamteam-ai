@@ -109,8 +109,27 @@ console.log(`checking ${files.length} new migration(s) can run somewhere that is
 const DEPENDENCY_STATES = /ERROR:\s+(42883|42P01|42703|3F000)/;
 const ASSERTION_STATE = /ERROR:\s+P0001/;
 
+// ── Why "not proven" is split in two, as of 2026-08-22 ─────────────────────
+// A DEPENDENCY failure is a real, bounded statement: the dry run reached dev,
+// ran, and dev was missing an object. Not the author's fault, so it does not
+// fail the gate — that judgement stands.
+//
+// The `else` branch was NOT that. It swallowed every other cause, including
+// "there are no credentials at all". Measured before this change:
+//
+//   $ node scripts/audit-migration-replayability.mjs --base HEAD~5
+//      ⏸ …841_warm_editorial_surface_family.sql — NOT PROVEN (…does not classify)
+//        Error: ENOENT: no such file or directory, open '.env.local'
+//      0 of 1 proven replayable; 1 not checked
+//      >>> EXIT=0
+//
+// Zero proven, exit 0 — in a step `.github/workflows/ci.yml` documents as a
+// HARD FAIL. "We could not check this" and "this is fine" must not look the
+// same, and that principle was already written six lines above; it just was not
+// wired to the exit code for the unclassified case.
 const unreplayable = [];
-const notProven = [];
+const notProvenDependency = [];
+const unclassified = [];
 for (const f of files) {
   const res = spawnSync(process.execPath, ['scripts/dev-apply.mjs', f, '--dry-run'], { encoding: 'utf8' });
   const out = `${res.stdout || ''}${res.stderr || ''}`;
@@ -124,24 +143,38 @@ for (const f of files) {
   } else if (DEPENDENCY_STATES.test(out)) {
     console.log(`   ⏸ ${f}  — NOT PROVEN (dev is missing a dependency, not this migration's doing)`);
     console.log(`     ${detail}`);
-    notProven.push(f);
+    notProvenDependency.push(f);
   } else {
-    console.log(`   ⏸ ${f}  — NOT PROVEN (dry run failed for a reason this gate does not classify)`);
+    console.log(`   ⚠ ${f}  — NOT CHECKED (the dry run did not reach a verdict this gate can classify)`);
     console.log(`     ${detail}`);
-    notProven.push(f);
+    unclassified.push(f);
   }
 }
 
-if (notProven.length) {
+if (notProvenDependency.length) {
   // Said out loud every time. A count of clean results that quietly includes
   // unchecked ones is the "zero findings from zero comparisons" shape.
-  console.log(`\n⏸ ${notProven.length} could NOT be checked — dev lacks something they depend on, so this gate proved nothing about them:`);
-  for (const f of notProven) console.log(`   ${f}`);
+  console.log(`\n⏸ ${notProvenDependency.length} could NOT be checked — dev lacks something they depend on, so this gate proved nothing about them:`);
+  for (const f of notProvenDependency) console.log(`   ${f}`);
   console.log('   (dev is behind because of the already-applied unreplayable migrations — register B-6)');
 }
 
+if (unclassified.length) {
+  console.log(`\n✗ ${unclassified.length} migration(s) could not be checked AT ALL, for a reason this gate cannot name:`);
+  for (const f of unclassified) console.log(`   ${f}`);
+  console.log(`
+The commonest cause is that the dry run never reached the dev project —
+missing .env.local, no SUPABASE_ACCESS_TOKEN, or a network failure. That is a
+WIRING problem, and it must be loud: a gate reporting "0 of 1 proven" while
+exiting 0 is the precise shape this repository has paid for before.
+
+Fix the wiring and re-run. If a migration genuinely cannot be classified with
+credentials present, say so in the register rather than letting the gate pass.`);
+  process.exit(1);
+}
+
 if (!unreplayable.length) {
-  console.log(`\n${files.length - notProven.length} of ${files.length} proven replayable; ${notProven.length} not checked`);
+  console.log(`\n${files.length - notProvenDependency.length} of ${files.length} proven replayable; ${notProvenDependency.length} not checked`);
   process.exit(0);
 }
 

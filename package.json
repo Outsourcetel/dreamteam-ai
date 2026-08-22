@@ -20,7 +20,7 @@
     "test:isolation": "vitest run tests/tenant-isolation.test.ts",
     "test:invariants": "vitest run tests/knowledge-acl-invariants.test.ts",
     "migrate:status": "node scripts/migration-status.mjs",
-    "audit:light-ready": "node scripts/audit-light-ready.mjs",
+    "audit:light-ready": "node scripts/audit-light-ready.mjs --strict",
     "audit:role-gates": "node scripts/audit-role-gates.mjs --strict",
     "audit:silent-refusals": "node scripts/audit-silent-refusals.mjs --strict",
     "baseline:generate": "node scripts/generate-baseline.mjs > supabase/baseline/000_baseline_core.sql",

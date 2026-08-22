@@ -46,10 +46,10 @@ functions via the Supabase Management API
 | Command | What it actually does |
 |---|---|
 | `npm run dev` | Vite dev server on `:5173`. Ready in ~1 s. |
-| `npm run build` | `tsc --noEmit && vite build`. ~25 s; emits a 2.17 MB main bundle (580 kB gzip). **`tsconfig.json` includes only `src/`** — `supabase/` is not typechecked here. |
-| `npm run test:unit` | The three credential-free vitest files (27 tests, ~1.3 s). Runs in CI. |
-| `npm run certify:offline` | The 4 of certify's 9 sections that need no credentials: `typecheck`, `edge-typecheck`, `design-drift`, `suite`. ~65 s. Prints `OFFLINE SUBSET GREEN — 4/9` and names the 5 sections that did **not** run. Runs in CI on every push. |
-| `npm run certify` | All 9 sections, including live probes against the database and the golden-path write loop. **Needs `SUPABASE_ACCESS_TOKEN` in `.env.local`** and takes ~3 min; only prints `CERTIFIED` when every section is green. |
+| `npm run build` | `tsc --noEmit && vite build`. ~34 s; emits a **2.40 MB** main bundle (**648 kB** gzip) as a SINGLE chunk — `vite.config.ts:8` sets `chunkSizeWarningLimit: 5000`, so Vite stays silent about it until 5 MB. **`tsconfig.json` includes only `src/`** — `supabase/` is not typechecked here. |
+| `npm run test:unit` | The five credential-free vitest files (56 tests, ~1.2 s). Runs in CI. |
+| `npm run certify:offline` | The 6 of certify's 21 sections that need no credentials: `typecheck`, `edge-typecheck`, `design-drift`, `migration-append`, `migration-numbering`, `suite`. ~32 s. Prints `OFFLINE SUBSET GREEN — 6/21` and names the 15 sections that did **not** run. Runs in CI on every push. |
+| `npm run certify` | All 21 sections, including live probes against the database and the golden-path write loop. **Needs `SUPABASE_ACCESS_TOKEN` in `.env.local`** and takes ~3 min; only prints `CERTIFIED` when every section is green. |
 | `npm test` | Full vitest sweep. Needs `.env.test` **and** an access token — it fails without them by design, rather than skipping. |
 
 `certify` is the one green bar that means something. What each section asserts,
@@ -60,20 +60,20 @@ and which invariants are PROVEN vs merely believed, is
 
 | Path | What is in it |
 |---|---|
-| `src/` | The React/Vite app — 203 files, ~79k lines. `pages/` (67), `components/` (57), `lib/` (62 API/domain modules), `design/` (the design system primitives + tokens). |
-| | **Routing is not `<Route>` elements.** `src/lib/pageRoutes.ts` maps 67 `Page` keys to URLs, typed `Record<Page, string>` so an unmapped page is a compile error. `src/App.tsx` renders off the key. |
-| `supabase/functions/` | 60 Deno edge functions plus `_shared/` — ~32k lines all told. The big ones are `connector-hub` (one adapter per connected system) and `playbook-execute` (one branch per step type). |
-| `supabase/migrations/` | 672 tracked SQL files, applied in number order via the Management API — **not** `supabase db push`. Read [supabase/migrations/README.md](supabase/migrations/README.md) first: 001–010 are legacy and must not be re-applied. |
+| `src/` | The React/Vite app — 226 files, ~92k lines. `pages/` (72), `components/` (58), `lib/` (77 API/domain modules), `design/` (the design system primitives + tokens). |
+| | **Routing is not `<Route>` elements.** `src/lib/pageRoutes.ts` maps 62 `Page` keys to URLs, typed `Record<Page, string>` so an unmapped page is a compile error. `src/App.tsx` renders off the key. |
+| `supabase/functions/` | 66 Deno edge functions plus `_shared/` — ~40k lines all told. The big ones are `connector-hub` (one adapter per connected system) and `playbook-execute` (one branch per step type). |
+| `supabase/migrations/` | 857 tracked SQL files, applied in number order via the Management API — **not** `supabase db push`. Read [supabase/migrations/README.md](supabase/migrations/README.md) first: 001–010 are legacy and must not be re-applied. |
 | `supabase/baseline/` | Generated snapshots the gates ratchet against — the EXECUTE allowlist, the edge type-error ceiling, the schema census. |
-| `scripts/` | 22 `.mjs` operational scripts. The load-bearing ones: `certify.mjs`, `golden-path.mjs`, `audit-role-gates.mjs`, `audit-silent-refusals.mjs`, `deploy.mjs`, `db-query.mjs`. |
-| `tests/` | 10 vitest files. Three are offline; the rest need real credentials and hit the isolated dev project, never production. `tests/README.md` explains why there are no mocks. |
-| `docs/` | 142 files — see below. |
+| `scripts/` | 58 `.mjs` operational scripts. The load-bearing ones: `certify.mjs`, `golden-path.mjs`, `audit-role-gates.mjs`, `audit-silent-refusals.mjs`, `deploy.mjs`, `db-query.mjs`. |
+| `tests/` | 38 vitest files. Five run in CI credential-free (`test:unit`), and **28 of the 38 pass with no credentials at all** — measured 2026-08-22, so CI executes about 8% of what it could; the rest need real credentials and hit the isolated dev project, never production. `tests/README.md` explains why there are no mocks. |
+| `docs/` | 196 files — see below. |
 | `.github/workflows/ci.yml` | Typecheck, build, unit tests, `certify:offline`, prod-dependency audit; then tenant-isolation and ACL-invariant jobs. Every job either runs or fails — there is no skip. |
 
 ## Documentation
 
 **The numbering is chronological, not a hierarchy — do not start at 05.**
-`docs/` holds 43 numbered documents (05–47) written over five weeks. The
+`docs/` holds 70 numbered documents (05–72) written over six weeks. The
 lowest-numbered ones (05–09) were last touched 2026-07-01 and are the stalest
 things in the tree; the newest are the ones to trust.
 

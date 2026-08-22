@@ -184,7 +184,7 @@ const views = await q(`
    order by c.relname`);
 
 const rls = await q(`
-  select c.relname as tbl, c.relrowsecurity as enabled
+  select c.relname as tbl, c.relrowsecurity as enabled, c.relforcerowsecurity as forced
     from pg_class c join pg_namespace n on n.oid = c.relnamespace
    where n.nspname = 'public' and c.relkind = 'r' and c.relrowsecurity`);
 
@@ -427,7 +427,20 @@ if (customRoles.length) {
 o.push(`-- ── Row Level Security ──────────────────────────────────────────────────────`);
 o.push(`-- On a multi-tenant database RLS is not hardening applied later: a table`);
 o.push(`-- restored without it is a cross-tenant data leak on the first query.`);
-for (const r of rls) o.push(`ALTER TABLE public.${r.tbl} ENABLE ROW LEVEL SECURITY;`);
+o.push(`--`);
+o.push(`-- FORCE is emitted alongside ENABLE and is NOT decoration. Every table here`);
+o.push(`-- is owned by the postgres role, and a table owner is exempt from its own`);
+o.push(`-- RLS unless FORCE is set. All 791 SECURITY DEFINER routines run as that`);
+o.push(`-- owner, so a table restored with ENABLE but without FORCE still row-filters`);
+o.push(`-- direct PostgREST traffic and silently stops filtering every SECDEF path —`);
+o.push(`-- which is most of the product. This half was missing until 2026-08-22: the`);
+o.push(`-- snapshot read relrowsecurity only, so 27 FORCE'd tables (platform_config,`);
+o.push(`-- platform_invites, remote_access_write_log, auth_login_lockouts, ...) came`);
+o.push(`-- back weaker than production and both restore paths applied that file.`);
+for (const r of rls) {
+  o.push(`ALTER TABLE public.${r.tbl} ENABLE ROW LEVEL SECURITY;`);
+  if (r.forced) o.push(`ALTER TABLE public.${r.tbl} FORCE ROW LEVEL SECURITY;`);
+}
 o.push('');
 
 for (const t of ordered) {

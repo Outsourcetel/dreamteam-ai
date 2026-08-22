@@ -131,8 +131,13 @@ work here: migrations replay in filename order and `20260810…` sorts *before*
 `666…`, so every new migration would land in the middle of history. Renumbering
 is worse — `public.schema_migrations` keys on **filename**, so renaming an
 applied migration turns it into an orphaned ledger row plus a pending file.
-The 19 pre-existing duplicate numbers are therefore permanent; `certify` ›
-`migration-numbering` ratchets against a 20th.
+The **23** pre-existing duplicate numbers are therefore permanent; `certify` ›
+`migration-numbering` ratchets against a 24th. (Measured 2026-08-22:
+`ls supabase/migrations/*.sql | sed 's|.*/||;s/_.*//' | sort | uniq -d | wc -l`
+→ 23, matching `certify.mjs`'s `KNOWN_DUPLICATES` exactly. This paragraph said
+19 until then — the *code* was current, the working agreement was four behind,
+and the four it had not caught up with are the ones the tool was built for:
+`669, 715, 717, 754`.)
 
 ## Scope discipline
 

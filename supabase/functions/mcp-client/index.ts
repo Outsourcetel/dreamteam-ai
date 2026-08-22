@@ -256,7 +256,15 @@ serve(async (req) => {
     // SUPABASE_SERVICE_ROLE_KEY to the empty string and a request with NO
     // Authorization header authenticates as a service call, then takes tenant_id
     // straight from the request body — any tenant it cares to name.
-    const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearers+/i, '');
+    // ⚠ The `\s` here was a bare `s` until 2026-08-22, so the pattern matched the
+    // literal text "Bearers+" and stripped nothing. The prefix stayed on the token,
+    // auth.getUser() below was handed "Bearer eyJ..." and 401'd every time — this
+    // function had no working interactive entry point at all. It failed CLOSED, so
+    // nothing was exposed; it was simply dead for humans. All 54 other Bearer
+    // strippers in supabase/functions use /^Bearer\s+/i; this was the lone outlier.
+    // Repairing it does NOT reopen the ungoverned MCP write path: `call_tool` is
+    // refused unconditionally at its own guard below, which never consulted this.
+    const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
     const machineCaller =
       secretMatches(req.headers.get('x-dispatch-secret'), Deno.env.get('PLAYBOOK_DISPATCH_SECRET')) ||
       secretMatches(jwt, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'));
