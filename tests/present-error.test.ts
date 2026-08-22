@@ -103,3 +103,44 @@ describe('messages authored for a person survive', () => {
     expect(presentError(null, 'We could not save the trust dial.')).toBe('We could not save the trust dial.');
   });
 });
+
+describe('a network failure reads as a network failure', () => {
+  // ⚠ THIS CAUGHT A REGRESSION THE CODEMOD INTRODUCED, and the order matters:
+  // these assertions were written to FAIL first, then the helper was fixed.
+  //
+  // The sites converted here previously read
+  //     setErr(e instanceof Error ? e.message : 'Could not save changes.')
+  // and postgrest-js returns a PLAIN OBJECT (not an Error) for fetch failures —
+  // PostgrestBuilder.ts:443-450, the FetchError path, distinct from the
+  // `new PostgrestError(...)` path used for real Postgres errors. So the old
+  // ternary fell to the author's fallback and the user read
+  // "Could not save changes."
+  //
+  // Naively, presentError(e, fallback) then found a `message` with no code and
+  // no internal-looking words, and returned "TypeError: Failed to fetch" —
+  // strictly worse than what it replaced. A browser exception string is not an
+  // improvement on a sentence someone wrote.
+  it('14. does not show a raw fetch exception', () => {
+    const plain = { message: 'TypeError: Failed to fetch', details: '', hint: '', code: '' };
+    const out = presentError(plain, 'Could not save changes.');
+    expect(out).not.toContain('TypeError');
+    expect(out).not.toContain('Failed to fetch');
+    expect(out).toMatch(/connection|network|reach|try again/i);
+  });
+
+  it('15. treats a thrown TypeError from fetch the same way', () => {
+    const out = presentError(new TypeError('Failed to fetch'), 'Could not save changes.');
+    expect(out).not.toContain('TypeError');
+    expect(out).toMatch(/connection|network|reach|try again/i);
+  });
+
+  it('16. and an aborted request', () => {
+    const out = presentError(new DOMException('The operation was aborted.', 'AbortError'));
+    expect(out).toMatch(/too long|timed out|try again|connection|network/i);
+  });
+
+  it('17. but still shows a plain sentence our own code threw', () => {
+    // The network rule must not swallow authored copy that happens to be short.
+    expect(presentError(new Error('Pick a start date first.'))).toBe('Pick a start date first.');
+  });
+});

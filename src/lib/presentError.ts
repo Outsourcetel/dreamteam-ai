@@ -88,6 +88,25 @@ const GENERIC = 'Something went wrong and nothing was changed. Try again — if 
 /** Raw text that must never reach a customer even when no code is present. */
 const LOOKS_INTERNAL = /(relation|column|function|schema cache|constraint|violates|syntax error at|permission denied for (table|schema|function)|pg_|PGRST|SQLSTATE|duplicate key value|null value in column)/i;
 
+// ── The transport layer, which has no SQLSTATE ─────────────────────────────
+// postgrest-js returns a PLAIN OBJECT (not a PostgrestError, and so not an
+// Error) for fetch failures — PostgrestBuilder.ts:443-450 — with `code: ''`.
+// A thrown TypeError from fetch has no code either. Neither reaches the code
+// table above, and "TypeError: Failed to fetch" contains no internal-looking
+// word, so without this it falls through to step 5 and is shown verbatim.
+//
+// That is a REGRESSION THIS FILE INTRODUCED and tests 14-16 caught: the sites
+// converted to presentError previously read
+//     setErr(e instanceof Error ? e.message : 'Could not save changes.')
+// and the plain-object case fell to the author's fallback, so the user read a
+// sentence. Handing them a browser exception string instead is not an
+// improvement on the thing it replaced.
+const NETWORK = /(failed to fetch|networkerror|network request failed|load failed|fetcherror|err_(network|internet|connection)|connection (refused|reset|closed)|socket hang up|econnrefused|etimedout|enotfound)/i;
+const ABORTED = /(aborted|abortsignal|the operation was aborted|timeouterror|signal timed out)/i;
+
+const NETWORK_SENTENCE = 'We could not reach the service. Nothing was changed — check your connection and try again.';
+const ABORTED_SENTENCE = 'That took too long and was stopped before anything changed. Try again.';
+
 /**
  * Turn any caught value into a sentence fit for a customer's screen.
  *
@@ -121,17 +140,32 @@ export function presentError(e: unknown, fallback: string = GENERIC): string {
     }
   }
 
-  // 4. No code, but the text reads like our internals. Do not show it.
+  // 4. The transport failed. Checked BEFORE the internals filter and before the
+  //    plain-message path, because these carry no code and no internal-looking
+  //    word — they would otherwise be shown verbatim as a browser exception.
+  //    `name` is checked too: a DOMException from AbortSignal.timeout() has the
+  //    reason in its name rather than its message.
+  const name = str(r.name);
+  if (ABORTED.test(name) || ABORTED.test(message)) {
+    console.error(`[presentError] aborted: ${name}${message ? ` — ${message}` : ''}`);
+    return ABORTED_SENTENCE;
+  }
+  if (NETWORK.test(message) || NETWORK.test(name)) {
+    console.error(`[presentError] network: ${message || name}`);
+    return NETWORK_SENTENCE;
+  }
+
+  // 5. No code, but the text reads like our internals. Do not show it.
   if (message && LOOKS_INTERNAL.test(message)) {
     console.error(`[presentError] internal-looking message withheld: ${message}`);
     return fallback;
   }
 
-  // 5. A plain Error someone wrote for a person (thrown by our own client code,
+  // 6. A plain Error someone wrote for a person (thrown by our own client code,
   //    an EdgeFunctionError message, a validation string). Show it.
   if (message) return message;
 
-  // 6. Sometimes it is a bare string, or an OAuth-style body.
+  // 7. Sometimes it is a bare string, or an OAuth-style body.
   if (typeof e === 'string' && e.trim() && !LOOKS_INTERNAL.test(e)) return e.trim();
   const oauth = str(r.error_description) || str(r.error);
   if (oauth && !LOOKS_INTERNAL.test(oauth)) return oauth;
