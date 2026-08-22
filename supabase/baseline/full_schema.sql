@@ -7,7 +7,7 @@
 -- file is the schema half of the answer; data is NOT in here (see below).
 --
 -- Contents: 9 extensions · 0 enums · 306 tables ·
--- 1414 constraints · 423 indexes · 883 functions ·
+-- 1415 constraints · 423 indexes · 884 functions ·
 -- 296 triggers · 404 policies · 841 role grants ·
 -- explicit REVOKEs for the closed perimeter.
 --
@@ -34814,6 +34814,42 @@ BEGIN
   RETURN jsonb_build_object('ok', true);
 END; $function$;
 
+CREATE OR REPLACE FUNCTION public.set_tenant_branding_auto(p_auto_switch boolean, p_night_surface_key text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE v_tenant uuid;
+BEGIN
+  -- Preamble mirrored verbatim from the live set_tenant_branding prosrc.
+  v_tenant := public.auth_tenant_id();
+  IF v_tenant IS NULL OR NOT public.auth_has_tenant_role(ARRAY['tenant_owner','tenant_admin']) THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'not_permitted');
+  END IF;
+  -- Night surface is restricted to the two dark families — never the light
+  -- ones, which would defeat the point of a NIGHT look. Same error code
+  -- ('unknown_surface') the sibling function already uses for an out-of-set
+  -- key, so the one UI string that explains it applies to both RPCs.
+  IF p_night_surface_key IS NOT NULL AND p_night_surface_key NOT IN ('midnight','graphite') THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'unknown_surface');
+  END IF;
+  -- UPDATE, not upsert: a tenant_branding row only exists once a workspace has
+  -- saved SOME branding (set_tenant_branding's INSERT .. ON CONFLICT is the
+  -- only inserter, mig 247). The Save flow this RPC ships behind always calls
+  -- set_tenant_branding first in the same save() (src/design/BrandingCard.tsx),
+  -- which guarantees the row exists before this runs; calling this RPC first
+  -- against a tenant with no branding row yet is the one case that legitimately
+  -- needs a distinct error rather than silently creating a half-populated row.
+  UPDATE public.tenant_branding
+    SET auto_switch = p_auto_switch, night_surface_key = p_night_surface_key, updated_at = now()
+    WHERE tenant_id = v_tenant;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'not_found');
+  END IF;
+  RETURN jsonb_build_object('ok', true);
+END; $function$;
+
 CREATE OR REPLACE FUNCTION public.set_tenant_comms_settings(p_from_email text, p_from_name text)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -50593,6 +50629,9 @@ CREATE TABLE IF NOT EXISTS public.tenant_branding (
   "accent_hex" text,
   "surface_key" text DEFAULT 'midnight'::text NOT NULL,
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "auto_switch" boolean DEFAULT false NOT NULL,
+  "night_surface_key" text,
+  CONSTRAINT tenant_branding_night_surface_key_check CHECK (((night_surface_key IS NULL) OR (night_surface_key = ANY (ARRAY['midnight'::text, 'graphite'::text])))),
   CONSTRAINT tenant_branding_surface_key_check CHECK ((surface_key = ANY (ARRAY['midnight'::text, 'graphite'::text, 'daylight'::text, 'editorial'::text]))),
   CONSTRAINT tenant_branding_pkey PRIMARY KEY (tenant_id)
 );
@@ -56298,8 +56337,8 @@ ALTER TABLE public.tenant_cost_tracking ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_deletion_receipts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_deletion_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_feature_overrides ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.tenant_branding ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_pipeline_stages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tenant_branding ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tenant_usage_metrics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.widget_key_secrets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.trust_policies ENABLE ROW LEVEL SECURITY;
