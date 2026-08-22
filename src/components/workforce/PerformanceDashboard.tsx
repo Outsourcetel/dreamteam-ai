@@ -1,4 +1,3 @@
-import React from 'react';
 import { DEPerformanceSummary } from '../../lib/workforceApi';
 import { TrendingUp, DollarSign, MessageSquare, AlertCircle } from './icons';
 

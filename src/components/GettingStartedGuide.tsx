@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { Page } from '../types';
 import { supabase } from '../supabase';
 import ImportSiteModal from './ImportSiteModal';

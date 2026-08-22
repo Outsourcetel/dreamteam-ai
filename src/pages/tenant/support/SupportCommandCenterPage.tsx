@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import type { Page } from '../../../types';
 import { getSupportOverview, subscribeSupport } from '../../../lib/supportInboxApi';

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   loadOrgTree, createUnit, renameUnit, setUnitActive, addMember, setMemberRole, removeMember,
   listAssignablePeople, listAssignmentRules, saveRule, setRuleActive, deleteRule,

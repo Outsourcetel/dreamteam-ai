@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useIsTenantAdmin } from '../lib/useRoleGate';
 import { StatTile } from '../design/primitives';
 import { getWorkforceEconomics, setWorkforceFteCost, type WorkforceEconomics } from '../lib/employeeRecordApi';

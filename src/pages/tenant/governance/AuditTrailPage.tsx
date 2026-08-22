@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import type { CompanyId } from '../../../data/companies'
 import type { Page } from '../../../types'

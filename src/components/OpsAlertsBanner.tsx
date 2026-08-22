@@ -22,7 +22,7 @@
 // present is furniture, and furniture gets ignored — which is how the original
 // alert went unread.
 // ============================================================
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '../supabase';
 import { Button } from '../design/primitives';
 

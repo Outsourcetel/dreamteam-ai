@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import Modal from './Modal';
 
 // Shared confirm-before-destroy dialog — added during a pre-launch readiness

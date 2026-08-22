@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Toast } from '../../../design/primitives';
 import type { Page } from '../../../types';
 import { listTriageRules, upsertTriageRule, deleteTriageRule } from '../../../lib/supportInboxApi';

@@ -7,7 +7,7 @@ import DeleteWorkspacePanel from '../../components/DeleteWorkspacePanel';
 import DomainClaimPanel from '../../components/sso/DomainClaimPanel';
 import SsoPolicyPanel from '../../components/sso/SsoPolicyPanel';
 import ScimTokensPanel from '../../components/sso/ScimTokensPanel';
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { AuthUser, Tenant, Page } from '../../types';
 import { updateTenant, savePlatformConfig, hasPlatformConfigKey, fetchTenants, fetchAllTenantsUsage, updateTenantBudget,
   getTenantLlmKeyStatus, saveTenantLlmKey, clearTenantLlmKey, setTenantLlmKeyMode, type LlmKeyMode } from '../../lib/api';

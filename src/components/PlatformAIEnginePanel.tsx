@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { savePlatformConfig } from '../lib/api';
 import { invokeEdge } from '../lib/invokeEdge';
 

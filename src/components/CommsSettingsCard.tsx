@@ -1,6 +1,6 @@
 import { DEFAULT_ACCENT } from '../design/branding';
 // approved, it sends from this address (via Resend). Owner/admin only.
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { getCommsSettings, setCommsSettings } from '../lib/commsApi';
 
 export default function CommsSettingsCard({ accentColor = DEFAULT_ACCENT }: { accentColor?: string }) {

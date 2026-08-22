@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { PageHeader, th, td } from '../../../components/ui';
 import type { Page } from '../../../types';
 import { useAuth } from '../../../context/AuthContext';

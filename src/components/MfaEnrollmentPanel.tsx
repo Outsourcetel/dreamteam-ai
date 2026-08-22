@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabase';
 
 // Real two-factor enrollment, wired to Supabase's own MFA system

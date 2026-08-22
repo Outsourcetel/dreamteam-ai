@@ -9,7 +9,7 @@
 //     countdown, so nothing happens that cannot be walked back;
 //   • anything it is NOT allowed to do comes back as a visible proposal
 //     saying a person must approve it, instead of silently failing.
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   sendSessionMessage, findLatestSession, loadSessionMessages, undoChange, hoursRemaining,
   type SubjectKind, type AppliedChange, type ProposedChange,

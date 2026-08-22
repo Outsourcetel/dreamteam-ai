@@ -42,7 +42,10 @@
     "audit:toolchain": "npm audit --audit-level=high",
     "migrate:next": "node scripts/migration-next.mjs",
     "audit:anon": "node scripts/anon-probe.mjs",
-    "audit:replayable": "node scripts/audit-migration-replayability.mjs"
+    "audit:replayable": "node scripts/audit-migration-replayability.mjs",
+    "audit:retirement": "node scripts/retirement-candidates.mjs",
+    "audit:cron-liveness": "node scripts/cron-detector-liveness.mjs",
+    "config:runtime": "node scripts/set-runtime-config.mjs"
   },
   "dependencies": {
     "@fontsource-variable/instrument-sans": "^5.3.0",

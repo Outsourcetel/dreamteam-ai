@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { PanelCard, Field, INPUT_CLS, Button, EmptyState } from '../../../../design/primitives';
 import { listActionDefinitions } from '../../../../lib/connectorApi';
 import type { ActionDefinition } from '../../../../lib/connectorApi';

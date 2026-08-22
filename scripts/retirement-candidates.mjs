@@ -107,7 +107,6 @@ const SURFACE = {
   'scripts': 'caller',
   'public': 'caller',
   '.github': 'caller',
-  'apply-migration.js': 'caller',
   'qa-app.js': 'caller',
   'qa-audit.cjs': 'caller',
   'qa-forms.cjs': 'caller',
@@ -115,6 +114,12 @@ const SURFACE = {
   'verify-migration.sql': 'caller',
   'vite.config.ts': 'caller',
   'vitest.config.ts': 'caller',
+  // Added 2026-08-22 — and this entry is the argument for wiring this
+  // checker into certify. vitest.offline.config.ts landed earlier the same
+  // day and UNCLASSIFIED_TOPLEVEL_IS_FATAL fired on it correctly, on the
+  // FIRST run anyone had ever given this tool. It caught a real omission in
+  // a change made minutes earlier; it just had no bell attached.
+  'vitest.offline.config.ts': 'caller',
   'postcss.config.js': 'caller',
   'tailwind.config.js': 'caller',
   'index.html': 'caller',

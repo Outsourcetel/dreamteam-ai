@@ -21,7 +21,7 @@
  * policies and no client grants, and the only two functions a browser can call
  * are SELECTs.
  */
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Modal } from '../design/primitives'
 import {
   listPlatformShelf, getPlatformShelfDoc, getPlatformShelfStatus,

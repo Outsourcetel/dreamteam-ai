@@ -1,5 +1,4 @@
 import { DEFAULT_ACCENT } from '../design/branding';
-import React from 'react';
 import type { Page } from '../types';
 
 export const PORTAL_TABS: { id: Page; label: string }[] = [

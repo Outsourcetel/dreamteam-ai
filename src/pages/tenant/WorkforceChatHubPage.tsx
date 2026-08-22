@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { useIsTenantManager } from '../../lib/useRoleGate';
 import { PerformanceDashboard } from '../../components/workforce/PerformanceDashboard';

@@ -1,5 +1,5 @@
 import { useIsTenantAdmin } from '../../lib/useRoleGate';
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { WorkforceAction, approveWorkforceAction } from '../../lib/workforceApi';
 import { CheckCircle, XCircle, Loader } from './icons';
 import { presentError } from '../../lib/presentError';

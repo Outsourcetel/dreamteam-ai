@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import AISessionPanel from './AISessionPanel';
 import { useAuth } from '../context/AuthContext';
 import { useCanOpenPage } from '../lib/useRoleGate';

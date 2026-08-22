@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { AUTONOMY_ACTION_META } from '../lib/autonomyApi';
 import type { AutonomyActionType } from '../lib/autonomyApi';
 import { listTrustPolicies, listTrustHistory, trustLevelName } from '../lib/trustApi';

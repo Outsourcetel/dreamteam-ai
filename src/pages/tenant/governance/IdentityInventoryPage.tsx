@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { PageHeader } from '../../../components/ui';
 import { CATEGORY_SHORT } from '../../../lib/categoryContracts';
 import { fetchIdentityInventory, IdentitySubject } from '../../../lib/identityInventoryApi';

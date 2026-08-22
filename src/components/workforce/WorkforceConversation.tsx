@@ -1,5 +1,3 @@
-import React from 'react';
-
 interface WorkforceConversationProps {
   role: 'user' | 'assistant';
   content: string;

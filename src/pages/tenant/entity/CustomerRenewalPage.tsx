@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Modal, Toast } from '../../../design/primitives';
 import { useAuth } from '../../../context/AuthContext';
 import type { Page } from '../../../types';

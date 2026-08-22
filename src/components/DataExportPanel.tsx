@@ -20,7 +20,7 @@
  *
  * Not mounted anywhere yet — routing is the orchestrator's call after review.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Banner, Button, Chip, EmptyState, PanelCard, TableScroll, TD, TH,
 } from '../design/primitives';

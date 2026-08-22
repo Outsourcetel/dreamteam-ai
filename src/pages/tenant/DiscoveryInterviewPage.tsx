@@ -58,7 +58,7 @@
 // could not ground anything", "your AI engine was not available", and "you
 // have nothing to review" are three different facts and this screen never
 // renders them the same.
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   PageHeaderV2, PanelCard, Banner, Button, Chip, Modal, EmptyState, INPUT_CLS,
 } from '../../design/primitives';

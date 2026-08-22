@@ -1,4 +1,3 @@
-import React from 'react';
 import { StatTile, type Tone } from '../design/primitives';
 
 // LEGACY ADAPTER — old gradient StatCard call sites now render the Design

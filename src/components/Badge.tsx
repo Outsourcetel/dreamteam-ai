@@ -1,5 +1,3 @@
-import React from 'react';
-
 const Badge = ({
   label,
   color = 'slate',

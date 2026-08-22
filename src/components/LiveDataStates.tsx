@@ -1,5 +1,3 @@
-import React from 'react';
-
 // ============================================================
 // Shared UI states for LIVE-mode Customer pages: loading
 // skeleton, "tables not provisioned" notice, and empty state.

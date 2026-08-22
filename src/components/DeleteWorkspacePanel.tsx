@@ -27,7 +27,7 @@
  *
  * Not mounted anywhere yet — routing is the orchestrator's call after review.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Banner, Button, Chip, Modal, PanelCard } from '../design/primitives';
 import { EXPORT_PANEL_ANCHOR_ID } from './DataExportPanel';
 import {

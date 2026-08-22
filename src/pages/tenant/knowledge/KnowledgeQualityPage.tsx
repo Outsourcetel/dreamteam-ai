@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Toast } from '../../../design/primitives';
 import { PageHeader, th, td } from '../../../components/ui';
 import { ConfidenceBar } from './KnowledgeLibraryPage';

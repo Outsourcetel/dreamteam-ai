@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Page } from '../../../types';
 import { InHubContext } from '../../../components/ui';
 import KnowledgeLibraryPage from './KnowledgeLibraryPage';

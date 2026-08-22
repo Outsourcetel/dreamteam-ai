@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { getWorkforceBoard, type WorkforceBoardRow } from '../lib/missionApi';
 import { useOpenEmployeeFile } from '../lib/employeeFileRoute';
 import TeamMissionPanel from './TeamMissionPanel';

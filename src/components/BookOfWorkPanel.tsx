@@ -5,7 +5,7 @@
 // accounts whose health drops", "review the book every week". Each watcher the
 // 5-minute engine matches opens a case the employee then works.
 import { useIsTenantAdmin } from '../lib/useRoleGate';
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   listWatchers, createWatcher, updateWatcher, setWatcherActive, deleteWatcher, describeWatcher,
   WATCHER_KIND_META, type WorkWatcher, type WatcherKind,

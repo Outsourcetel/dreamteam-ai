@@ -9,7 +9,7 @@
 // the AI assistant (next) may only PROPOSE changes for approval, never
 // flip one off. Every add/edit/toggle is audited by guardrailApi.
 import { useIsTenantAdmin } from '../lib/useRoleGate';
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   listGuardrailRules, addGuardrailRule, updateGuardrailRule,
   type GuardrailRule, type GuardrailRuleType, type GuardrailScope,

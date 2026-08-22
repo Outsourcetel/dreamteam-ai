@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { checkMyAccountStatus, PLATFORM_INVITE_ROLE_LABELS } from '../../lib/api';
 import type { PlatformInviteRole } from '../../lib/api';

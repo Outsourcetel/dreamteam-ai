@@ -1,4 +1,3 @@
-import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import EmployeeProfileDrawer from '../../components/EmployeeProfileDrawer';
 import { Banner } from '../../design/primitives';

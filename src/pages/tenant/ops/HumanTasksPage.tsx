@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { useIsTenantManager } from '../../../lib/useRoleGate';
 import { PageHeader } from '../../../components/ui';

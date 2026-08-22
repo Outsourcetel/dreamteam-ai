@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Page } from '../types';
 import type { DigitalEmployee } from '../lib/digitalEmployeesApi';
 import { getOperatingModel, type OperatingModel } from '../lib/missionApi';

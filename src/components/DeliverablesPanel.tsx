@@ -1,7 +1,7 @@
 // Deliverables — documents a DE produced for human review (EXEC 0.4).
 // A renewal account review, an FP&A variance summary, a QBR prep pack: the
 // "prepare it for a person" half of the job. Read-only; expand to read.
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { listDeliverables, type Deliverable } from '../lib/commsApi';
 
 export default function DeliverablesPanel({ deId }: { deId: string }) {

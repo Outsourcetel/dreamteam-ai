@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useIsTenantAdmin } from '../../../lib/useRoleGate';
 import { PageHeader } from '../../../components/ui';
 import { listConnectors, Connector } from '../../../lib/connectorApi';

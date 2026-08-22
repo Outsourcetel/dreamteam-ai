@@ -1,4 +1,3 @@
-import React from 'react';
 import { Banner } from '../../design/primitives';
 
 // Starter draft, not a finished legal document — see the banner below.

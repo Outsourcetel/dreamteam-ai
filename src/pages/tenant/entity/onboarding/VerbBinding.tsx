@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { SELECT_CLS, INPUT_CLS, Field, EmptyState } from '../../../../design/primitives';
 import { listActionDefinitions, listConnectors } from '../../../../lib/connectorApi';
 import type { ActionDefinition, Connector } from '../../../../lib/connectorApi';

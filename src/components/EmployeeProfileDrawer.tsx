@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   getEmployeeRecord, updateEmployeeProfile, updateEmployeePrivate, setEmployeeCompensation,
   EMPLOYMENT_TYPES, EMPLOYMENT_STATUSES, PAY_FREQUENCIES,

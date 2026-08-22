@@ -4,7 +4,6 @@
 //
 // This is where a new schema gets checked at 1024/1280/1536 before it reaches
 // a real screen. Add a section here when you add a schema.
-import React from 'react';
 import {
   EmployeeCard, DecisionCard, FilterBar, SetupChecklist,
   Button, Chip, PanelCard, INPUT_CLS, SELECT_CLS, StatTile, DetailTile, TableScroll, TH, TD, EntityRow,

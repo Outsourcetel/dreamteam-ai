@@ -58,7 +58,7 @@
 //   - the capability-gap message renders BELOW the last batch as a
 //     Banner tone="info" with no action control — never the two-column
 //     layout spec §5 originally proposed, which §11b itself corrects.
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   PageHeaderV2, PanelCard, Banner, EmptyState, Button, Chip, DecisionCard, Drawer,
   Modal, INPUT_CLS,

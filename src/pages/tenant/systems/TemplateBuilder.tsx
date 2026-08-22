@@ -1,5 +1,5 @@
 import { useIsTenantAdmin } from '../../../lib/useRoleGate';
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Modal } from '../../../design/primitives';
 import {
   AdapterDefinition, AdapterOpBinding, AdapterTemplate, AdapterAuthType,

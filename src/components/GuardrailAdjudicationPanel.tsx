@@ -13,7 +13,7 @@
  * update: guardrail_rule_adjudicable revokes INSERT/UPDATE/DELETE from
  * authenticated precisely so permission cannot be granted without its audit row.
  */
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   listAdjudicableRules, setRuleAdjudicable, listAdjudications,
   type GuardrailRule, type AdjudicableGrant, type Adjudication,

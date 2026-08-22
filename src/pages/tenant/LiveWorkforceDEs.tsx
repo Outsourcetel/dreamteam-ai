@@ -9,7 +9,7 @@
 
 import { useIsTenantAdmin } from '../../lib/useRoleGate';
 import { useConfirm } from '../../components/useDialog';
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabase';
 import type { Page } from '../../types';

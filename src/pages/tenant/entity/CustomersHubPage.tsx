@@ -1,4 +1,3 @@
-import React from 'react';
 import type { Page } from '../../../types';
 import { InHubContext } from '../../../components/ui';
 import { TabBar, Banner, Button } from '../../../design/primitives';

@@ -6,7 +6,7 @@
 // appears just below, in the live guardrails panel, for a person to approve or
 // dismiss. This panel drives the conversation; onProposed() tells the host to
 // reload the pending list.
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   sendGovernanceMessage, findLatestGovernanceSession,
 } from '../lib/governanceAiApi';

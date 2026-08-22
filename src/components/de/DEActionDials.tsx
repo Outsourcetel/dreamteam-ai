@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { deriveDeAutonomyDials, setDeActionDial } from '../../lib/autonomyApi';
 import type { DerivedDial } from '../../lib/autonomyApi';
 import { listDefinitions } from '../../lib/playbookBuilderApi';

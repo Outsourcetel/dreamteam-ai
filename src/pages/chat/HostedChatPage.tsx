@@ -1,4 +1,3 @@
-import React from 'react';
 import ChatCore from '../../components/chat/ChatCore';
 
 // Public, unauthenticated hosted support portal. A tenant shares a URL

@@ -1,5 +1,5 @@
 import { useIsTenantAdmin } from '../../../lib/useRoleGate';
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Modal, StatTile, Button, INPUT_CLS } from '../../../design/primitives'
 import type { Tone } from '../../../design/primitives'
 import { useAuth } from '../../../context/AuthContext'

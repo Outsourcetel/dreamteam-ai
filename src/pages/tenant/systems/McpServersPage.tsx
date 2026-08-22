@@ -1,6 +1,6 @@
 import { useIsTenantAdmin } from '../../../lib/useRoleGate';
 import { useConfirm } from '../../../components/useDialog';
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { Page } from '../../../types';
 import {
   listMcpServers, syncMcpServerTools, previewMcpTools, listMcpAllowedHosts,

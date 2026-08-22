@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { Page } from '../types';
 import { useVocabulary } from '../lib/vocabulary';
 import type { Vocabulary } from '../lib/vocabulary';

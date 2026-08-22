@@ -34,7 +34,7 @@
  * An unassigned DE is a governance gap, not a neutral default, so the empty
  * state says so plainly rather than showing a tidy "—".
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useIsTenantManager } from '../../lib/useRoleGate';
 import { supabase } from '../../supabase';
 import { useAuth } from '../../context/AuthContext';

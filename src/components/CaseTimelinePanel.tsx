@@ -4,7 +4,7 @@
 // each case between steps — waiting for a date or a reply — and resumes when the
 // continuation is due. This shows what it's parked on, so a human can see the
 // employee is mid-motion (not idle) and step in if needed.
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   listPendingContinuations, cancelContinuation, whenLabel, type CaseContinuation,
 } from '../lib/caseTimelineApi';

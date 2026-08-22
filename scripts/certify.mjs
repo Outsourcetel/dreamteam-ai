@@ -1643,6 +1643,23 @@ const sections = [
     shell('golden-path', 'node', ['scripts/golden-path.mjs']),
     shell('role-gates', 'npm', ['run', '-s', 'audit:role-gates']),
     shell('silent-refusals', 'npm', ['run', '-s', 'audit:silent-refusals']),
+    // ── Two gates that existed and were wired to NOTHING until 2026-08-22 ────
+    // Measured that day: neither appeared in package.json, in this file, in
+    // .github/, or in any sibling script. `retirement-candidates.mjs` is 795
+    // lines with a --selftest that inverts every pin and an
+    // UNCLASSIFIED_TOPLEVEL_IS_FATAL rule — the most carefully built checker in
+    // the repository, and nobody had ever run it.
+    //
+    // The first run proved the point immediately: it REFUSED to start, because
+    // vitest.offline.config.ts had landed hours earlier and was not in its
+    // SURFACE map. It caught a real omission in a change made minutes before —
+    // it simply had no bell attached. That is the whole argument for this line.
+    //
+    // Both need credentials, so they belong here rather than in the offline
+    // subset. cron-detector-liveness says so honestly when it cannot connect
+    // ("A check that could not run has not passed"), which is the right shape.
+    shell('retirement-candidates', 'node', ['scripts/retirement-candidates.mjs']),
+    shell('cron-detector-liveness', 'node', ['scripts/cron-detector-liveness.mjs']),
     // mig 713's anti-drift ratchet. The gate on playbook_versions is a SQL
     // TWIN of playbook-execute's validateSteps, and this repo already
     // ratchets browser/edge twins because a second copy of a contract rots

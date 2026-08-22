@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Modal, Button, Chip, Banner } from '../../../design/primitives';
 import { supabase } from '../../../supabase';
 import AISessionPanel from '../../../components/AISessionPanel';

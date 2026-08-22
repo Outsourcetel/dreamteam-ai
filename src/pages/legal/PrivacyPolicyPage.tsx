@@ -1,4 +1,3 @@
-import React from 'react';
 import { Banner } from '../../design/primitives';
 // Section 4 is GENERATED, not written. See src/lib/subprocessors.ts for why:
 // a provider joins the model failover chain the moment its key resolves, so a

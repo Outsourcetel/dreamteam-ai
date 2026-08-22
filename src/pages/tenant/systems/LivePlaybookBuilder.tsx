@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useIsTenantAdmin, useIsTenantManager } from '../../../lib/useRoleGate';
 // Straight from the design system now, not via components/ui — that shim only
 // ever re-exported PageHeaderV2 and TH under older names, and the last table
