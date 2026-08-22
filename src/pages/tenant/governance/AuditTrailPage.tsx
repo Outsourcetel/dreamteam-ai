@@ -9,6 +9,7 @@ import type { AuditEvent as LiveAuditEvent, AuditCategory, ChainVerification } f
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates'
 import { supabase } from '../../../supabase'
 import Modal from '../../../components/Modal'
+import { csvRow } from '../../../lib/csv'
 
 // ═══════════════════════════════════════════════════════════════
 // GOVERNANCE — Audit Trail (gov_audit)
@@ -347,13 +348,18 @@ function LiveAuditTrail({ setPage }: { setPage?: (p: Page) => void }) {
   const positionById = new Map(events.map((e, i) => [e.id, events.length - i]))
   const rangeLabel = RANGE_OPTIONS.find(r => r.days === days)?.label ?? 'window'
 
+  // ⚠ Every cell goes through csvRow. This used to quote ONE column (`action`)
+  // by hand and pass `actor`, `actor_type`, `category` and `hash` through raw —
+  // so a comma in an actor name broke the reader's columns, and a leading `=`
+  // in any of them ran as a formula when the auditor opened the file. See
+  // src/lib/csv.ts for why this export in particular.
   const exportLiveCsv = () => {
     const headers = ['Timestamp', 'Actor', 'Actor Type', 'Category', 'Action', 'Chain #', 'Hash']
     const rows = filtered.map(e => [
       new Date(e.created_at).toISOString(), e.actor, e.actor_type, e.category,
-      `"${e.action.replace(/"/g, '""')}"`, String(positionById.get(e.id) ?? ''), e.hash,
+      e.action, String(positionById.get(e.id) ?? ''), e.hash,
     ])
-    const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
+    const csv = [headers, ...rows].map(csvRow).join('\r\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')

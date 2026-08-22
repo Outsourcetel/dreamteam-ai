@@ -7,6 +7,7 @@
 // column — de_conversations has none (verified against the live schema,
 // 2026-08-10). The spec chose last_message_at deliberately: a reopened
 // conversation counts where it actually closed.
+import { csvRow } from './csv';
 import type { SupportConversation } from './supportInboxApi';
 
 export type DatePresetKey = 'today' | '7d' | '30d' | '90d' | 'year' | 'custom';
@@ -136,7 +137,10 @@ export function formatDuration(ms: number | null): string {
   return `${Math.floor(h / 24)}d ${h % 24}h`;
 }
 
-const csvCell = (s: string): string => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+// ⚠ WAS a local `csvCell` that quoted correctly (RFC 4180) and did NOTHING
+// about formula injection — and `end_user_name` and `subject` are text the end
+// user typed. It now shares src/lib/csv.ts with the audit-trail export, so
+// there is one answer to "is our CSV safe to open" instead of two.
 
 /** The table, as a file. Columns mirror the on-screen table exactly —
  *  a CSV that disagrees with the screen it came from is a support ticket. */
@@ -149,14 +153,14 @@ export function reportToCsv(
     const de = names.deName(c.de_id);
     const user = names.userName(c.owner_user_id);
     const handled = de && user ? `${de} → ${user}` : de || user || '—';
-    return [
-      csvCell(c.end_user_name ?? c.account_external_ref ?? '—'),
-      csvCell(c.subject ?? c.handoff_summary ?? '—'),
-      csvCell(handled),
-      csvCell(c.category ?? '—'),
-      csvCell(new Date(closeTimeOf(c)).toISOString()),
+    return csvRow([
+      c.end_user_name ?? c.account_external_ref ?? '—',
+      c.subject ?? c.handoff_summary ?? '—',
+      handled,
+      c.category ?? '—',
+      new Date(closeTimeOf(c)).toISOString(),
       c.csat_score != null ? `${c.csat_score} ★` : 'not rated',
-    ].join(',');
+    ]);
   });
   return [header, ...lines].join('\r\n');
 }
