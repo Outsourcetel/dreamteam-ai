@@ -2,6 +2,7 @@ import { useIsTenantAdmin } from '../../lib/useRoleGate';
 import React, { useState } from 'react';
 import { WorkforceAction, approveWorkforceAction } from '../../lib/workforceApi';
 import { CheckCircle, XCircle, Loader } from './icons';
+import { presentError } from '../../lib/presentError';
 
 interface DraftApprovalCardProps {
   action: WorkforceAction;
@@ -29,7 +30,7 @@ export function DraftApprovalCard({ action }: DraftApprovalCardProps) {
         setError(result.error || 'Failed to approve');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error approving');
+      setError(presentError(err, 'Error approving'));
     } finally {
       setIsApproving(false);
     }

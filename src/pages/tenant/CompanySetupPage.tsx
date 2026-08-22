@@ -11,6 +11,7 @@ import { setPipelineStages } from '../../lib/pipelineApi';
 import { listEntityFields, addEntityField } from '../../lib/customerApi';
 import BrandingCard from '../../design/BrandingCard';
 import BrandIdentityCard from '../../design/BrandIdentityCard';
+import { presentError } from '../../lib/presentError';
 
 // ============================================================
 // Company Setup — the REAL wizard (Wave 1.1).
@@ -133,7 +134,7 @@ export default function CompanySetupPage({ setPage }: { setPage: (p: Page) => vo
       });
       setDone({ des: created, rules: rulesMade });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Setup failed — nothing further was created.');
+      setError(presentError(e, 'Setup failed — nothing further was created.'));
     }
     setBusy(false);
   };

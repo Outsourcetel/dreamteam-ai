@@ -5,6 +5,7 @@ import {
   runOnboardingAssist, approveProposal,
   type ArchitectProposal, type OnboardingAssistResult,
 } from '../../lib/onboardingArchitectApi';
+import { presentError } from '../../lib/presentError';
 
 // Icon + friendly noun for each builder action.
 function proposalMeta(label: string): { icon: string; kind: string } {
@@ -33,7 +34,7 @@ function ProposalCard({ p, onApproved }: { p: ArchitectProposal; onApproved: () 
       setState('approved');
       onApproved();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not create this.'); setState('error');
+      setErr(presentError(e, 'Could not create this.')); setState('error');
     }
   };
 
@@ -101,7 +102,7 @@ export default function OnboardingArchitectPage({ setPage }: { setPage?: (p: Pag
       if (r.error) setFatal(r.detail || r.error);
       else setResult(r);
     } catch (e) {
-      setFatal(e instanceof Error ? e.message : 'Something went wrong. Please try again.');
+      setFatal(presentError(e, 'Something went wrong. Please try again.'));
     } finally {
       setBusy(false);
     }

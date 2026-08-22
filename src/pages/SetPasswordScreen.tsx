@@ -33,6 +33,7 @@
  */
 import React, { useState } from 'react';
 import { supabase } from '../supabase';
+import { presentError } from '../lib/presentError';
 
 /**
  * Captured at module load, before Supabase consumes the hash or the router
@@ -76,7 +77,7 @@ export default function SetPasswordScreen({ onDone }: { onDone: () => void }) {
     setBusy(true); setError(null);
     const { error: err } = await supabase.auth.updateUser({ password: pw });
     setBusy(false);
-    if (err) { setError(err.message); return; }
+    if (err) { setError(presentError(err)); return; }
     markPasswordSet();
     onDone();
   };

@@ -10,6 +10,7 @@ import type { McpServer, McpAllowedHost, McpTool, McpToolPreview } from '../../.
 import { connectProvider, deleteConnector, PROVIDERS } from '../../../lib/connectorApi';
 import { LiveLoadingSkeleton, LiveErrorNotice } from '../../../components/LiveDataStates';
 import { Button, Chip, EmptyState, PanelCard, StatTile, Banner, Field, INPUT_CLS, TableScroll, TH, TD } from '../../../design/primitives';
+import { presentError } from '../../../lib/presentError';
 
 // ============================================================
 // MCP servers — the home this capability never had.
@@ -152,7 +153,7 @@ function ServerCard({ s, onChanged }: { s: McpServer; onChanged: () => void }) {
       if (!r.ok || !r.tools) setErr(r.error || r.detail || 'The server did not answer.');
       else { setPreview(r.tools); setOpen(false); }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not reach the server.');
+      setErr(presentError(e, 'Could not reach the server.'));
     } finally { setBusy(false); }
   };
 
@@ -168,7 +169,7 @@ function ServerCard({ s, onChanged }: { s: McpServer; onChanged: () => void }) {
         setPreview(null); setOpen(true); onChanged();
       }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not register the tools.');
+      setErr(presentError(e, 'Could not register the tools.'));
     } finally { setBusy(false); }
   };
 
@@ -182,7 +183,7 @@ function ServerCard({ s, onChanged }: { s: McpServer; onChanged: () => void }) {
     })) return;
     setBusy(true);
     try { await deleteConnector(s.connector.id); onChanged(); }
-    catch (e) { setErr(e instanceof Error ? e.message : 'Could not disconnect.'); }
+    catch (e) { setErr(presentError(e, 'Could not disconnect.')); }
     finally { setBusy(false); }
   };
 
@@ -266,7 +267,7 @@ function ConnectForm({ onDone }: { onDone: () => void }) {
       setName(''); setUrl(''); setToken('');
       onDone();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not connect.');
+      setErr(presentError(e, 'Could not connect.'));
     } finally { setBusy(false); }
   };
 
@@ -318,7 +319,7 @@ function Allowlist({ hosts, onChanged, setPage }: {
     })) return;
     setBusy(true); setErr(null);
     try { await addMcpAllowedHost(clean, note); setHost(''); setNote(''); onChanged(); }
-    catch (e) { setErr(e instanceof Error ? e.message : 'Could not add the host.'); }
+    catch (e) { setErr(presentError(e, 'Could not add the host.')); }
     finally { setBusy(false); }
   };
 
@@ -333,7 +334,7 @@ function Allowlist({ hosts, onChanged, setPage }: {
     })) return;
     setBusy(true);
     try { await removeMcpAllowedHost(h.id); onChanged(); }
-    catch (e) { setErr(e instanceof Error ? e.message : 'Could not remove the host.'); }
+    catch (e) { setErr(presentError(e, 'Could not remove the host.')); }
     finally { setBusy(false); }
   };
 
@@ -401,7 +402,7 @@ const McpServersPage = ({ setPage, embedded }: { setPage: (p: Page) => void; emb
       const [s, h] = await Promise.all([listMcpServers(), listMcpAllowedHosts()]);
       setServers(s); setHosts(h);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load MCP servers.');
+      setError(presentError(e, 'Could not load MCP servers.'));
     } finally { setLoading(false); }
   }, []);
 

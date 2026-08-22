@@ -6,6 +6,14 @@ import { execSync } from 'node:child_process';
 const sh = (cmd) => { try { return execSync(cmd, { encoding: 'utf8', shell: 'bash' }).trim(); } catch { return '0'; } };
 // src/design/ IS the system — its canonical definitions are exempt from drift.
 const G = `src/ --include='*.tsx' --exclude-dir=design`;
+// ── A SECOND GLOB, for one metric ──────────────────────────────────────────
+// Every metric above this line is about markup and correctly scans .tsx only.
+// `raw error text` is about what a CAUGHT ERROR becomes on screen, and half of
+// those live in src/lib/*.ts — 77 modules this file has never looked at. Rather
+// than widen G (which would move nine pinned numbers at once, in a commit that
+// is not about them), the one metric that needs .ts gets its own glob.
+const G_ALL = `src/ --include='*.tsx' --include='*.ts' --exclude-dir=design`;
+const countAll = (pat) => Number(sh(`grep -rhE "${pat}" ${G_ALL} ${NO_COMMENTS} | wc -l`));
 // Defined below NO_COMMENTS (hoisting would read as if the order mattered).
 let uniq;
 // ⚠ COMMENTS ARE NOT CODE. `hand-rolled dialogs` counts the string
@@ -103,6 +111,24 @@ const BASELINE = {
   'card padding variants': 9, 'local StatCard-likes (files)': 6,
   'hand-rolled dialogs': 0, 'hand-rolled toasts': 0,
   'inline style objects': 42, 'raw hex colors': 18,
+  // ── raw error text, pinned 2026-08-22 at its measured value ─────────────
+  // `setSomething(e.message)` straight out of a catch. When the error came from
+  // .rpc() or .from() it is a PostgrestError and `.message` is raw Postgres —
+  // `column "de_id" of relation "human_tasks" does not exist` — reaching a
+  // customer's screen verbatim, naming our tables and telling them nothing.
+  //
+  // 125 sites when first measured with a looser grep; 61 converted to
+  // presentError() the same day. This metric's own (stricter, ERE) count of what
+  // remains is 62 — and that number came from THIS GATE REFUSING an unpinned
+  // improvement, which is the behaviour working rather than a nuisance.
+  // Pinned rather than floored at 0 because the rest need reading
+  // one at a time: some are already fine (a plain Error our own code threw),
+  // and a few carry a GOVERNED REFUSAL that must reach the user verbatim —
+  // rewriting one of those into "something went wrong" would be the exact
+  // defect CLAUDE.md records this repo has already paid for. A blanket codemod
+  // is how that gets done by accident, so the remainder is a worklist, not a
+  // sweep.  `node scripts/design-drift.mjs --files` lists them.
+  'raw error text': 62,
 };
 const NOW = {
   'bg-slate variants': uniq('bg-slate-[0-9/]*'),
@@ -134,6 +160,7 @@ const NOW = {
   'hand-rolled dialogs': count('fixed inset-0'),
   'hand-rolled toasts': count('fixed bottom-6 right-6'),
   'inline style objects': count('style={{'),
+  'raw error text': countAll('\\bset[A-Za-z_]*\\(.*\\b(e|err|error|ex)\\b\\??\\.message'),
   'raw hex colors': uniq('#[0-9a-fA-F]{6}'),
 };
 

@@ -12,6 +12,7 @@ import {
 } from '../../lib/deWorkbenchApi';
 import { extractPdf, extractUrl } from '../../lib/knowledgeApi';
 import { LiveLoadingSkeleton, LiveEmptyState } from '../../components/LiveDataStates';
+import { presentError } from '../../lib/presentError';
 
 // docs/17 C5: name the regulations each pack is DESIGNED to support (honest
 // wording — posture, never a compliance certification claim).
@@ -566,7 +567,7 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
                     onClick={async () => {
                       setReplayRunning(true); setReplayResult(null); setReplayError(null);
                       try { setReplayResult(await runReplay(deId, replayQ.trim(), replayCk)); }
-                      catch (err) { setReplayError(err instanceof Error ? err.message : 'Replay failed — try again.'); }
+                      catch (err) { setReplayError(presentError(err, 'Replay failed — try again.')); }
                       finally { setReplayRunning(false); }
                     }}
                     className="px-4 py-2 bg-dt-accent-soft text-dt-accent-text text-sm rounded-lg hover:brightness-110 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">

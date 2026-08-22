@@ -31,6 +31,7 @@ import type { TrustReadinessRow } from '../../lib/trustApi';
 import type { DEHealth } from '../../lib/deHealthApi';
 import { listAuditEvents } from '../../lib/guardrailApi';
 import type { AuditEvent } from '../../lib/guardrailApi';
+import { presentError } from '../../lib/presentError';
 
 // ════════════════════════════════════════════════════════════
 // ⚠ WHO MAY CHANGE AN EMPLOYEE.
@@ -339,7 +340,7 @@ function TeamsPanel() {
   const run = async (fn: () => PromiseLike<{ error: { message: string } | null }>) => {
     setBusy(true); setError(null);
     const { error: err } = await fn();
-    if (err) setError(err.message);
+    if (err) setError(presentError(err));
     await load();
     setBusy(false);
   };

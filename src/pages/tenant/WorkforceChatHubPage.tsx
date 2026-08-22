@@ -17,6 +17,7 @@ import {
 } from '../../lib/workforceApi';
 import { useAuth } from '../../context/AuthContext';
 import { Loader } from '../../components/workforce/icons';
+import { presentError } from '../../lib/presentError';
 
 export function WorkforceChatHubPage() {
   const { tenantId } = useParams<{ tenantId: string }>();
@@ -149,7 +150,7 @@ export function WorkforceChatHubPage() {
 
       setInputMessage('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to send message');
+      setError(presentError(err, 'Failed to send message'));
       console.error(err);
     } finally {
       setIsLoading(false);

@@ -38,6 +38,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useIsTenantManager } from '../../lib/useRoleGate';
 import { supabase } from '../../supabase';
 import { useAuth } from '../../context/AuthContext';
+import { presentError } from '../../lib/presentError';
 
 type Relation = 'primary' | 'manager' | 'executive';
 
@@ -63,7 +64,7 @@ export default function ResponsiblePeoplePanel({ deId, deName }: { deId: string;
   const load = useCallback(async () => {
     setLoading(true);
     const { data, error: e } = await supabase.rpc('list_de_assignments', { p_de_id: deId });
-    if (e) setError(e.message); else { setError(null); setRows((data ?? []) as Assignment[]); }
+    if (e) setError(presentError(e)); else { setError(null); setRows((data ?? []) as Assignment[]); }
     setLoading(false);
   }, [deId]);
 
@@ -90,7 +91,7 @@ export default function ResponsiblePeoplePanel({ deId, deName }: { deId: string;
     // The server's own sentence, verbatim. "insufficient_permission: assigning
     // responsibility requires manager" tells somebody what to do next;
     // "Failed to save" does not.
-    if (e) setError(e.message);
+    if (e) setError(presentError(e));
     await load();
     setBusy(null);
   };
@@ -98,7 +99,7 @@ export default function ResponsiblePeoplePanel({ deId, deName }: { deId: string;
   const unassign = async (id: string) => {
     setBusy(id); setError(null);
     const { error: e } = await supabase.rpc('remove_de_assignment', { p_id: id });
-    if (e) setError(e.message);
+    if (e) setError(presentError(e));
     await load();
     setBusy(null);
   };

@@ -39,6 +39,7 @@ import { getTrustPolicyById } from '../../../lib/trustApi';
 import type { TrustPolicy } from '../../../lib/trustApi';
 import { trustPromotionCardCopy, isThinTrustEvidence, extractPolicyEvidence, detailIsRedundantBesideCard } from '../../../lib/trustPromotionPresentation';
 import { listDigitalEmployees } from '../../../lib/digitalEmployeesApi';
+import { presentError } from '../../../lib/presentError';
 
 // ⚠ APPROVING SOMETHING YOU HAVE NOT READ is the failure this product exists
 // to prevent, so a task carrying DRAFTED CONTENT never gets an inline
@@ -104,7 +105,7 @@ export default function MobileShell({ setPage }: { setPage: (p: Page) => void })
       const [t, a, c] = await Promise.all([listHumanTasks(), listActivity(30), listConnectors()]);
       setTasks(t); setActivity(a); setConnectors(c);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load your decisions.');
+      setError(presentError(e, 'Could not load your decisions.'));
     } finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -176,7 +177,7 @@ export default function MobileShell({ setPage }: { setPage: (p: Page) => void })
       })
       .catch(err => {
         if (!alive) return;
-        setTrustLoadError(err instanceof Error ? err.message : 'Could not load the evidence behind this request.');
+        setTrustLoadError(presentError(err, 'Could not load the evidence behind this request.'));
         // Settle OUT of "loading" on failure too — a network hiccup must not
         // leave Approve disabled forever.
         setTrustPolicy(null);

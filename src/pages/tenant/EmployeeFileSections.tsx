@@ -63,6 +63,7 @@ import type { DEDevelopmentItem, DEDevelopmentAttempt, DEImprovementOutcome } fr
 import { listDocScopes } from '../../lib/knowledgeApi';
 import { promoteDeploymentStage } from '../../lib/workforceApi';
 import { useCanManageDe } from './LiveWorkforceDEs';
+import { presentError } from '../../lib/presentError';
 
 // ============================================================
 // Workforce — LIVE mode (R5): the first live DE-profile surface.
@@ -174,7 +175,7 @@ export function DeIncidentsPanel({ de, setPage }: { de: DigitalEmployee; setPage
     const { error: err } = await supabase.rpc('review_de_incident', {
       p_incident_id: id, p_status: status, p_resolution_note: note.trim() || null,
     });
-    if (err) setError(err.message);
+    if (err) setError(presentError(err));
     else { setNote(''); setOpenId(null); }
     await load();
     setBusy(false);
@@ -313,7 +314,7 @@ export function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
     // them. Reading de_skills directly meant a newly-defined skill had no row
     // yet and so was invisible.
     const { data, error: err } = await supabase.rpc('list_de_skills', { p_de_id: de.id });
-    if (err) { setError(err.message); return; }
+    if (err) { setError(presentError(err)); return; }
     setSkills((data ?? []) as SkillRow[]);
   }, [de.id]);
 
@@ -352,7 +353,7 @@ export function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
     const { error: err } = await supabase.rpc('set_de_skill_proficiency', {
       p_de_id: de.id, p_skill_key: skillKey, p_proficiency: level, p_note: null,
     });
-    if (err) setError(err.message);
+    if (err) setError(presentError(err));
     await load();
     setSaving(false);
   };
@@ -360,7 +361,7 @@ export function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
   const assess = async () => {
     setAssessing(true); setError(null);
     const { error: err } = await supabase.rpc('assess_de_skills');
-    if (err) setError(err.message);
+    if (err) setError(presentError(err));
     await load();
     setAssessing(false);
   };
@@ -579,7 +580,7 @@ export function DeReviewsPanel({ de }: { de: DigitalEmployee }) {
   const run = async (fn: () => PromiseLike<{ error: { message: string } | null }>) => {
     setBusy(true); setError(null);
     const { error: err } = await fn();
-    if (err) setError(err.message);
+    if (err) setError(presentError(err));
     await load();
     setBusy(false);
   };
@@ -798,7 +799,7 @@ export function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
   const scan = async () => {
     setScanning(true); setErr(null);
     try { await detectDeDevelopmentNeeds(); await load(); }
-    catch (e) { setErr(e instanceof Error ? e.message : 'Could not scan for development needs.'); }
+    catch (e) { setErr(presentError(e, 'Could not scan for development needs.')); }
     finally { setScanning(false); }
   };
 
@@ -806,7 +807,7 @@ export function DeDevelopmentPanel({ de }: { de: DigitalEmployee }) {
     if (!desc.trim()) { setErr('Describe the development need.'); return; }
     setBusy(true); setErr(null);
     try { await createDeDevelopmentItem(de.id, { description: desc.trim() }); setDesc(''); setShowAdd(false); await load(); }
-    catch (e) { setErr(e instanceof Error ? e.message : 'Could not create the item.'); }
+    catch (e) { setErr(presentError(e, 'Could not create the item.')); }
     finally { setBusy(false); }
   };
 
@@ -961,7 +962,7 @@ function EditDEModal({ de, onClose, onSaved }: { de: DigitalEmployee; onClose: (
       onSaved(updated);
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not save changes.');
+      setErr(presentError(e, 'Could not save changes.'));
     } finally {
       setBusy(false);
     }
@@ -1008,7 +1009,7 @@ function RetireDEModal({ de, onClose, onRetired }: { de: DigitalEmployee; onClos
 
   useEffect(() => {
     let cancelled = false;
-    checkDeRetirementReadiness(de.id).then(r => { if (!cancelled) setReadiness(r); }).catch(e => { if (!cancelled) setErr(e instanceof Error ? e.message : 'Could not check readiness.'); });
+    checkDeRetirementReadiness(de.id).then(r => { if (!cancelled) setReadiness(r); }).catch(e => { if (!cancelled) setErr(presentError(e, 'Could not check readiness.')); });
     return () => { cancelled = true; };
   }, [de.id]);
 
@@ -1020,7 +1021,7 @@ function RetireDEModal({ de, onClose, onRetired }: { de: DigitalEmployee; onClos
       onRetired(updated);
       onClose();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not retire this employee.');
+      setErr(presentError(e, 'Could not retire this employee.'));
     } finally {
       setBusy(false);
     }
@@ -1114,7 +1115,7 @@ function ColleaguesHelpPanel({ de }: { de: DigitalEmployee }) {
       setCategories(((cats.data ?? []) as Array<{ key: string }>).map(c => c.key));
     } catch (e) {
       setAsRequester([]); setAsTarget([]);
-      setErr(e instanceof Error ? e.message : 'Could not load colleagues & help.');
+      setErr(presentError(e, 'Could not load colleagues & help.'));
     }
   }, [de.id]);
 
@@ -1132,7 +1133,7 @@ function ColleaguesHelpPanel({ de }: { de: DigitalEmployee }) {
       setShowAdd(false); setTargetId(''); setCategory('');
       await load();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not create the consultation grant.');
+      setErr(presentError(e, 'Could not create the consultation grant.'));
     } finally {
       setBusy(false);
     }
@@ -1480,7 +1481,7 @@ function DeVoicePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: D
       p_voice: voice.trim(),
       p_context_turns: Number.isFinite(n) ? Math.max(0, Math.min(30, n)) : 8,
     });
-    if (err) setError(err.message);
+    if (err) setError(presentError(err));
     else { setSaved(true); setTimeout(() => setSaved(false), 2500); if (data) onUpdated(data as DigitalEmployee); }
     setBusy(false);
   };
@@ -1553,7 +1554,7 @@ function DeIdentityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d
       p_location: location.trim(),
       p_cost_center: costCenter.trim(),
     });
-    if (err) setError(err.message);
+    if (err) setError(presentError(err));
     else { setSaved(true); setTimeout(() => setSaved(false), 2500); if (data) onUpdated(data as DigitalEmployee); }
     setBusy(false);
   };
@@ -1635,7 +1636,7 @@ function DeAvailabilityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated
       p_end_hour: Math.max(1, Math.min(24, Math.round(Number(endH) || 17))),
       p_days: days,
     });
-    if (err) setError(err.message);
+    if (err) setError(presentError(err));
     else { setSaved(true); setTimeout(() => setSaved(false), 2500); if (data) onUpdated(data as DigitalEmployee); }
     setBusy(false);
   };
@@ -1957,7 +1958,7 @@ function DeModelPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: D
       setSaved(true); setTimeout(() => setSaved(false), 2500);
       onUpdated(updated);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save.');
+      setError(presentError(e, 'Failed to save.'));
     }
     setBusy(false);
   };
@@ -2025,7 +2026,7 @@ export function DeKpisPanel({ de }: { de: DigitalEmployee }) {
 
   const load = useCallback(async () => {
     const { data, error: err } = await supabase.rpc('get_de_kpi_status', { p_de_id: de.id });
-    if (err) { setError(err.message); return; }
+    if (err) { setError(presentError(err)); return; }
     setKpis((data ?? []) as KpiStatus[]);
   }, [de.id]);
 
@@ -2045,7 +2046,7 @@ export function DeKpisPanel({ de }: { de: DigitalEmployee }) {
   const run = async (fn: () => PromiseLike<{ error: { message: string } | null }>) => {
     setBusy(true); setError(null);
     const { error: err } = await fn();
-    if (err) setError(err.message);
+    if (err) setError(presentError(err));
     await load();
     setBusy(false);
   };
@@ -2253,7 +2254,7 @@ export function DeEconomicsPanel({ de }: { de: DigitalEmployee }) {
     const { data, error: err } = await supabase.rpc('get_de_economics', {
       p_tenant_id: de.tenant_id, p_de_id: de.id, p_days: 30,
     });
-    if (err) { setError(err.message); return; }
+    if (err) { setError(presentError(err)); return; }
     const e = data as Economics;
     setEco(e);
     setFteCost(e.baselines.avg_fte_cost_monthly_usd?.toString() ?? '');
@@ -2272,7 +2273,7 @@ export function DeEconomicsPanel({ de }: { de: DigitalEmployee }) {
       p_action_minutes: num(actMin),
       p_conversation_minutes: num(convMin),
     });
-    if (err) setError(err.message);
+    if (err) setError(presentError(err));
     else setShowConfig(false);
     await load();
     setBusy(false);
@@ -2418,7 +2419,7 @@ function DeLifecyclePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
   const run = async (fn: () => PromiseLike<{ error: { message: string } | null }>) => {
     setBusy(true); setError(null);
     const { error: err } = await fn();
-    if (err) setError(err.message);
+    if (err) setError(presentError(err));
     setNote('');
     await load();
     setBusy(false);
@@ -2605,7 +2606,7 @@ function DeDeploymentStagePanel({ de }: { de: DigitalEmployee }) {
       .select('stage, stage_promoted_at, promotion_reason')
       .eq('de_id', de.id)
       .maybeSingle();
-    if (err) { setError(err.message); setRow(null); setLoaded(true); return; }
+    if (err) { setError(presentError(err)); setRow(null); setLoaded(true); return; }
     setRow((data as DeploymentStageRow | null) ?? null);
     setLoaded(true);
   }, [de.id]);
@@ -2774,7 +2775,7 @@ export function DeEscalationPanel({ deId }: { deId: string }) {
     const { data, error: err } = await supabase.from('de_escalation_rules')
       .select('de_id, frustration_threshold, always_escalate_topics')
       .or(`de_id.eq.${deId},de_id.is.null`);
-    if (err) { setError(err.message); return; }
+    if (err) { setError(presentError(err)); return; }
     const rows = (data ?? []) as EscalationRow[];
     const mine = rows.find(r => r.de_id === deId) ?? null;
     setDeRow(mine);
@@ -2840,7 +2841,7 @@ export function DeEscalationPanel({ deId }: { deId: string }) {
     const { error: err } = await supabase.rpc('set_de_escalation_rules', {
       p_de_id: deId, p_frustration_threshold: thr, p_topics: list,
     });
-    if (err) setError(err.message);
+    if (err) setError(presentError(err));
     else { setSaved(true); setTimeout(() => setSaved(false), 2500); }
     await load();
     setBusy(false);

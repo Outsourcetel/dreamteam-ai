@@ -19,6 +19,7 @@ import type {
   HireDraft, TeachResult, RehearsalResult, PromotionOutcome,
   RoleArchetype, ArchetypeHireResult, SetupQuestion, TailoredApplyResult,
 } from '../lib/hireApi';
+import { presentError } from '../lib/presentError';
 
 type Step = 'brief' | 'meet' | 'working' | 'done' | 'tailor' | 'archetype_done';
 
@@ -197,7 +198,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
     try {
       setApplyResult(await applyTailoredGuardrails(archResult.deId, tailoredProposal));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not apply the adjustments.');
+      setError(presentError(e, 'Could not apply the adjustments.'));
     } finally { setApplyBusy(false); }
   };
 
@@ -211,7 +212,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
       setGoldenSaved(await saveExamAsGolden(d.study.exam));
       setStep('meet');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong drafting the employee.');
+      setError(presentError(e, 'Something went wrong drafting the employee.'));
     } finally { setBusy(false); setPhase(''); }
   };
 
@@ -232,7 +233,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
       setPhase(`Rehearsal — ${persona} is answering realistic customer questions, each one scored by an independent judge…`);
       setRehearsal(await runRehearsal(draft.entity_id));
     } catch (e) {
-      setRehearsalError(e instanceof Error ? e.message : 'The rehearsal could not run.');
+      setRehearsalError(presentError(e, 'The rehearsal could not run.'));
     }
     try {
       setPhase('Walking the promotion gates…');
@@ -255,7 +256,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
       setSetupAnswers(Object.fromEntries(qs.map((q) => [q.key, ''])));
       setStep(qs.length > 0 ? 'tailor' : 'archetype_done');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not hire from this role template.');
+      setError(presentError(e, 'Could not hire from this role template.'));
     } finally { setBusy(false); setPhase(''); }
   };
 

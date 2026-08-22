@@ -4,6 +4,7 @@ import { listVoiceCalls, listOrphanVoiceMessages } from '../../../lib/voiceApi';
 import type { VoiceCall, VoiceCallMessage } from '../../../lib/voiceApi';
 import { LiveLoadingSkeleton, LiveErrorNotice } from '../../../components/LiveDataStates';
 import { Button, Chip, EmptyState, PanelCard, StatTile, Banner } from '../../../design/primitives';
+import { presentError } from '../../../lib/presentError';
 
 // ============================================================
 // Calls — review what the voice channel actually did (docs/42).
@@ -134,7 +135,7 @@ const SupportCallsPage = ({ setPage, embedded }: { setPage: (p: Page) => void; e
       const [c, o] = await Promise.all([listVoiceCalls(), listOrphanVoiceMessages()]);
       setCalls(c); setOrphans(o);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load calls.');
+      setError(presentError(e, 'Could not load calls.'));
     } finally {
       setLoading(false);
     }

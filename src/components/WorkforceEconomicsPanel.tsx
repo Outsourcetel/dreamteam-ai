@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useIsTenantAdmin } from '../lib/useRoleGate';
 import { StatTile } from '../design/primitives';
 import { getWorkforceEconomics, setWorkforceFteCost, type WorkforceEconomics } from '../lib/employeeRecordApi';
+import { presentError } from '../lib/presentError';
 
 // Whole-workforce economics (Tier-1 surfacing) — get_workforce_economics
 // (mig 193) has computed this all along with zero readers: what the workforce
@@ -37,7 +38,7 @@ export default function WorkforceEconomicsPanel({ tenantId }: { tenantId: string
     if (!Number.isFinite(n) || n <= 0) { setErr('Enter a monthly cost, e.g. 4200.'); return; }
     setSaving(true); setErr(null);
     try { await setWorkforceFteCost(n); setEditing(false); await load(); }
-    catch (e) { setErr(e instanceof Error ? e.message : 'Could not save.'); }
+    catch (e) { setErr(presentError(e, 'Could not save.')); }
     finally { setSaving(false); }
   };
 

@@ -19,6 +19,7 @@ import { getDeInquiryMetrics, getDeActionMetrics, getDeCostMetricsRanged, getOut
 import { summariseWork, type WorkSummary } from '../../lib/workSummary';
 import { listDigitalEmployees, type DigitalEmployee } from '../../lib/digitalEmployeesApi';
 import { useOpenEmployeeFile } from '../../lib/employeeFileRoute';
+import { presentError } from '../../lib/presentError';
 
 // ── Health config ────────────────────────────────────────────────
 
@@ -241,7 +242,7 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
           setMissingTables(true);
         } else {
           console.error('LiveDashboard:', err);
-          setLoadError(err instanceof Error ? err.message : 'Something went wrong loading your dashboard.');
+          setLoadError(presentError(err, 'Something went wrong loading your dashboard.'));
         }
       } finally {
         if (!cancelled) setLoading(false);

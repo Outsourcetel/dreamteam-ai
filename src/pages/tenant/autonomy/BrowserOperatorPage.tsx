@@ -10,6 +10,7 @@ import {
   Chip, Banner, Button, Field, INPUT_CLS, EmptyState, Modal, Drawer, TimelineStep, type Tone,
 } from '../../../design/primitives';
 import { useAuth } from '../../../context/AuthContext';
+import { presentError } from '../../../lib/presentError';
 
 // ⚠ WHO MAY DO WHAT HERE.
 //
@@ -72,7 +73,7 @@ const BrowserOperatorPage = ({ setPage }: { setPage: (p: Page) => void }) => {
 
   const load = async () => {
     try { setError(''); setState(await getBrowserOperator()); }
-    catch (e) { setError(e instanceof Error ? e.message : 'Failed to load.'); }
+    catch (e) { setError(presentError(e, 'Failed to load.')); }
     finally { setLoading(false); }
   };
   useEffect(() => { load(); const t = setInterval(load, 15000); return () => clearInterval(t); }, []);
@@ -273,7 +274,7 @@ function NewTaskModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
     if (!valid) return;
     setBusy(true); setErr('');
     try { await proposeBrowserTask({ deId, goal: goal.trim(), allowedDomains: domains, maxSteps, engine, credentialPolicy: cred }); onDone(); }
-    catch (e) { setErr(e instanceof Error ? e.message : 'Could not create the task.'); setBusy(false); }
+    catch (e) { setErr(presentError(e, 'Could not create the task.')); setBusy(false); }
   };
 
   return (
@@ -342,14 +343,14 @@ function TaskDrawer({ taskId, onClose, onChange }: { taskId: string; onClose: ()
   const [task, setTask] = useState<BrowserTaskDetail | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  const reload = async () => { try { setTask(await getBrowserTask(taskId)); } catch (e) { setErr(e instanceof Error ? e.message : 'Failed.'); } };
+  const reload = async () => { try { setTask(await getBrowserTask(taskId)); } catch (e) { setErr(presentError(e, 'Failed.')); } };
   useEffect(() => { reload(); /* eslint-disable-next-line */ }, [taskId]);
 
   const decide = async (decision: 'approved' | 'rejected') => {
     if (!task?.human_task_id) return;
     setBusy(true); setErr('');
     try { await decideBrowserTask(task.human_task_id, decision); await reload(); onChange(); }
-    catch (e) { setErr(e instanceof Error ? e.message : 'Could not save.'); }
+    catch (e) { setErr(presentError(e, 'Could not save.')); }
     finally { setBusy(false); }
   };
   const s = task ? (STATUS[task.status] ?? STATUS.pending_approval) : STATUS.pending_approval;
@@ -416,13 +417,13 @@ function OperateConfigDrawer({ onClose }: { onClose: () => void }) {
   const [err, setErr] = useState('');
   const [adding, setAdding] = useState(false);
 
-  useEffect(() => { listDEsLite().then(d => { setDes(d); if (d[0]) setDeId(d[0].id); }).catch(e => setErr(e instanceof Error ? e.message : 'Failed to load employees.')); }, []);
+  useEffect(() => { listDEsLite().then(d => { setDes(d); if (d[0]) setDeId(d[0].id); }).catch(e => setErr(presentError(e, 'Failed to load employees.'))); }, []);
 
   const loadCfg = async (id: string) => {
     if (!id) return;
     setLoading(true); setErr('');
     try { setCfg(await getDeOperateConfig(id)); }
-    catch (e) { setErr(e instanceof Error ? e.message : 'Failed to load config.'); setCfg(null); }
+    catch (e) { setErr(presentError(e, 'Failed to load config.')); setCfg(null); }
     finally { setLoading(false); }
   };
   useEffect(() => { if (deId) loadCfg(deId); /* eslint-disable-next-line */ }, [deId]);
@@ -485,7 +486,7 @@ function SystemCard({ deId, s, connectors, onChange }: { deId: string; s: Operat
   const [showLogin, setShowLogin] = useState(false);
   const dirty = label !== s.label || (domain || '') !== (s.operate_domain ?? '') || (connectorId || '') !== (s.connector_id ?? '');
 
-  const run = async (fn: () => Promise<void>) => { setBusy(true); setErr(''); try { await fn(); onChange(); } catch (e) { setErr(e instanceof Error ? e.message : 'Failed.'); setBusy(false); } };
+  const run = async (fn: () => Promise<void>) => { setBusy(true); setErr(''); try { await fn(); onChange(); } catch (e) { setErr(presentError(e, 'Failed.')); setBusy(false); } };
   const save = (canOperate: boolean) => run(async () => { await upsertOperateBinding({ deId, systemId: s.id, label, canOperate, operateDomain: domain || null, connectorId: connectorId || null }); });
 
   return (
@@ -556,7 +557,7 @@ function LoginForm({ systemId, onDone, onCancel }: { systemId: string; onDone: (
     // Stored as the mig-243 convention: JSON {username,password} or a bare password.
     const secret = username ? JSON.stringify({ username, password }) : password;
     try { await setOperateLogin(systemId, secret); onDone(); }
-    catch (e) { setErr(e instanceof Error ? e.message : 'Could not save.'); setBusy(false); }
+    catch (e) { setErr(presentError(e, 'Could not save.')); setBusy(false); }
   };
   return (
     <div className="mt-3 rounded-lg border border-dt-border bg-dt-inset p-3">
@@ -593,7 +594,7 @@ function AddBindingForm({ deId, connectors, onCancel, onDone }: { deId: string; 
     try {
       await upsertOperateBinding({ deId, systemId: null, systemKey, label: label || systemKey, canOperate: true, operateDomain: domain || null, connectorId: connectorId || null });
       onDone();
-    } catch (e) { setErr(e instanceof Error ? e.message : 'Could not add.'); setBusy(false); }
+    } catch (e) { setErr(presentError(e, 'Could not add.')); setBusy(false); }
   };
   return (
     <div className="rounded-xl border border-dt-accent-border bg-dt-accent-soft p-4">

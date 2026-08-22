@@ -43,6 +43,7 @@ import {
   listRoleArchetypes, applyRoleKitToEmployee,
   type RoleArchetype, type AppliedRoleKit,
 } from '../../lib/hireApi';
+import { presentError } from '../../lib/presentError';
 
 // ═══════════════════════════════════════════════════════════════
 // Employee File — ONE page per Digital Employee, with a URL other
@@ -869,7 +870,7 @@ function RoleTemplatePanel({
       const res = await applyRoleKitToEmployee(de.id, choice, rerole);
       setDone(res); setOpen(false); onApplied();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not apply that role template.');
+      setError(presentError(e, 'Could not apply that role template.'));
     } finally { setBusy(false); }
   };
 
