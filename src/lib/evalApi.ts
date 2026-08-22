@@ -6,7 +6,7 @@
 // Mirrors the tenant/error patterns in customerApi.ts.
 // ============================================================
 import { supabase } from '../supabase';
-import { CustomerApiError, isMissingTableError, getSessionTenantId } from './customerApi';
+import { getSessionTenantId } from './customerApi';
 
 // ── Types ─────────────────────────────────────────────────────────
 

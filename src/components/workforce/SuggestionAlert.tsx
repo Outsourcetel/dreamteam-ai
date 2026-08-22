@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Lightbulb, TrendingDown, AlertCircle } from './icons';
+import { Lightbulb, AlertCircle } from './icons';
 
 export function SuggestionAlert() {
   const [suggestion, setSuggestion] = useState<any>(null);

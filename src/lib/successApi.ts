@@ -5,7 +5,6 @@
 // and tenant-configurable weights/thresholds in health_score_config.
 // ============================================================
 import { supabase } from '../supabase';
-import { getSessionTenantId, CustomerApiError, isMissingTableError } from './customerApi';
 import type { SupportTicket, RenewalInvoice, ActivityEvent } from './customerApi';
 import type { PlaybookTriggerFire } from './playbookBuilderApi';
 

@@ -15,7 +15,7 @@ import { supabase } from '../../supabase';
 import type { Page } from '../../types';
 import { useOpenEmployeeFile } from '../../lib/employeeFileRoute';
 import AISessionPanel from '../../components/AISessionPanel';
-import { PanelCard, Button, EntityRow, EmployeeCard, Banner, EmptyState, Drawer } from '../../design/primitives';
+import { PanelCard, Button, EmployeeCard, Banner, EmptyState, Drawer } from '../../design/primitives';
 import { say, DE_STATUS } from '../../design/statusVocabulary';
 import { summariseWork, workCells } from '../../lib/workSummary';
 import type { WorkSummary } from '../../lib/workSummary';
@@ -29,8 +29,8 @@ import { listWorkforceBlockers } from '../../lib/customerApi';
 import type { WorkforceBlocker } from '../../lib/customerApi';
 import type { TrustReadinessRow } from '../../lib/trustApi';
 import type { DEHealth } from '../../lib/deHealthApi';
-import { listAuditEvents } from '../../lib/guardrailApi';
-import type { AuditEvent } from '../../lib/guardrailApi';
+import {  } from '../../lib/guardrailApi';
+import type {  } from '../../lib/guardrailApi';
 import { presentError } from '../../lib/presentError';
 
 // ════════════════════════════════════════════════════════════

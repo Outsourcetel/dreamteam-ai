@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useVocabulary } from '../../lib/vocabulary';
-import { loadChatEscalations, chatEscalationAge } from '../../lib/chatEscalations';
-import type { ChatEscalation } from '../../lib/chatEscalations';
+import type {  } from '../../lib/chatEscalations';
 import type { Page } from '../../types';
 import GettingStartedGuide from '../../components/GettingStartedGuide';
 import OpsAlertsBanner from '../../components/OpsAlertsBanner';
@@ -91,21 +90,6 @@ interface ActivityItem {
   confidence?: number;
 }
 
-interface CompanyData {
-  entities: {
-    customer: EntityData;
-    vendor: EntityData;
-    workforce: EntityData;
-  };
-  outcomes: {
-    revenue: OutcomeData;
-    delivery: OutcomeData;
-    financial: OutcomeData;
-    risk: OutcomeData;
-  };
-  tasks: TaskItem[];
-  activity: ActivityItem[];
-}
 
 // ── Helpers ──────────────────────────────────────────────────────
 

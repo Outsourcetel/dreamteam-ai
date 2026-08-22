@@ -16,7 +16,6 @@
 // TODO(R1-activation) noted in docs/ROADMAP.md.
 // ============================================================
 import { supabase } from '../supabase';
-import { getSessionTenantId, CustomerApiError, isMissingTableError } from './customerApi';
 import { appendAuditEvent } from './guardrailApi';
 
 export type AutonomyActionType = 'invoice_auto_send' | 'answer_dock' | 'answer_widget';

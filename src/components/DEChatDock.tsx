@@ -162,14 +162,6 @@ function writeEscalation(companyId: CompanyId, de: DockDE, summary: string) {
 
 // ── The scripted "brain" ──────────────────────────────────────────
 
-interface Intent {
-  deId: string;
-  keywords: string[];
-  text: string;
-  confidence: number;
-  actions?: ChatAction[];
-  special?: 'escalate' | 'guardrail';
-}
 
 
 const INTROS: Record<string, string> = {

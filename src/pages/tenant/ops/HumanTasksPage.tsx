@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../../../context/AuthContext';
+import {  } from '../../../context/AuthContext';
 import { useIsTenantManager } from '../../../lib/useRoleGate';
 import { PageHeader } from '../../../components/ui';
 import type { Page } from '../../../types';
 import type { CompanyId } from '../../../data/companies';
-import { loadChatEscalations, setChatEscalationStatus, chatEscalationAge } from '../../../lib/chatEscalations';
 import type { GatedExecutionPreview } from '../../../lib/connectorApi';
-import { listHumanTasks, decideHumanTask, withdrawHumanTask, withdrawHumanTasks, previewDecideHumanTasks, decideHumanTasks, listDecisionGroups, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, getImprovementProposal, getImprovementReviewSignals, DECISION_REASON_CODES, getBlockedWorkForTask, rerouteEscalation, retryAnswerableBlockers, getPendingConversationDraft } from '../../../lib/customerApi';
+import { listHumanTasks, decideHumanTask, withdrawHumanTasks, previewDecideHumanTasks, decideHumanTasks, listDecisionGroups, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, getImprovementProposal, getImprovementReviewSignals, DECISION_REASON_CODES, getBlockedWorkForTask, rerouteEscalation, retryAnswerableBlockers, getPendingConversationDraft } from '../../../lib/customerApi';
 import type { BlockedWork, PendingConversationDraft } from '../../../lib/customerApi';
 import type { DecisionPreview, DecisionGroup } from '../../../lib/customerApi';
 import type { DecisionCapture, DecisionReasonCode } from '../../../lib/customerApi';

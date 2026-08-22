@@ -229,7 +229,7 @@ function AppShell() {
     dbTenantsLoaded,
     currentTenant,
     isDTUser,
-    isTenantUser,
+    
     needsOrgSetup,
     mfaGateBlocking,
     handleLogin,

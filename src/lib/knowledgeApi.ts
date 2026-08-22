@@ -6,7 +6,7 @@
 // ============================================================
 import { supabase } from '../supabase';
 import { invokeEdge } from './invokeEdge';
-import { CustomerApiError, isMissingTableError, getSessionTenantId } from './customerApi';
+import { CustomerApiError } from './customerApi';
 
 export interface KnowledgeDoc {
   id: string;

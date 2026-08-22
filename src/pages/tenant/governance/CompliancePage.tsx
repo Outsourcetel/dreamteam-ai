@@ -2,7 +2,7 @@ import { useIsTenantAdmin } from '../../../lib/useRoleGate';
 import { useState, useEffect } from 'react'
 import { Modal, StatTile, Button, INPUT_CLS } from '../../../design/primitives'
 import type { Tone } from '../../../design/primitives'
-import { useAuth } from '../../../context/AuthContext'
+import {  } from '../../../context/AuthContext'
 import type { Page } from '../../../types'
 import type { CompanyId } from '../../../data/companies'
 import { PageHeader, th, td } from '../../../components/ui'

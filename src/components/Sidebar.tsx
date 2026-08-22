@@ -5,7 +5,7 @@ import type { Vocabulary } from '../lib/vocabulary';
 import { canAccessPage } from '../lib/navAccess';
 import { useAuth } from '../context/AuthContext';
 import type { CompanyId } from '../data/companies';
-import { countPendingChatEscalations } from '../lib/chatEscalations';
+import {  } from '../lib/chatEscalations';
 import { listAccounts, listTickets, listInvoices, listHumanTasks, getPendingKnowledgeGapCount } from '../lib/customerApi';
 import { listOpportunities } from '../lib/pipelineApi';
 import { listProjects } from '../lib/onboardingApi';

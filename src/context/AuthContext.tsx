@@ -15,16 +15,6 @@ import { URL_TO_PAGE } from '../lib/pageRoutes';
 import type { CompanyProfile, CompanyId } from '../data/companies';
 import { setGodModeTenantIdOverride } from '../lib/customerApi';
 
-interface DbStats {
-  totalConversations: number;
-  openConversations: number;
-  resolvedConversations: number;
-  totalArticles: number;
-  publishedArticles: number;
-  pendingApprovals: number;
-  autoResolved: number;
-  channelBreakdown: { chat: number; email: number; phone: number };
-}
 
 interface GodModeSession {
   tenant: Tenant;

@@ -36,58 +36,8 @@ interface DBProfile {
   created_at: string;
 }
 
-interface DBKnowledgeArticle {
-  id: string;
-  tenant_id: string;
-  title: string;
-  body: string;
-  summary?: string;
-  status: 'draft' | 'review' | 'published' | 'archived';
-  audience: 'internal' | 'customer' | 'both';
-  category?: string;
-  tags?: string[];
-  product?: string;
-  module?: string;
-  quality_score: number;
-  freshness_score: number;
-  view_count: number;
-  helpful_count: number;
-  not_helpful_count: number;
-  created_by?: string;
-  published_at?: string;
-  created_at: string;
-  updated_at: string;
-}
 
-interface DBConversation {
-  id: string;
-  tenant_id: string;
-  channel: 'chat' | 'email' | 'phone' | 'api';
-  status: 'open' | 'pending' | 'resolved' | 'escalated' | 'closed';
-  subject?: string;
-  customer_name?: string;
-  customer_email?: string;
-  assigned_to?: string;
-  sentiment?: 'positive' | 'neutral' | 'negative' | 'urgent';
-  confidence_score?: number;
-  resolution_type?: string;
-  tags?: string[];
-  opened_at: string;
-  resolved_at?: string;
-  created_at: string;
-}
 
-interface DBMessage {
-  id: string;
-  conversation_id: string;
-  tenant_id: string;
-  role: 'user' | 'agent' | 'ai' | 'system';
-  content: string;
-  confidence_score?: number;
-  sources?: unknown[];
-  requires_approval: boolean;
-  created_at: string;
-}
 
 // =====================================================
 // TENANT QUERIES

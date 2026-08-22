@@ -18,22 +18,6 @@ import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDat
 
 // ── Shared per-DE metrics (numbers from WorkforceDEsPage) ─────────
 
-interface DEMetrics {
-  name: string;
-  role: string;
-  resolutionRate: number;
-  confidence: number;
-  escalationRate: number;
-  errorRate: number;
-  tasksThisMonth: number;   // inquiries handled
-  actionsTaken: number;     // real actions completed
-  autoActions: number;      // of those, done without a human
-  sentToHuman: number;      // routed for approval
-  blockedActions: number;   // stopped by guardrail/access
-  trend: number[];          // resolution trend for sparkline
-  costPerTask: string;
-  humanBaseline: string;
-}
 
 
 // Company benchmark — same wording as WorkforceDEsPage TabPerformance

@@ -12,7 +12,7 @@
 import { supabase } from '../supabase';
 import { invokeEdge } from './invokeEdge';
 import { getSessionTenantId, CustomerApiError, isMissingTableError } from './customerApi';
-import type { PlaybookRun } from './playbookApi';
+import type {  } from './playbookApi';
 
 // ── Registry (UI metadata + param forms) ──────────────────────────
 

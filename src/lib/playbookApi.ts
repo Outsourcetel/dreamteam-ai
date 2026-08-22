@@ -15,7 +15,7 @@
 // ============================================================
 import { supabase } from '../supabase';
 import { invokeEdge } from './invokeEdge';
-import { getSessionTenantId, CustomerApiError, isMissingTableError } from './customerApi';
+import { getSessionTenantId } from './customerApi';
 import type { CustomerAccount } from './customerApi';
 
 export type RunStatus = 'running' | 'waiting_approval' | 'resume_pending' | 'completed' | 'cancelled' | 'failed';

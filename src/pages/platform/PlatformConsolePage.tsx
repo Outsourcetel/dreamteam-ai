@@ -7,7 +7,7 @@ import { Badge, StatCard, Modal } from '../../components';
 import { Modal as DtModal, Banner } from '../../design/primitives';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../supabase';
-import type { DBTenant, TenantProvisioningRequest, FeatureRegistryEntry, TenantFeatureOverride, PlatformConnectorHealthRow, TenantOverviewRow, DispatchHealth } from '../../lib/api';
+import type { DBTenant, TenantProvisioningRequest, FeatureRegistryEntry, PlatformConnectorHealthRow, TenantOverviewRow, DispatchHealth } from '../../lib/api';
 import {
   fetchPendingProvisioningRequests, approveSubtenantRequest, rejectSubtenantRequest,
   setTenantSelfServe, setTenantStatus, setTenantPlan, deleteTenant, requestSubtenant, fetchTenants,

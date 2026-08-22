@@ -8,7 +8,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useIsTenantAdmin } from '../lib/useRoleGate';
 import { useAuth } from '../context/AuthContext';
-import { Modal, Banner, Button } from '../design/primitives';
+import { Banner, Button } from '../design/primitives';
 import {
   draftNewHire, saveExamAsGolden, teachNewHire, runRehearsal,
   promoteAsFarAsGatesAllow, describeStage,

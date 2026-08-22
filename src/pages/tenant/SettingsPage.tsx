@@ -9,7 +9,7 @@ import SsoPolicyPanel from '../../components/sso/SsoPolicyPanel';
 import ScimTokensPanel from '../../components/sso/ScimTokensPanel';
 import { useState, useEffect, useRef } from 'react';
 import type { AuthUser, Tenant, Page } from '../../types';
-import { updateTenant, savePlatformConfig, hasPlatformConfigKey, fetchTenants, fetchAllTenantsUsage, updateTenantBudget,
+import { updateTenant, savePlatformConfig, fetchTenants, fetchAllTenantsUsage, updateTenantBudget,
   getTenantLlmKeyStatus, saveTenantLlmKey, clearTenantLlmKey, setTenantLlmKeyMode, type LlmKeyMode } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
 import { canAccessSettingsTab, type SettingsTab } from '../../lib/navAccess';

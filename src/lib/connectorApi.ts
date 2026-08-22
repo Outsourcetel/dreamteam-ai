@@ -10,7 +10,7 @@
 // set_connector_secret RPC and never readable from the client).
 // ============================================================
 import { supabase } from '../supabase';
-import { getSessionTenantId, CustomerApiError, isMissingTableError } from './customerApi';
+import { getSessionTenantId, CustomerApiError } from './customerApi';
 
 // ── Types ─────────────────────────────────────────────────────────
 

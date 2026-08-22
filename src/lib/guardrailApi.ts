@@ -7,7 +7,7 @@
 //   the append_audit_event() SECURITY DEFINER RPC.
 // ============================================================
 import { supabase } from '../supabase';
-import { getSessionTenantId, CustomerApiError, isMissingTableError } from './customerApi';
+import { CustomerApiError } from './customerApi';
 
 // ── Types ─────────────────────────────────────────────────────────
 

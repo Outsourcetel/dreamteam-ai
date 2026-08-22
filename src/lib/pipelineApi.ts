@@ -13,7 +13,7 @@
 // the moment a prospect becomes a customer.
 // ============================================================
 import { supabase } from '../supabase';
-import { getSessionTenantId, CustomerApiError, isMissingTableError, parseMoneyToCents } from './customerApi';
+import { parseMoneyToCents } from './customerApi';
 import type { ImportResult, ImportRowError } from './customerApi';
 
 // ── Types ─────────────────────────────────────────────────────────

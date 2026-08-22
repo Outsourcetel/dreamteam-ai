@@ -8,7 +8,7 @@
 // ============================================================
 import { supabase } from '../supabase';
 import { invokeEdge } from './invokeEdge';
-import { getSessionTenantId, CustomerApiError, isMissingTableError } from './customerApi';
+import { getSessionTenantId } from './customerApi';
 
 // ── Types ─────────────────────────────────────────────────────────
 

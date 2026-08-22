@@ -3,8 +3,8 @@ import React, { useEffect, useState } from 'react';
 import { Chip, Drawer, Toast } from '../../../design/primitives';
 import type { Tone } from '../../../design/primitives';
 import AISessionPanel from '../../../components/AISessionPanel';
-import { useAuth } from '../../../context/AuthContext';
-import type { CompanyId } from '../../../data/companies';
+import {  } from '../../../context/AuthContext';
+import type {  } from '../../../data/companies';
 import { PageHeader, th, td } from '../../../components/ui';
 import type { KEntity, KAudience, KType } from './KnowledgeLibraryPage';
 import type { Page } from '../../../types';
@@ -44,21 +44,6 @@ interface GapDraft {
   sources: string[];
 }
 
-interface Gap {
-  id: string;
-  title: string;
-  source: SignalSource;
-  description: string;
-  frequency: string;
-  de: string;
-  severity: 'high' | 'medium' | 'low';
-  status: GapStatus;
-  signals: GapSignal[];
-  searched: number;
-  findings: GapFinding[];
-  draft?: GapDraft;
-  retrainedNote?: string;
-}
 
 const STATUS_META: Record<GapStatus, { label: string; cls: string }> = {
   detected: { label: 'Detected', cls: 'bg-dt-neutral-soft text-dt-neutral' },

@@ -7,7 +7,7 @@ import {
   type MissionRow, type MissionProgress, type MissionStatus,
 } from '../lib/missionApi';
 import { useConfirm } from './useDialog';
-import { Banner, Button, Chip, Drawer, EmptyState, Field, INPUT_CLS, PanelCard, type Tone } from '../design/primitives';
+import { Banner, Button, Chip, Drawer, EmptyState, INPUT_CLS, PanelCard, type Tone } from '../design/primitives';
 
 // Mission Delegation UI (docs/14): the directive box, the plan-approval
 // drawer (plan gate: ALWAYS), and the per-mission console. Soft budget:
