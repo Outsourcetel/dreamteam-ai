@@ -123,7 +123,6 @@ const LIVE_SUGGESTIONS = [
 ];
 
 const threadKey = (c: string) => `dt_chat_thread_${c}`;
-const escKey = (c: CompanyId) => `dt_chat_escalations_${c}`;
 
 function loadThread(companyId: string): ChatMsg[] {
   try {
@@ -139,47 +138,29 @@ function saveThread(companyId: string, msgs: ChatMsg[]) {
   } catch { /* noop */ }
 }
 
-function writeEscalation(companyId: CompanyId, de: DockDE, summary: string) {
-  // dt_ops_tasks_${companyId} stores a decisions overlay (Record<taskId, status>)
-  // for seeded tasks only — appending a new task there isn't shape-compatible.
-  // Escalations from chat live in their own list instead.
-  try {
-    const raw = localStorage.getItem(escKey(companyId));
-    const list = raw ? (JSON.parse(raw) as unknown[]) : [];
-    list.push({
-      id: `chat-esc-${Date.now()}`,
-      type: 'review_gate',
-      title: `Chat escalation — ${summary}`,
-      de: de.name,
-      createdAt: new Date().toISOString(),
-      status: 'pending',
-      source: 'de_chat_dock',
-    });
-    localStorage.setItem(escKey(companyId), JSON.stringify(list));
-    window.dispatchEvent(new Event('dt-state-changed'));
-  } catch { /* noop */ }
-}
 
-// ── The scripted "brain" ──────────────────────────────────────────
+// ⚠ The scripted "brain" is GONE. `send` has routed every turn through the
+// de-answer edge function since the answer bank was removed for inventing
+// customer finances (see the comment in `send` below). What survived it as
+// zero-reader scaffolding was deleted 2026-08-22:
+//
+//   INTROS          five hardcoded persona greetings quoting invented numbers
+//                   ("47 open tickets", "the $2.1M renewal pipeline").
+//   postDEReply     posted a scripted reply behind a fake typing delay.
+//   DEResponse      its argument shape. No importer anywhere in src/.
+//   fallbackCursor  a round-robin index into an answer bank that no longer exists.
+//   writeEscalation + escKey
+//                   wrote governance escalations to localStorage under
+//                   dt_chat_escalations_${companyId}. Zero call sites, and
+//                   rightly so: an escalation that exists only in one
+//                   browser's localStorage is not an audit trail. Live
+//                   escalations are rows in human_tasks. src/lib/chatEscalations.ts,
+//                   the reader half of that store, went with it.
+//
+// Recoverable at 571868e.
 
 
 
-const INTROS: Record<string, string> = {
-  alex: "I'm Alex, your Customer Support DE. I work the support queue — 47 open tickets right now — resolve what I can autonomously, and escalate anything below my confidence threshold. Ask me about tickets, escalations, or resolution rates.",
-  casey: "I'm Casey, your Renewal DE. I run the $2.1M renewal pipeline — 8 renewals due — generate invoices, and prep contracts. Anything above my $10K approval gate goes to a human. Ask me about renewals, at-risk accounts, or invoices.",
-  riley: "I'm Riley, your HR & People DE. I handle workforce onboarding, leave requests, and people processes. Full transparency: my own recertification is currently overdue. Ask me about onboarding, learned behaviors, or the Workday sync.",
-  morgan: "I'm Morgan, your Client Relations DE. I manage 4 active engagements — letters, fees, credit notes, and client communications, with everything above $5K gated to a partner. Ask me about engagements, the GDPR request, or fees.",
-  avery: "I'm Avery, your Tax Research DE. I draft cited tax memos and review audit workpapers — every memo goes through partner review before delivery. Ask me about the Crestline memo, workpapers, or my FATCA knowledge gap.",
-};
-
-export interface DEResponse {
-  text: string;
-  confidence: number;
-  actions?: ChatAction[];
-  escalated?: boolean;
-}
-
-let fallbackCursor = 0;
 
 // ── Suggestion chips ──────────────────────────────────────────────
 
@@ -329,17 +310,7 @@ export default function DEChatDock() {
     endRef.current?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth' });
   }, [messages, typing, reduceMotion]);
 
-  const postDEReply = (deNow: DockDE, resp: DEResponse) => {
-    setTyping(true);
-    const delay = reduceMotion ? 100 : 700 + Math.floor(Math.random() * 500);
-    window.setTimeout(() => {
-      setTyping(false);
-      setMessages(prev => [...prev, {
-        id: uid(), role: 'de', deId: deNow.id, text: resp.text,
-        confidence: resp.confidence, actions: resp.actions, time: nowTime(),
-      }]);
-    }, delay);
-  };
+
 
   // Live mode: real DE turn via the de-answer edge function.
   const sendLive = async (text: string) => {

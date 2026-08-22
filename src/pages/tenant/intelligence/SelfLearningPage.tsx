@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Drawer, Toast } from '../../../design/primitives';
-import {  } from '../../../context/AuthContext';
 import { PageHeader, th, td } from '../../../components/ui';
 import type { Page } from '../../../types';
-import type { CompanyId } from '../../../data/companies';
 import { CustomerApiError } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
 import {
@@ -17,107 +15,25 @@ import { supabase } from '../../../supabase';
 
 // ── Types ─────────────────────────────────────────────────────────
 
-interface DELearningRow {
-  id: string;
-  name: string;
-  role: string;
-  learningRate: 'low' | 'medium' | 'high';
-  topics: number;           // matches WorkforceDEsPage LEARNING_TOPICS counts
-  pendingValidations: number;
-  lastApproved: string;
-}
-
-interface PendingValidation {
-  id: string;
-  de: string;
-  behavior: string;
-  context: string;
-  evidence: string;
-  proposedAt: string;
-}
-
-interface LearnedBehavior {
-  id: string;
-  date: string;
-  de: string;
-  behavior: string;
-  approver: string;
-}
 
 // ── Seed data ─────────────────────────────────────────────────────
 
-const DE_ROWS: Record<CompanyId, DELearningRow[]> = {
-  tcp: [
-    { id: 'alex', name: 'Alex', role: 'Customer Support DE', learningRate: 'medium', topics: 3, pendingValidations: 0, lastApproved: 'Billing FAQ shortcut — 2026-06-18' },
-    { id: 'casey', name: 'Casey', role: 'Renewal DE', learningRate: 'medium', topics: 2, pendingValidations: 0, lastApproved: 'Renewal objection phrasing — 2026-06-02' },
-    { id: 'riley', name: 'Riley', role: 'HR & People DE', learningRate: 'medium', topics: 3, pendingValidations: 1, lastApproved: 'Leave-policy clarification — 2026-05-12' },
-  ],
-  pwc: [
-    { id: 'morgan', name: 'Morgan', role: 'Client Relations DE', learningRate: 'low', topics: 2, pendingValidations: 0, lastApproved: 'KYC document checklist — 2026-06-10' },
-    { id: 'avery', name: 'Avery', role: 'Tax Research DE', learningRate: 'medium', topics: 3, pendingValidations: 0, lastApproved: 'Citation format preference — 2026-06-22' },
-  ],
-};
 
 // Riley's pending validation — same behavior text as WorkforceDEsPage Audit & Memory tab
-const PENDING: Record<CompanyId, PendingValidation[]> = {
-  tcp: [
-    {
-      id: 'val_riley_1',
-      de: 'Riley',
-      behavior: 'When leave request is submitted by same employee twice in 24 hrs, auto-reject duplicate.',
-      context: 'Riley observed HR manually rejecting duplicate leave submissions with identical rationale each time, and proposes automating the rejection with a notification to the employee.',
-      evidence: '9 duplicate submissions in the last 60 days — all manually rejected by HR with the same reason. Zero false positives in the pattern window.',
-      proposedAt: '2026-07-03 · 3 hrs ago',
-    },
-  ],
-  pwc: [],
-};
 
-const HISTORY: Record<CompanyId, LearnedBehavior[]> = {
-  tcp: [
-    { id: 'lb1', date: '2026-06-18', de: 'Alex', behavior: 'Answer common billing FAQ ("Where is my invoice?") with direct portal link instead of full explanation.', approver: 'M. Osei (Support Lead)' },
-    { id: 'lb2', date: '2026-06-02', de: 'Casey', behavior: 'Lead renewal objection responses with usage-value summary before pricing discussion.', approver: 'Renewal Manager' },
-    { id: 'lb3', date: '2026-05-12', de: 'Riley', behavior: 'Include carry-over balance in every leave-policy answer during Q1/Q2.', approver: 'HR Manager' },
-    { id: 'lb4', date: '2026-04-28', de: 'Alex', behavior: 'Auto-attach rate-limit reference table when a 429 error is mentioned.', approver: 'M. Osei (Support Lead)' },
-    { id: 'lb5', date: '2026-04-10', de: 'Casey', behavior: 'Send renewal-confirmation summary to CSM as well as the customer.', approver: 'CSM Lead' },
-  ],
-  pwc: [
-    { id: 'lb1', date: '2026-06-22', de: 'Avery', behavior: 'Cite both Checkpoint and Bloomberg Tax authorities when positions differ between sources.', approver: 'Tax Partner' },
-    { id: 'lb2', date: '2026-06-10', de: 'Morgan', behavior: 'Send KYC document checklist proactively at engagement signing.', approver: 'Engagement Partner' },
-    { id: 'lb3', date: '2026-05-20', de: 'Morgan', behavior: 'Flag engagements with no client contact in 21 days for a status touch.', approver: 'Engagement Manager' },
-    { id: 'lb4', date: '2026-05-05', de: 'Avery', behavior: 'Open memos with a one-paragraph plain-English conclusion before the technical analysis.', approver: 'Tax Partner' },
-  ],
-};
-
-interface SignalConfig {
-  id: string;
-  label: string;
-  description: string;
-  enabled: boolean;
-  weight: number;
-}
-
-const DEFAULT_SIGNALS: SignalConfig[] = [
-  { id: 'thumbs', label: 'Thumbs up / down', description: 'Direct feedback on DE responses from customers and employees', enabled: true, weight: 30 },
-  { id: 'escalation', label: 'Escalation outcomes', description: 'What the human did after a DE escalated — the strongest correction signal', enabled: true, weight: 40 },
-  { id: 'corrections', label: 'Correction edits', description: 'Human edits to DE drafts before sending (reviews, approvals)', enabled: true, weight: 20 },
-  { id: 'csat', label: 'CSAT scores', description: 'Post-interaction satisfaction surveys where connected', enabled: false, weight: 10 },
-];
 
 // ── Small components ──────────────────────────────────────────────
 
-function Toggle({ enabled, onChange, disabled }: { enabled: boolean; onChange?: (v: boolean) => void; disabled?: boolean }) {
-  return (
-    <button
-      onClick={() => !disabled && onChange && onChange(!enabled)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? 'bg-indigo-600' : 'bg-dt-border-strong'} ${disabled ? 'opacity-70 cursor-not-allowed' : ''}`}
-    >
-      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-4' : 'translate-x-1'}`} />
-    </button>
-  );
-}
 
 // ── Page ──────────────────────────────────────────────────────────
+
+// ⚠ The preview learning loop was DELETED 2026-08-22, all zero-reader:
+// DELearningRow/DE_ROWS, PendingValidation/PENDING, LearnedBehavior/HISTORY
+// — seeded per-DE learning stats and invented "learned behaviours" for the
+// two fictional tenants; SignalConfig/DEFAULT_SIGNALS — a signal-source list
+// the live page reads from LearningPolicy instead; and a second copy of
+// Toggle (the live one that is still rendered lives in CompliancePage).
+// Recoverable at 571868e.
 
 type RepInfo = { inquiry: string; created_at: string };
 

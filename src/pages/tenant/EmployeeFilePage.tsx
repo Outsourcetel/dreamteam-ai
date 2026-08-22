@@ -33,7 +33,6 @@ import OperatingModelPanel from '../../components/OperatingModelPanel';
 import {
   DeProfileSections, DeIncidentsPanel,
   DeKpisPanel, DeEconomicsPanel, DeDevelopmentPanel, DeReviewsPanel, DeSkillsPanel,
-  type DeProfileSectionKey,
 } from './EmployeeFileSections';
 import {
   Button, Chip, PanelCard, StatTile, EmptyState, TabBar, Banner, TimelineStep, FilterBar, SELECT_CLS, type Tone,
@@ -58,7 +57,6 @@ import { presentError } from '../../lib/presentError';
 const fmt = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 
-const STATUS_TONE: Record<string, Tone> = { active: 'ok', paused: 'warn', retired: 'neutral', draft: 'neutral' };
 const TRUST_TONE: Record<string, Tone> = { supervised: 'warn', established: 'info', trusted: 'accent', autonomous: 'ok' };
 const WORK_TONE: Record<string, { tone: Tone; pulse?: boolean }> = {
   running: { tone: 'info', pulse: true }, queued: { tone: 'neutral' }, waiting_human: { tone: 'warn' },

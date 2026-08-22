@@ -104,7 +104,6 @@ const EndUserChatPage = ({
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const customerName = customerIdentity?.name || user?.name || 'Customer';
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });

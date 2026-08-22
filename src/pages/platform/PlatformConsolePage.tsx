@@ -58,7 +58,7 @@ const PlatformConsolePage = ({
   dbTenants?: DBTenant[];
   dbTenantsLoaded?: boolean;
 }) => {
-  const { enterRemoteAccess, setActiveCompanyId, isLiveTenant } = useAuth();
+  const { enterRemoteAccess } = useAuth();
   // Local mirror of the prop, so a provision/suspend action can refresh the
   // list immediately without waiting on the parent's own resync cycle.
   const [localDbTenants, setLocalDbTenants] = useState<DBTenant[]>(dbTenants || []);
@@ -82,8 +82,9 @@ const PlatformConsolePage = ({
     void fetchPlatformTenantOverview().then(setTenantOverview);
   }, []);
   const [revenueRowLimit, setRevenueRowLimit] = useState(50);
-  const [remoteAccessSearch, setRemoteAccessSearch] = useState('');
-  const [remoteAccessLimit, setRemoteAccessLimit] = useState(30);
+  // The remote-access audit list's own search/limit state moved into
+   // RemoteAccessWriteAuditPanel (below) when that panel was extracted; the
+   // copies that stayed behind here had no reader and were dropped 2026-08-22.
   const TENANT_PAGE_SIZE = 50;
 
   // Real, DB-gated ONLY (is_platform_admin() enforced server-side): calls

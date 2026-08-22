@@ -12,7 +12,6 @@ import type { Page } from '../../types';
 import { LiveEmptyState } from '../../components/LiveDataStates';
 
 
-const DEPT_COLORS = [DEFAULT_ACCENT,'#3b82f6','#10b981','#f59e0b','#06b6d4','#8b5cf6','#ec4899','#ef4444','#84cc16','#f97316'];
 
 const ROLE_COLOR: Record<TenantRole, string> = {
   tenant_owner: 'text-amber-400 bg-amber-400/10',

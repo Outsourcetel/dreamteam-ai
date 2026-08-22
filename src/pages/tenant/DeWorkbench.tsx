@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useIsTenantAdmin } from '../../lib/useRoleGate';
 import {
-  getDeMemory, getDeTrace, getDeExceptions,
+  getDeTrace, getDeExceptions,
   getDeCertifications, getDeCertStatus, getTenantCompliancePacks, runCertificationEval,
   listAllCompliancePacks, attachCompliancePack,
   getReplaySources, runReplay,
   getDeMemoryGrouped, forgetMemory, decideException,
-  type MemoryRow, type TraceRow, type ExceptionRow,
+  type TraceRow, type ExceptionRow,
   type CertRow, type CertStatus, type CompliancePackRow,
   type ReplaySource, type ReplayResult, type MemoryGroup,
 } from '../../lib/deWorkbenchApi';
@@ -70,9 +70,6 @@ const humanOutcome = (outputs: Record<string, unknown>): string => {
   return keys.length ? `recorded ${keys.slice(0, 3).join(', ')}` : '';
 };
 const card = 'bg-dt-card border border-dt-border rounded-xl';
-const Empty = ({ children }: { children: React.ReactNode }) => (
-  <div className="text-center text-dt-muted text-sm py-10">{children}</div>
-);
 const Loading = () => <div className="text-center text-dt-muted text-sm py-10">Loading…</div>;
 
 const statusPill: Record<string, string> = {
@@ -250,7 +247,6 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
   const isTenantAdmin = useIsTenantAdmin();
   const [section, setSection] = useState<Section>('memory');
   const [loading, setLoading] = useState(true);
-  const [memory, setMemory] = useState<MemoryRow[]>([]);
   const [trace, setTrace] = useState<TraceRow[]>([]);
   const [exceptions, setExceptions] = useState<ExceptionRow[]>([]);
 
@@ -283,13 +279,17 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
     setLoadError(false);
     (async () => {
       try {
-        const [m, t, e, rs, mg] = await Promise.all([
-          getDeMemory(deId), getDeTrace(deId),
+        // The flat getDeMemory() list went with the `memory` state it fed:
+        // the Memory tab renders memoryGroups (grouped by what each memory is
+        // ABOUT), and fetching the same rows a second time, flat, to store
+        // them where nothing read them was a round-trip for nobody.
+        const [t, e, rs, mg] = await Promise.all([
+          getDeTrace(deId),
           getDeExceptions(deId),
           getReplaySources(deId), getDeMemoryGrouped(deId),
         ]);
         if (cancelled) return;
-        setMemory(m); setTrace(t);
+        setTrace(t);
         setExceptions(e);
         setReplaySources(rs); setMemoryGroups(mg);
       } catch {

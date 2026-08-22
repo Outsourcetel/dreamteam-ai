@@ -9,7 +9,7 @@ import {
   updateKnowledgeDoc, deleteKnowledgeDoc,
   ingestDocChunks,
   SearchDocRow, searchKnowledgeDocs, getKnowledgeDoc,
-  KnowledgeCollection, listKnowledgeCollections, createKnowledgeCollection, deleteKnowledgeCollection,
+  KnowledgeCollection, listKnowledgeCollections,
   listDocCollectionIds, assignDocCollection, unassignDocCollection,
   markDocVerified, setDocLifecycle, getMyUserId,
   bulkAddTag, bulkAssignCollection, bulkMarkVerified, bulkDeleteDocs, bulkReembedDocs, getReembedStatus,
@@ -223,20 +223,15 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, sourceFilter, visFilter, collectionFilter, pageIdx]);
 
-  // ── Collections: create + open the per-doc membership modal ──
-  const newCollection = () => {
-    setAskTextValue('');
-    setAskText({
-      title: 'New collection',
-      label: 'What should it be called?',
-      placeholder: 'e.g. Refunds & returns',
-      cta: 'Create it',
-      onSubmit: async (name) => {
-        try { await createKnowledgeCollection(name); await load(); }
-        catch (e) { setError((e as Error).message); }
-      },
-    });
-  };
+  // ⚠ newCollection() — the library's own "Create collection" flow, on the
+  // flat createKnowledgeCollection() — was deleted 2026-08-22 with zero call
+  // sites, along with the unused deleteKnowledgeCollection import. Spaces and
+  // collections are created in KnowledgeTreePanel now, through the
+  // hierarchical createKnowledgeSpace/createChildCollection pair. This page
+  // still LISTS collections (the filter and the per-doc membership modal), it
+  // just no longer owns making them. Recoverable at 571868e.
+  // ── Collections: open the per-doc membership modal ──
+
   const openCollections = async (doc: SearchDocRow) => {
     setCollectionDoc(doc);
     setDocCollIds(new Set(await listDocCollectionIds(doc.id)));

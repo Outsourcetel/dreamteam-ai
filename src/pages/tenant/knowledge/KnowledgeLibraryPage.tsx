@@ -1,5 +1,3 @@
-import {  } from '../../../context/AuthContext';
-import type {  } from '../../../data/companies';
 import LiveKnowledgeLibrary from './LiveKnowledgeLibrary';
 
 // ============================================================

@@ -1267,7 +1267,6 @@ function ConsultationsAuditPanel({ de }: { de: DigitalEmployee }) {
   }, [de.id]);
 
   const who = (id: string | null) => id ? (nameById[id] || 'a colleague') : 'You';
-  const REQUESTER_LABEL: Record<string, string> = { de: 'an employee', playbook: 'a playbook', human: 'a person' };
   const allTasks = [...(tasks?.inbound ?? []), ...(tasks?.outbound ?? [])]
     .sort((a, b) => (a.created_at < b.created_at ? 1 : -1)).slice(0, 6);
 

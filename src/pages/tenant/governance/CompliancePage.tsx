@@ -2,9 +2,7 @@ import { useIsTenantAdmin } from '../../../lib/useRoleGate';
 import { useState, useEffect } from 'react'
 import { Modal, StatTile, Button, INPUT_CLS } from '../../../design/primitives'
 import type { Tone } from '../../../design/primitives'
-import {  } from '../../../context/AuthContext'
 import type { Page } from '../../../types'
-import type { CompanyId } from '../../../data/companies'
 import { PageHeader, th, td } from '../../../components/ui'
 import { CustomerApiError } from '../../../lib/customerApi'
 import {
@@ -926,137 +924,32 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// GOVERNANCE — Compliance & Guardrails (gov_compliance)
-// Three-layer guardrail model:
-//   Industry Template (base) → Customer Overrides → Per-DE Restrictions
-// Per-DE data is imported directly from WorkforceDEsPage seed data
-// so the two views can never drift apart.
+// What is left of the preview compliance page: three helpers the LIVE
+// page above still calls. Everything else was DELETED 2026-08-22, all
+// zero-reader — 140 lines of hardcoded rules for two fictional tenants
+// ('tcp'/'pwc') that no longer exist, describing a guardrail model the
+// live page does not implement:
+//
+//   INDUSTRY_TEMPLATES, ACTIVE_TEMPLATE   five invented template names
+//        and versions ("Financial Services v6.2").
+//   TemplateRule/TEMPLATE_RULES           21 invented compliance rules
+//        citing SOC 2, GDPR, SEC/FINRA, PCAOB and AML by name. Live
+//        rules are rows read through guardrailApi.
+//   OverrideRow/SEED_OVERRIDES            four invented org overrides.
+//   VersionRow/VERSION_HISTORY            11 invented change-log entries
+//        with invented named approvers.
+//   CALENDAR                              six invented filing deadlines,
+//        two flagged overdue.
+//   CategoryBadge                         zero render sites.
+//
+// The invented regulatory text is why this is a deletion and not an
+// archive: a compliance screen that can render "SOC 2 evidence
+// collection — overdue" from a literal is worse than one that renders
+// nothing. Recoverable at 571868e.
 // ═══════════════════════════════════════════════════════════════
 
 type Severity = 'blocking' | 'warning' | 'regulatory'
 
-interface TemplateRule {
-  id: string
-  text: string
-  category: 'Data handling' | 'AI conduct' | 'Industry-specific'
-  severity: Severity
-}
-
-const INDUSTRY_TEMPLATES = [
-  { name: 'Healthcare (HIPAA)', version: 'v3.1' },
-  { name: 'Manufacturing', version: 'v2.0' },
-  { name: 'Technology / SaaS', version: 'v4.0' },
-  { name: 'Retail / eCommerce', version: 'v2.4' },
-  { name: 'Financial Services', version: 'v6.2' },
-]
-
-const TEMPLATE_RULES: Record<CompanyId, TemplateRule[]> = {
-  tcp: [
-    // Data handling
-    { id: 'dh1', text: 'PII masking required in all DE responses and logs', category: 'Data handling', severity: 'regulatory' },
-    { id: 'dh2', text: 'Customer data must remain in approved data-residency regions (US/EU)', category: 'Data handling', severity: 'regulatory' },
-    { id: 'dh3', text: 'Conversation retention limited to 24 months unless legal hold applies', category: 'Data handling', severity: 'blocking' },
-    // AI conduct
-    { id: 'ac1', text: 'No legal or medical advice — route to human specialist', category: 'AI conduct', severity: 'blocking' },
-    { id: 'ac2', text: 'DE must disclose AI identity when asked or on first contact', category: 'AI conduct', severity: 'regulatory' },
-    { id: 'ac3', text: 'Content filtering active on all outbound channels', category: 'AI conduct', severity: 'blocking' },
-    // Industry-specific
-    { id: 'is1', text: 'SOC 2 access controls enforced on all connected systems', category: 'Industry-specific', severity: 'regulatory' },
-    { id: 'is2', text: 'GDPR / CCPA data-subject request handling within statutory windows', category: 'Industry-specific', severity: 'regulatory' },
-    { id: 'is3', text: 'API data protection — no raw API keys or tokens in DE output', category: 'Industry-specific', severity: 'blocking' },
-    { id: 'is4', text: 'Beta-feature commitments require product-team confirmation', category: 'Industry-specific', severity: 'warning' },
-  ],
-  pwc: [
-    // Data handling
-    { id: 'dh1', text: 'PII redaction required in all DE responses and stored artifacts', category: 'Data handling', severity: 'regulatory' },
-    { id: 'dh2', text: 'Client data must remain in approved data-residency regions', category: 'Data handling', severity: 'regulatory' },
-    { id: 'dh3', text: 'Engagement records retained 7 years per regulatory requirement', category: 'Data handling', severity: 'regulatory' },
-    // AI conduct
-    { id: 'ac1', text: 'No legal or medical advice — route to attorney or specialist', category: 'AI conduct', severity: 'blocking' },
-    { id: 'ac2', text: 'DE must disclose AI identity when asked or on first contact', category: 'AI conduct', severity: 'regulatory' },
-    { id: 'ac3', text: 'Strict content filtering on all client-facing channels', category: 'AI conduct', severity: 'blocking' },
-    // Industry-specific
-    { id: 'is1', text: 'SEC / FINRA communication rules applied to all client messaging', category: 'Industry-specific', severity: 'regulatory' },
-    { id: 'is2', text: 'Auditor independence rules — no conflicting engagements', category: 'Industry-specific', severity: 'regulatory' },
-    { id: 'is3', text: 'AML / KYC verification required before engagement work begins', category: 'Industry-specific', severity: 'regulatory' },
-    { id: 'is4', text: 'PCAOB documentation standards on all audit-adjacent output', category: 'Industry-specific', severity: 'blocking' },
-    { id: 'is5', text: 'Fee discussions flagged for engagement-partner visibility', category: 'Industry-specific', severity: 'warning' },
-  ],
-}
-
-interface OverrideRow {
-  id: string
-  rule: string
-  type: 'allow' | 'restrict'
-  appliesTo: string
-  addedBy: string
-  date: string
-  version: string
-}
-
-// Seed overrides mirror the customerOverrides on the DE configs in
-// WorkforceDEsPage (rule text verbatim), rolled up to the org level.
-const SEED_OVERRIDES: Record<CompanyId, OverrideRow[]> = {
-  tcp: [
-    { id: 'co1', rule: 'Never quote competitor pricing', type: 'restrict', appliesTo: 'All DEs', addedBy: 'Admin', date: '2026-03-01', version: 'v2.1' },
-    { id: 'co2', rule: 'Always offer free trial extension on churn risk', type: 'allow', appliesTo: 'Alex, Casey', addedBy: 'CSM Lead', date: '2026-04-15', version: 'v2.2' },
-    { id: 'co3', rule: 'Max 20% discount without VP approval', type: 'restrict', appliesTo: 'Casey', addedBy: 'Finance', date: '2026-02-01', version: 'v1.7' },
-  ],
-  pwc: [
-    { id: 'co1', rule: 'Require partner sign-off on all client commitments >$50K', type: 'restrict', appliesTo: 'All DEs', addedBy: 'Risk', date: '2026-02-10', version: 'v3.0' },
-  ],
-}
-
-// ── Version history ────────────────────────────────────────────
-interface VersionRow { version: string; date: string; summary: string; changedBy: string; diff: { removed: string[]; added: string[] } }
-
-const VERSION_HISTORY: Record<CompanyId, VersionRow[]> = {
-  tcp: [
-    { version: 'v2.3', date: '2026-05-01', summary: 'Alex — added "No SLA commitments not in standard tier" restriction', changedBy: 'K. Douglas (Security)',
-      diff: { removed: [], added: ['Alex › restrictions: "No SLA commitments not in standard tier" (blocking)'] } },
-    { version: 'v2.2', date: '2026-04-15', summary: 'Customer override added — free trial extension on churn risk', changedBy: 'CSM Lead',
-      diff: { removed: [], added: ['Overrides › allow: "Free trial extension allowed on churn risk" (applies to: Casey)'] } },
-    { version: 'v2.1', date: '2026-03-01', summary: 'Customer override added — never quote competitor pricing', changedBy: 'Admin',
-      diff: { removed: [], added: ['Overrides › restrict: "Never quote competitor pricing" (applies to: all DEs)'] } },
-    { version: 'v2.0', date: '2026-02-10', summary: 'Re-based on Technology / SaaS template v4.0 (from v3.8)', changedBy: 'System',
-      diff: { removed: ['Template base: Technology / SaaS v3.8'], added: ['Template base: Technology / SaaS v4.0', 'New template rule: "API data protection — no keys or tokens in DE output" (regulatory, locked)', 'All existing overrides re-validated against v4.0 — 0 conflicts'] } },
-    { version: 'v1.8', date: '2026-04-01', summary: 'Casey — write-off limit raised to $2,500 with Finance approval gate', changedBy: 'Finance',
-      diff: { removed: ['Casey › restrictions: "No write-offs >$1,000"'], added: ['Casey › restrictions: "No write-offs >$2,500" + approval gate: Finance Manager'] } },
-    { version: 'v1.5', date: '2026-01-15', summary: 'Riley — PII handling set to hash; content filter set to strict', changedBy: 'HR Director',
-      diff: { removed: ['Riley › PII handling: mask', 'Riley › content filter: standard'], added: ['Riley › PII handling: hash', 'Riley › content filter: strict'] } },
-  ],
-  pwc: [
-    { version: 'v3.1', date: '2026-05-01', summary: 'Morgan — added fee-adjustment restriction ($5,000 cap)', changedBy: 'Quality & Risk',
-      diff: { removed: [], added: ['Morgan › restrictions: "No fee adjustments >$5,000" (blocking)'] } },
-    { version: 'v3.0', date: '2026-02-10', summary: 'Customer override added — partner sign-off on commitments >$50K', changedBy: 'Risk',
-      diff: { removed: [], added: ['Overrides › restrict: "Partner sign-off on client commitments >$50K" (applies to: all DEs)'] } },
-    { version: 'v2.4', date: '2026-06-01', summary: 'Avery — PCAOB independence conflict rule added', changedBy: 'Quality & Risk',
-      diff: { removed: [], added: ['Avery › restrictions: "No PCAOB independence conflicts" (regulatory, locked)'] } },
-    { version: 'v2.3', date: '2026-03-01', summary: 'Re-based on Financial Services template v6.2 (from v6.0)', changedBy: 'System',
-      diff: { removed: ['Template base: Financial Services v6.0'], added: ['Template base: Financial Services v6.2', 'New template rule: "Sanctions screening required before client onboarding" (regulatory, locked)'] } },
-    { version: 'v2.0', date: '2026-01-20', summary: 'All DEs — PII handling set to redact per firm policy', changedBy: 'Managing Partner',
-      diff: { removed: ['Morgan › PII handling: mask', 'Avery › PII handling: mask'], added: ['Morgan › PII handling: redact', 'Avery › PII handling: redact'] } },
-  ],
-}
-
-// ── Compliance calendar ────────────────────────────────────────
-const CALENDAR: Record<CompanyId, { item: string; date: string; overdue: boolean }[]> = {
-  tcp: [
-    { item: 'SOC 2 evidence collection', date: 'Jul 10', overdue: true },
-    { item: 'Annual penetration test', date: 'Aug 1', overdue: false },
-    { item: 'GDPR processing review', date: 'Sep 15', overdue: false },
-  ],
-  pwc: [
-    { item: 'Independence attestation', date: 'Jul 8', overdue: true },
-    { item: 'FINRA filing window', date: 'Jul 15', overdue: false },
-    { item: 'AML training refresh', date: 'Aug 30', overdue: false },
-  ],
-}
-
-const ACTIVE_TEMPLATE: Record<CompanyId, { name: string; version: string }> = {
-  tcp: { name: 'Technology / SaaS', version: 'v4.0' },
-  pwc: { name: 'Financial Services', version: 'v6.2' },
-}
 
 // ── Small helpers ──────────────────────────────────────────────
 
@@ -1069,9 +962,6 @@ function SeverityBadge({ severity }: { severity: Severity }) {
   return <span className={`text-[10px] uppercase px-1.5 py-0.5 rounded ${styles[severity]}`}>{severity}</span>
 }
 
-function CategoryBadge({ category }: { category: string }) {
-  return <span className="text-[10px] px-1.5 py-0.5 rounded bg-dt-panel text-dt-support">{category}</span>
-}
 
 function Toggle({ enabled, onChange, disabled }: { enabled: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (

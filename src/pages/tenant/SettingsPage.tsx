@@ -10,7 +10,7 @@ import ScimTokensPanel from '../../components/sso/ScimTokensPanel';
 import { useState, useEffect, useRef } from 'react';
 import type { AuthUser, Tenant, Page } from '../../types';
 import { updateTenant, savePlatformConfig, fetchTenants, fetchAllTenantsUsage, updateTenantBudget,
-  getTenantLlmKeyStatus, saveTenantLlmKey, clearTenantLlmKey, setTenantLlmKeyMode, type LlmKeyMode } from '../../lib/api';
+  getTenantLlmKeyStatus, saveTenantLlmKey, clearTenantLlmKey, type LlmKeyMode } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
 import { canAccessSettingsTab, type SettingsTab } from '../../lib/navAccess';
 import {
@@ -265,6 +265,13 @@ const SettingsPage = ({
     setTimeout(() => setKeyStatus('idle'), 4000);
   };
 
+  // ⚠ Until 2026-08-22 this function had ZERO call sites: a workspace owner
+  // could set a provider key and had no way to take one back. That is a
+  // revocation gap, not a missing nicety — a leaked or rotated key stayed
+  // decryptable in vault with no self-service path to remove it. The RPC
+  // behind it (clear_tenant_llm_key, migration 541) deletes the row AND the
+  // vault secret, and RAISEs on an unauthorised caller, so the error branch
+  // below reports a governed refusal rather than swallowing it.
   const handleRemoveKey = async (providerKey: string, clearFlag: (v: boolean) => void) => {
     if (!tenant?.id) return;
     setKeySaving(true); setKeyError(null);
@@ -274,10 +281,12 @@ const SettingsPage = ({
     setTimeout(() => setKeyStatus('idle'), 4000);
   };
 
-  // handleKeyModeChange removed with the radio buttons it served. It called
-  // setTenantLlmKeyMode → a direct UPDATE on `tenants`, which RLS answers with
-  // zero rows and no error, so it reported success and changed nothing. Which
-  // account pays is set from the platform console.
+  // handleKeyModeChange removed with the radio buttons it served. At the time
+  // setTenantLlmKeyMode was a direct UPDATE on `tenants`, which RLS answered
+  // with zero rows and no error — it reported success and changed nothing.
+  // (api.ts's copy has since been repaired to call the migration-633 RPC; the
+  // radio buttons did not come back, because which account pays is a platform
+  // decision and is set from the platform console.)
 
   const handleSaveBudget = async (tenantId: string) => {
     const val = parseInt(budgetEdits[tenantId] || '0', 10);
@@ -641,9 +650,16 @@ const SettingsPage = ({
             <div className="mb-5">
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-medium text-dt-support">Anthropic API Key</label>
-                {anthropicSet
-                  ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured — primary engine</span>
-                  : <span className="text-xs text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded">Not set — answers fall to the next engine</span>}
+                <div className="flex items-center gap-2">
+                  {anthropicSet
+                    ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured — primary engine</span>
+                    : <span className="text-xs text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded">Not set — answers fall to the next engine</span>}
+                  {anthropicSet && (
+                    <button type="button" onClick={() => void handleRemoveKey('ANTHROPIC_API_KEY', setAnthropicSet)}
+                      disabled={keySaving} title="Delete this key from the workspace"
+                      className="text-xs text-dt-danger hover:brightness-110 disabled:opacity-50">Remove</button>
+                  )}
+                </div>
               </div>
               <input
                 type="password"
@@ -661,9 +677,16 @@ const SettingsPage = ({
             <div className="mb-5">
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-medium text-dt-support">Amazon Bedrock Key — Claude fallback <span className="text-dt-faint font-normal">(recommended)</span></label>
-                {bedrockSet
-                  ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured — fallback armed</span>
-                  : <span className="text-xs text-dt-muted bg-dt-neutral-soft px-2 py-0.5 rounded">Not set — no fallback if Anthropic is unavailable</span>}
+                <div className="flex items-center gap-2">
+                  {bedrockSet
+                    ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured — fallback armed</span>
+                    : <span className="text-xs text-dt-muted bg-dt-neutral-soft px-2 py-0.5 rounded">Not set — no fallback if Anthropic is unavailable</span>}
+                  {bedrockSet && (
+                    <button type="button" onClick={() => void handleRemoveKey('BEDROCK_API_KEY', setBedrockSet)}
+                      disabled={keySaving} title="Delete this key from the workspace"
+                      className="text-xs text-dt-danger hover:brightness-110 disabled:opacity-50">Remove</button>
+                  )}
+                </div>
               </div>
               <div className="flex gap-2">
                 <input
@@ -692,9 +715,16 @@ const SettingsPage = ({
             <div className="mb-5">
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-medium text-dt-support">OpenAI API Key <span className="text-dt-faint font-normal">(optional)</span></label>
-                {openaiSet
-                  ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured — cross-vendor fallback armed</span>
-                  : <span className="text-xs text-dt-muted bg-dt-neutral-soft px-2 py-0.5 rounded">Not set — optional tier</span>}
+                <div className="flex items-center gap-2">
+                  {openaiSet
+                    ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured — cross-vendor fallback armed</span>
+                    : <span className="text-xs text-dt-muted bg-dt-neutral-soft px-2 py-0.5 rounded">Not set — optional tier</span>}
+                  {openaiSet && (
+                    <button type="button" onClick={() => void handleRemoveKey('OPENAI_API_KEY', setOpenaiSet)}
+                      disabled={keySaving} title="Delete this key from the workspace"
+                      className="text-xs text-dt-danger hover:brightness-110 disabled:opacity-50">Remove</button>
+                  )}
+                </div>
               </div>
               <input
                 type="password"
@@ -714,9 +744,16 @@ const SettingsPage = ({
             <div className="mb-5">
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-xs font-medium text-dt-support">Google AI Key <span className="text-dt-faint font-normal">(optional)</span></label>
-                {googleSet
-                  ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured — Gemini fallback armed</span>
-                  : <span className="text-xs text-dt-muted bg-dt-neutral-soft px-2 py-0.5 rounded">Not set — optional tier</span>}
+                <div className="flex items-center gap-2">
+                  {googleSet
+                    ? <span className="text-xs text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded">Configured — Gemini fallback armed</span>
+                    : <span className="text-xs text-dt-muted bg-dt-neutral-soft px-2 py-0.5 rounded">Not set — optional tier</span>}
+                  {googleSet && (
+                    <button type="button" onClick={() => void handleRemoveKey('GOOGLE_AI_KEY', setGoogleSet)}
+                      disabled={keySaving} title="Delete this key from the workspace"
+                      className="text-xs text-dt-danger hover:brightness-110 disabled:opacity-50">Remove</button>
+                  )}
+                </div>
               </div>
               <input
                 type="password"

@@ -3,7 +3,6 @@ import { useAuth } from '../../../context/AuthContext';
 import { fetchMonthlyUsage, MonthlyUsage } from '../../../lib/usageApi';
 import { PageHeader } from '../../../components/ui';
 import type { Page } from '../../../types';
-import type { CompanyId } from '../../../data/companies';
 import {
   getDePerformanceMetrics, getDeCsatMetrics, getDeActionMetrics, getOutcomeMetering, getBenchmarkReport,
   getDeInquiryMetrics, getDeCostMetricsRanged,
@@ -19,12 +18,14 @@ import { LiveLoadingSkeleton, LiveEmptyState } from '../../../components/LiveDat
 // ── Shared per-DE metrics (numbers from WorkforceDEsPage) ─────────
 
 
-
-// Company benchmark — same wording as WorkforceDEsPage TabPerformance
-const BENCHMARK: Record<CompanyId, { resolution: number; confidence: number; escalation: number }> = {
-  tcp: { resolution: 84, confidence: 88, escalation: 11 },
-  pwc: { resolution: 83, confidence: 89, escalation: 13 },
-};
+// ⚠ Two seeded blocks were DELETED 2026-08-22, both zero-reader:
+//   BENCHMARK   invented per-tenant resolution/confidence/escalation numbers.
+//   InsightKind/Insight/TCP_INSIGHTS/PWC_INSIGHTS/INSIGHTS/KIND_META
+//               ~95 lines of invented "intelligence" — named anomalies,
+//               retraining recommendations and config-drift claims with
+//               invented percentages, each linking to a real governance page.
+// The live pages read real metrics; a fabricated insight that deep-links into
+// Compliance is a claim about the tenant's own governance. Recoverable at 571868e.
 
 // ── Sparkline (inline SVG) ────────────────────────────────────────
 
@@ -387,111 +388,6 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
 // Insights
 // ══════════════════════════════════════════════════════════════════
 
-type InsightKind = 'anomaly' | 'retraining' | 'config_drift' | 'trend' | 'action_failed' | 'opportunity';
-
-interface Insight {
-  kind: InsightKind;
-  title: string;
-  detail: string;
-  page: Page;
-  pageLabel: string;
-  severity: 'high' | 'medium' | 'low';
-}
-
-const TCP_INSIGHTS: Insight[] = [
-  {
-    kind: 'action_failed', severity: 'high',
-    title: 'Riley: 3 Workday actions failed this week',
-    detail: 'All three onboarding record-updates were rejected by Workday — the connector token has likely expired. Reconnect it to unblock the queue.',
-    page: 'systems_connectors', pageLabel: 'Open Connectors',
-  },
-  {
-    kind: 'opportunity', severity: 'low',
-    title: 'Casey routed 60 renewals for approval',
-    detail: 'Only 75% of Casey\'s actions ran without a human, and your team approved nearly all of them unchanged. Raise Casey\'s trust dial to clear the queue — guardrails still cap what it can do.',
-    page: 'workforce_des', pageLabel: 'Open Digital Employees',
-  },
-  {
-    kind: 'anomaly', severity: 'high',
-    title: 'Alex escalation rate +40% WoW on billing topics',
-    detail: 'Correlates with open knowledge gap "Multi-currency invoicing" — 11 queries missed this week. Resolving the gap is projected to recover ~6 points of resolution rate.',
-    page: 'knowledge_gaps', pageLabel: 'Open Gap Detection',
-  },
-  {
-    kind: 'anomaly', severity: 'medium',
-    title: 'Riley resolution rate declining 5 points over 6 months',
-    detail: '84% → 79% since January. Trend correlates with the overdue recertification (due 2026-06-01) and the recurring Workday connector errors.',
-    page: 'workforce_des', pageLabel: "Open Riley's profile",
-  },
-  {
-    kind: 'retraining', severity: 'high',
-    title: 'Riley recertification overdue — schedule now',
-    detail: 'Recert was due 2026-06-01. Two training modules are incomplete (Workday HRIS Fundamentals 65%, GDPR & Employee Data 40%).',
-    page: 'workforce_des', pageLabel: 'Open Digital Employees',
-  },
-  {
-    kind: 'retraining', severity: 'medium',
-    title: 'Alex: PII Handling module at 78% — completion recommended',
-    detail: 'Completing "PII Handling & GDPR Basics" before the SOC 2 checkpoint (Jul 20) strengthens the audit evidence package.',
-    page: 'workforce_des', pageLabel: 'Open Digital Employees',
-  },
-  {
-    kind: 'config_drift', severity: 'medium',
-    title: 'Casey discount override used 6× this month',
-    detail: 'The 20% discount ceiling was overridden six times, all approved. Consider raising the template limit to 22% to remove approval friction — or tightening the save-offer playbook.',
-    page: 'gov_compliance', pageLabel: 'Open Compliance & Guardrails',
-  },
-  {
-    kind: 'anomaly', severity: 'low',
-    title: 'Workday connector error rate above threshold',
-    detail: '3 sync failures in 24 hrs blocked onboarding automations. Riley error rate (4%) is approaching the 5% amber threshold.',
-    page: 'systems_connectors', pageLabel: 'Open Connectors',
-  },
-];
-
-const PWC_INSIGHTS: Insight[] = [
-  {
-    kind: 'opportunity', severity: 'low',
-    title: 'Avery routed 19 filings for partner review',
-    detail: 'About half of Avery\'s actions needed a human. That\'s expected for tax work — but if certain filing types are always approved, scope a narrower auto-approve rule for just those.',
-    page: 'workforce_des', pageLabel: 'Open Digital Employees',
-  },
-  {
-    kind: 'anomaly', severity: 'high',
-    title: 'GDPR request breached statutory SLA',
-    detail: 'One data-subject request passed the 30-day window before escalation. Recommend lowering the escalation trigger from day 24 to day 20.',
-    page: 'outcome_risk', pageLabel: 'Open Risk Posture',
-  },
-  {
-    kind: 'anomaly', severity: 'medium',
-    title: 'Avery escalation rate 16% — highest in the org',
-    detail: 'Driven by the "FATCA filing for dual-nationals" knowledge gap and the mandatory partner-review policy. Gap resolution is in progress.',
-    page: 'knowledge_gaps', pageLabel: 'Open Gap Detection',
-  },
-  {
-    kind: 'retraining', severity: 'medium',
-    title: 'Avery: International Tax module at 72%',
-    detail: 'Completing FATCA/FBAR training is projected to cut dual-national escalations by half.',
-    page: 'workforce_des', pageLabel: 'Open Digital Employees',
-  },
-  {
-    kind: 'config_drift', severity: 'low',
-    title: 'Morgan review-gate threshold raised twice this quarter',
-    detail: '70% → 72% by Risk & Compliance. Monitor whether partner review volume stays manageable; a third raise should go through governance review.',
-    page: 'gov_compliance', pageLabel: 'Open Compliance & Guardrails',
-  },
-];
-
-const INSIGHTS: Record<CompanyId, Insight[]> = { tcp: TCP_INSIGHTS, pwc: PWC_INSIGHTS };
-
-const KIND_META: Record<InsightKind, { label: string; cls: string }> = {
-  anomaly: { label: 'ANOMALY', cls: 'bg-dt-danger-soft text-dt-danger' },
-  retraining: { label: 'RETRAINING', cls: 'bg-dt-info-soft text-dt-info' },
-  config_drift: { label: 'CONFIG DRIFT', cls: 'bg-dt-warn-soft text-dt-warn' },
-  trend: { label: 'TREND', cls: 'bg-dt-accent-soft text-dt-accent-text' },
-  action_failed: { label: 'ACTION FAILED', cls: 'bg-dt-danger-soft text-dt-danger' },
-  opportunity: { label: 'OPPORTUNITY', cls: 'bg-dt-ok-soft text-dt-ok' },
-};
 
 export function InsightsPage({ setPage }: { setPage: (p: Page) => void }) {
   const { currentTenant } = useAuth();

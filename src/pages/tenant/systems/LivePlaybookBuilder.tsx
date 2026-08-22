@@ -16,7 +16,7 @@ import {
   RETIRED_PRIMITIVES,
   PRIMITIVE_REGISTRY, TEMPLATE_VARS, UPDATE_WHITELIST, DECISION_OPERATORS, BRANCH_PRIMITIVES,
   validateStepsClient, listDefinitions, createDefinition, updateDefinition,
-  publishDefinition, startDefinitionRun, previewRun, uploadPlaybookMedia, getPlaybookMediaUrlByAssetId,
+  publishDefinition, startDefinitionRun, previewRun, uploadPlaybookMedia,
   DISPATCH_MODE, WEEKDAYS, EVENT_META, POLLED_EVENT_KEYS, describeSchedule, describeEventRule,
   listSchedules, createSchedule, setScheduleActive, deleteSchedule,
   listEventRules, createEventRule, setEventRuleActive, deleteEventRule,
@@ -695,89 +695,13 @@ const NEW_TEMPLATE: DefinitionStep[] = [
 // like an SOP: numbered steps, rich instruction blocks with embedded
 // media, decision branches indented, executable steps as action chips.
 
-function MediaThumb({ m }: { m: StepMedia }) {
-  const [url, setUrl] = useState<string | null>(m.url ?? null);
-  useEffect(() => {
-    if (m.url || !m.asset_id) return;
-    void getPlaybookMediaUrlByAssetId(m.asset_id).then(setUrl).catch(() => undefined);
-  }, [m.asset_id, m.url]);
-  return (
-    <div className="rounded-lg border border-dt-border bg-dt-page p-2 inline-block">
-      {m.kind === 'video' ? (
-        url ? <video src={url} controls className="max-h-40 rounded" /> : <span className="text-[11px] text-dt-muted">🎬 {m.caption || 'video'}</span>
-      ) : (
-        url ? <img src={url} alt={m.caption || ''} className="max-h-40 rounded" /> : <span className="text-[11px] text-dt-muted">🖼️ {m.caption || 'image'}</span>
-      )}
-      {m.caption && <p className="text-[10px] text-dt-faint mt-1">{m.caption}</p>}
-    </div>
-  );
-}
 
-function DocStepRow({ s, index, publishedDefs, depth = 0 }: {
-  s: DefinitionStep; index: number | null; publishedDefs: PlaybookDefinition[]; depth?: number;
-}) {
-  const meta = PRIMITIVE_REGISTRY.find(m => m.key === s.key);
-  const gate = s.key === 'human_approval' || s.key === 'checklist';
-  const p = s.params ?? {};
+// ⚠ The playbook DOCUMENT VIEW — PlaybookDocumentView, the recursive
+// DocStepRow it rendered and MediaThumb (DocStepRow's only caller), 74 lines — was DELETED 2026-08-22. DocStepRow's only
+// non-recursive caller was PlaybookDocumentView, and PlaybookDocumentView had
+// no call site at all, so neither had rendered anything. The builder's own step
+// list is what authors actually see. Recoverable at 571868e.
 
-  if (s.key === 'instruction') {
-    const media = Array.isArray(p.media) ? (p.media as StepMedia[]) : [];
-    return (
-      <div style={{ marginLeft: depth * 20 }} className="rounded-xl border border-dt-info-border bg-dt-info-soft p-3 mb-1.5">
-        <div className="flex items-center gap-2 mb-1">
-          {index !== null && <span className="w-6 h-6 rounded-lg bg-dt-info-soft text-dt-info flex items-center justify-center text-[11px] font-bold flex-shrink-0">{index + 1}</span>}
-          <span className="text-sm font-medium text-dt-title">{String(p.title ?? 'Instruction')}</span>
-        </div>
-        {p.body_md ? <p className="text-xs text-dt-support whitespace-pre-wrap ml-8">{String(p.body_md)}</p> : null}
-        {media.length > 0 && <div className="ml-8 mt-2 flex flex-wrap gap-2">{media.map((m, i) => <MediaThumb key={i} m={m} />)}</div>}
-      </div>
-    );
-  }
-
-  if (s.key === 'decision') {
-    const then = s.then_steps ?? [];
-    const els = s.else_steps ?? [];
-    return (
-      <div style={{ marginLeft: depth * 20 }} className="mb-1.5">
-        <div className="flex items-center gap-2 rounded-xl border border-dt-accent-border bg-dt-accent-soft px-3 py-2">
-          {index !== null && <span className="w-6 h-6 rounded-lg bg-dt-accent-soft text-dt-accent-text flex items-center justify-center text-[11px] font-bold flex-shrink-0">{index + 1}</span>}
-          <span className="text-sm text-dt-title">If <code className="text-dt-accent-text">{String(p.on ?? '?')}</code> {DECISION_OPERATORS.find(o => o.value === p.operator)?.label ?? String(p.operator ?? '')} {p.operator !== 'exists' ? <code className="text-dt-accent-text">{String(p.value ?? '')}</code> : null}</span>
-        </div>
-        <div className="ml-8 mt-1">
-          <p className="text-[10px] uppercase tracking-wider text-dt-faint mt-1">Then</p>
-          {then.length === 0 ? <p className="text-[11px] text-dt-faint ml-2">(nothing)</p> : then.map((bs, i) => <DocStepRow key={i} s={bs} index={null} publishedDefs={publishedDefs} depth={depth + 1} />)}
-          <p className="text-[10px] uppercase tracking-wider text-dt-faint mt-2">Else</p>
-          {els.length === 0 ? <p className="text-[11px] text-dt-faint ml-2">(nothing)</p> : els.map((bs, i) => <DocStepRow key={i} s={bs} index={null} publishedDefs={publishedDefs} depth={depth + 1} />)}
-        </div>
-      </div>
-    );
-  }
-
-  // Everything else — a numbered "document" row with an action chip.
-  return (
-    <div style={{ marginLeft: depth * 20 }} className={`flex items-center gap-2 text-xs rounded-lg px-2 py-1.5 mb-1 ${gate ? 'bg-amber-500/5 border border-amber-500/20' : 'border border-dt-border'}`}>
-      {index !== null && <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-bold flex-shrink-0 ${gate ? 'bg-amber-500/20 text-amber-400' : 'bg-dt-panel text-dt-support'}`}>{index + 1}</span>}
-      <span className="text-dt-support">{meta?.label ?? s.key}{gate ? ' 🤝' : ''}</span>
-      {s.key === 'connector_action' && <span className="text-[10px] text-dt-faint">{String(p.action_category ?? p.category ?? p.provider ?? '—')}{(p.action_key || p.op) ? ` · ${String(p.action_key ?? p.op)}` : ''}</span>}
-      {s.key === 'log_activity' && <span className="text-[10px] text-dt-faint truncate">{String(p.text_template ?? '')}</span>}
-      {s.key === 'checklist' && <span className="text-[10px] text-dt-faint">{Array.isArray(p.items) ? (p.items as string[]).length : 0} item(s)</span>}
-      {s.key === 'wait' && <span className="text-[10px] text-dt-faint">{String(p.duration_minutes ?? 0)} min</span>}
-      {s.key === 'sub_playbook' && <span className="text-[10px] text-dt-faint">→ {publishedDefs.find(d => d.id === p.playbook_id)?.name ?? 'unknown playbook'}</span>}
-      {s.key === 'check_knowledge' && <span className="text-[10px] text-dt-faint truncate">🔎 {String(p.query_template ?? '')} · miss: {String(p.on_miss ?? 'escalate')}</span>}
-      {s.key === 'read_reference' && <span className="text-[10px] text-dt-faint">📄 {Array.isArray(p.refs) ? (p.refs as unknown[]).length : 0} reference(s)</span>}
-      {s.key === 'custom_step' && <span className="text-[10px] text-dt-faint truncate">✦ {String(p.instructions ?? '')}</span>}
-      {(p.rule as { pattern?: string } | undefined)?.pattern && <span className="text-[10px] text-rose-400/70" title={`Step rule: ${String((p.rule as { pattern?: string }).pattern)}`}>⚑ rule</span>}
-    </div>
-  );
-}
-
-function PlaybookDocumentView({ steps, publishedDefs }: { steps: DefinitionStep[]; publishedDefs: PlaybookDefinition[] }) {
-  return (
-    <div className="space-y-1 mb-4">
-      {steps.map((s, i) => <DocStepRow key={i} s={s} index={i} publishedDefs={publishedDefs} />)}
-    </div>
-  );
-}
 
 // W4-A (docs/16): the owning employee, finally settable where playbooks are
 // authored. The binding steers the work-engine briefing (mig 250), consult

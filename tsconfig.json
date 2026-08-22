@@ -22,17 +22,25 @@
     // into a ratchet: the tree already complies, and the day someone writes code
     // that does not, the build says so instead of the number quietly growing.
     //
-    // The two that are NOT free are recorded here so the next person starts from
-    // a measurement rather than a guess:
-    //     npx tsc --noEmit --noImplicitAny      → 23 errors
-    //     npx tsc --noEmit --strictNullChecks   → 19 errors
-    // Both are worth doing and neither is a one-sitting job.
+    // The ones that are NOT free are recorded here so the next person starts
+    // from a measurement rather than a guess (all re-measured 2026-08-22):
+    //     npx tsc --noEmit --noImplicitAny        → 23 errors
+    //     npx tsc --noEmit --strictNullChecks     → 19 errors
+    //     npx tsc --noEmit --noUnusedParameters   → 12 errors
+    // All three are worth doing and none is a one-sitting job.
     "strict": false,
     "strictFunctionTypes": true,
     "strictBindCallApply": true,
     "noImplicitThis": true,
     "alwaysStrict": true,
-    "noUnusedLocals": false,
+    // Was false, costing 202 findings when it was last measured. Those were
+    // cleared one at a time over 2026-08-22 — the ones that were litter by
+    // deletion, and the ones that were a symptom by fixing what they pointed
+    // at — and it is ON now because that is the only thing that stops the
+    // number growing back. A dead local is cheap to delete the day it appears
+    // and expensive to judge two hundred at a time; this makes the build the
+    // thing that notices, instead of the next person to run the flag by hand.
+    "noUnusedLocals": true,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true
   },

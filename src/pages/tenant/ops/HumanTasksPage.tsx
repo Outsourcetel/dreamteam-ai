@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react';
-import {  } from '../../../context/AuthContext';
 import { useIsTenantManager } from '../../../lib/useRoleGate';
 import { PageHeader } from '../../../components/ui';
 import type { Page } from '../../../types';
-import type { CompanyId } from '../../../data/companies';
 import type { GatedExecutionPreview } from '../../../lib/connectorApi';
 import { listHumanTasks, decideHumanTask, withdrawHumanTasks, previewDecideHumanTasks, decideHumanTasks, listDecisionGroups, toggleChecklistItem, listOpenStalenessEscalations, CustomerApiError, setImprovementPublishScope, getImprovementRoleInfo, getImprovementProposal, getImprovementReviewSignals, DECISION_REASON_CODES, getBlockedWorkForTask, rerouteEscalation, retryAnswerableBlockers, getPendingConversationDraft } from '../../../lib/customerApi';
 import type { BlockedWork, PendingConversationDraft } from '../../../lib/customerApi';
@@ -36,136 +34,12 @@ import { trustPromotionCardCopy, isThinTrustEvidence, extractPolicyEvidence, det
 type TaskType = 'approval_gate' | 'review_gate' | 'escalation' | 'override' | 'training_feedback' | 'trust_promotion' | 'trust_demotion_notice' | 'checklist' | 'knowledge_revision' | 'inquiry_review' | 'action_approval';
 type TaskStatus = 'pending' | 'approved' | 'rejected' | 'completed' | 'expired';
 
-interface OpsTask {
-  id: string;
-  type: TaskType;
-  title: string;
-  de: string;
-  detail: string;
-  age: string;
-  urgent: boolean;
-  status: TaskStatus;
-  context: string;
-  reasoning: string;
-  confidence?: number;
-  relatedPage: Page;
-  relatedLabel: string;
-  slaRemaining: string;   // for pending tasks
-  resolvedBy?: string;    // for historical tasks
-  resolvedAt?: string;
-  viaChat?: boolean;      // raised from the DE chat dock
-}
 
-// ── Seed data — pending rows mirror DashboardPage task seeds EXACTLY ─
-
-const TCP_TASKS: OpsTask[] = [
-  {
-    id: 't1', type: 'approval_gate', title: 'Invoice approval — Meridian Group', de: 'Casey', detail: '$15,600', age: '8 min', urgent: true, status: 'pending',
-    context: 'Casey generated the renewal invoice for Meridian Group ($15,600). Amount exceeds the $10,000 approval-gate threshold for the Renewal DE.',
-    reasoning: 'Contract terms match the signed renewal order. Subscription and overage amounts reconciled against Zuora. No discount applied.',
-    confidence: 92, relatedPage: 'entity_customer_renewal', relatedLabel: 'Renewal & Expansion', slaRemaining: '23h 52m of 1-day SLA',
-  },
-  {
-    id: 't2', type: 'escalation', title: 'Complex bug — API auth failure', de: 'Alex', detail: 'Apex Systems', age: '23 min', urgent: true, status: 'pending',
-    context: 'Alex escalated ticket #4819 — intermittent API authentication failures affecting Apex Systems. Reproduction steps and environment details attached.',
-    reasoning: 'Confidence fell to 58%, below the 55% escalation threshold after two failed resolution attempts. Linked Jira issue ENG-2401 created.',
-    confidence: 58, relatedPage: 'entity_customer_support', relatedLabel: 'Customer Support', slaRemaining: '1d 23h of 2-day SLA',
-  },
-  {
-    id: 't3', type: 'review_gate', title: 'KB article review — Rate limiting guide', de: 'Alex', detail: '', age: '1 hr', urgent: false, status: 'pending',
-    context: 'Alex drafted a knowledge-base article "Rate limiting guide" from the resolved gap "API rate limit tiers after upgrade". Awaiting human review before publication.',
-    reasoning: 'Draft compiled from Jira ENG-2380 (authoritative tier table) and ticket #4688. All figures cited from engineering sources.',
-    confidence: 88, relatedPage: 'knowledge_gaps', relatedLabel: 'Knowledge Gaps', slaRemaining: '23h of 1-day SLA',
-  },
-  {
-    id: 't4', type: 'approval_gate', title: 'Contract renewal — Harbor Tech', de: 'Casey', detail: '$67,000', age: '2 hrs', urgent: false, status: 'pending',
-    context: 'Casey prepared the Harbor Tech renewal at $67,000 with standard 12-month terms. Above the $10,000 approval threshold.',
-    reasoning: 'Health score 81 (healthy). No discount requested. Terms identical to prior year plus 4% uplift per contract escalator.',
-    confidence: 95, relatedPage: 'entity_customer_renewal', relatedLabel: 'Renewal & Expansion', slaRemaining: '22h of 1-day SLA',
-  },
-  {
-    id: 't5', type: 'training_feedback', title: 'DE response flagged for review', de: 'Riley', detail: '', age: '3 hrs', urgent: false, status: 'pending',
-    context: 'Riley proposed a learned behavior awaiting human validation: "When leave request is submitted by same employee twice in 24 hrs, auto-reject duplicate." All learned behaviors require human approval before activation.',
-    reasoning: 'Pattern observed across 9 duplicate leave submissions in the last 60 days, each manually rejected by HR with identical rationale.',
-    confidence: 76, relatedPage: 'workforce_des', relatedLabel: "Riley's profile — Audit & Memory", slaRemaining: '4d 21h of 5-day SLA',
-  },
-  // ── Historical ──
-  {
-    id: 'h1', type: 'approval_gate', title: 'Invoice approval — Northwind Labs', de: 'Casey', detail: '$22,400', age: '1 day', urgent: false, status: 'approved',
-    context: 'Renewal invoice for Northwind Labs.', reasoning: 'Amounts reconciled against Zuora subscription.', confidence: 94,
-    relatedPage: 'entity_customer_renewal', relatedLabel: 'Renewal & Expansion', slaRemaining: '—', resolvedBy: 'J. Patel (Finance)', resolvedAt: '2026-07-02 15:40',
-  },
-  {
-    id: 'h2', type: 'review_gate', title: 'KB article review — Webhook retry logic', de: 'Alex', detail: '', age: '2 days', urgent: false, status: 'approved',
-    context: 'Draft article covering webhook delivery retries, backoff, and replay.', reasoning: 'Compiled from L2 tickets and ENG-2214 spec.', confidence: 90,
-    relatedPage: 'knowledge_gaps', relatedLabel: 'Knowledge Gaps', slaRemaining: '—', resolvedBy: 'M. Osei (Support Lead)', resolvedAt: '2026-07-01 11:20',
-  },
-  {
-    id: 'h3', type: 'override', title: 'Discount override — Sunrise Media renewal', de: 'Casey', detail: '22% requested', age: '3 days', urgent: false, status: 'rejected',
-    context: 'Casey requested an override to offer 22% discount, above the 20% template limit.', reasoning: 'At-risk account with health score 44; save-offer economics justified per playbook.', confidence: 71,
-    relatedPage: 'gov_compliance', relatedLabel: 'Compliance & Guardrails', slaRemaining: '—', resolvedBy: 'VP Sales', resolvedAt: '2026-06-30 09:15',
-  },
-  {
-    id: 'h4', type: 'escalation', title: 'Workday connector failure — sync outage', de: 'Riley', detail: '', age: '4 days', urgent: false, status: 'completed',
-    context: 'Repeated Workday sync timeouts blocked onboarding tasks.', reasoning: 'Three consecutive failures triggered the error-rate escalation rule.',
-    relatedPage: 'systems_connectors', relatedLabel: 'Connectors', slaRemaining: '—', resolvedBy: 'IT Ops', resolvedAt: '2026-06-29 16:05',
-  },
-  {
-    id: 'h5', type: 'training_feedback', title: 'Response tone feedback — billing replies', de: 'Alex', detail: '', age: '6 days', urgent: false, status: 'completed',
-    context: 'Customer flagged an overly terse billing response; routed to the training team.', reasoning: 'CSAT comment triggered the training-feedback touchpoint.',
-    relatedPage: 'workforce_des', relatedLabel: "Alex's profile", slaRemaining: '—', resolvedBy: 'Training Team', resolvedAt: '2026-06-27 10:30',
-  },
-];
-
-const PWC_TASKS: OpsTask[] = [
-  {
-    id: 't1', type: 'review_gate', title: 'Partner review — Crestline tax memo Q2', de: 'Avery', detail: '', age: '14 min', urgent: true, status: 'pending',
-    context: 'Avery completed the Q2 corporate tax memo for Crestline Corp. All memos require partner review before client delivery.',
-    reasoning: 'Positions supported by Checkpoint citations and IRS Notice 2026-14. One aggressive position flagged for partner attention (R&D credit stacking).',
-    confidence: 91, relatedPage: 'outcome_delivery', relatedLabel: 'Practice Delivery', slaRemaining: '23h 46m of 1-day SLA',
-  },
-  {
-    id: 't2', type: 'approval_gate', title: 'Credit note approval', de: 'Morgan', detail: '$12,400', age: '1 hr', urgent: false, status: 'pending',
-    context: 'Morgan prepared a $12,400 credit note following a scoping change on the Harbor Financial engagement. Above the $5,000 approval threshold.',
-    reasoning: 'Scope reduction documented in the signed change order. Fee adjustment matches the revised statement of work.',
-    confidence: 89, relatedPage: 'outcome_financial', relatedLabel: 'Financial Health', slaRemaining: '23h of 1-day SLA',
-  },
-  {
-    id: 't3', type: 'escalation', title: 'GDPR data request — response overdue', de: 'Morgan', detail: '', age: '2 hrs', urgent: true, status: 'pending',
-    context: 'A client data-subject request has passed its statutory deadline. Morgan escalated to Legal with the compiled data export ready for review.',
-    reasoning: 'Statutory 30-day window breached; escalation rule fired automatically. Response draft attached, awaiting legal sign-off.',
-    relatedPage: 'outcome_risk', relatedLabel: 'Risk Posture', slaRemaining: 'OVERDUE — statutory deadline passed',
-  },
-  {
-    id: 't4', type: 'review_gate', title: 'Audit workpaper review — Harbor Financial', de: 'Avery', detail: '', age: '3 hrs', urgent: false, status: 'pending',
-    context: 'Avery reviewed 14 workpapers for the Harbor Financial audit; 2 flagged with inconsistent depreciation schedules for human review.',
-    reasoning: 'Depreciation method changed mid-year without documented justification in 2 of 14 workpapers.',
-    confidence: 88, relatedPage: 'outcome_delivery', relatedLabel: 'Practice Delivery', slaRemaining: '21h of 1-day SLA',
-  },
-  // ── Historical ──
-  {
-    id: 'h1', type: 'approval_gate', title: 'Engagement letter — Sterling Trust advisory', de: 'Morgan', detail: '$48,000', age: '2 days', urgent: false, status: 'approved',
-    context: 'New advisory engagement letter for Sterling Trust.', reasoning: 'Standard terms; fees within partner-approved rate card.', confidence: 93,
-    relatedPage: 'entity_customer', relatedLabel: 'Clients', slaRemaining: '—', resolvedBy: 'Engagement Partner', resolvedAt: '2026-07-01 14:20',
-  },
-  {
-    id: 'h2', type: 'review_gate', title: 'Tax memo — R&D credit analysis', de: 'Avery', detail: '', age: '3 days', urgent: false, status: 'approved',
-    context: 'R&D credit memo for a manufacturing client.', reasoning: 'All positions cited; no aggressive positions taken.', confidence: 94,
-    relatedPage: 'outcome_delivery', relatedLabel: 'Practice Delivery', slaRemaining: '—', resolvedBy: 'Tax Partner', resolvedAt: '2026-06-30 16:45',
-  },
-  {
-    id: 'h3', type: 'escalation', title: 'KYC screening hit — new client entity', de: 'Morgan', detail: '', age: '5 days', urgent: false, status: 'completed',
-    context: 'Sanctions screening returned a partial name match on a beneficial owner.', reasoning: 'Any screening hit routes to Risk & Compliance per playbook.',
-    relatedPage: 'outcome_risk', relatedLabel: 'Risk Posture', slaRemaining: '—', resolvedBy: 'Risk & Compliance', resolvedAt: '2026-06-28 11:10',
-  },
-  {
-    id: 'h4', type: 'override', title: 'Fee adjustment override — Harbor Financial', de: 'Morgan', detail: '$6,800 requested', age: '8 days', urgent: false, status: 'rejected',
-    context: 'Fee adjustment above the $5,000 limit requested for scope creep absorption.', reasoning: 'Client relationship value cited; however change-order process required instead.', confidence: 64,
-    relatedPage: 'gov_compliance', relatedLabel: 'Compliance & Guardrails', slaRemaining: '—', resolvedBy: 'Managing Partner', resolvedAt: '2026-06-25 09:30',
-  },
-];
-
-const SEED_TASKS: Record<CompanyId, OpsTask[]> = { tcp: TCP_TASKS, pwc: PWC_TASKS };
+// ⚠ The seeded approvals queue was DELETED 2026-08-22, zero-reader:
+// OpsTask, TCP_TASKS, PWC_TASKS and SEED_TASKS — 128 lines of invented
+// pending approvals for two fictional tenants, with invented amounts, named
+// approvers and resolution timestamps. The live queue reads human_tasks.
+// Recoverable at 571868e.
 
 // ── Badges — same palette as DashboardPage ────────────────────────
 

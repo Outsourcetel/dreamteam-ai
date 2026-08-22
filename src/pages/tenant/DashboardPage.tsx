@@ -1,17 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useVocabulary } from '../../lib/vocabulary';
-import type {  } from '../../lib/chatEscalations';
 import type { Page } from '../../types';
 import GettingStartedGuide from '../../components/GettingStartedGuide';
 import OpsAlertsBanner from '../../components/OpsAlertsBanner';
 import TeamMissionPanel from '../../components/TeamMissionPanel';
 import { StatTile, PanelCard, Chip, Button, EmptyState, DecisionCard, SetupChecklist } from '../../design/primitives';
 import {
-  listAccounts, listTickets, listInvoices, listHumanTasks, listActivity,
-  getPendingKnowledgeGapCount, fmtMoneyK, CustomerApiError,
+  listAccounts, listTickets, listHumanTasks, listActivity,
+  fmtMoneyK, CustomerApiError,
 } from '../../lib/customerApi';
-import type { CustomerAccount, SupportTicket, RenewalInvoice, DBHumanTask, ActivityEvent } from '../../lib/customerApi';
+import type { CustomerAccount, SupportTicket, DBHumanTask, ActivityEvent } from '../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveErrorNotice } from '../../components/LiveDataStates';
 import { getActiveWorkAcrossDes, countDeOutputs, type ActiveWorkRow } from '../../lib/deWorkbenchApi';
 import { getDeInquiryMetrics, getDeActionMetrics, getDeCostMetricsRanged, getOutcomeMetering } from '../../lib/api';
@@ -20,120 +19,36 @@ import { listDigitalEmployees, type DigitalEmployee } from '../../lib/digitalEmp
 import { useOpenEmployeeFile } from '../../lib/employeeFileRoute';
 import { presentError } from '../../lib/presentError';
 
-// ── Health config ────────────────────────────────────────────────
+// ⚠ The preview command centre's scaffolding was DELETED 2026-08-22, all
+// verified zero-reader by `tsc --noUnusedLocals`:
+//
+//   HealthConfig/DEFAULT_HEALTH_CONFIG   thresholds for a health badge the
+//        live page does not render. The live thresholds live in the DB.
+//   EntityData/OutcomeData/TaskItem/ActivityItem   the four seeded row
+//        shapes. Live rows come typed from customerApi.
+//   healthDot/healthLabel/healthLabelColor, trendIcon/trendLabel/trendColor
+//        colour+word maps for those seeded rows. Zero call sites.
+//   EntityHealth/OutcomeTrend            their union types, now unreferenced.
+//
+// Also removed: `getPendingKnowledgeGapCount()`, which sat in the BLOCKING
+// Promise.all and whose result was stored in state and never rendered — a
+// round-trip per dashboard load that bought nothing and could fail the whole
+// page for a number nobody could see. And `renewalsDue`, computed and never
+// shown. Neither is displayed anywhere on this screen; if the front page
+// should carry a gap or renewal count, that is a tile to design, not a
+// variable to keep warm. `listInvoices()` went with renewalsDue — it was
+// that variable's only reader, so the dashboard was fetching every invoice
+// on load to compute a number it never showed. Recoverable at 571868e.
+//
+// ⚠ TaskType/ActivityType below are NOT part of that — taskBadgeStyle,
+// taskBadgeLabel, activityDotColor and activityBorderColor all still read
+// them for live rows.
 
-interface HealthConfig {
-  confidence_amber: number;
-  confidence_red: number;
-  escalation_amber: number;
-  escalation_red: number;
-  staleness_amber: number;
-  staleness_red: number;
-  error_rate_amber: number;
-  error_rate_red: number;
-}
-
-const DEFAULT_HEALTH_CONFIG: HealthConfig = {
-  confidence_amber: 70,
-  confidence_red: 50,
-  escalation_amber: 20,
-  escalation_red: 35,
-  staleness_amber: 30,
-  staleness_red: 60,
-  error_rate_amber: 5,
-  error_rate_red: 15,
-};
-
-// ── Company seed data ────────────────────────────────────────────
-
-type EntityHealth = 'active' | 'degraded' | 'at_risk' | 'offline';
-type OutcomeTrend = 'up' | 'stable' | 'warn' | 'alert';
 type TaskType = 'approval_gate' | 'review_gate' | 'escalation' | 'override' | 'training_feedback' | 'trust_promotion' | 'trust_demotion_notice' | 'checklist' | 'knowledge_revision' | 'inquiry_review' | 'action_approval';
 type ActivityType = 'resolved' | 'escalated' | 'kb_gap' | 'error';
 
-interface EntityData {
-  label: string;
-  icon: string;
-  des: string[];
-  metric: string;
-  metricPage: Page;
-  health: EntityHealth;
-  humanTasks: number;
-  legacy: string[];
-  subPage: Page;
-}
-
-interface OutcomeData {
-  label: string;
-  icon: string;
-  metric: string;
-  trend: OutcomeTrend;
-  page: Page;
-  legacy: string[];
-  alerts?: number;
-}
-
-interface TaskItem {
-  id: string;
-  type: TaskType;
-  title: string;
-  de: string;
-  detail: string;
-  age: string;
-  urgent: boolean;
-}
-
-interface ActivityItem {
-  type: ActivityType;
-  time: string;
-  text: string;
-  confidence?: number;
-}
-
 
 // ── Helpers ──────────────────────────────────────────────────────
-
-function healthDot(health: EntityHealth): string {
-  if (health === 'active') return 'bg-emerald-400';
-  if (health === 'degraded') return 'bg-amber-400';
-  if (health === 'at_risk') return 'bg-red-400';
-  return 'bg-dt-border-strong';
-}
-
-function healthLabel(health: EntityHealth): string {
-  if (health === 'active') return 'Active';
-  if (health === 'degraded') return 'Degraded';
-  if (health === 'at_risk') return 'At Risk';
-  return 'Offline';
-}
-
-function healthLabelColor(health: EntityHealth): string {
-  if (health === 'active') return 'text-emerald-400';
-  if (health === 'degraded') return 'text-amber-400';
-  if (health === 'at_risk') return 'text-red-400';
-  return 'text-dt-muted';
-}
-
-function trendIcon(trend: OutcomeTrend): string {
-  if (trend === 'up') return '↑';
-  if (trend === 'stable') return '→';
-  if (trend === 'warn') return '↓';
-  return '⚠';
-}
-
-function trendLabel(trend: OutcomeTrend): string {
-  if (trend === 'up') return 'Trending up';
-  if (trend === 'stable') return 'Stable';
-  if (trend === 'warn') return 'Needs attention';
-  return 'Alert';
-}
-
-function trendColor(trend: OutcomeTrend): string {
-  if (trend === 'up') return 'text-emerald-400';
-  if (trend === 'stable') return 'text-dt-support';
-  if (trend === 'warn') return 'text-amber-400';
-  return 'text-red-400';
-}
 
 function taskBadgeStyle(type: TaskType): string {
   if (type === 'approval_gate') return 'bg-dt-accent-soft text-dt-accent-text';
@@ -197,10 +112,8 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
   const [work, setWork] = useState<Record<string, WorkSummary>>({});
   const [accounts, setAccounts] = useState<CustomerAccount[]>([]);
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
-  const [invoices, setInvoices] = useState<RenewalInvoice[]>([]);
   const [tasks, setTasks] = useState<DBHumanTask[]>([]);
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
-  const [knowledgeGaps, setKnowledgeGaps] = useState(0);
   const [loading, setLoading] = useState(true);
   const [missingTables, setMissingTables] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -211,13 +124,11 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
     setLoading(true);
     void (async () => {
       try {
-        const [a, t, i, h, ev, kg] = await Promise.all([
-          listAccounts(), listTickets(), listInvoices(), listHumanTasks(), listActivity(10),
-          getPendingKnowledgeGapCount(),
+        const [a, t, h, ev] = await Promise.all([
+          listAccounts(), listTickets(), listHumanTasks(), listActivity(10),
         ]);
         if (cancelled) return;
-        setAccounts(a); setTickets(t); setInvoices(i); setTasks(h); setActivity(ev);
-        setKnowledgeGaps(kg);
+        setAccounts(a); setTickets(t); setTasks(h); setActivity(ev);
         setMissingTables(false);
         setLoadError(null);
       } catch (err) {
@@ -269,7 +180,6 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
   const openTickets = tickets.filter(t => t.status === 'open' || t.status === 'escalated').length;
   const atRisk = accounts.filter(a => a.status === 'at_risk' || a.health_score < 45).length;
   const pendingTasks = tasks.filter(t => t.status === 'pending').length;
-  const renewalsDue = invoices.filter(i => i.status !== 'paid').length;
   const arrCents = accounts.reduce((s, a) => s + a.arr_cents, 0);
 
   // What the workforce actually did, from the same four sources the roster
@@ -444,12 +354,12 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="text-dt-support text-sm">◎</span>
-                      <span className="text-sm font-semibold text-dt-title">Customer Lifecycle</span>
+                      <span className="text-sm font-semibold text-dt-title">{vocab.party_singular} Lifecycle</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Chip tone={atRisk > 0 ? 'warn' : 'ok'} dot>{atRisk > 0 ? 'Attention' : 'Healthy'}</Chip>
                       <button
-                        onClick={() => setPage('entity_customer')} aria-label="Open Customer Lifecycle"
+                        onClick={() => setPage('entity_customer')} aria-label={`Open ${vocab.party_singular} Lifecycle`}
                         className="w-6 h-6 rounded-md bg-dt-panel text-dt-support hover:text-dt-title hover:bg-dt-inset flex items-center justify-center text-xs transition-colors"
                       >
                         →
@@ -457,7 +367,7 @@ function LiveDashboard({ setPage }: { setPage: (p: Page) => void }) {
                     </div>
                   </div>
                   <div className="text-xs text-dt-support">
-                    <span className="text-dt-muted text-[10px]">ARR under management: </span>
+                    <span className="text-dt-muted text-[10px]">{vocab.value_metric} under management: </span>
                     <span className="text-dt-body font-medium">{fmtMoneyK(arrCents)}</span>
                   </div>
                   <div className="flex items-center gap-2">

@@ -110,7 +110,7 @@ const BASELINE = {
   'bg-slate variants': 0, 'border-slate variants': 1, 'radius variants': 13,
   'card padding variants': 9, 'local StatCard-likes (files)': 6,
   'hand-rolled dialogs': 0, 'hand-rolled toasts': 0,
-  'inline style objects': 42, 'raw hex colors': 18,
+  'inline style objects': 39, 'raw hex colors': 12,
   // ── raw error text, pinned 2026-08-22 at its measured value ─────────────
   // `setSomething(e.message)` straight out of a catch. When the error came from
   // .rpc() or .from() it is a PostgrestError and `.message` is raw Postgres —

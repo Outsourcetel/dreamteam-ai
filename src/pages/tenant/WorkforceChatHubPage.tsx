@@ -3,7 +3,6 @@ import { useParams } from 'react-router-dom';
 import { useIsTenantManager } from '../../lib/useRoleGate';
 import { PerformanceDashboard } from '../../components/workforce/PerformanceDashboard';
 import { DETrainingPanel } from '../../components/workforce/DETrainingPanel';
-import { SuggestionAlert } from '../../components/workforce/SuggestionAlert';
 import { DraftApprovalCard } from '../../components/workforce/DraftApprovalCard';
 import { WorkforceConversation } from '../../components/workforce/WorkforceConversation';
 import {
@@ -54,6 +53,19 @@ export function WorkforceChatHubPage() {
   // request on every selection and a page that quietly means two different
   // things to two people. Don't ask for what will be refused.
   const canSeePerformance = useIsTenantManager();
+
+  // ⚠ Nothing called setSelectedDEId until 2026-08-22, so selectedDEId was
+  // permanently null and BOTH panels it gates — <PerformanceDashboard/> and
+  // <DETrainingPanel/> — could never render. They were built, imported and
+  // unreachable. The employee is a property of the conversation: server-loaded
+  // conversations carry a real de_id, and the optimistic object built in
+  // handleSendMessage carries '' until the reload replaces it (see its own
+  // "Will be fetched" note), which falls to null here and correctly keeps the
+  // panels hidden rather than asking for a summary of no employee.
+  useEffect(() => {
+    setSelectedDEId(currentConversation?.de_id || null);
+  }, [currentConversation?.de_id]);
+
   useEffect(() => {
     if (selectedDEId && canSeePerformance) {
       loadDEPerformance(selectedDEId);
@@ -283,10 +295,20 @@ export function WorkforceChatHubPage() {
               )}
             </div>
 
-            {/* Right sidebar: Performance + Suggestions + Pending Approvals */}
+            {/* Right sidebar: Performance + Pending Approvals */}
             <div className="w-96 flex flex-col gap-4 overflow-y-auto">
-              {/* Suggestion alerts */}
-              <SuggestionAlert />
+              {/* ⚠ <SuggestionAlert/> stood here and was DELETED 2026-08-22.
+                  It was a placeholder that had shipped: its own comment said
+                  "In a real implementation, this would poll for amendment
+                  suggestions / For now, we'll show a placeholder", and it
+                  rendered a hardcoded literal to every tenant on every load —
+                  a red HIGH-severity card reading "Support DE · CSAT is 78%
+                  (goal 90%). Suggested: reduce guardrail strictness on
+                  approval actions. Confidence: 82%", with a Review Proposal
+                  button wired to nothing. An invented metric is bad; an
+                  invented recommendation to WEAKEN a guardrail, presented as
+                  system output with a confidence score, is a governance
+                  claim this product did not make. Recoverable at 571868e. */}
 
               {/* Pending actions */}
               {pendingActions.length > 0 && (

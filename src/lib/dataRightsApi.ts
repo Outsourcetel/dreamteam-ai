@@ -248,6 +248,11 @@ export interface ExportManifest {
   coverage: string | null;
 }
 
+/** ⚠ normaliseDownload() — which parsed whatever shape the server put in
+ *  `download` — was deleted 2026-08-22 with zero call sites. The exporter's
+ *  envelope is fixed now, and runExport below fetches the file itself and
+ *  checks for the completion marker, which is a stronger guarantee than
+ *  reshaping a URL the caller never verified. Recoverable at 571868e. */
 export interface ExportDownload {
   url: string;
   filename: string | null;
@@ -269,28 +274,6 @@ export interface ExportResult {
   raw: unknown;
 }
 
-function normaliseDownload(raw: unknown, warnings: string[]): ExportDownload | null {
-  if (raw == null) return null;
-  if (typeof raw === 'string') {
-    return raw.trim() ? { url: raw, filename: null, expires_at: null, size_bytes: null } : null;
-  }
-  if (typeof raw === 'object') {
-    const d = raw as { url?: unknown; href?: unknown; signed_url?: unknown; filename?: unknown; name?: unknown; expires_at?: unknown; size_bytes?: unknown };
-    const url = [d.url, d.href, d.signed_url].find(v => typeof v === 'string' && v) as string | undefined;
-    if (!url) {
-      warnings.push('The server returned a download object with no URL in it, so there is nothing to retrieve.');
-      return null;
-    }
-    return {
-      url,
-      filename: typeof d.filename === 'string' ? d.filename : typeof d.name === 'string' ? d.name : null,
-      expires_at: typeof d.expires_at === 'string' ? d.expires_at : null,
-      size_bytes: typeof d.size_bytes === 'number' ? d.size_bytes : null,
-    };
-  }
-  warnings.push('The server returned a download field this screen could not read.');
-  return null;
-}
 
 /** snake_case json key -> a heading a customer can read. */
 function humaniseKey(k: string): string {

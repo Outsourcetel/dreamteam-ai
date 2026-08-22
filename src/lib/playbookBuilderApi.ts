@@ -12,7 +12,6 @@
 import { supabase } from '../supabase';
 import { invokeEdge } from './invokeEdge';
 import { getSessionTenantId, CustomerApiError, isMissingTableError } from './customerApi';
-import type {  } from './playbookApi';
 
 // ── Registry (UI metadata + param forms) ──────────────────────────
 

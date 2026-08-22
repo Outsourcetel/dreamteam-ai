@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {  } from '../supabase';
 import { invokeEdge } from '../lib/invokeEdge';
 import { Button, Chip, Field, INPUT_CLS, Modal } from '../design/primitives';
 import { searchKnowledgeDocs } from '../lib/knowledgeApi';

@@ -5,7 +5,6 @@ import type { Vocabulary } from '../lib/vocabulary';
 import { canAccessPage } from '../lib/navAccess';
 import { useAuth } from '../context/AuthContext';
 import type { CompanyId } from '../data/companies';
-import {  } from '../lib/chatEscalations';
 import { listAccounts, listTickets, listInvoices, listHumanTasks, getPendingKnowledgeGapCount } from '../lib/customerApi';
 import { listOpportunities } from '../lib/pipelineApi';
 import { listProjects } from '../lib/onboardingApi';
@@ -86,7 +85,7 @@ export async function fetchLiveNavCounts(): Promise<NavCounts> {
   }
 }
 
-function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vocab: Vocabulary): NavSection[] {
+function buildNav(companyId: CompanyId, live: NavCounts, vocab: Vocabulary): NavSection[] {
   // DE-CENTERED STRUCTURE (founder-approved 2026-07-11, mockup artifact
   // f43050e7): 8 sections, the Digital Employee at the center. A system
   // of record organizes around the data; DreamTeam organizes around the
@@ -175,13 +174,15 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
         { id: 'connectors', label: 'Connected systems', icon: '⟷', page: 'systems_connectors' },
         { id: 'mcp', label: 'MCP servers', icon: '🔗', page: 'systems_mcp' },
         // ⚠ The Vendors & Partners and Our People nav trees stood here behind
-        // `isLiveMode ? [] : [...]`. buildNav's only call site passes
-        // isLiveMode = true (see below), so that branch has rendered NOTHING
-        // since Wave 3 — and the reason it was left in place, "the routes stay
-        // valid for deep links", was the defect: hiding a link never closed
-        // /vendor or /workforce-entity, because the router asks canAccessPage,
-        // not the Sidebar. Both the nine routes and this dead block are gone as
-        // of 2026-08-20; see src/types/index.ts.
+        // `isLiveMode ? [] : [...]`. buildNav's only call site passed
+        // isLiveMode = true, so that branch rendered NOTHING since Wave 3 —
+        // and the reason it was left in place, "the routes stay valid for deep
+        // links", was the defect: hiding a link never closed /vendor or
+        // /workforce-entity, because the router asks canAccessPage, not the
+        // Sidebar. Both the nine routes and this dead block are gone as of
+        // 2026-08-20; see src/types/index.ts. The `isLiveMode` parameter that
+        // gated it outlived its last reader and was dropped 2026-08-22, along
+        // with the `isLiveTenant` the component destructured and never used.
       ],
     },
     {
@@ -240,7 +241,7 @@ function buildNav(companyId: CompanyId, live: NavCounts, isLiveMode: boolean, vo
 }
 
 export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, godModeActive, exitGodMode, onLogout }: SidebarProps) {
-  const { activeCompany, isLiveTenant, liveTenantName } = useAuth();
+  const { activeCompany, liveTenantName } = useAuth();
   // No groups open by default — Company Data (the demoted entity
   // section) in particular starts collapsed per the DE-centered IA.
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
@@ -279,7 +280,7 @@ export function Sidebar({ page, setPage, user, tenant, collapsed, setCollapsed, 
   // reachable but invisible: navigable by deep link and absent from the nav.
   const deRelations = user?.deRelations as Parameters<typeof canAccessPage>[3];
   const allowed = (p?: string) => !p || canAccessPage(role, p as Page, layer, deRelations);
-  const nav = buildNav(activeCompany.id, liveCounts, true, vocab)
+  const nav = buildNav(activeCompany.id, liveCounts, vocab)
     .map(section => ({
       ...section,
       groups: section.groups

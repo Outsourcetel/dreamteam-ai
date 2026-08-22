@@ -3,10 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Chip, Drawer, Toast } from '../../../design/primitives';
 import type { Tone } from '../../../design/primitives';
 import AISessionPanel from '../../../components/AISessionPanel';
-import {  } from '../../../context/AuthContext';
-import type {  } from '../../../data/companies';
 import { PageHeader, th, td } from '../../../components/ui';
-import type { KEntity, KAudience, KType } from './KnowledgeLibraryPage';
 import type { Page } from '../../../types';
 import { CustomerApiError } from '../../../lib/customerApi';
 import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../../components/LiveDataStates';
@@ -24,36 +21,15 @@ import { supabase } from '../../../supabase';
 // DE query misses / escalations → gap signal → Resolution Agent
 // searches historical resolutions → Knowledge Drafting Agent
 // proposes an article → human approves → DEs auto-retrain.
-// Open-gap counts MUST match companies.ts (TCP 5 / PWC 3).
-// "Webhook retry logic" (23 queries) reuses the exact wording
-// from the dashboard activity feed.
 // ============================================================
-
-type GapStatus = 'detected' | 'investigating' | 'draft_ready' | 'approved' | 'retrained';
-type SignalSource = 'DE query miss' | 'Human escalation' | 'Low-confidence answer';
-
-interface GapSignal { time: string; text: string }
-interface GapFinding { ref: string; title: string; note: string }
-interface GapDraft {
-  title: string;
-  paragraphs: string[];
-  entity: KEntity;
-  audience: KAudience;
-  type: KType;
-  confidence: number;
-  sources: string[];
-}
-
-
-const STATUS_META: Record<GapStatus, { label: string; cls: string }> = {
-  detected: { label: 'Detected', cls: 'bg-dt-neutral-soft text-dt-neutral' },
-  investigating: { label: 'Investigating', cls: 'bg-sky-500/20 text-sky-400' },
-  draft_ready: { label: 'Draft ready', cls: 'bg-amber-500/20 text-amber-400' },
-  approved: { label: 'Approved', cls: 'bg-emerald-500/20 text-emerald-400' },
-  retrained: { label: 'Retrained', cls: 'bg-indigo-500/20 text-indigo-400' },
-};
-
-const SEVERITY_CLS = { high: 'text-red-400', medium: 'text-amber-400', low: 'text-dt-support' } as const;
+//
+// ⚠ The preview's invented 5-stage lifecycle was DELETED 2026-08-22,
+// all zero-reader: GapStatus ('detected'→'investigating'→'draft_ready'
+// →'approved'→'retrained') and its badge map STATUS_META, SignalSource,
+// GapSignal, GapFinding, GapDraft, and SEVERITY_CLS. The live states are
+// simpler and real — see the note on the LIVE section below, which already
+// says so: there is no tracked "investigating" phase and no "retrained"
+// event. Recoverable at 571868e.
 
 
 // ============================================================

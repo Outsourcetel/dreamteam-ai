@@ -46,12 +46,6 @@ const STATE_SOURCES: { key: string; label: string; fields: { key: string; label:
     ],
   },
 ];
-const STATE_FIELDS = [
-  { key: 'health_score', label: 'health score' },
-  { key: 'status', label: 'status' },
-  { key: 'arr_cents', label: 'ARR (cents)' },
-  { key: 'tier', label: 'tier' },
-];
 const NUMERIC_OPS = [
   { key: 'lt', label: 'is below' }, { key: 'lte', label: 'is at or below' },
   { key: 'gt', label: 'is above' }, { key: 'gte', label: 'is at or above' },
