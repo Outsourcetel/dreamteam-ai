@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { savePlatformConfig, hasPlatformConfigKey } from '../lib/api';
+import { SUPABASE_URL } from '../lib/env';
 
 // ════════════════════════════════════════════════════════════════════════
 // The Resend API key — outbound email for the whole platform.
@@ -162,8 +163,14 @@ function InboundSecretField() {
         <strong> email.received</strong> event pointing at the address below, and paste the signing secret
         it gives you here.
       </p>
+      {/* ⚠ WAS the production project ref, typed out. This panel exists to
+          tell an operator where to point a webhook, so a hardcoded URL sends
+          whoever is running a staging or preview build to PRODUCTION's
+          email-inbound — and it is the one address on the screen they are
+          meant to copy. Derived from the deployment's own config now, the way
+          every other functions/v1 URL in src/ already is. */}
       <p className="text-xs font-mono text-dt-support bg-dt-inset border border-dt-border rounded-lg px-3 py-2 mb-2 break-all select-all">
-        https://rfsvmhcqeiyrxivbmpel.supabase.co/functions/v1/email-inbound
+        {`${SUPABASE_URL}/functions/v1/email-inbound`}
       </p>
       <p className="text-xs text-dt-support mb-3">
         Mail routes to a workspace by address: <span className="font-mono">&lt;workspace-slug&gt;@your-receiving-domain</span> —

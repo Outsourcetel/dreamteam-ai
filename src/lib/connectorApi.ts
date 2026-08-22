@@ -9,6 +9,11 @@
 // connector_secrets (service-role-only; written via the
 // set_connector_secret RPC and never readable from the client).
 // ============================================================
+// SUPABASE_URL over a raw import.meta.env read: env.ts THROWS on a missing
+// variable, where the raw read yields undefined and builds
+// `https://undefined/functions/v1/…` — a fetch that fails as a network error
+// and never says the deployment is misconfigured.
+import { SUPABASE_URL } from './env';
 import { supabase } from '../supabase';
 import { getSessionTenantId, CustomerApiError } from './customerApi';
 
@@ -1652,7 +1657,7 @@ async function invokeHub<T = Record<string, unknown>>(
   // — for an ordinary tenant user it's redundant with their own
   // profile and never gets used.
   const tid = await getSessionTenantId();
-  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/connector-hub`, {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/connector-hub`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -1669,7 +1674,7 @@ async function invokeHub<T = Record<string, unknown>>(
 // ── User-OAuth (authorization-code) connect flow ──────────────────
 
 /** The public redirect URI a platform admin registers in each OAuth app. */
-export const OAUTH_CALLBACK_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/oauth-callback`;
+export const OAUTH_CALLBACK_URL = `${SUPABASE_URL}/functions/v1/oauth-callback`;
 
 /** Which OAuth apps a platform admin has configured (client id set). */
 export async function oauthAppStatus(): Promise<Set<string>> {
@@ -1688,7 +1693,7 @@ export async function setOAuthApp(provider: ConnectorProvider, clientId: string,
 export async function oauthStart(provider: ConnectorProvider, displayName: string): Promise<{ ok: boolean; authorize_url?: string; error?: string; detail?: string }> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) throw new CustomerApiError('Not signed in.', false);
-  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/oauth-start`, {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/oauth-start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}`, 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY },
     body: JSON.stringify({ provider, display_name: displayName }),
@@ -1704,7 +1709,7 @@ async function invokeConnector<T = Record<string, unknown>>(
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) throw new CustomerApiError('Not signed in.', false);
   const tid = await getSessionTenantId();
-  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/connector-zendesk`, {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/connector-zendesk`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -1915,7 +1920,7 @@ export async function learnToolFromSpec(
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) throw new CustomerApiError('Not signed in.', false);
   const tid = await getSessionTenantId();
-  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/tool-learn`, {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/tool-learn`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
