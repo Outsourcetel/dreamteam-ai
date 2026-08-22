@@ -360,7 +360,7 @@ function LiveKnowledgeGaps({ setPage }: { setPage: (p: Page) => void }) {
                       <td className={td}>
                         {de ? (
                           <span className="flex items-center gap-1.5">
-                            <span className="w-5 h-5 rounded-full bg-indigo-600 flex items-center justify-center text-white text-[10px] font-bold">{de.name[0]}</span>
+                            <span className="w-5 h-5 rounded-full bg-dt-accent-strong flex items-center justify-center text-white text-[10px] font-bold">{de.name[0]}</span>
                             <span className="text-xs">{de.name}</span>
                           </span>
                         ) : <span className="text-xs text-dt-faint">—</span>}

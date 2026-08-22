@@ -677,10 +677,10 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
           <input value={urlInput} onChange={e => setUrlInput(e.target.value)}
             aria-label="Address of a single page to add"
             placeholder="https://help.yourcompany.com/article/…"
-            className="flex-1 bg-dt-page border border-dt-border-strong rounded-lg px-3 py-1.5 text-sm text-dt-body placeholder:text-dt-faint focus:outline-none focus:border-indigo-500"
+            className="flex-1 bg-dt-page border border-dt-border-strong rounded-lg px-3 py-1.5 text-sm text-dt-body placeholder:text-dt-faint focus:outline-none focus:border-dt-accent"
             onKeyDown={e => { if (e.key === 'Enter') void importUrl(); }} />
           <button onClick={() => void importUrl()} disabled={!!busyMsg || !urlInput.trim()}
-            className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white">
+            className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-50 text-white">
             Fetch & add
           </button>
           <button onClick={() => { setShowUrl(false); setUrlInput(''); }} className="text-xs px-2 py-1.5 text-dt-muted hover:text-dt-support">✕</button>
@@ -689,7 +689,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
 
       {/* Bulk action bar (WS7) — appears when documents are selected */}
       {selected.size > 0 && (
-        <div className="flex flex-wrap items-center gap-2 mb-3 rounded-xl border border-indigo-500/40 bg-indigo-500/10 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2 mb-3 rounded-xl border border-indigo-500/40 bg-dt-accent-soft px-3 py-2">
           <span className="text-xs text-dt-body font-medium">{selected.size} selected</span>
           <button disabled={bulkBusy} onClick={() => void bulkTag()} className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-indigo-500 disabled:opacity-50">Add tag</button>
           {collections.length > 0 && (
@@ -768,7 +768,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
             </thead>
             <tbody>
               {rows.map(d => (
-                <tr key={d.id} className={`border-b border-dt-border transition-colors ${selected.has(d.id) ? 'bg-indigo-500/10' : 'hover:bg-dt-panel'}`}>
+                <tr key={d.id} className={`border-b border-dt-border transition-colors ${selected.has(d.id) ? 'bg-dt-accent-soft' : 'hover:bg-dt-panel'}`}>
                   <td className={td}>
                     <input type="checkbox" checked={selected.has(d.id)} onChange={() => toggleSel(d.id)} />
                   </td>
@@ -979,7 +979,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               value={editor.title}
               onChange={e => setEditor({ ...editor, title: e.target.value })}
               placeholder="e.g. Refund policy"
-              className="w-full mb-3 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              className="w-full mb-3 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body placeholder-slate-600 focus:outline-none focus:border-dt-accent"
             />
             <label className="block text-xs text-dt-muted mb-1">Content (plain text or Markdown)</label>
             <textarea
@@ -987,14 +987,14 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               onChange={e => setEditor({ ...editor, content: e.target.value })}
               rows={10}
               placeholder="Paste the document content your employees should answer from…"
-              className="w-full mb-3 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-y"
+              className="w-full mb-3 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body placeholder-slate-600 focus:outline-none focus:border-dt-accent resize-y"
             />
             <label className="block text-xs text-dt-muted mb-1">Tags (comma-separated, optional)</label>
             <input
               value={editor.tags}
               onChange={e => setEditor({ ...editor, tags: e.target.value })}
               placeholder="billing, refunds"
-              className="w-full mb-5 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              className="w-full mb-5 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body placeholder-slate-600 focus:outline-none focus:border-dt-accent"
             />
             <div className="flex justify-end gap-2">
               <button
@@ -1007,7 +1007,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               <button
                 onClick={() => void save()}
                 disabled={saving || !editor.title.trim() || !editor.content.trim()}
-                className="text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white transition-colors"
+                className="text-sm px-4 py-2 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-40 text-white transition-colors"
               >
                 {saving ? 'Saving…' : editor.id ? 'Save changes' : 'Add document'}
               </button>
@@ -1043,24 +1043,24 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               <label className="block">
                 <span className="text-[11px] uppercase tracking-wide text-dt-muted">Review every (days)</span>
                 <input type="number" min={1} value={govForm.reviewDays} onChange={e => setGovForm(f => ({ ...f, reviewDays: e.target.value }))}
-                  placeholder="e.g. 90" className="mt-1 w-full bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1.5 text-sm text-dt-body placeholder:text-dt-faint focus:outline-none focus:border-indigo-500" />
+                  placeholder="e.g. 90" className="mt-1 w-full bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1.5 text-sm text-dt-body placeholder:text-dt-faint focus:outline-none focus:border-dt-accent" />
               </label>
               <label className="block">
                 <span className="text-[11px] uppercase tracking-wide text-dt-muted">Authority (0–100)</span>
                 <input type="number" min={0} max={100} value={govForm.authority} onChange={e => setGovForm(f => ({ ...f, authority: e.target.value }))}
-                  placeholder="50" className="mt-1 w-full bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1.5 text-sm text-dt-body placeholder:text-dt-faint focus:outline-none focus:border-indigo-500" />
+                  placeholder="50" className="mt-1 w-full bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1.5 text-sm text-dt-body placeholder:text-dt-faint focus:outline-none focus:border-dt-accent" />
               </label>
               <label className="block">
                 <span className="text-[11px] uppercase tracking-wide text-dt-muted">Expires on</span>
                 <input type="date" value={govForm.expires} onChange={e => setGovForm(f => ({ ...f, expires: e.target.value }))}
-                  className="mt-1 w-full bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1.5 text-sm text-dt-body focus:outline-none focus:border-indigo-500" />
+                  className="mt-1 w-full bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1.5 text-sm text-dt-body focus:outline-none focus:border-dt-accent" />
               </label>
             </div>
             <p className="text-[11px] text-dt-muted">Authority weights this doc in retrieval; a review cadence flags it stale after that many days; expiry marks it for removal. All optional.</p>
 
             <div className="flex justify-end gap-2">
               <button onClick={() => setGovernDoc(null)} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support">Cancel</button>
-              <button onClick={() => void saveGovern()} disabled={govSaving} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white">{govSaving ? 'Saving…' : 'Save'}</button>
+              <button onClick={() => void saveGovern()} disabled={govSaving} className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-50 text-white">{govSaving ? 'Saving…' : 'Save'}</button>
             </div>
           </div>
         </Modal>
@@ -1084,7 +1084,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               </div>
             )}
             <div className="flex justify-end mt-3">
-              <button onClick={() => setCollectionDoc(null)} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white">Done</button>
+              <button onClick={() => setCollectionDoc(null)} className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white">Done</button>
             </div>
           </div>
         </Modal>
@@ -1146,7 +1146,7 @@ const LiveKnowledgeLibrary = ({ setPage }: { setPage?: (p: Page) => void }) => {
               <button
                 onClick={() => void saveScope()}
                 disabled={scopeSaving}
-                className="text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white transition-colors"
+                className="text-sm px-4 py-2 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-40 text-white transition-colors"
               >
                 {scopeSaving ? 'Saving…' : scopeSel.size > 0 ? `Limit to ${scopeSel.size} selected` : 'Allow everyone'}
               </button>

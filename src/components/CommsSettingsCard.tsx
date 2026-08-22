@@ -40,13 +40,13 @@ export default function CommsSettingsCard({ accentColor = DEFAULT_ACCENT }: { ac
           <div>
             <label className="text-xs font-medium text-dt-support block mb-1.5">From address</label>
             <input value={fromEmail} onChange={e => setFromEmail(e.target.value)} type="email" placeholder="renewals@yourcompany.com"
-              className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500" />
+              className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-dt-accent" />
             <p className="text-[11px] text-dt-faint mt-1">Must be on a domain you've verified with your email provider.</p>
           </div>
           <div>
             <label className="text-xs font-medium text-dt-support block mb-1.5">From name (optional)</label>
             <input value={fromName} onChange={e => setFromName(e.target.value)} placeholder="Acme Renewals"
-              className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500" />
+              className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-dt-accent" />
           </div>
           <div className="flex items-center gap-3">
             <button onClick={() => void save()} disabled={saving || !fromEmail.trim()}

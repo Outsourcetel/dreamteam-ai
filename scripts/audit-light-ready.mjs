@@ -725,7 +725,7 @@ const toneBorderMid = lines(`border-\\(${TONE_HUES}\\)-\\(400\\|500\\)\\b`)
 // a permanently-red tick everyone learns to route around. They are a RATCHET:
 // the number may only fall, and the commit that lowers it must lower the pin.
 const BASELINE = { 'bare text-white': 0, 'bg-slate': 0, 'border-slate': 0, 'text-slate': 0, 'tone text-300': 0,
-  'tone text-400/500': 256, 'tone border-400/500': 268 };
+  'tone text-400/500': 256, 'tone border-400/500': 105 };
 const NOW = {
   'bare text-white': bareWhite.length,
   'bg-slate': slateBg.length,

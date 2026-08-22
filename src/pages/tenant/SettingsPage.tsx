@@ -486,7 +486,7 @@ const SettingsPage = ({
                   value={orgName}
                   onChange={e => setOrgName(e.target.value)}
                   placeholder="Your organisation name"
-                  className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-dt-accent"
                 />
               </div>
               <div>
@@ -494,7 +494,7 @@ const SettingsPage = ({
                 <select
                   value={industry}
                   onChange={e => setIndustry(e.target.value)}
-                  className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-dt-accent"
                 >
                   {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
                 </select>
@@ -518,7 +518,7 @@ const SettingsPage = ({
                       <label className="text-[11px] font-medium text-dt-support block mb-1">{label}</label>
                       <input value={vocabDraft[k] ?? ''} placeholder={ph}
                         onChange={e => setVocabDraft(v => ({ ...v, [k]: e.target.value }))}
-                        className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-indigo-500" />
+                        className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-dt-accent" />
                     </div>
                   ))}
                 </div>
@@ -529,7 +529,7 @@ const SettingsPage = ({
                   value={contactEmail}
                   onChange={e => setContactEmail(e.target.value)}
                   type="email"
-                  className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-dt-accent"
                 />
               </div>
               <div>
@@ -545,7 +545,7 @@ const SettingsPage = ({
                     value={brandColor}
                     onChange={e => setBrandColor(e.target.value)}
                     placeholder="#6366f1"
-                    className="flex-1 bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+                    className="flex-1 bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-dt-accent font-mono"
                   />
                   <div className="w-10 h-10 rounded-lg flex-shrink-0 border border-dt-border-strong" style={{ backgroundColor: brandColor }} />
                 </div>
@@ -666,7 +666,7 @@ const SettingsPage = ({
                 value={anthropicKey}
                 onChange={e => setAnthropicKey(e.target.value)}
                 placeholder={anthropicSet ? 'Enter new key to replace existing…' : 'sk-ant-…'}
-                className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+                className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-dt-accent font-mono"
               />
               <p className="text-xs text-dt-faint mt-1">
                 Get your key at console.anthropic.com → API Keys. The primary engine for all Digital Employee responses.
@@ -694,14 +694,14 @@ const SettingsPage = ({
                   value={bedrockKey}
                   onChange={e => setBedrockKey(e.target.value)}
                   placeholder={bedrockSet ? 'Enter new key to replace existing…' : 'Bedrock API key…'}
-                  className="flex-1 bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+                  className="flex-1 bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-dt-accent font-mono"
                 />
                 <input
                   type="text"
                   value={bedrockRegion}
                   onChange={e => setBedrockRegion(e.target.value)}
                   placeholder="Region (us-east-1)"
-                  className="w-44 bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+                  className="w-44 bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-dt-accent font-mono"
                 />
               </div>
               <p className="text-xs text-dt-faint mt-1">
@@ -731,7 +731,7 @@ const SettingsPage = ({
                 value={openaiKey}
                 onChange={e => setOpenaiKey(e.target.value)}
                 placeholder={openaiSet ? 'Enter new key to replace existing…' : 'sk-…'}
-                className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+                className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-dt-accent font-mono"
               />
               <p className="text-xs text-dt-faint mt-1">
                 Optional third tier: used only when both Claude engines are unreachable. A different brain than
@@ -760,7 +760,7 @@ const SettingsPage = ({
                 value={googleKey}
                 onChange={e => setGoogleKey(e.target.value)}
                 placeholder={googleSet ? 'Enter new key to replace existing…' : 'AIza…'}
-                className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+                className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-dt-accent font-mono"
               />
               <p className="text-xs text-dt-faint mt-1">
                 Optional fourth tier (Gemini) — same continuity-only role as OpenAI. Get a key at aistudio.google.com → API Keys.
@@ -874,7 +874,7 @@ const SettingsPage = ({
                               type="number"
                               value={budgetEdits[t.id] ?? ''}
                               onChange={e => setBudgetEdits(prev => ({ ...prev, [t.id]: e.target.value }))}
-                              className="w-28 bg-dt-panel border border-dt-border-strong text-dt-body text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-indigo-500 font-mono text-right"
+                              className="w-28 bg-dt-panel border border-dt-border-strong text-dt-body text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-dt-accent font-mono text-right"
                               min={0}
                               step={10000}
                             />
@@ -964,7 +964,7 @@ const SettingsPage = ({
                 value={newKeyLabel}
                 onChange={e => setNewKeyLabel(e.target.value)}
                 placeholder="Key label (e.g. Production portal)"
-                className="flex-1 bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+                className="flex-1 bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-dt-accent"
               />
               <button
                 onClick={handleGenerateKey}

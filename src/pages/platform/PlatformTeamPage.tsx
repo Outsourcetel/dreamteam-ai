@@ -12,7 +12,7 @@ import PlatformInvitesPanel from './PlatformInvitesPanel';
 
 const ROLE_OPTIONS: PlatformInviteRole[] = ['platform_support', 'platform_billing', 'platform_super_admin'];
 
-const inputCls = 'bg-dt-panel border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500';
+const inputCls = 'bg-dt-panel border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-dt-accent';
 
 // ─────────────────────────────────────────────────────────────────
 // The real team roster (active accounts, not just pending invites),
@@ -102,7 +102,7 @@ const PlatformTeamPage = () => {
               const busy = busyId === m.user_id;
               return (
                 <div key={m.user_id} className={`px-5 py-3 flex items-center gap-3 flex-wrap ${!m.is_active ? 'opacity-50' : ''}`}>
-                  <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-dt-accent-strong flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
                     {(m.full_name || m.email || '?')[0].toUpperCase()}
                   </div>
                   <div className="min-w-[160px] flex-1">

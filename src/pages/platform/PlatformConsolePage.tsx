@@ -244,7 +244,7 @@ const PlatformConsolePage = ({
           </div>
           <button
             onClick={() => setProvisionOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-medium bg-indigo-600 hover:bg-indigo-500"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-medium bg-dt-accent-strong hover:bg-dt-accent-hover"
           >
             + Provision Tenant
           </button>
@@ -255,7 +255,7 @@ const PlatformConsolePage = ({
             value={tenantSearch}
             onChange={(e) => { setTenantSearch(e.target.value); setTenantRowLimit(TENANT_PAGE_SIZE); }}
             placeholder="Search by name, ID, slug, or email…"
-            className="w-full max-w-md bg-dt-card border border-dt-border text-dt-body text-sm rounded-xl px-4 py-2 focus:outline-none focus:border-indigo-500"
+            className="w-full max-w-md bg-dt-card border border-dt-border text-dt-body text-sm rounded-xl px-4 py-2 focus:outline-none focus:border-dt-accent"
           />
           <span className="text-xs text-dt-muted">
             {searchedRows.length} tenant{searchedRows.length === 1 ? '' : 's'}{searchTerm ? ` matching "${tenantSearch.trim()}"` : ''}
@@ -1670,7 +1670,7 @@ const PlanSelector = ({ tenant, onChanged }: { tenant: Tenant; onChanged: (plan:
         value={tenant.plan}
         onChange={(e) => void handleChange(e.target.value as Tenant['plan'])}
         disabled={saving}
-        className="bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+        className="bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-dt-accent disabled:opacity-50"
       >
         <option value="starter">Starter</option>
         <option value="growth">Growth</option>
@@ -1719,7 +1719,7 @@ const KeyModeSelector = ({ tenant, onChanged }: { tenant: Tenant; onChanged?: (m
         value={mode}
         onChange={(e) => void handleChange(e.target.value as 'platform' | 'byo')}
         disabled={saving}
-        className="bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+        className="bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-dt-accent disabled:opacity-50"
       >
         <option value="platform">We pay</option>
         <option value="byo">They pay (own key)</option>
@@ -1764,7 +1764,7 @@ const ProvisionTenantModal = ({ onClose, onCreated }: { onClose: () => void; onC
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Acme Manufacturing"
-            className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+            className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-dt-accent"
           />
         </div>
         <div>
@@ -1773,14 +1773,14 @@ const ProvisionTenantModal = ({ onClose, onCreated }: { onClose: () => void; onC
             value={industry}
             onChange={(e) => setIndustry(e.target.value)}
             placeholder="e.g. Manufacturing"
-            className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+            className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-dt-accent"
           />
         </div>
         {error && <p className="text-xs text-red-400">{error}</p>}
         <button
           onClick={submit}
           disabled={saving || !name.trim()}
-          className="w-full py-2.5 text-sm font-medium rounded-xl text-white bg-indigo-600 hover:bg-indigo-500 transition-all disabled:opacity-50"
+          className="w-full py-2.5 text-sm font-medium rounded-xl text-white bg-dt-accent-strong hover:bg-dt-accent-hover transition-all disabled:opacity-50"
         >
           {saving ? 'Creating…' : 'Create tenant'}
         </button>

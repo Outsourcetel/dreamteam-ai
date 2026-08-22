@@ -69,7 +69,7 @@ function ProposalCard({ p, onApproved }: { p: ArchitectProposal; onApproved: () 
             <button
               onClick={approve}
               disabled={state === 'working'}
-              className="rounded-lg bg-indigo-600 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+              className="rounded-lg bg-dt-accent-strong px-3 py-1.5 text-[13px] font-medium text-white hover:bg-dt-accent-hover disabled:opacity-50"
             >
               {state === 'working' ? 'Creating…' : 'Approve & create'}
             </button>
@@ -132,7 +132,7 @@ export default function OnboardingArchitectPage({ setPage }: { setPage?: (p: Pag
               <button
                 onClick={design}
                 disabled={busy || desc.trim().length < 8}
-                className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+                className="rounded-xl bg-dt-accent-strong px-4 py-2 text-sm font-semibold text-white hover:bg-dt-accent-hover disabled:opacity-50"
               >
                 {busy ? 'Ada is designing your setup…' : 'Design my setup'}
               </button>

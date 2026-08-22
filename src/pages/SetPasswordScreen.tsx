@@ -122,7 +122,7 @@ export default function SetPasswordScreen({ onDone }: { onDone: () => void }) {
 
           <button
             type="submit" disabled={!canSubmit}
-            className="w-full py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm font-medium"
+            className="w-full py-2.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-40 text-white text-sm font-medium"
           >
             {busy ? 'Saving…' : 'Save password and continue'}
           </button>

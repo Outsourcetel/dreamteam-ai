@@ -856,7 +856,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                   decision === d.id
                     ? (d.id === 'needs_you'
                         ? 'bg-dt-warn-soft text-dt-warn border border-dt-warn-border'
-                        : 'bg-indigo-600 text-white border border-indigo-600')
+                        : 'bg-dt-accent-strong text-white border border-indigo-600')
                     : 'bg-dt-card border border-dt-border text-dt-support hover:text-dt-body'}`}
               >
                 {d.label}
@@ -1333,7 +1333,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                             <textarea
                               value={draftEditText} onChange={e => setDraftEditText(e.target.value)}
                               rows={Math.min(12, Math.max(4, gatedDraft.split('\n').length + 1))}
-                              className="w-full rounded-md border border-dt-border bg-dt-inset px-2 py-1.5 text-xs text-dt-body focus:outline-none focus:border-indigo-500"
+                              className="w-full rounded-md border border-dt-border bg-dt-inset px-2 py-1.5 text-xs text-dt-body focus:outline-none focus:border-dt-accent"
                             />
                           ) : (
                             <p className="whitespace-pre-wrap text-dt-support">{gatedDraft}</p>
@@ -1645,7 +1645,7 @@ function LiveHumanTasks({ setPage }: { setPage: (p: Page) => void }) {
                           <button
                             onClick={() => void doReroute()}
                             disabled={deciding || !rerouteTo || !rerouteNote.trim()}
-                            className="flex-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2 transition-colors">
+                            className="flex-1 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2 transition-colors">
                             Hand it over
                           </button>
                           <button onClick={() => { setRerouting(false); setRerouteTo(''); setRerouteNote(''); }}

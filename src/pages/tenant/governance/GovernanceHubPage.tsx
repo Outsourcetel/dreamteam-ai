@@ -73,7 +73,7 @@ const GovernanceHubPage = ({ tab, setPage }: { tab: Page; setPage: (p: Page) => 
         {tabs.map(t => (
           <button key={t.page} onClick={() => setPage(t.page)}
             className={`shrink-0 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === t.page ? 'border-indigo-500 text-dt-title' : 'border-transparent text-dt-support hover:text-dt-body'}`}>
+              tab === t.page ? 'border-dt-accent text-dt-title' : 'border-transparent text-dt-support hover:text-dt-body'}`}>
             {t.label}
           </button>
         ))}

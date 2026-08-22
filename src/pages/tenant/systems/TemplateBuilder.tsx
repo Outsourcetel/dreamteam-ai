@@ -172,7 +172,7 @@ export function TemplateBuilderModal({ onClose, onDone }: {
                 <div className="grid grid-cols-2 gap-2">
                   {CATEGORIES.map(cat => (
                     <button key={cat} onClick={() => { setCategory(cat); setOps({}); setTestOpName(''); }}
-                      className={`text-left rounded-xl border p-2.5 transition-colors ${category === cat ? 'border-indigo-500/60 bg-indigo-500/10' : 'bg-dt-page border-dt-border hover:border-indigo-500/40'}`}>
+                      className={`text-left rounded-xl border p-2.5 transition-colors ${category === cat ? 'border-indigo-500/60 bg-dt-accent-soft' : 'bg-dt-page border-dt-border hover:border-indigo-500/40'}`}>
                       <p className="text-xs font-semibold text-dt-title">{CATEGORY_SHORT[cat]}</p>
                       <p className="text-[10px] text-dt-muted mt-0.5">{CATEGORY_LABELS[cat]}</p>
                     </button>
@@ -293,7 +293,7 @@ export function TemplateBuilderModal({ onClose, onDone }: {
                           ))}
                         </div>
                         <button disabled={busy} onClick={() => void runTest(o.op)}
-                          className="px-3 py-1.5 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+                          className="px-3 py-1.5 rounded-lg text-xs bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-50">
                           {busy ? 'Calling live…' : 'Test now (live call)'}
                         </button>
                         {testResult?.op === o.op && (
@@ -350,12 +350,12 @@ export function TemplateBuilderModal({ onClose, onDone }: {
             {step < 5 && (
               <button disabled={busy || (step === 1 && !name.trim()) || (step === 3 && !baseUrl.trim() && false)}
                 onClick={() => setStep(s => s + 1)}
-                className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs disabled:opacity-50">Next →</button>
+                className="px-4 py-2 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white text-xs disabled:opacity-50">Next →</button>
             )}
             {step === 5 && (
               <>
                 <button disabled={busy} onClick={() => void save(false)} className="px-3 py-2 rounded-lg bg-dt-panel text-dt-support hover:bg-dt-panel text-xs disabled:opacity-50">Save draft</button>
-                <button disabled={busy} onClick={() => void save(true)} className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs disabled:opacity-50">{busy ? 'Saving…' : 'Save & publish'}</button>
+                <button disabled={busy} onClick={() => void save(true)} className="px-4 py-2 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white text-xs disabled:opacity-50">{busy ? 'Saving…' : 'Save & publish'}</button>
               </>
             )}
         </div>
@@ -443,7 +443,7 @@ export function ConnectFromTemplateModal({ template, onClose, onDone }: {
           {err && <p className="text-xs text-dt-danger mt-3">{err}</p>}
           <div className="flex gap-3 mt-5">
             <button disabled={busy} onClick={onClose} className="flex-1 px-3 py-2 rounded-lg bg-dt-panel text-dt-support hover:bg-dt-panel text-xs disabled:opacity-50">Cancel</button>
-            <button disabled={busy || !canManageConnectors} onClick={() => void submit()} className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs disabled:opacity-50">{busy ? 'Testing…' : 'Test & Save'}</button>
+            <button disabled={busy || !canManageConnectors} onClick={() => void submit()} className="flex-1 px-3 py-2 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white text-xs disabled:opacity-50">{busy ? 'Testing…' : 'Test & Save'}</button>
           </div>
     </Modal>
   );
@@ -463,7 +463,7 @@ export function TemplateLibrary({ templates, onUse, onBuild }: {
           <h2 className="text-sm font-semibold text-dt-title">Template library — connect anything with a REST API</h2>
           <p className="text-xs text-dt-muted mt-0.5">A template turns a system's API into configuration: pick one, enter your credentials, done. Or build your own in five guided steps — no code.</p>
         </div>
-        <button onClick={onBuild} className="px-3 py-1.5 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500 text-white">+ Build a custom template</button>
+        <button onClick={onBuild} className="px-3 py-1.5 rounded-lg text-xs bg-dt-accent-strong hover:bg-dt-accent-hover text-white">+ Build a custom template</button>
       </div>
       {templates.length === 0 ? (
         <LiveEmptyState icon="◎" title="No templates yet" body="The platform library appears once migration 028 is applied." />

@@ -67,7 +67,7 @@ const BUCKETS: Array<{ key: BucketKey; label: string; match: (d: InquiryDecision
   { key: 'blocked', label: 'Blocked / no access', match: d => d === 'blocked_guardrail' || d === 'skipped_no_access', cls: 'text-dt-danger', active: 'border-dt-danger-border bg-dt-danger-soft' },
   { key: 'acted', label: 'Acted', match: d => d === 'acted', cls: 'text-dt-ok', active: 'border-dt-ok-border bg-dt-ok-soft' },
   { key: 'auto', label: 'Auto-sent', match: d => d === 'would_auto_send', cls: 'text-emerald-400', active: 'border-emerald-500/60 bg-emerald-500/10' },
-  { key: 'all', label: 'All activity', match: () => true, cls: 'text-dt-support', active: 'border-indigo-500/60 bg-indigo-500/10' },
+  { key: 'all', label: 'All activity', match: () => true, cls: 'text-dt-support', active: 'border-indigo-500/60 bg-dt-accent-soft' },
 ];
 
 function Chip({ label, cls }: { label: string; cls: string }) {

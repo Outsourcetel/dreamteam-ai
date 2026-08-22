@@ -116,7 +116,7 @@ export default function PlatformShelfPanel({ tenantQuery }: { tenantQuery?: stri
             <input
               type="text" value={q} onChange={e => setQ(e.target.value)}
               placeholder="Search the product guide…"
-              className="w-full mb-3 bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+              className="w-full mb-3 bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-dt-accent" />
 
             {loading && <p className="text-[11px] text-dt-muted">Loading…</p>}
             {!loading && docs.length === 0 && (

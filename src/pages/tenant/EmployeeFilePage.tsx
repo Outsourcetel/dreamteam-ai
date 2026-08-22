@@ -447,15 +447,15 @@ function WorkTab({ de, setPage }: { de: DigitalEmployee; setPage: (p: Page) => v
           <div className="mb-3 rounded-lg border border-dt-border-strong bg-dt-inset p-3 space-y-2">
             <input value={objTitle} onChange={e => setObjTitle(e.target.value)} autoFocus
               placeholder="What should this employee be working towards?"
-              className="w-full bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+              className="w-full bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-dt-accent" />
             <div className="flex items-center gap-2">
               <label className="text-[11px] text-dt-muted">Priority</label>
               <select value={objPriority} onChange={e => setObjPriority(Number(e.target.value))}
-                className="bg-dt-card border border-dt-border-strong text-dt-support text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
+                className="bg-dt-card border border-dt-border-strong text-dt-support text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-dt-accent">
                 {[1, 2, 3, 4, 5].map(p => <option key={p} value={p}>P{p}{p === 1 ? ' (highest)' : p === 5 ? ' (lowest)' : ''}</option>)}
               </select>
               <button onClick={() => void handleSaveObjective()} disabled={objSaving || !objTitle.trim()}
-                className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
+                className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-40">
                 {objSaving ? 'Saving…' : objEditId ? 'Save changes' : 'Add objective'}
               </button>
               <button onClick={() => setObjOpen(false)} className="text-xs text-dt-muted hover:text-dt-support">Cancel</button>
@@ -915,7 +915,7 @@ function RoleTemplatePanel({
             <select
               value={choice}
               onChange={e => setChoice(e.target.value)}
-              className="bg-dt-card border border-dt-border rounded-lg px-3 py-1.5 text-xs text-dt-support focus:outline-none focus:border-indigo-500 w-full"
+              className="bg-dt-card border border-dt-border rounded-lg px-3 py-1.5 text-xs text-dt-support focus:outline-none focus:border-dt-accent w-full"
             >
               <option value="">Choose a role…</option>
               {kits.map(k => (

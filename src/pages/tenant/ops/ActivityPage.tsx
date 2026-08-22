@@ -218,7 +218,7 @@ export default function ActivityPage({ setPage }: { setPage: (p: Page) => void }
             <button
               key={t}
               onClick={() => setTypeFilter(t)}
-              className={`px-2.5 py-1.5 rounded-full text-[11px] transition-colors ${typeFilter === t ? 'bg-indigo-600 text-white' : 'bg-dt-card border border-dt-border text-dt-support hover:text-dt-body'}`}
+              className={`px-2.5 py-1.5 rounded-full text-[11px] transition-colors ${typeFilter === t ? 'bg-dt-accent-strong text-white' : 'bg-dt-card border border-dt-border text-dt-support hover:text-dt-body'}`}
             >
               {t === 'all' ? 'All types' : TYPE_LABELS[t]}
             </button>

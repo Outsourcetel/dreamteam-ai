@@ -352,7 +352,7 @@ function LiveCustomerRenewal({ setPage }: { setPage: (p: Page) => void }) {
             )}
             <div className="flex gap-3 mt-3">
               <button onClick={() => void confirmGenerate()} disabled={generating}
-                className="flex-1 py-2 text-sm font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 transition-all">
+                className="flex-1 py-2 text-sm font-medium rounded-lg text-white bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-50 transition-all">
                 {generating ? 'Generating…' : 'Confirm'}
               </button>
               <button onClick={() => setGenModal(null)} className="flex-1 py-2 text-sm rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong transition-all">

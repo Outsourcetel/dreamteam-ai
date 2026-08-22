@@ -36,7 +36,7 @@ import { LiveLoadingSkeleton, MissingTablesNotice, LiveEmptyState } from '../../
 // (020). Winning a deal closes the Customer Lifecycle loop.
 // ============================================================
 
-const inputCls = 'bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-3 py-2 placeholder:text-dt-faint focus:outline-none focus:border-indigo-500';
+const inputCls = 'bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-3 py-2 placeholder:text-dt-faint focus:outline-none focus:border-dt-accent';
 
 const stageChip = (s: OppStage) =>
   s === 'won' ? 'bg-dt-ok-soft text-dt-ok'
@@ -177,7 +177,7 @@ function ImportOpportunitiesModal({ onClose, onImported }: { onClose: () => void
             </div>
             <textarea value={csvText} onChange={e => setCsvText(e.target.value)} rows={5}
               placeholder={'company,name,stage,amount,close_date,owner\nLakeside Retail,Lakeside — Growth,qualified,$96K,2026-07-25,S. Mitchell'}
-              className="w-full bg-dt-page border border-dt-border-strong text-dt-body text-xs font-mono rounded-xl px-3 py-2.5 placeholder:text-dt-faint focus:outline-none focus:border-indigo-500" />
+              className="w-full bg-dt-page border border-dt-border-strong text-dt-body text-xs font-mono rounded-xl px-3 py-2.5 placeholder:text-dt-faint focus:outline-none focus:border-dt-accent" />
           </div>
           {parsed && (
             <div>
@@ -188,7 +188,7 @@ function ImportOpportunitiesModal({ onClose, onImported }: { onClose: () => void
                     <span className="text-xs text-dt-support flex-1 truncate">{f.label}{f.required && <span className="text-rose-400"> *</span>}</span>
                     <select value={mapping[f.key] ?? -1}
                       onChange={e => setMapping(prev => ({ ...prev, [f.key]: Number(e.target.value) }))}
-                      className="bg-dt-page border border-dt-border-strong rounded text-xs text-dt-body px-2 py-1 focus:outline-none focus:border-indigo-500 max-w-[140px]">
+                      className="bg-dt-page border border-dt-border-strong rounded text-xs text-dt-body px-2 py-1 focus:outline-none focus:border-dt-accent max-w-[140px]">
                       <option value={-1}>— skip —</option>
                       {parsed.headers.map((h, i) => <option key={i} value={i}>{h || `(column ${i + 1})`}</option>)}
                     </select>
@@ -216,7 +216,7 @@ function ImportOpportunitiesModal({ onClose, onImported }: { onClose: () => void
             {result ? 'Done' : 'Cancel'}
           </button>
           <button onClick={() => void runImport()} disabled={!parsed || mappedRows.length === 0 || !requiredMapped || importing}
-            className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+            className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
             {importing ? 'Importing…' : 'Import opportunities'}
           </button>
         </div>
@@ -567,7 +567,7 @@ export function CustomerSalesLive() {
               <div className="flex gap-1 bg-dt-panel rounded-xl p-1">
                 {(['open', 'won', 'lost'] as const).map(f => (
                   <button key={f} onClick={() => setStageFilter(f)}
-                    className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${stageFilter === f ? 'bg-indigo-600 text-white' : 'text-dt-support hover:text-dt-body'}`}>
+                    className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${stageFilter === f ? 'bg-dt-accent-strong text-white' : 'text-dt-support hover:text-dt-body'}`}>
                     {f === 'open' ? 'Open' : STAGE_LABELS[f]}
                   </button>
                 ))}
@@ -608,7 +608,7 @@ export function CustomerSalesLive() {
                               <span className={`text-xs px-2 py-0.5 rounded-full ${stageChip(o.stage)}`}>{stageLabel(o.stage)}</span>
                             ) : (
                               <select value={o.stage} onChange={e => void onStageSelect(o, e.target.value)}
-                                className="bg-dt-page border border-dt-border-strong rounded-lg text-xs text-dt-body px-2 py-1 focus:outline-none focus:border-indigo-500">
+                                className="bg-dt-page border border-dt-border-strong rounded-lg text-xs text-dt-body px-2 py-1 focus:outline-none focus:border-dt-accent">
                                 {openStages.map(s => (
                                   <option key={s} value={s}>{stageLabel(s)}</option>
                                 ))}
@@ -630,7 +630,7 @@ export function CustomerSalesLive() {
                           <td className={`${td} text-right whitespace-nowrap`}>
                             {canWrite && !closed && (editing === o.id ? (
                               <span className="flex gap-1 justify-end">
-                                <button onClick={() => void saveEdit(o)} className="text-xs px-2 py-1 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 transition-colors">Save</button>
+                                <button onClick={() => void saveEdit(o)} className="text-xs px-2 py-1 rounded-lg bg-dt-accent-strong text-white hover:bg-dt-accent-hover transition-colors">Save</button>
                                 <button onClick={() => setEditing(null)} className="text-xs px-2 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body transition-colors">✕</button>
                               </span>
                             ) : (
@@ -670,7 +670,7 @@ export function CustomerSalesLive() {
           </div>
           <div className="flex gap-3">
             <button onClick={() => void addProspect()} disabled={saving || !newCompany.trim()}
-              className="flex-1 py-2 text-sm font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 transition-all">
+              className="flex-1 py-2 text-sm font-medium rounded-lg text-white bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-50 transition-all">
               {saving ? 'Saving…' : 'Add prospect'}
             </button>
             <button onClick={() => setShowAdd(false)} className="flex-1 py-2 text-sm rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong transition-all">

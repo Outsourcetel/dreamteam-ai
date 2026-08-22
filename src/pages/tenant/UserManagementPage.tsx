@@ -102,18 +102,18 @@ const InviteModal = ({
           <div>
             <label className="text-xs text-dt-support mb-1.5 block">Full Name *</label>
             <input value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Sarah Mitchell"
-              className="w-full bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2.5 text-sm text-dt-body focus:outline-none focus:border-indigo-500" />
+              className="w-full bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2.5 text-sm text-dt-body focus:outline-none focus:border-dt-accent" />
           </div>
           <div>
             <label className="text-xs text-dt-support mb-1.5 block">Work Email *</label>
             <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="sarah@company.com"
-              className="w-full bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2.5 text-sm text-dt-body focus:outline-none focus:border-indigo-500" />
+              className="w-full bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2.5 text-sm text-dt-body focus:outline-none focus:border-dt-accent" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-dt-support mb-1.5 block">Role</label>
               <select value={role} onChange={e => setRole(e.target.value as TenantRole)}
-                className="w-full bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2.5 text-sm text-dt-body focus:outline-none focus:border-indigo-500">
+                className="w-full bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2.5 text-sm text-dt-body focus:outline-none focus:border-dt-accent">
                 {(Object.entries(ROLE_LABELS) as [TenantRole, string][])
                   .filter(([r]) => r !== 'tenant_owner') // can't invite another owner
                   .map(([r, label]) => <option key={r} value={r}>{label}</option>)}
@@ -122,7 +122,7 @@ const InviteModal = ({
             <div>
               <label className="text-xs text-dt-support mb-1.5 block">Department</label>
               <select value={department} onChange={e => setDepartment(e.target.value)}
-                className="w-full bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2.5 text-sm text-dt-body focus:outline-none focus:border-indigo-500">
+                className="w-full bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2.5 text-sm text-dt-body focus:outline-none focus:border-dt-accent">
                 <option value="">No department</option>
                 {units.filter(u => u.kind === 'department' || u.kind === 'team').map(u => (
                   <option key={u.id} value={u.name}>{u.path}</option>
@@ -278,7 +278,7 @@ const UserManagementPage = ({ user, tenant, setPage }: { user?: AuthUser; tenant
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <input value={search} onChange={e => setSearch(e.target.value)}
           placeholder="Search name, email, department..."
-          className="flex-1 min-w-48 max-w-xs bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2 text-sm text-dt-body placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+          className="flex-1 min-w-48 max-w-xs bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2 text-sm text-dt-body placeholder-slate-500 focus:outline-none focus:border-dt-accent" />
         <div className="flex gap-1 bg-dt-panel rounded-lg p-1">
           {(['all', 'active', 'pending', 'deactivated'] as const).map(s => (
             <button key={s} onClick={() => setStatusFilter(s)}
@@ -289,7 +289,7 @@ const UserManagementPage = ({ user, tenant, setPage }: { user?: AuthUser; tenant
           ))}
         </div>
         <select value={roleFilter} onChange={e => setRoleFilter(e.target.value as any)}
-          className="bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2 text-sm text-dt-body focus:outline-none focus:border-indigo-500">
+          className="bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2 text-sm text-dt-body focus:outline-none focus:border-dt-accent">
           <option value="all">All roles</option>
           {(Object.entries(ROLE_LABELS) as [TenantRole, string][]).map(([r, l]) => (
             <option key={r} value={r}>{l}</option>
@@ -337,7 +337,7 @@ const UserManagementPage = ({ user, tenant, setPage }: { user?: AuthUser; tenant
                   {editingId === m.id && isAdmin && m.role !== 'tenant_owner' ? (
                     <select value={m.role} onChange={e => { runAction(() => updateRole(m.id, e.target.value as TenantRole)); setEditingId(null); }}
                       onBlur={() => setEditingId(null)} autoFocus
-                      className="w-full bg-dt-panel border border-indigo-500 rounded-lg px-2 py-1 text-xs text-dt-body focus:outline-none">
+                      className="w-full bg-dt-panel border border-dt-accent rounded-lg px-2 py-1 text-xs text-dt-body focus:outline-none">
                       {(Object.entries(ROLE_LABELS) as [TenantRole, string][])
                         .filter(([r]) => r !== 'tenant_owner')
                         .map(([r, l]) => <option key={r} value={r}>{l}</option>)}
@@ -354,7 +354,7 @@ const UserManagementPage = ({ user, tenant, setPage }: { user?: AuthUser; tenant
                 <div className="col-span-2">
                   {editingId === m.id && isAdmin ? (
                     <select value={m.orgUnitId ?? ''} onChange={e => { runAction(() => updateDepartment(m.id, e.target.value || null)); }}
-                      className="w-full bg-dt-panel border border-indigo-500 rounded-lg px-2 py-1 text-xs text-dt-body focus:outline-none">
+                      className="w-full bg-dt-panel border border-dt-accent rounded-lg px-2 py-1 text-xs text-dt-body focus:outline-none">
                       <option value="">No department</option>
                       {units.filter(u => u.kind === 'department' || u.kind === 'team').map(u => (
                         <option key={u.id} value={u.id}>{u.path}</option>

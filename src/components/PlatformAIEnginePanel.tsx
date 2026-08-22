@@ -142,7 +142,7 @@ export default function PlatformAIEnginePanel() {
               onChange={e => setDrafts(d => ({ ...d, [f.name]: e.target.value }))}
               className="flex-1 bg-dt-inset border border-dt-border rounded-lg px-3 py-1.5 text-xs text-dt-body" />
             <button onClick={() => void saveKey(f.name)} disabled={!drafts[f.name]?.trim() || savingKey !== null}
-              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 text-white disabled:opacity-40">
+              className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong text-white disabled:opacity-40">
               {savingKey === f.name ? 'Saving…' : 'Save'}
             </button>
           </div>

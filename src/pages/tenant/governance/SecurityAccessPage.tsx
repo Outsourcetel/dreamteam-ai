@@ -65,7 +65,7 @@ const API_KEY_SCOPES = ['a2a.message', 'a2a.*'] as const
 function Toggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean) => void }) {
   return (
     <button onClick={() => onChange(!enabled)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? 'bg-indigo-600' : 'bg-dt-border-strong'}`}>
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? 'bg-dt-accent-strong' : 'bg-dt-border-strong'}`}>
       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-4' : 'translate-x-1'}`} />
     </button>
   )
@@ -141,20 +141,20 @@ function ManageSubAccountsPanel({ tenantId }: { tenantId: string }) {
             value={name}
             onChange={e => setName(e.target.value)}
             placeholder="Sub-account name (e.g. Acme Customer Portal)"
-            className="bg-dt-page border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+            className="bg-dt-page border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-dt-accent"
           />
           <input
             value={industry}
             onChange={e => setIndustry(e.target.value)}
             placeholder="Industry (optional)"
-            className="bg-dt-page border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+            className="bg-dt-page border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-dt-accent"
           />
         </div>
 
         <button
           onClick={handleSubmit}
           disabled={busy || !name.trim()}
-          className="px-5 py-2.5 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 transition-all"
+          className="px-5 py-2.5 text-white text-sm font-medium rounded-xl bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-50 transition-all"
         >
           {busy ? 'Submitting…' : 'Request sub-account'}
         </button>
@@ -221,7 +221,7 @@ function ApiKeysPanel({ tenantId }: { tenantId: string }) {
         <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">API Keys</p>
         <button
           onClick={() => setShowCreate(true)}
-          className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-3 py-1.5 rounded-lg transition-colors"
+          className="bg-dt-accent-strong hover:bg-dt-accent-hover text-white text-xs px-3 py-1.5 rounded-lg transition-colors"
         >
           + Create key
         </button>
@@ -271,7 +271,7 @@ function ApiKeysPanel({ tenantId }: { tenantId: string }) {
                 value={newName}
                 onChange={e => setNewName(e.target.value)}
                 placeholder="e.g. Analytics export"
-                className="w-full bg-dt-page border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500"
+                className="w-full bg-dt-page border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-dt-accent"
               />
             </div>
             <div>
@@ -283,7 +283,7 @@ function ApiKeysPanel({ tenantId }: { tenantId: string }) {
                     onClick={() => toggleScope(s)}
                     className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${
                       newScopes.includes(s)
-                        ? 'bg-indigo-600 border-indigo-500 text-white'
+                        ? 'bg-dt-accent-strong border-dt-accent text-white'
                         : 'bg-dt-page border-dt-border-strong text-dt-support hover:border-dt-border-strong'
                     }`}
                   >
@@ -296,7 +296,7 @@ function ApiKeysPanel({ tenantId }: { tenantId: string }) {
             <button
               onClick={handleCreate}
               disabled={creating || !newName.trim()}
-              className="px-5 py-2.5 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 transition-all"
+              className="px-5 py-2.5 text-white text-sm font-medium rounded-xl bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-50 transition-all"
             >
               {creating ? 'Creating…' : 'Create key'}
             </button>
@@ -426,7 +426,7 @@ function IpAllowlistPanel({ tenantId }: { tenantId: string }) {
         <button
           onClick={handleAdd}
           disabled={!newIp.trim()}
-          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 transition-colors whitespace-nowrap"
+          className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-50 transition-colors whitespace-nowrap"
         >
           + Add range
         </button>
@@ -582,14 +582,14 @@ function SecurityActivityLogPanel({ canView }: { canView: boolean }) {
 
       <div className="px-5 py-3 border-b border-dt-border flex items-center gap-2 flex-wrap">
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search actor or event…"
-          className="bg-dt-page border border-dt-border rounded-lg px-3 py-1.5 text-xs text-dt-support placeholder-slate-600 focus:outline-none focus:border-indigo-500 w-52" />
+          className="bg-dt-page border border-dt-border rounded-lg px-3 py-1.5 text-xs text-dt-support placeholder-slate-600 focus:outline-none focus:border-dt-accent w-52" />
         <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
-          className="bg-dt-page border border-dt-border rounded-lg px-2 py-1.5 text-xs text-dt-support focus:outline-none focus:border-indigo-500">
+          className="bg-dt-page border border-dt-border rounded-lg px-2 py-1.5 text-xs text-dt-support focus:outline-none focus:border-dt-accent">
           <option value="all">All event types</option>
           {SECURITY_TABLES.map(t => <option key={t} value={t}>{SECURITY_TABLE_LABELS[t]}</option>)}
         </select>
         <select value={opFilter} onChange={e => setOpFilter(e.target.value)}
-          className="bg-dt-page border border-dt-border rounded-lg px-2 py-1.5 text-xs text-dt-support focus:outline-none focus:border-indigo-500">
+          className="bg-dt-page border border-dt-border rounded-lg px-2 py-1.5 text-xs text-dt-support focus:outline-none focus:border-dt-accent">
           <option value="all">All actions</option>
           <option value="INSERT">Added</option>
           <option value="UPDATE">Changed</option>

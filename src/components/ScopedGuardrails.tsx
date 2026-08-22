@@ -219,22 +219,22 @@ export default function ScopedGuardrails({ scope, scopeRef, entityLabel, variant
       ) : (
         <div className="rounded-xl border border-dt-border-strong bg-dt-inset p-3 space-y-2">
           <select value={ruleType} onChange={e => setRuleType(e.target.value as GuardrailRuleType)}
-            className="w-full bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
+            className="w-full bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-dt-accent">
             {RULE_TYPES.map(t => <option key={t.key} value={t.key}>{t.label} — {t.hint}</option>)}
           </select>
           <input value={name} onChange={e => setName(e.target.value)} placeholder="Name this rule (e.g. No refunds over policy)"
-            className="w-full bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+            className="w-full bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-dt-accent" />
           <div className="flex items-center gap-2">
             <input value={value} onChange={e => setValue(e.target.value)}
               placeholder={meta.input === 'money' ? 'Amount in dollars' : meta.input === 'pct' ? 'Max %' : 'Phrase or topic'}
-              className="flex-1 bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+              className="flex-1 bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-dt-accent" />
             <select value={severity} onChange={e => setSeverity(e.target.value as 'blocking' | 'warning')}
-              className="bg-dt-card border border-dt-border-strong text-dt-support text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
+              className="bg-dt-card border border-dt-border-strong text-dt-support text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-dt-accent">
               <option value="blocking">Block</option>
               <option value="warning">Warn</option>
             </select>
             <button onClick={submit} disabled={busy || !canEditGuardrails || !name.trim()}
-              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">Add</button>
+              className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-40">Add</button>
             <button onClick={() => setAdding(false)} className="text-xs text-dt-muted hover:text-dt-support">Cancel</button>
           </div>
         </div>

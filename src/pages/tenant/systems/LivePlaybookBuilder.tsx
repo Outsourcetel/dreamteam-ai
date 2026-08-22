@@ -957,7 +957,7 @@ function DryRunPreview({ steps, definitionId, accounts, disabled }: {
               {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
             <button onClick={() => void run()} disabled={running || !accountId}
-              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-40 transition-colors">
+              className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white font-medium disabled:opacity-40 transition-colors">
               {running ? 'Running…' : 'Run preview'}
             </button>
           </div>
@@ -1143,7 +1143,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
             )}
           </div>
           <button onClick={() => void addSchedule()} disabled={busy || (selMode === 'single' && !selAccount)}
-            className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-40 transition-colors">
+            className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white font-medium disabled:opacity-40 transition-colors">
             {busy ? 'Adding…' : 'Add schedule'}
           </button>
         </div>
@@ -1193,7 +1193,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
           </div>
           <p className="text-[10px] text-dt-faint">{eventDesc}{!isPolled && selectedDef ? ' — fired via the Emit event step, manual fire, or the webhook.' : ''}</p>
           <button onClick={() => void addRule()} disabled={busy}
-            className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-40 transition-colors">
+            className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white font-medium disabled:opacity-40 transition-colors">
             {busy ? 'Adding…' : 'Add event rule'}
           </button>
         </div>
@@ -1213,7 +1213,7 @@ function TriggersSection({ def, schedules, rules, fires, accounts, onChanged, on
               <input className={inputCls + ' !w-44'} placeholder="Label (e.g. Deal signed)"
                 value={newLabel} onChange={e => setNewLabel(e.target.value)} />
               <button onClick={() => void createCustomEvent()} disabled={busy || !isTenantAdmin || !newKey.trim()}
-                className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-40 transition-colors">
+                className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white font-medium disabled:opacity-40 transition-colors">
                 Create event
               </button>
             </div>
@@ -1342,7 +1342,7 @@ function DraftWithAiModal({ onClose, onDrafted }: { onClose: () => void; onDraft
         <div className="flex items-center justify-end gap-2 mt-3">
           <button onClick={onClose} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border text-dt-support hover:text-dt-body">Cancel</button>
           <button onClick={() => void run()} disabled={busy}
-            className="text-xs px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-50">
+            className="text-xs px-3.5 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white font-medium disabled:opacity-50">
             {busy ? 'Studying & compiling…' : 'Study & draft'}
           </button>
         </div>
@@ -2110,7 +2110,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
                   {accounts.map(a => <option key={a.id} value={a.id}>{a.name} — ${Math.round(a.arr_cents / 100).toLocaleString()}</option>)}
                 </select>
                 <button onClick={() => void startRun()} disabled={!runAccountId || starting}
-                  className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-40 transition-colors">
+                  className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white font-medium disabled:opacity-40 transition-colors">
                   {starting ? 'Running…' : `▶ Run v${selectedDef.version}`}
                 </button>
                 <span className="text-[10px] text-dt-faint">Runs execute the published v{selectedDef.version} snapshot server-side — later edits never touch in-flight runs.</span>
@@ -2159,7 +2159,7 @@ export default function LivePlaybookBuilder({ setPage }: { setPage: (p: Page) =>
               <p className="text-xs font-medium text-dt-muted uppercase tracking-wider">Your playbooks</p>
               <div className="flex items-center gap-2">
                 <button onClick={() => setShowDraftAi(true)}
-                  className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors">
+                  className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white font-medium transition-colors">
                   ✨ Draft with AI
                 </button>
                 <button onClick={() => setBuilder({ id: null, name: '', key: '', description: '', steps: [...NEW_TEMPLATE.map(s => ({ ...s, params: { ...s.params } }))], status: 'draft', de_id: null })}

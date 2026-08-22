@@ -128,7 +128,7 @@ export function DeCertificationPanel({ deId }: { deId: string }) {
       </p>
       <div className="flex items-center gap-3 mb-3">
         <button onClick={() => void runCertExam()} disabled={certRun.busy}
-          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+          className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-50">
           {certRun.busy ? 'Running exam…' : 'Run certification exam'}
         </button>
         <span className="text-[11px] text-dt-muted flex-1">
@@ -209,7 +209,7 @@ export function DeCompliancePanel() {
           ))}
         </select>
         <button disabled={packBusy || !packPick} onClick={() => void attachPack()}
-          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+          className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-50">
           {packBusy ? 'Attaching…' : 'Attach'}
         </button>
       </div>
@@ -482,7 +482,7 @@ export default function DeWorkbenchPanel({ deId }: { deId: string }) {
                     <div className="mt-2 pt-2 border-t border-dt-border flex items-center gap-2 flex-wrap">
                       <input value={excOutcome[e.id] ?? ''} onChange={ev => setExcOutcome(s => ({ ...s, [e.id]: ev.target.value }))}
                         placeholder="What should happen? (optional note)"
-                        className="flex-1 min-w-[180px] bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-indigo-500" />
+                        className="flex-1 min-w-[180px] bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-dt-accent" />
                       <label className="flex items-center gap-1.5 text-[11px] text-dt-muted">
                         <input type="checkbox" checked={excLearn[e.id] ?? false}
                           onChange={() => setExcLearn(s => ({ ...s, [e.id]: !s[e.id] }))}

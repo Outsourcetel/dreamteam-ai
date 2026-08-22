@@ -85,7 +85,7 @@ export function LiveEmptyState({
         {primaryLabel && onPrimary && (
           <button
             onClick={onPrimary}
-            className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 transition-colors"
+            className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-dt-accent-strong hover:bg-dt-accent-hover transition-colors"
           >
             {primaryLabel}
           </button>

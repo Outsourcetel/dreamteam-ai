@@ -35,7 +35,7 @@ const ResetPasswordScreen = ({ onComplete }: {
     <div className="min-h-screen bg-dt-page flex items-center justify-center p-8">
       <div className="max-w-sm w-full">
         <div className="flex items-center gap-2 mb-8 justify-center">
-          <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white text-xs font-bold">DT</div>
+          <div className="w-8 h-8 rounded-lg bg-dt-accent-strong flex items-center justify-center text-white text-xs font-bold">DT</div>
           <span className="text-dt-title font-bold">DreamTeam AI</span>
         </div>
 
@@ -53,16 +53,16 @@ const ResetPasswordScreen = ({ onComplete }: {
               <div>
                 <label className="text-xs font-medium text-dt-support block mb-1.5">New password</label>
                 <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="8+ characters" autoFocus
-                  className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                  className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-dt-accent" />
               </div>
               <div>
                 <label className="text-xs font-medium text-dt-support block mb-1.5">Confirm password</label>
                 <input value={confirm} onChange={(e) => setConfirm(e.target.value)} type="password" placeholder="Retype the password"
-                  className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                  className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-dt-accent" />
               </div>
               {error && <Banner tone="danger" className="text-xs">{error}</Banner>}
               <button type="submit" disabled={loading}
-                className="w-full py-3 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 transition-all flex items-center justify-center gap-2">
+                className="w-full py-3 text-white text-sm font-medium rounded-xl bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-60 transition-all flex items-center justify-center gap-2">
                 {loading ? <><Spinner /> Saving...</> : 'Set new password'}
               </button>
             </form>

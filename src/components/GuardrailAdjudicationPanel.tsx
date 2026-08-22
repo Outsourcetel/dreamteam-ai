@@ -191,12 +191,12 @@ export default function GuardrailAdjudicationPanel({ rules }: { rules: Guardrail
                         value={why} rows={2} disabled={busy}
                         onChange={e => setWhy(e.target.value)}
                         placeholder="e.g. This rule exists to stop the employee promising a refund. It keeps blocking answers that merely quote the published refund policy."
-                        className="w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+                        className="w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-dt-accent disabled:opacity-50" />
                       <div className="mt-2 flex items-center gap-3">
                         <button
                           disabled={busy || why.trim().length < MIN_JUSTIFICATION}
                           onClick={() => void submit(r.id, true)}
-                          className="text-[11px] px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
+                          className="text-[11px] px-2.5 py-1 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-40">
                           {busy ? 'Saving…' : 'Allow'}
                         </button>
                         <span className="text-[10px] text-dt-muted">

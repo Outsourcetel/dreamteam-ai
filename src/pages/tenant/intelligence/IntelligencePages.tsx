@@ -107,7 +107,7 @@ function RangeSelector({ value, onChange }: { value: number | null; onChange: (d
         <button
           key={o.label}
           onClick={() => onChange(o.days)}
-          className={`text-xs px-2.5 py-1 rounded-md transition-colors ${value === o.days ? 'bg-indigo-600 text-white' : 'text-dt-support hover:text-dt-body'}`}
+          className={`text-xs px-2.5 py-1 rounded-md transition-colors ${value === o.days ? 'bg-dt-accent-strong text-white' : 'text-dt-support hover:text-dt-body'}`}
         >
           {o.label}
         </button>
@@ -286,7 +286,7 @@ function LivePerformancePage({ tenantId, setPage }: { tenantId: string; setPage:
               <div key={de.id} className="bg-dt-card border border-dt-border rounded-2xl p-5">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
-                    <span className="w-9 h-9 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 font-semibold">{(de.persona_name ?? de.name)[0]}</span>
+                    <span className="w-9 h-9 rounded-xl bg-indigo-600/20 border border-dt-accent-border flex items-center justify-center text-indigo-400 font-semibold">{(de.persona_name ?? de.name)[0]}</span>
                     <div>
                       <p className="text-sm font-semibold text-dt-title">{de.persona_name ?? de.name}</p>
                       <p className="text-[11px] text-dt-muted">{de.persona_name ? de.name : (de.description || de.category)}</p>

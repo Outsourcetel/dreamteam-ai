@@ -231,11 +231,11 @@ export default function BookOfWorkPanel({ deId }: { deId: string }) {
       {adding && (
         <div className="mb-3 rounded-lg border border-dt-border-strong bg-dt-inset p-3 space-y-2">
           <select value={kind} onChange={e => setKind(e.target.value as WatcherKind)}
-            className="w-full bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
+            className="w-full bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-dt-accent">
             {CONFIGURABLE.map(k => <option key={k} value={k}>{WATCHER_KIND_META[k].label} — {WATCHER_KIND_META[k].hint}</option>)}
           </select>
           <input value={label} onChange={e => setLabel(e.target.value)} placeholder="Name this (e.g. Upcoming renewals)"
-            className="w-full bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+            className="w-full bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-dt-accent" />
 
           {kind === 'date_horizon' && (
             <div className="space-y-2">
@@ -255,7 +255,7 @@ export default function BookOfWorkPanel({ deId }: { deId: string }) {
               <label className="block text-[11px] text-dt-muted">
                 Open a case this many days before that date:
                 <input value={horizons} onChange={e => setHorizons(e.target.value)} placeholder="90, 60, 30"
-                  className="mt-1 w-full bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+                  className="mt-1 w-full bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-dt-accent" />
               </label>
             </div>
           )}
@@ -313,7 +313,7 @@ export default function BookOfWorkPanel({ deId }: { deId: string }) {
 
           <div className="flex items-center gap-2">
             <button onClick={() => void submit()} disabled={busy || !canEditWatchers || !label.trim()}
-              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
+              className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-40">
               {busy ? 'Saving…' : 'Add'}
             </button>
             <button onClick={() => { setAdding(false); resetForm(); setError(null); }} className="text-xs text-dt-muted hover:text-dt-support">Cancel</button>
@@ -360,7 +360,7 @@ export default function BookOfWorkPanel({ deId }: { deId: string }) {
                     onUnit={setEdUnit} onAmount={setEdAmount} onDate={setEdDate} />
                   <div className="flex items-center gap-2">
                     <button onClick={() => void saveWindow(w)} disabled={busy || !canEditWatchers}
-                      className="text-xs px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
+                      className="text-xs px-3 py-1 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-40">
                       {busy ? 'Saving…' : 'Save'}
                     </button>
                     <button onClick={() => { setEditing(null); setError(null); }}

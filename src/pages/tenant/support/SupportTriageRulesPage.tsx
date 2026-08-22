@@ -109,7 +109,7 @@ const SupportTriageRulesPage = ({ setPage, embedded }: { setPage: (p: Page) => v
           {!embedded && <button onClick={() => setPage('support_command_center')}
             className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong transition-colors">← Command Center</button>}
           <button onClick={() => setDraft({ ...BLANK })}
-            className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">+ Add rule</button>
+            className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white transition-colors">+ Add rule</button>
         </div>
       </div>
 
@@ -117,7 +117,7 @@ const SupportTriageRulesPage = ({ setPage, embedded }: { setPage: (p: Page) => v
 
       {/* Editor */}
       {draft && (
-        <div className="mb-5 rounded-2xl border border-indigo-500/30 bg-indigo-500/10 p-5 space-y-3">
+        <div className="mb-5 rounded-2xl border border-dt-accent-border bg-dt-accent-soft p-5 space-y-3">
           <p className="text-sm font-semibold text-dt-title">{draft.id ? 'Edit rule' : 'New rule'}</p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <label className="block">
@@ -187,7 +187,7 @@ const SupportTriageRulesPage = ({ setPage, embedded }: { setPage: (p: Page) => v
           </label>
           <div className="flex gap-2">
             <button onClick={save} disabled={saving}
-              className="text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-60 transition-colors">
+              className="text-sm px-4 py-2 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-60 transition-colors">
               {saving ? 'Saving…' : 'Save rule'}
             </button>
             <button onClick={() => setDraft(null)} className="text-sm px-4 py-2 rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong transition-colors">Cancel</button>

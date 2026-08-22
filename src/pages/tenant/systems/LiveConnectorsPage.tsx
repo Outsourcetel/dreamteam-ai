@@ -360,7 +360,7 @@ function ConnectWizard({ onClose, onDone, onCustom, reconnect }: { onClose: () =
                 <button disabled={busy} onClick={onClose} className="flex-1 px-3 py-2 rounded-lg bg-dt-panel text-dt-support hover:bg-dt-panel text-xs transition-colors disabled:opacity-50">
                   Cancel
                 </button>
-                <button disabled={busy || !canManageConnectors} onClick={() => void submit()} className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs transition-colors disabled:opacity-50">
+                <button disabled={busy || !canManageConnectors} onClick={() => void submit()} className="flex-1 px-3 py-2 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white text-xs transition-colors disabled:opacity-50">
                   {busy ? 'Testing…' : meta!.implemented ? 'Test & Save' : 'Register (no adapter yet)'}
                 </button>
               </div>
@@ -439,7 +439,7 @@ function OAuthConnectSection({ provider, label, name, onClose }: {
         <button disabled={busy} onClick={onClose} className="flex-1 px-3 py-2 rounded-lg bg-dt-panel text-dt-support hover:bg-dt-panel text-xs disabled:opacity-50">Cancel</button>
         <button disabled={busy || configured !== true} onClick={() => void connect()}
           title={configured !== true ? 'A platform admin must add the app credentials first.' : ''}
-          className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs disabled:opacity-50">
+          className="flex-1 px-3 py-2 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white text-xs disabled:opacity-50">
           {busy ? 'Starting…' : `Connect with ${label}`}
         </button>
       </div>
@@ -473,7 +473,7 @@ function FieldMapEditor({ connector, onSave, isBusy }: {
         ))}
       </div>
       <button disabled={isBusy} onClick={() => onSave(map)}
-        className="mt-3 px-3 py-1.5 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 transition-colors">
+        className="mt-3 px-3 py-1.5 rounded-lg text-xs bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-50 transition-colors">
         Save mapping
       </button>
     </div>
@@ -602,7 +602,7 @@ function IngestControlPanel({ connector, onToast }: { connector: Connector; onTo
           </label>
         </div>
         <button disabled={isBusy} onClick={() => void saveFilters()}
-          className="mt-3 px-3 py-1.5 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 transition-colors">
+          className="mt-3 px-3 py-1.5 rounded-lg text-xs bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-50 transition-colors">
           {busy === 'save' ? 'Saving…' : 'Save settings'}
         </button>
       </div>
@@ -747,7 +747,7 @@ function LearnedToolsPanel({ onToast }: { onToast: (m: string) => void }) {
             className="w-full px-3 py-2 rounded-lg bg-dt-panel border border-dt-border text-xs font-mono text-dt-body placeholder:text-dt-muted" />
           {err && <div className="text-[11px] text-dt-danger">{err}</div>}
           <button disabled={busy || !specText.trim()} onClick={() => void learn()}
-            className="px-3 py-1.5 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 transition-colors">
+            className="px-3 py-1.5 rounded-lg text-xs bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-50 transition-colors">
             {busy ? 'Working…' : 'Learn actions from this spec'}
           </button>
 
@@ -1020,7 +1020,7 @@ export default function LiveConnectorsPage() {
             {showAi ? 'Close assistant' : '✨ Ask about systems'}
           </button>
           {connectors.length > 0 && (
-            <button onClick={() => setShowConnect(true)} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-lg transition-colors">
+            <button onClick={() => setShowConnect(true)} className="bg-dt-accent-strong hover:bg-dt-accent-hover text-white text-sm px-4 py-2 rounded-lg transition-colors">
               + Connect a system
             </button>
           )}
@@ -1175,14 +1175,14 @@ export default function LiveConnectorsPage() {
                     {meta?.knowledgeSync && (
                       <button disabled={isBusy} onClick={() => void doKnowledgeSync(c)}
                         title={c.access_mode === 'fetch_only' ? 'Fetch-only connectors refuse sync server-side — try it.' : 'Ingest help articles / pages into knowledge'}
-                        className="px-3 py-1.5 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 transition-colors">
+                        className="px-3 py-1.5 rounded-lg text-xs bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-50 transition-colors">
                         {isBusy ? 'Working…' : 'Sync knowledge'}
                       </button>
                     )}
                     {c.provider === 'mcp' && (
                       <button disabled={isBusy || c.status === 'disconnected'} onClick={() => void doMcpSync(c)}
                         title="Read this server's tool list and register each tool as an approval-gated action"
-                        className="px-3 py-1.5 rounded-lg text-xs bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 transition-colors">
+                        className="px-3 py-1.5 rounded-lg text-xs bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-50 transition-colors">
                         {isBusy ? 'Working…' : 'Register tools'}
                       </button>
                     )}

@@ -472,7 +472,7 @@ function LiveKnowledgeQuality() {
                             <button
                               disabled={busyId === d.id}
                               onClick={() => void reverify(d)}
-                              className="text-xs px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white">
+                              className="text-xs px-2.5 py-1 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-50 text-white">
                               {busyId === d.id ? '…' : 'Re-verify'}
                             </button>
                             <button onClick={() => setConfirmDelete(d)} className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-red-500/50 hover:text-red-400">

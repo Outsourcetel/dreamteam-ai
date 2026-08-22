@@ -40,6 +40,26 @@ const NO_COMMENTS = `| grep -v '^[[:space:]]*\\(//\\|\\*\\)'`;
 const count = (pat) => Number(sh(`grep -rh "${pat}" ${G} ${NO_COMMENTS} | wc -l`));
 uniq = (pat) => Number(sh(`grep -rhE "${pat}" ${G} ${NO_COMMENTS} | grep -oE "${pat}" | sort -u | wc -l`));
 const files = (pat) => Number(sh(`grep -rlE "${pat}" ${G} | wc -l`));
+// ── A THIRD FILTER, for one metric ─────────────────────────────────────────
+// NO_COMMENTS drops `// …` and ` * …` lines. It does NOT drop a JSX comment
+// ({/* … */}), whose continuation lines are bare prose — and the one place in
+// the estate that DOCUMENTS a colour decision in JSX prose (GettingStartedGuide,
+// explaining a past audit false-exemption) names two hue classes in English.
+// Counting those is the "metric counting English as CSS" failure this file
+// already records for `radius variants`. A real class token is always inside a
+// quoted string; the sentence describing one is not. Measured before adding
+// this filter: exactly 2 matches on quote-free lines, both from that comment.
+// The quote test runs in Node, not in the pipeline: a shell pattern matching
+// all three of ' " and ` cannot be written in this file without an escaping
+// puzzle that the next reader would have to re-solve to trust the number.
+const countQuoted = (pat) => {
+  const re = new RegExp(pat, 'g');
+  return sh(`grep -rhE "${pat}" ${G} ${NO_COMMENTS}`)
+    .split('\n')
+    .filter((l) => /['"`]/.test(l))
+    .reduce((n, l) => n + (l.match(re) || []).length, 0);
+};
+const HUE = 'bg-(red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-[0-9]{2,3}(/[0-9]{1,3})?';
 
 // Baseline RATCHETED 2026-07-30. Counts only go DOWN — when a sweep lowers
 // them, tighten these floors in the SAME commit, which is the step that had
@@ -129,6 +149,43 @@ const BASELINE = {
   // is how that gets done by accident, so the remainder is a worklist, not a
   // sweep.  `node scripts/design-drift.mjs --files` lists them.
   'raw error text': 62,
+  // ── bare hue fills, ADDED 2026-08-22 ───────────────────────────────────
+  // The gap this closes: audit-light-ready.mjs ratchets bare hues in TEXT and
+  // BORDER classes, and nothing anywhere ratcheted them in BACKGROUNDS. 580
+  // occurrences were sitting in 70 of 133 page files, and no checker in the
+  // repo could see one.
+  //
+  // ⚠ 580, not the 405 this comment said in its first draft. 405 came from
+  // `grep -coE`, and `-c` counts matching LINES even with `-o` — so every
+  // className carrying two hue fills was counted once. The number that
+  // survived was the one this metric computes itself.
+  //
+  // Why it is not cosmetic: tokens.css defines FOUR themes (:root dark,
+  // :root.light, :root.light.editorial, and the fourth block), and each
+  // redefines --dt-accent. A literal `bg-indigo-600` ignores all of it, so a
+  // tenant on the editorial theme — accent #c14d21, a rust orange — got 136
+  // indigo primary buttons.
+  //
+  // 262 occurrences converted in the same commit (580 → 318), every one an
+  // EXACT token equivalence checked against tokens.css rather than eyeballed:
+  //     bg-indigo-600      → bg-dt-accent-strong    (--dt-accent-strong #4f46e5)
+  //     hover:bg-indigo-500→ hover:bg-dt-accent-hover
+  //     bg-indigo-500/10   → bg-dt-accent-soft      (--dt-accent-soft #6366f11a)
+  //     bg-indigo-500      → bg-dt-accent           (--dt-accent #6366f1)
+  //     border-indigo-500/30 → border-dt-accent-border
+  //     focus:border-indigo-500 → focus:border-dt-accent
+  //     text-indigo-300    → text-dt-accent-text
+  // The same pass converted the border/text/focus siblings of those classes,
+  // which is what moved audit-light-ready's `tone border-400/500` from 268 to
+  // 105 — 432 substitutions in total, of which the 262 above are the
+  // backgrounds this metric counts.
+  //
+  // The remaining 318 are NOT one substitution: they are semantic status
+  // colours (emerald=healthy, amber=needs-a-human, rose=failed) at opacities
+  // the token set has no exact match for — /5, /15, /20, /40, /60. Each needs
+  // a design decision about which dt-* recipe it becomes, so this is pinned as
+  // a worklist, not swept.
+  'bare hue fills': 318,
 };
 const NOW = {
   'bg-slate variants': uniq('bg-slate-[0-9/]*'),
@@ -162,6 +219,10 @@ const NOW = {
   'inline style objects': count('style={{'),
   'raw error text': countAll('\\bset[A-Za-z_]*\\(.*\\b(e|err|error|ex)\\b\\??\\.message'),
   'raw hex colors': uniq('#[0-9a-fA-F]{6}'),
+  // Occurrences, not distinct variants: the conversion above moved the
+  // variant count by two (77 → 75) and the occurrence count by 262. A uniq()
+  // here would have called that a rounding error.
+  'bare hue fills': countQuoted(HUE),
 };
 
 let regressions = 0;

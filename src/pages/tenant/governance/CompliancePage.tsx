@@ -481,7 +481,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                   after an edit reopens the composer still bound to that rule. */}
               <button disabled={!canEditGuardrails}
                 onClick={() => { if (showAdd) closeComposer(); else { setEditing(null); setShowAdd(true) } }}
-                className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">
+                className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white transition-colors">
                 + Add rule
               </button>
             </div>
@@ -490,7 +490,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
             <div className="flex items-center gap-2 mb-4 flex-wrap">
               <span className="text-[11px] text-dt-muted">Showing:</span>
               <select value={focus} onChange={e => setFocus(e.target.value)}
-                className="bg-dt-page border border-dt-border text-dt-support text-xs rounded-lg px-2 py-1 focus:outline-none focus:border-indigo-500">
+                className="bg-dt-page border border-dt-border text-dt-support text-xs rounded-lg px-2 py-1 focus:outline-none focus:border-dt-accent">
                 <option value="all">Everything</option>
                 <option value="workspace">Workspace-wide only</option>
                 {des.length > 0 && <optgroup label="A specific employee">
@@ -727,7 +727,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                 <label className="block text-dt-support mb-1">Rule (plain English)</label>
                 <input value={form.rule} onChange={e => setForm(f => ({ ...f, rule: e.target.value }))}
                   placeholder='e.g. "Never quote competitor pricing"'
-                  className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body placeholder:text-dt-faint focus:outline-none focus:border-indigo-500" />
+                  className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body placeholder:text-dt-faint focus:outline-none focus:border-dt-accent" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -744,7 +744,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                     </p>
                   ) : (
                   <select value={form.rule_type} onChange={e => setForm(f => ({ ...f, rule_type: e.target.value as GuardrailRuleType }))}
-                    className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body focus:outline-none focus:border-indigo-500">
+                    className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body focus:outline-none focus:border-dt-accent">
                     {(Object.keys(RULE_TYPE_META) as GuardrailRuleType[]).map(t => (
                       <option key={t} value={t}>{RULE_TYPE_META[t].label}</option>
                     ))}
@@ -754,7 +754,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                 <div>
                   <label className="block text-dt-support mb-1">Severity</label>
                   <select value={form.severity} onChange={e => setForm(f => ({ ...f, severity: e.target.value as 'blocking' | 'warning' }))}
-                    className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body focus:outline-none focus:border-indigo-500">
+                    className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body focus:outline-none focus:border-dt-accent">
                     <option value="blocking">Blocking</option>
                     <option value="warning">Warning</option>
                   </select>
@@ -773,7 +773,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                 <div>
                   <label className="block text-dt-support mb-1">Applies to</label>
                   <select value={form.scope} onChange={e => setForm(f => ({ ...f, scope: e.target.value as 'workspace' | 'department' | 'employee', scope_ref: '' }))}
-                    className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body focus:outline-none focus:border-indigo-500">
+                    className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body focus:outline-none focus:border-dt-accent">
                     {(Object.keys(SCOPE_META) as Array<'workspace' | 'department' | 'employee'>).map(s => (
                       <option key={s} value={s}>{SCOPE_META[s].label}</option>
                     ))}
@@ -783,7 +783,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                   <div>
                     <label className="block text-dt-support mb-1">Department</label>
                     <select value={form.scope_ref} onChange={e => setForm(f => ({ ...f, scope_ref: e.target.value }))}
-                      className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body focus:outline-none focus:border-indigo-500">
+                      className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body focus:outline-none focus:border-dt-accent">
                       <option value="">Choose a department…</option>
                       {departments.map(d => <option key={d} value={d}>{d}</option>)}
                     </select>
@@ -792,7 +792,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                   <div>
                     <label className="block text-dt-support mb-1">Employee</label>
                     <select value={form.scope_ref} onChange={e => setForm(f => ({ ...f, scope_ref: e.target.value }))}
-                      className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body focus:outline-none focus:border-indigo-500">
+                      className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body focus:outline-none focus:border-dt-accent">
                       <option value="">Choose an employee…</option>
                       {des.map(d => <option key={d.id} value={d.id}>{d.name}{d.department ? ` · ${d.department}` : ''}</option>)}
                     </select>
@@ -812,7 +812,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                   <label className="block text-dt-support mb-1">Patterns (separate alternatives with |)</label>
                   <input value={form.pattern} onChange={e => setForm(f => ({ ...f, pattern: e.target.value }))}
                     placeholder="guarantee|we promise|legally binding"
-                    className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body font-mono placeholder:text-dt-faint focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body font-mono placeholder:text-dt-faint focus:outline-none focus:border-dt-accent" />
                 </div>
               ) : (
                 <div>
@@ -821,7 +821,7 @@ function LiveCompliancePage({ setPage }: { setPage: (p: Page) => void }) {
                   </label>
                   <input value={form.threshold} onChange={e => setForm(f => ({ ...f, threshold: e.target.value }))}
                     placeholder={form.rule_type === 'require_approval_over_cents' ? '10000' : '20'} inputMode="numeric"
-                    className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body font-mono placeholder:text-dt-faint focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body font-mono placeholder:text-dt-faint focus:outline-none focus:border-dt-accent" />
                 </div>
               )}
               <p className="text-[11px] text-dt-muted">{ruleTypeMeta(form.rule_type).hint}.</p>
@@ -967,7 +967,7 @@ function Toggle({ enabled, onChange, disabled }: { enabled: boolean; onChange: (
   return (
     <button
       onClick={() => !disabled && onChange(!enabled)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${disabled ? 'bg-dt-panel cursor-not-allowed' : enabled ? 'bg-indigo-600' : 'bg-dt-border-strong'}`}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${disabled ? 'bg-dt-panel cursor-not-allowed' : enabled ? 'bg-dt-accent-strong' : 'bg-dt-border-strong'}`}
       title={disabled ? 'Regulatory rule — cannot be disabled' : undefined}
     >
       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-4' : 'translate-x-1'}`} />

@@ -35,7 +35,7 @@ import type { Page } from '../../../types';
 //      one connector
 // ============================================================
 
-const selectCls = 'text-xs bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body focus:outline-none focus:border-indigo-500 disabled:opacity-40';
+const selectCls = 'text-xs bg-dt-page border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body focus:outline-none focus:border-dt-accent disabled:opacity-40';
 const PERMS: AccessPermission[] = ['search', 'read', 'ingest', 'write_back'];
 
 const fmtDate = (iso: string) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });

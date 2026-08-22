@@ -70,7 +70,7 @@ export default function OrgSetupScreen() {
     <div className="min-h-screen bg-dt-page flex items-center justify-center p-8">
       <div className="max-w-sm w-full">
         <div className="flex items-center gap-3 mb-8 justify-center">
-          <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold">DT</div>
+          <div className="w-10 h-10 rounded-xl bg-dt-accent-strong flex items-center justify-center text-white font-bold">DT</div>
           <div>
             <div className="text-dt-title font-bold text-lg">DreamTeam AI</div>
             <div className="text-dt-accent-text text-xs">Digital Workforce Platform</div>
@@ -91,7 +91,7 @@ export default function OrgSetupScreen() {
               type="text"
               placeholder="Acme Corp"
               autoFocus
-              className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-dt-accent"
             />
           </div>
           <div>
@@ -99,7 +99,7 @@ export default function OrgSetupScreen() {
             <select
               value={industry}
               onChange={e => setIndustry(e.target.value)}
-              className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 focus:outline-none focus:border-indigo-500"
+              className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 focus:outline-none focus:border-dt-accent"
             >
               {INDUSTRIES.map(i => <option key={i}>{i}</option>)}
             </select>
@@ -108,7 +108,7 @@ export default function OrgSetupScreen() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 transition-all flex items-center justify-center gap-2"
+            className="w-full py-3 text-white text-sm font-medium rounded-xl bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-60 transition-all flex items-center justify-center gap-2"
           >
             {loading ? <><Spinner /> Setting up your workspace...</> : 'Create My Workspace'}
           </button>

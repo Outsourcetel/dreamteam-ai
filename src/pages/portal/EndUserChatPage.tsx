@@ -336,7 +336,7 @@ const EndUserChatPage = ({
                       <select
                         value={prechatValues[field.id] || ''}
                         onChange={e => { setPrechatValues(prev => ({ ...prev, [field.id]: e.target.value })); setPrechatErrors(prev => ({ ...prev, [field.id]: false })); }}
-                        className={`w-full bg-dt-panel border rounded-xl px-3 py-2.5 text-sm text-dt-body focus:outline-none ${prechatErrors[field.id] ? 'border-red-500' : 'border-dt-border-strong focus:border-indigo-500'}`}>
+                        className={`w-full bg-dt-panel border rounded-xl px-3 py-2.5 text-sm text-dt-body focus:outline-none ${prechatErrors[field.id] ? 'border-red-500' : 'border-dt-border-strong focus:border-dt-accent'}`}>
                         <option value="">Select…</option>
                         <option>Billing question</option>
                         <option>Technical issue</option>
@@ -349,7 +349,7 @@ const EndUserChatPage = ({
                         value={prechatValues[field.id] || ''}
                         onChange={e => { setPrechatValues(prev => ({ ...prev, [field.id]: e.target.value })); setPrechatErrors(prev => ({ ...prev, [field.id]: false })); }}
                         placeholder={field.label}
-                        className={`w-full bg-dt-panel border rounded-xl px-3 py-2.5 text-sm text-dt-body placeholder-slate-600 focus:outline-none ${prechatErrors[field.id] ? 'border-red-500' : 'border-dt-border-strong focus:border-indigo-500'}`}
+                        className={`w-full bg-dt-panel border rounded-xl px-3 py-2.5 text-sm text-dt-body placeholder-slate-600 focus:outline-none ${prechatErrors[field.id] ? 'border-red-500' : 'border-dt-border-strong focus:border-dt-accent'}`}
                       />
                     )}
                     {prechatErrors[field.id] && <p className="text-xs text-red-400 mt-1">{field.label} is required</p>}
@@ -626,7 +626,7 @@ const EndUserChatPage = ({
                 onKeyDown={handleKey}
                 placeholder="Type your message…"
                 rows={2}
-                className="flex-1 bg-dt-panel border border-dt-border-strong rounded-xl px-4 py-3 text-sm text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-none transition-all"
+                className="flex-1 bg-dt-panel border border-dt-border-strong rounded-xl px-4 py-3 text-sm text-dt-body placeholder-slate-600 focus:outline-none focus:border-dt-accent resize-none transition-all"
               />
               <button
                 onClick={send}

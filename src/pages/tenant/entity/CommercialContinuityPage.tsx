@@ -108,7 +108,7 @@ function AddAgreementDialog({ onClose, onSaved }: { onClose: () => void; onSaved
           <div className="flex justify-end gap-2 pt-1">
             <button onClick={onClose} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border text-dt-support hover:text-dt-body">Cancel</button>
             <button onClick={() => void save()} disabled={busy || !canManage || !f.title.trim() || !f.counterparty_name.trim()}
-              className="text-xs px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+              className="text-xs px-3.5 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-50">
               {busy ? 'Saving…' : 'Add agreement'}
             </button>
           </div>
@@ -322,7 +322,7 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
           </p>
         </div>
         <button onClick={() => setShowAddAgreement(true)}
-          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shrink-0">
+          className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white shrink-0">
           + Add agreement
         </button>
       </div>
@@ -332,7 +332,7 @@ const CommercialContinuityPage = ({ setPage }: { setPage: (p: Page) => void }) =
       <div className="flex gap-1 mb-5 border-b border-dt-border">
         {([['command', 'Command Center'], ['portfolio', 'Portfolio'], ['cases', 'Case Workspace']] as [Tab, string][]).map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === id ? 'border-indigo-500 text-dt-title' : 'border-transparent text-dt-support hover:text-dt-body'}`}>
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === id ? 'border-dt-accent text-dt-title' : 'border-transparent text-dt-support hover:text-dt-body'}`}>
             {label}
           </button>
         ))}

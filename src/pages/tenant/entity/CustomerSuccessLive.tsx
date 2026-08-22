@@ -38,7 +38,7 @@ import type { Opportunity as PipelineOpportunity } from '../../../lib/pipelineAp
 const healthColor = (h: number) => (h >= 70 ? 'bg-emerald-500' : h >= 45 ? 'bg-amber-500' : 'bg-red-500');
 const healthText = (h: number) => (h >= 70 ? 'text-dt-ok' : h >= 45 ? 'text-dt-warn' : 'text-dt-danger');
 
-const inputCls = 'bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-indigo-500';
+const inputCls = 'bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-dt-accent';
 
 function StatusChip({ status }: { status: CustomerAccount['status'] }) {
   return (
@@ -219,7 +219,7 @@ function ContactsPanel({ accountId, accountName }: { accountId: string; accountN
           </label>
           <div className="flex gap-2">
             <button onClick={() => void save()} disabled={saving || !form.email.trim()}
-              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-40 transition-colors">
+              className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white font-medium disabled:opacity-40 transition-colors">
               {saving ? 'Saving…' : form.contactId ? 'Save changes' : 'Add contact'}
             </button>
             <button onClick={() => { setForm(null); setErr(null); }}
@@ -388,7 +388,7 @@ function AccountDrawer({ account, onClose, onChanged }: {
                 {defs.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
               <button onClick={() => void runPlaybook()} disabled={running || !selDef}
-                className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-40 transition-colors whitespace-nowrap">
+                className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white font-medium disabled:opacity-40 transition-colors whitespace-nowrap">
                 {running ? 'Starting…' : 'Run'}
               </button>
             </div>
@@ -480,7 +480,7 @@ function HealthConfigPanel({ weights, thresholds, lastComputed, onSaved, onRecom
           {err && <p className="text-[11px] text-rose-400 mb-2">✗ {err}</p>}
           <div className="flex gap-2">
             <button onClick={() => void save()} disabled={busy !== null}
-              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-40 transition-colors">
+              className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white font-medium disabled:opacity-40 transition-colors">
               {busy === 'save' ? 'Saving…' : 'Save config'}
             </button>
             <button onClick={() => void recompute()} disabled={busy !== null}
@@ -607,7 +607,7 @@ export default function CustomerSuccessLive() {
             <button onClick={() => setShowImport(true)} className="px-3 py-1.5 rounded-lg text-xs text-dt-support border border-dt-border-strong hover:border-dt-border-strong hover:text-dt-body transition-colors">
               + Import CSV
             </button>
-            <button onClick={() => setShowAdd(true)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 transition-colors">
+            <button onClick={() => setShowAdd(true)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-dt-accent-strong hover:bg-dt-accent-hover transition-colors">
               + Add {vocab.party_singular.toLowerCase()}
             </button>
           </div>
@@ -743,7 +743,7 @@ export default function CustomerSuccessLive() {
             </div>
             <div className="flex gap-3">
               <button onClick={() => void addAccount()} disabled={saving || !newName.trim()}
-                className="flex-1 py-2 text-sm font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 transition-all">
+                className="flex-1 py-2 text-sm font-medium rounded-lg text-white bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-50 transition-all">
                 {saving ? 'Saving…' : `Add ${vocab.party_singular.toLowerCase()}`}
               </button>
               <button onClick={() => setShowAdd(false)} className="flex-1 py-2 text-sm rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong transition-all">

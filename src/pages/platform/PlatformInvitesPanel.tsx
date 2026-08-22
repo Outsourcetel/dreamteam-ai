@@ -82,12 +82,12 @@ const PlatformInvitesPanel = () => {
           onChange={(e) => setEmail(e.target.value)}
           type="email"
           placeholder="teammate@company.com"
-          className="flex-1 bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+          className="flex-1 bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-dt-accent"
         />
         <select
           value={role}
           onChange={(e) => setRole(e.target.value as PlatformInviteRole)}
-          className="bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-indigo-500"
+          className="bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-dt-accent"
         >
           {ROLE_OPTIONS.map((r) => (
             <option key={r} value={r}>{PLATFORM_INVITE_ROLE_LABELS[r]}</option>
@@ -96,7 +96,7 @@ const PlatformInvitesPanel = () => {
         <button
           type="submit"
           disabled={creating}
-          className="px-4 py-2 rounded-xl text-white text-sm font-medium bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 transition-all whitespace-nowrap"
+          className="px-4 py-2 rounded-xl text-white text-sm font-medium bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-60 transition-all whitespace-nowrap"
         >
           {creating ? 'Creating…' : 'Send invite'}
         </button>

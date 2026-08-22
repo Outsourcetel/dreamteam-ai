@@ -340,7 +340,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                 onChange={(e) => setBrief(e.target.value)}
                 rows={5}
                 placeholder="e.g. I need someone to answer billing questions…"
-                className="w-full bg-dt-card border border-dt-border rounded-xl px-4 py-3 text-sm text-dt-body focus:border-indigo-500 focus:outline-none resize-none"
+                className="w-full bg-dt-card border border-dt-border rounded-xl px-4 py-3 text-sm text-dt-body focus:border-dt-accent focus:outline-none resize-none"
               />
               <div className="flex flex-wrap gap-2">
                 {EXAMPLES.map((ex, i) => (
@@ -351,7 +351,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                 ))}
               </div>
               <button onClick={doDraft} disabled={busy || !isTenantAdmin}
-                className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium disabled:opacity-60 transition-colors">
+                className="w-full py-3 rounded-xl bg-dt-accent-strong hover:bg-dt-accent-hover text-white text-sm font-medium disabled:opacity-60 transition-colors">
                 {busy ? phase || 'Working…' : 'Draft my new employee'}
               </button>
 
@@ -373,7 +373,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {archetypes.map((a) => (
                           <button key={a.key} onClick={() => { setSelectedRole(a); setRoleDeName(a.name); }}
-                            className={`text-left rounded-xl border p-3 transition-colors ${selectedRole?.key === a.key ? 'border-indigo-500 bg-indigo-500/10' : 'border-dt-border bg-dt-card hover:border-dt-border-strong'}`}>
+                            className={`text-left rounded-xl border p-3 transition-colors ${selectedRole?.key === a.key ? 'border-dt-accent bg-dt-accent-soft' : 'border-dt-border bg-dt-card hover:border-dt-border-strong'}`}>
                             <p className="text-xs font-semibold text-dt-title">{a.name}</p>
                             <p className="text-[11px] text-dt-muted">{a.domain}</p>
                           </button>
@@ -386,7 +386,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                         <label className="block">
                           <span className="text-[11px] text-dt-muted">Name this employee</span>
                           <input value={roleDeName} onChange={(e) => setRoleDeName(e.target.value)}
-                            className="mt-1 w-full bg-dt-card border border-dt-border rounded-lg px-3 py-2 text-xs text-dt-body focus:border-indigo-500 focus:outline-none" />
+                            className="mt-1 w-full bg-dt-card border border-dt-border rounded-lg px-3 py-2 text-xs text-dt-body focus:border-dt-accent focus:outline-none" />
                         </label>
                         <button onClick={doArchetypeHire} disabled={busy || !isTenantAdmin}
                           className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium disabled:opacity-60 transition-colors">
@@ -403,7 +403,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
           {/* ── Step 2: meet the draft + interview ── */}
           {step === 'meet' && draft && (
             <>
-              <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-4 flex gap-3">
+              <div className="rounded-xl border border-dt-accent-border bg-dt-accent-soft p-4 flex gap-3">
                 <div className="w-11 h-11 rounded-xl bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-dt-accent-text text-lg font-bold flex-shrink-0">
                   {persona.charAt(0).toUpperCase()}
                 </div>
@@ -487,7 +487,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                         onChange={(e) => setAnswers((prev) => prev.map((a, j) => (j === i ? e.target.value : a)))}
                         rows={2}
                         placeholder="Your answer (optional)"
-                        className="mt-1 w-full bg-dt-card border border-dt-border rounded-lg px-3 py-2 text-xs text-dt-body focus:border-indigo-500 focus:outline-none resize-none"
+                        className="mt-1 w-full bg-dt-card border border-dt-border rounded-lg px-3 py-2 text-xs text-dt-body focus:border-dt-accent focus:outline-none resize-none"
                       />
                     </label>
                   ))}
@@ -505,7 +505,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                     earlier in this wizard. This one was missed when they were
                     gated — the whole point of the checker. */}
                 <button onClick={doTeachAndRehearse} disabled={!isTenantAdmin}
-                  className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors disabled:opacity-40">
+                  className="flex-1 py-3 rounded-xl bg-dt-accent-strong hover:bg-dt-accent-hover text-white text-sm font-medium transition-colors disabled:opacity-40">
                   {answeredCount > 0 ? `Teach ${persona} & run the rehearsal` : 'Run the rehearsal'}
                 </button>
                 {answeredCount === 0 && draft.study.questions.length > 0 && (
@@ -518,7 +518,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
           {/* ── Step 3: working ── */}
           {step === 'working' && (
             <div className="py-10 text-center space-y-4">
-              <div className="mx-auto w-10 h-10 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
+              <div className="mx-auto w-10 h-10 rounded-full border-2 border-dt-accent border-t-transparent animate-spin" />
               <p className="text-sm text-dt-support">{phase || 'Working…'}</p>
               <p className="text-[11px] text-dt-muted">This is a real rehearsal — live answers, really judged. Usually under a minute.</p>
             </div>
@@ -605,7 +605,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
               </div>
 
               <button onClick={() => { forgetDraft(); onFinished(); onClose(); }}
-                className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors">
+                className="w-full py-3 rounded-xl bg-dt-accent-strong hover:bg-dt-accent-hover text-white text-sm font-medium transition-colors">
                 Done — take me to the team
               </button>
             </>
@@ -614,7 +614,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
           {/* ── Archetype tailoring interview (AI-led, role-defined) ── */}
           {step === 'tailor' && selectedRole && (
             <>
-              <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-4">
+              <div className="rounded-xl border border-dt-accent-border bg-dt-accent-soft p-4">
                 <p className="text-sm font-semibold text-dt-title mb-1">
                   {roleDeName.trim() || selectedRole.name} is hired — now let’s tailor it to your business.
                 </p>
@@ -641,14 +641,14 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
                       <textarea value={setupAnswers[q.key] ?? ''} rows={2}
                         onChange={(e) => setSetupAnswers((prev) => ({ ...prev, [q.key]: e.target.value }))}
                         placeholder="Your answer (optional)"
-                        className="w-full bg-dt-card border border-dt-border rounded-lg px-3 py-2 text-xs text-dt-body focus:border-indigo-500 focus:outline-none resize-none" />
+                        className="w-full bg-dt-card border border-dt-border rounded-lg px-3 py-2 text-xs text-dt-body focus:border-dt-accent focus:outline-none resize-none" />
                     )}
                   </div>
                 ))}
               </div>
 
               <button onClick={doTailorSetup} disabled={busy}
-                className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium disabled:opacity-60 transition-colors">
+                className="w-full py-3 rounded-xl bg-dt-accent-strong hover:bg-dt-accent-hover text-white text-sm font-medium disabled:opacity-60 transition-colors">
                 {busy ? phase || 'Drafting…' : 'Draft my tailored setup'}
               </button>
               <p className="text-[11px] text-dt-muted text-center">
@@ -693,7 +693,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
               )}
 
               {hasProposal && (
-                <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-4 space-y-2">
+                <div className="rounded-xl border border-dt-accent-border bg-dt-accent-soft p-4 space-y-2">
                   <p className="text-[11px] uppercase tracking-wide text-dt-accent-text mb-1">Proposed from your answers — you approve before it applies</p>
                   {tailoredProposal.partyScope && <p className="text-xs text-dt-support">• Scope: <span className="text-dt-title font-medium">{tailoredProposal.partyScope}</span></p>}
                   {tailoredProposal.discountPct != null && <p className="text-xs text-dt-support">• Discount allowed without approval: <span className="text-dt-title font-medium">{tailoredProposal.discountPct}%</span></p>}
@@ -721,7 +721,7 @@ export default function HireEmployeeWizard({ onClose, onFinished }: { onClose: (
               </p>
 
               <button onClick={() => { forgetDraft(); onFinished(); onClose(); }}
-                className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors">
+                className="w-full py-3 rounded-xl bg-dt-accent-strong hover:bg-dt-accent-hover text-white text-sm font-medium transition-colors">
                 Done — take me to the team
               </button>
             </>

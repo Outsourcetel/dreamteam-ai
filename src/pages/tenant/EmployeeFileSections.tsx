@@ -232,7 +232,7 @@ export function DeIncidentsPanel({ de, setPage }: { de: DigitalEmployee; setPage
                         value={note}
                         onChange={e => setNote(e.target.value)}
                         placeholder="Resolution note (optional)"
-                        className="w-full bg-dt-card border border-dt-border text-dt-body text-[11px] rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-500"
+                        className="w-full bg-dt-card border border-dt-border text-dt-body text-[11px] rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-dt-accent"
                       />
                       <div className="flex gap-2">
                         {inc.status === 'open' && (
@@ -375,7 +375,7 @@ export function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
             by nobody, ever — because its entry point was an 11px footnote
             link. Same flow, real button, where eyes actually land. */}
         <button onClick={() => setAdding(true)}
-          className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white">
+          className="ml-auto text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white">
           + Add a skill your business cares about
         </button>
         <button onClick={() => void assess()} disabled={assessing || !canManage}
@@ -507,7 +507,7 @@ export function DeSkillsPanel({ de }: { de: DigitalEmployee }) {
           </p>
           <div className="flex gap-2">
             <button onClick={() => void addSkill()} disabled={saving || !canManage || !newName.trim()}
-              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
+              className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-40">
               {saving ? 'Adding…' : 'Add skill'}
             </button>
             <button onClick={() => { setAdding(false); setNewName(''); setNewDesc(''); setNewSignal(''); }}
@@ -993,7 +993,7 @@ function EditDEModal({ de, onClose, onSaved }: { de: DigitalEmployee; onClose: (
         </label>
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} disabled={busy} className="text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:bg-dt-panel transition-colors disabled:opacity-50">Cancel</button>
-          <button onClick={save} disabled={busy || !canManage} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50">{busy ? 'Saving…' : 'Save changes'}</button>
+          <button onClick={save} disabled={busy || !canManage} className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white transition-colors disabled:opacity-50">{busy ? 'Saving…' : 'Save changes'}</button>
         </div>
       </div>
     </Modal>
@@ -1501,19 +1501,19 @@ function DeVoicePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: D
       <div className="space-y-2">
         <textarea value={voice} disabled={busy} onChange={e => setVoice(e.target.value)} rows={3}
           placeholder={'Voice — e.g. Calm and precise. Never more than three sentences unless asked for detail. Plain English, no jargon, no exclamation marks.'}
-          className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+          className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-dt-accent disabled:opacity-50" />
         <label className="flex items-center gap-2 text-[11px] text-dt-muted">
           <span className="whitespace-nowrap">Remembers the last</span>
           <input type="number" min={0} max={30} value={turns} disabled={busy}
             onChange={e => setTurns(e.target.value)}
-            className="w-16 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+            className="w-16 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1 focus:outline-none focus:border-dt-accent disabled:opacity-50" />
           <span>messages of a conversation. 0 answers each message in isolation; higher costs more per reply.</span>
         </label>
       </div>
       <div className="mt-3 flex items-center gap-3">
         {/* set_de_voice is owner/admin-gated in the database. */}
         <button onClick={() => void save()} disabled={busy || !canManage}
-          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+          className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-50">
           {busy ? 'Saving…' : 'Save voice'}
         </button>
         {!canManage && <span className="text-[11px] text-dt-muted">Changing this needs an owner or admin.</span>}
@@ -1573,34 +1573,34 @@ function DeIdentityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d
       <div className="space-y-2">
         <input type="text" value={title} disabled={busy} onChange={e => setTitle(e.target.value)}
           placeholder="Display title — e.g. Customer Support Specialist"
-          className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+          className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-dt-accent disabled:opacity-50" />
         <textarea value={purpose} disabled={busy} onChange={e => setPurpose(e.target.value)} rows={2}
           placeholder="Purpose statement — one to three sentences on what this employee exists to do"
-          className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+          className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-dt-accent disabled:opacity-50" />
         <input type="text" value={outcome} disabled={busy} onChange={e => setOutcome(e.target.value)}
           placeholder="Primary business outcome — e.g. Reduce average resolution time by 40%"
-          className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+          className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-dt-accent disabled:opacity-50" />
         <textarea value={resp} disabled={busy} onChange={e => setResp(e.target.value)} rows={3}
           placeholder={'Responsibilities — one per line, e.g.\nAnswer customer product questions\nDraft ticket replies for approval'}
-          className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+          className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-dt-accent disabled:opacity-50" />
         {/* Standard workforce-record fields (migration 136) — org bookkeeping,
             NOT fed into the answering persona. */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <input type="text" value={empCode} disabled={busy} onChange={e => setEmpCode(e.target.value)}
             placeholder="Employee code — e.g. DE-0042"
-            className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+            className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-dt-accent disabled:opacity-50" />
           <input type="text" value={location} disabled={busy} onChange={e => setLocation(e.target.value)}
             placeholder="Location — e.g. HQ / EU region"
-            className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+            className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-dt-accent disabled:opacity-50" />
           <input type="text" value={costCenter} disabled={busy} onChange={e => setCostCenter(e.target.value)}
             placeholder="Cost center — e.g. CC-SUPPORT"
-            className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50" />
+            className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-dt-accent disabled:opacity-50" />
         </div>
       </div>
       <div className="mt-3 flex items-center gap-3">
         {/* set_de_identity is owner/admin-gated in the database. */}
         <button onClick={() => void save()} disabled={busy || !canManage}
-          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+          className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-50">
           {busy ? 'Saving…' : 'Save identity'}
         </button>
         {!canManage && <span className="text-[11px] text-dt-muted">Changing this needs an owner or admin.</span>}
@@ -1655,24 +1655,24 @@ function DeAvailabilityPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated
       {error && <p className="text-xs text-dt-danger mb-2">{error}</p>}
       <div className="flex items-center gap-2 flex-wrap">
         <select value={mode} disabled={busy} onChange={e => setMode(e.target.value)}
-          className="bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
+          className="bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-dt-accent">
           <option value="always_on">Always on</option>
           <option value="business_hours">Business hours</option>
         </select>
         {mode === 'business_hours' && (
           <>
             <input type="text" value={tz} disabled={busy} onChange={e => setTz(e.target.value)} placeholder="Timezone, e.g. America/New_York"
-              className="w-44 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500" />
+              className="w-44 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-dt-accent" />
             <input type="number" min={0} max={23} value={startH} disabled={busy} onChange={e => setStartH(e.target.value)} title="Start hour"
-              className="w-16 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500" />
+              className="w-16 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-dt-accent" />
             <span className="text-xs text-dt-muted">to</span>
             <input type="number" min={1} max={24} value={endH} disabled={busy} onChange={e => setEndH(e.target.value)} title="End hour"
-              className="w-16 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500" />
+              className="w-16 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-dt-accent" />
           </>
         )}
         {/* set_de_availability is owner/admin-gated in the database. */}
         <button onClick={() => void save()} disabled={busy || !canManage}
-          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+          className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-50">
           {busy ? 'Saving…' : 'Save'}
         </button>
         {!canManage && <span className="text-[11px] text-dt-muted">Changing this needs an owner or admin.</span>}
@@ -1797,7 +1797,7 @@ function DeReplyModePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
             key={o.key}
             onClick={() => void choose(o.key)}
             disabled={busy || !canManage}
-            className={`text-left rounded-xl border p-4 transition-colors disabled:opacity-60 ${mode === o.key ? (o.key === 'auto' ? 'border-emerald-500/60 bg-emerald-500/10' : 'border-indigo-500/60 bg-indigo-500/10') : 'border-dt-border bg-dt-inset hover:border-dt-border-strong'}`}
+            className={`text-left rounded-xl border p-4 transition-colors disabled:opacity-60 ${mode === o.key ? (o.key === 'auto' ? 'border-emerald-500/60 bg-emerald-500/10' : 'border-indigo-500/60 bg-dt-accent-soft') : 'border-dt-border bg-dt-inset hover:border-dt-border-strong'}`}
           >
             <div className="flex items-center gap-2">
               <span className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 ${mode === o.key ? (o.key === 'auto' ? 'border-emerald-400 bg-emerald-400' : 'border-indigo-400 bg-indigo-400') : 'border-dt-border-strong'}`} />
@@ -1977,7 +1977,7 @@ function DeModelPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: D
       {error && <p className="text-xs text-dt-danger mb-2">{error}</p>}
       <div className="flex items-center gap-2 flex-wrap">
         <select value={selected} disabled={busy} onChange={e => setSelected(e.target.value)}
-          className="flex-1 min-w-[260px] bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50">
+          className="flex-1 min-w-[260px] bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-dt-accent disabled:opacity-50">
           {models.map(m => (
             <option key={m.model_id} value={m.model_id}>
               {MODEL_LABELS[m.model_id] ?? m.model_id} · ${m.input_price_per_million}/{'$'}{m.output_price_per_million} per M tokens
@@ -1985,7 +1985,7 @@ function DeModelPanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (d: D
           ))}
         </select>
         <button onClick={() => void save()} disabled={busy || !canManage || selected === (de.model_id || 'claude-sonnet-5')}
-          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
+          className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-40">
           {busy ? 'Saving…' : 'Save'}
         </button>
         {saved && <span className="text-xs text-emerald-400">Saved</span>}
@@ -2151,16 +2151,16 @@ export function DeKpisPanel({ de }: { de: DigitalEmployee }) {
       )}
 
       {reading && (
-        <div className="mb-3 rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-3 space-y-2">
+        <div className="mb-3 rounded-xl border border-dt-accent-border bg-indigo-500/5 p-3 space-y-2">
           <p className="text-xs text-dt-support">Record a value for <span className="font-medium">{reading.name}</span></p>
           <div className="flex items-center gap-2">
             <input type="number" value={readingValue} autoFocus disabled={!canManage}
               onChange={e => setReadingValue(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') void saveReading(); }}
               placeholder="Value"
-              className="w-32 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+              className="w-32 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-dt-accent" />
             <button onClick={() => void saveReading()} disabled={busy || !canManage || readingValue.trim() === ''}
-              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">Save</button>
+              className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-40">Save</button>
             <button onClick={() => setReading(null)} className="text-xs text-dt-muted hover:text-dt-support">Cancel</button>
           </div>
         </div>
@@ -2168,7 +2168,7 @@ export function DeKpisPanel({ de }: { de: DigitalEmployee }) {
 
       <div className="flex items-center gap-2">
         <select value={metricKey} disabled={busy || metrics.length === 0} onChange={e => setMetricKey(e.target.value)}
-          className="flex-1 bg-dt-page border border-dt-border text-dt-support text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
+          className="flex-1 bg-dt-page border border-dt-border text-dt-support text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-dt-accent">
           {(() => {
             const label = (m: KpiMetric) => `${m.label}${m.unit ? ` (${m.unit})` : ''}${m.source === 'manual' ? ' — you record this' : m.source === 'action' ? ' — auto from actions' : ''}`;
             const opt = (m: KpiMetric) => <option key={m.metric_key} value={m.metric_key}>{label(m)}</option>;
@@ -2183,7 +2183,7 @@ export function DeKpisPanel({ de }: { de: DigitalEmployee }) {
           })()}
         </select>
         <input type="number" value={target} disabled={busy || !canManage} onChange={e => setTarget(e.target.value)} placeholder="Target"
-          className="w-24 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+          className="w-24 bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-dt-accent" />
         <button onClick={add} disabled={busy || !canManage || target.trim() === '' || !selected}
           className="text-xs px-3 py-1.5 rounded-lg bg-dt-panel hover:bg-dt-panel text-dt-body disabled:opacity-40">
           Add KPI
@@ -2201,11 +2201,11 @@ export function DeKpisPanel({ de }: { de: DigitalEmployee }) {
           </p>
           <div className="flex items-center gap-2 flex-wrap">
             <input value={newLabel} onChange={e => setNewLabel(e.target.value)} placeholder="e.g. First-call resolution"
-              className="flex-1 min-w-[180px] bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+              className="flex-1 min-w-[180px] bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-dt-accent" />
             <input value={newUnit} onChange={e => setNewUnit(e.target.value)} placeholder="Unit (%, hrs)"
-              className="w-28 bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+              className="w-28 bg-dt-card border border-dt-border-strong text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-dt-accent" />
             <select value={newDir} onChange={e => setNewDir(e.target.value as 'higher' | 'lower')}
-              className="bg-dt-card border border-dt-border-strong text-dt-support text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
+              className="bg-dt-card border border-dt-border-strong text-dt-support text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-dt-accent">
               <option value="higher">Higher is better</option>
               <option value="lower">Lower is better</option>
             </select>
@@ -2215,7 +2215,7 @@ export function DeKpisPanel({ de }: { de: DigitalEmployee }) {
           )}
           <div className="flex gap-2">
             <button onClick={() => void defineMetric()} disabled={busy || !canManage || !newLabel.trim()}
-              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">Create</button>
+              className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-40">Create</button>
             <button onClick={() => { setDefining(false); setNewLabel(''); setNewUnit(''); }}
               className="text-xs text-dt-muted hover:text-dt-support">Cancel</button>
           </div>
@@ -2303,23 +2303,23 @@ export function DeEconomicsPanel({ de }: { de: DigitalEmployee }) {
           <div className="grid grid-cols-2 gap-2">
             <label className="text-[11px] text-dt-muted">Human minutes per inbox item
               <input type="number" min={0.1} step={0.5} value={inqMin} disabled={busy || !canManage} onChange={e => setInqMin(e.target.value)} placeholder="e.g. 6"
-                className="mt-0.5 w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+                className="mt-0.5 w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-dt-accent" />
             </label>
             <label className="text-[11px] text-dt-muted">Human minutes per action
               <input type="number" min={0.1} step={0.5} value={actMin} disabled={busy || !canManage} onChange={e => setActMin(e.target.value)} placeholder="e.g. 8"
-                className="mt-0.5 w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+                className="mt-0.5 w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-dt-accent" />
             </label>
             <label className="text-[11px] text-dt-muted">Human minutes per conversation
               <input type="number" min={0.1} step={0.5} value={convMin} disabled={busy || !canManage} onChange={e => setConvMin(e.target.value)} placeholder="e.g. 4"
-                className="mt-0.5 w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+                className="mt-0.5 w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-dt-accent" />
             </label>
             <label className="text-[11px] text-dt-muted">Human FTE cost / month (USD, fully loaded)
               <input type="number" min={1} value={fteCost} disabled={busy || !canManage} onChange={e => setFteCost(e.target.value)} placeholder="e.g. 6000"
-                className="mt-0.5 w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500" />
+                className="mt-0.5 w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-dt-accent" />
             </label>
           </div>
           <button onClick={() => void saveBaselines()} disabled={busy || !canManage}
-            className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+            className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-50">
             {busy ? 'Saving…' : 'Save baselines'}
           </button>
         </div>
@@ -2488,13 +2488,13 @@ function DeLifecyclePanel({ de, onUpdated }: { de: DigitalEmployee; onUpdated: (
                 type="text" value={note} disabled={busy}
                 onChange={e => setNote(e.target.value)}
                 placeholder="Certification note — what did you review?"
-                className="flex-1 min-w-[220px] bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+                className="flex-1 min-w-[220px] bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-dt-accent disabled:opacity-50"
               />
             )}
             <button
               onClick={() => void run(() => supabase.rpc('advance_de_lifecycle', { p_de_id: de.id, p_to_stage: nextStage, p_note: note.trim() || null }))}
               disabled={busy || !canManage || !allMet || (nextStage === 'certified' && !note.trim())}
-              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
+              className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-40">
               {busy ? 'Working…' : nextStage === 'certified' ? 'Certify' : `Advance to ${STAGE_LABELS[nextStage]}`}
             </button>
             {!allMet && <span className="text-[10px] text-dt-faint">Criteria above must be met first.</span>}
@@ -2700,7 +2700,7 @@ function DeDeploymentStagePanel({ de }: { de: DigitalEmployee }) {
               <button
                 onClick={() => void promote()}
                 disabled={busy || !canPromote || !trimmed}
-                className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
+                className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-40">
                 {busy ? 'Working…' : `Confirm — move to ${DEPLOYMENT_LABELS[next]}`}
               </button>
               <button
@@ -2717,12 +2717,12 @@ function DeDeploymentStagePanel({ de }: { de: DigitalEmployee }) {
               type="text" value={reason} disabled={busy || !canPromote}
               onChange={e => { setReason(e.target.value); setDone(null); }}
               placeholder={`Why is ${de.name} ready for ${DEPLOYMENT_LABELS[next]}? (required)`}
-              className="flex-1 min-w-[220px] bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+              className="flex-1 min-w-[220px] bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-dt-accent disabled:opacity-50"
             />
             <button
               onClick={() => { setError(null); setDone(null); setConfirming(true); }}
               disabled={busy || !canPromote || !trimmed}
-              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
+              className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-40">
               Promote to {DEPLOYMENT_LABELS[next]}…
             </button>
             {!canPromote && (
@@ -2866,7 +2866,7 @@ export function DeEscalationPanel({ deId }: { deId: string }) {
             type="number" min={0} max={100} value={threshold} disabled={busy || !canManage}
             onChange={e => setThreshold(e.target.value)}
             placeholder={`inherited (${tenantRow?.frustration_threshold ?? 50})`}
-            className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+            className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-dt-accent disabled:opacity-50"
           />
           <p className="text-[10px] text-dt-faint mt-1">
             A customer scoring ≥ {effectiveThreshold}% on frustration signals always gets a human. Blank = inherit.
@@ -2878,7 +2878,7 @@ export function DeEscalationPanel({ deId }: { deId: string }) {
             type="text" value={topics} disabled={busy || !canManage}
             onChange={e => setTopics(e.target.value)}
             placeholder="e.g. refund, contract renewal"
-            className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+            className="w-full bg-dt-page border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-dt-accent disabled:opacity-50"
           />
           <p className="text-[10px] text-dt-faint mt-1">
             Comma-separated phrases — any match routes to a human regardless of confidence.
@@ -2888,7 +2888,7 @@ export function DeEscalationPanel({ deId }: { deId: string }) {
       </div>
       <div className="mt-3 flex items-center gap-3">
         <button onClick={() => void save()} disabled={busy || !canManage}
-          className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+          className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-50">
           {busy ? 'Saving…' : 'Save'}
         </button>
         {saved && <span className="text-xs text-emerald-400">Saved</span>}
@@ -2935,7 +2935,7 @@ export function DeEscalationPanel({ deId }: { deId: string }) {
         <div className="rounded-lg border border-dt-border bg-dt-page p-3 space-y-2">
           <input value={ruleName} disabled={busy || !canManage} onChange={e => setRuleName(e.target.value)}
             placeholder="Rule name — e.g. Large payment, Legal threat"
-            className="w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+            className="w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-dt-accent" />
 
           <p className="text-[10px] uppercase tracking-wide text-dt-muted">Escalate when {conds.length > 1 ? (
             <select value={ruleMatch} onChange={e => setRuleMatch(e.target.value as 'all' | 'any')}
@@ -2952,13 +2952,13 @@ export function DeEscalationPanel({ deId }: { deId: string }) {
               <div key={i} className="flex items-center gap-1.5 flex-wrap">
                 <select value={c.signal} disabled={busy || !canManage}
                   onChange={e => setCond(i, { signal: e.target.value, op: '', value: '' })}
-                  className="bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
+                  className="bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-dt-accent">
                   <option value="">Pick a signal…</option>
                   {signals.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
                 </select>
                 <select value={c.op} disabled={busy || !c.signal}
                   onChange={e => setCond(i, { op: e.target.value })}
-                  className="bg-dt-card border border-dt-border text-dt-support text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-40">
+                  className="bg-dt-card border border-dt-border text-dt-support text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-dt-accent disabled:opacity-40">
                   <option value="">condition…</option>
                   {ops.map(o => <option key={o.op} value={o.op}>{o.label}</option>)}
                 </select>
@@ -2967,7 +2967,7 @@ export function DeEscalationPanel({ deId }: { deId: string }) {
                     onChange={e => setCond(i, { value: e.target.value })}
                     inputMode={sType === 'number' ? 'numeric' : 'text'}
                     placeholder={sType === 'number' ? 'value' : 'text…'}
-                    className="w-28 bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500 disabled:opacity-40" />
+                    className="w-28 bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-dt-accent disabled:opacity-40" />
                 )}
                 {sigOf(c.signal)?.help && <span className="text-[10px] text-dt-faint">{sigOf(c.signal)!.help}</span>}
                 {conds.length > 1 && (
@@ -2982,12 +2982,12 @@ export function DeEscalationPanel({ deId }: { deId: string }) {
               className="text-[11px] text-dt-support hover:text-dt-body">+ add a condition</button>
             <div className="ml-auto flex items-center gap-2">
               <select value={ruleAction} disabled={busy || !canManage} onChange={e => setRuleAction(e.target.value as 'escalate' | 'require_approval')}
-                className="bg-dt-card border border-dt-border text-dt-support text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-indigo-500">
+                className="bg-dt-card border border-dt-border text-dt-support text-xs rounded-lg px-2 py-2 focus:outline-none focus:border-dt-accent">
                 <option value="escalate">Hand to a human</option>
                 <option value="require_approval">Needs approval first</option>
               </select>
               <button onClick={addRule} disabled={busy || !ruleName.trim() || readyConds.length === 0}
-                className="text-xs px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
+                className="text-xs px-3 py-2 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-40">
                 Add rule
               </button>
             </div>
@@ -3224,13 +3224,13 @@ function LadderEditorDrawer({ entry, deName, onClose, onSaved }: {
                   Name
                   <input value={l.name} onChange={e => setLevel(i, { name: e.target.value })}
                     placeholder={TRUST_LEVEL_LABELS[i + 1] ?? `Level ${i + 1}`}
-                    className="w-40 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none" />
+                    className="w-40 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-dt-accent focus:outline-none" />
                 </label>
                 <label className="flex items-center gap-2 text-xs text-dt-support">
                   Mode
                   <select value={l.mode}
                     onChange={e => setLevel(i, { mode: e.target.value as TrustLadderMode })}
-                    className="bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none disabled:opacity-60">
+                    className="bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-dt-accent focus:outline-none disabled:opacity-60">
                     {LADDER_MODES.map(m => <option key={m} value={m}>{TRUST_LADDER_MODE_LABELS[m]}</option>)}
                   </select>
                 </label>
@@ -3242,7 +3242,7 @@ function LadderEditorDrawer({ entry, deName, onClose, onSaved }: {
                       Max amount $
                       <input type="number" min={1} value={l.amount} placeholder="e.g. 1000"
                         onChange={e => setLevel(i, { amount: e.target.value })}
-                        className="w-28 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none" />
+                        className="w-28 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-dt-accent focus:outline-none" />
                     </label>
                   )}
                   {entry.enforcement.uses_confidence && (
@@ -3250,7 +3250,7 @@ function LadderEditorDrawer({ entry, deName, onClose, onSaved }: {
                       Min confidence %
                       <input type="number" min={0} max={100} value={l.confidence} placeholder="e.g. 75"
                         onChange={e => setLevel(i, { confidence: e.target.value })}
-                        className="w-24 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none" />
+                        className="w-24 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-dt-accent focus:outline-none" />
                     </label>
                   )}
                   {l.mode === 'act_within_limits' && (
@@ -3408,7 +3408,7 @@ function TrustSurfaceCard({ entry, ev, draft, saving, saved, requesting, request
             Max amount $
             <input type="number" min={0} value={draft.amount} placeholder="e.g. 5000" disabled={!canOverride}
               onChange={e => onDraft({ ...draft, amount: e.target.value })}
-              className="w-28 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none disabled:opacity-60" />
+              className="w-28 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-dt-accent focus:outline-none disabled:opacity-60" />
           </label>
         )}
         {entry.enforcement.uses_confidence && (
@@ -3416,7 +3416,7 @@ function TrustSurfaceCard({ entry, ev, draft, saving, saved, requesting, request
             Min confidence %
             <input type="number" min={0} max={100} value={draft.confidence} placeholder="e.g. 75" disabled={!canOverride}
               onChange={e => onDraft({ ...draft, confidence: e.target.value })}
-              className="w-20 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none disabled:opacity-60" />
+              className="w-20 bg-dt-card border border-dt-border-strong rounded-lg px-2 py-1.5 text-dt-body text-xs focus:border-dt-accent focus:outline-none disabled:opacity-60" />
           </label>
         )}
         {canOverride && (
@@ -4193,7 +4193,7 @@ function AttachedProceduresPanel({ deId, setPage }: { deId: string; setPage: (p:
               {unbound.map(d => <option key={d.id} value={d.id}>{d.name} ({d.status}){d.de_id ? ' — attached elsewhere' : ''}</option>)}
             </select>
             <button disabled={busy || !canBindProcedures || !pick} onClick={() => void act(async () => { await setDefinitionDeBinding(pick, deId); setPick(''); })}
-              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">Attach</button>
+              className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-50">Attach</button>
           </div>
         </>
       )}

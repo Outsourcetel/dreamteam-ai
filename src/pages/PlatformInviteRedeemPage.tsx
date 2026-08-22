@@ -45,7 +45,7 @@ export default function PlatformInviteRedeemPage({ code }: { code: string }) {
     <div className="min-h-screen bg-dt-page flex items-center justify-center p-8">
       <div className="max-w-sm w-full">
         <div className="flex items-center gap-3 mb-8 justify-center">
-          <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-bold">DT</div>
+          <div className="w-10 h-10 rounded-xl bg-dt-accent-strong flex items-center justify-center text-white font-bold">DT</div>
           <div>
             <div className="text-dt-title font-bold text-lg">DreamTeam AI</div>
             <div className="text-dt-accent-text text-xs">Digital Workforce Platform</div>
@@ -61,7 +61,7 @@ export default function PlatformInviteRedeemPage({ code }: { code: string }) {
             </p>
             <a
               href={'/'}
-              className="block w-full py-3 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 transition-all text-center"
+              className="block w-full py-3 text-white text-sm font-medium rounded-xl bg-dt-accent-strong hover:bg-dt-accent-hover transition-all text-center"
             >
               Go to sign in
             </a>
@@ -85,7 +85,7 @@ export default function PlatformInviteRedeemPage({ code }: { code: string }) {
             <button
               onClick={handleAccept}
               disabled={loading}
-              className="w-full py-3 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 transition-all flex items-center justify-center gap-2"
+              className="w-full py-3 text-white text-sm font-medium rounded-xl bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-60 transition-all flex items-center justify-center gap-2"
             >
               {loading ? <><Spinner /> Accepting...</> : 'Accept platform invitation'}
             </button>

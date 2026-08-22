@@ -194,7 +194,7 @@ function PlatformNavTabs({ page, setPage }: { page: PlatformPage; setPage: (p: P
     <div className="border-b border-dt-border bg-dt-page">
       <div className="flex items-center justify-between pl-6 pr-4 pt-3">
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-md bg-indigo-600 flex items-center justify-center text-white text-[10px] font-bold">DT</div>
+          <div className="w-6 h-6 rounded-md bg-dt-accent-strong flex items-center justify-center text-white text-[10px] font-bold">DT</div>
           <span className="text-xs font-semibold text-dt-support tracking-wide">Platform Console</span>
         </div>
         <MyAccountBadge />

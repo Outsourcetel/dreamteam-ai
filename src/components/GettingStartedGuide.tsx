@@ -196,9 +196,14 @@ export default function GettingStartedGuide({
                     audit's line-based COLORED_BG check saw the opaque indigo
                     branch and false-exempted the whole line, so the emerald
                     branch's near-white wash in light theme was never counted
-                    by the metric. Converted to the ok chip recipe anyway. */}
+                    by the metric. Converted to the ok chip recipe anyway.
+                    (The indigo branch named above is bg-dt-accent as of
+                    2026-08-22 — same colour in the default theme, and now the
+                    tenant's accent in the other three. The hazard described
+                    here is about the AUDIT's line-based exemption, which the
+                    token change does not alter.) */}
                 <span className={`mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full text-[11px] font-bold ${
-                  s.done ? 'bg-dt-ok-soft text-dt-ok' : isCurrent ? 'bg-indigo-500 text-white' : 'bg-dt-panel text-dt-support'
+                  s.done ? 'bg-dt-ok-soft text-dt-ok' : isCurrent ? 'bg-dt-accent text-white' : 'bg-dt-panel text-dt-support'
                 }`}>{s.done ? '✓' : i + 1}</span>
                 <div className="min-w-0 flex-1">
                   <p className={`text-[13.5px] font-medium ${s.done ? 'text-dt-support line-through decoration-slate-600' : 'text-dt-title'}`}>{s.title}</p>
@@ -207,7 +212,7 @@ export default function GettingStartedGuide({
                       <p className="text-dt-support text-[13px] mt-1 leading-relaxed">{s.body}</p>
                       <div className="mt-2.5 flex flex-wrap items-center gap-2">
                         <button onClick={s.primary.run}
-                          className="rounded-lg bg-indigo-600 px-3.5 py-1.5 text-[13px] font-semibold text-white hover:bg-indigo-500 transition-colors">
+                          className="rounded-lg bg-dt-accent-strong px-3.5 py-1.5 text-[13px] font-semibold text-white hover:bg-dt-accent-hover transition-colors">
                           {s.primary.label}
                         </button>
                         {s.secondary && (

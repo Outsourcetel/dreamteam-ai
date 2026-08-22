@@ -48,7 +48,7 @@ const MyAccountBadge = () => {
         className="flex items-center gap-2 pr-1 rounded-lg hover:bg-dt-panel transition-colors py-1"
         title={authedUser.email}
       >
-        <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+        <div className="w-7 h-7 rounded-full bg-dt-accent-strong flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
           {(authedUser.name || authedUser.email || '?')[0].toUpperCase()}
         </div>
         <span className="text-xs text-dt-title font-medium whitespace-nowrap hidden sm:inline">{authedUser.name || authedUser.email}</span>

@@ -262,7 +262,7 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
                               <button
                                 disabled={syncingId === c.id}
                                 onClick={() => void doSync(c)}
-                                className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white">
+                                className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-50 text-white">
                                 {syncingId === c.id ? 'Syncing…' : 'Sync now'}
                               </button>
                               <button
@@ -308,8 +308,8 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
                   <div className="flex items-center gap-2 mt-3 max-w-md mx-auto">
                     <input value={urlInput} onChange={e => setUrlInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void importUrl(); }}
                       placeholder="…or paste a help-center URL" onClick={e => e.stopPropagation()}
-                      className="flex-1 bg-dt-page border border-dt-border rounded-lg px-3 py-1.5 text-xs text-dt-body focus:outline-none focus:border-indigo-500" />
-                    <button onClick={() => void importUrl()} disabled={!urlInput.trim() || !!busyMsg} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white">Import</button>
+                      className="flex-1 bg-dt-page border border-dt-border rounded-lg px-3 py-1.5 text-xs text-dt-body focus:outline-none focus:border-dt-accent" />
+                    <button onClick={() => void importUrl()} disabled={!urlInput.trim() || !!busyMsg} className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-50 text-white">Import</button>
                   </div>
                   {busyMsg && <p className="text-xs text-dt-accent-text mt-2">{busyMsg}</p>}
                 </div>
@@ -318,7 +318,7 @@ function LiveKnowledgeIngestion({ setPage }: { setPage: (p: Page) => void }) {
                   <div className="flex gap-2">
                     <button onClick={() => fileRef.current?.click()} className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-indigo-500">Upload file</button>
                     <input value={urlInput} onChange={e => setUrlInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void importUrl(); }}
-                      placeholder="…or import a URL" className="flex-1 bg-dt-page border border-dt-border rounded-lg px-2 py-1 text-xs text-dt-body focus:outline-none focus:border-indigo-500" />
+                      placeholder="…or import a URL" className="flex-1 bg-dt-page border border-dt-border rounded-lg px-2 py-1 text-xs text-dt-body focus:outline-none focus:border-dt-accent" />
                     <button onClick={() => void importUrl()} disabled={!urlInput.trim() || !!busyMsg} className="text-xs px-2.5 py-1 rounded-lg border border-dt-border-strong text-dt-support hover:border-indigo-500 disabled:opacity-50">Import</button>
                   </div>
                   {busyMsg && <p className="text-xs text-dt-accent-text">{busyMsg}</p>}

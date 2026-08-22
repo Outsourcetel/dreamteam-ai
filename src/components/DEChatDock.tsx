@@ -25,7 +25,7 @@ export interface DockDE {
 
 const DES: Record<CompanyId, DockDE[]> = {
   tcp: [
-    { id: 'alex', name: 'Alex', role: 'Customer Support DE', color: 'bg-indigo-600' },
+    { id: 'alex', name: 'Alex', role: 'Customer Support DE', color: 'bg-dt-accent-strong' },
     { id: 'casey', name: 'Casey', role: 'Renewal DE', color: 'bg-violet-600' },
     { id: 'riley', name: 'Riley', role: 'HR & People DE', color: 'bg-sky-600' },
   ],
@@ -114,7 +114,7 @@ interface ChatMsg {
 // (b) the first de-answer response names the actual answering DE —
 // whichever lands first. A brand-new tenant with zero DEs yet
 // legitimately keeps this generic label; that's not a bug.
-const GENERIC_LIVE_DE: DockDE = { id: 'de', name: 'your Digital Employee', role: 'Digital Employee', color: 'bg-indigo-600' };
+const GENERIC_LIVE_DE: DockDE = { id: 'de', name: 'your Digital Employee', role: 'Digital Employee', color: 'bg-dt-accent-strong' };
 
 const LIVE_SUGGESTIONS = [
   'What do you know about our refund policy?',
@@ -555,7 +555,7 @@ export default function DEChatDock() {
                     </div>
                   )}
                   <div className={`max-w-[85%] rounded-xl px-3 py-2 ${
-                    msg.role === 'user' ? 'bg-indigo-600 text-white'
+                    msg.role === 'user' ? 'bg-dt-accent-strong text-white'
                     : msg.notice === 'llm_not_configured' ? 'bg-dt-warn-soft border border-dt-warn-border text-dt-warn'
                     : msg.notice === 'error' ? 'bg-dt-danger-soft border border-dt-danger-border text-dt-danger'
                     : 'bg-dt-panel text-dt-body'
@@ -680,12 +680,12 @@ export default function DEChatDock() {
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
                 placeholder={`Ask ${de.name} anything...`}
-                className="flex-1 text-xs bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2 text-dt-body placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                className="flex-1 text-xs bg-dt-panel border border-dt-border-strong rounded-xl px-3 py-2 text-dt-body placeholder-slate-500 focus:outline-none focus:border-dt-accent transition-colors"
               />
               <button
                 onClick={() => send()}
                 disabled={!input.trim() || typing}
-                className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs transition-colors"
+                className="px-3 py-2 rounded-xl bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs transition-colors"
                 aria-label="Send"
               >
                 →

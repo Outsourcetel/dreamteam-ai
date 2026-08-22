@@ -163,7 +163,7 @@ function TeamActivityLogPanel({ days }: { days: number | null }) {
             <select
               value={tableFilter}
               onChange={(e) => setTableFilter(e.target.value)}
-              className="bg-dt-page border border-dt-border rounded-lg px-2 py-1.5 text-xs text-dt-support focus:outline-none focus:border-indigo-500"
+              className="bg-dt-page border border-dt-border rounded-lg px-2 py-1.5 text-xs text-dt-support focus:outline-none focus:border-dt-accent"
             >
               <option value="all">All tables</option>
               {tablesInLog.map((t) => (

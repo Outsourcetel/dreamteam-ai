@@ -106,7 +106,7 @@ function LearningDigestPanel() {
         <div className="flex gap-1">
           {[7, 30].map(d => (
             <button key={d} onClick={() => setDays(d)}
-              className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${days === d ? 'border-indigo-500 text-dt-title' : 'border-dt-border text-dt-muted hover:text-dt-body'}`}>
+              className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${days === d ? 'border-dt-accent text-dt-title' : 'border-dt-border text-dt-muted hover:text-dt-body'}`}>
               {d}d
             </button>
           ))}
@@ -343,7 +343,7 @@ function LiveSelfLearning({ setPage }: { setPage: (p: Page) => void }) {
                       <td className={td}>
                         {de ? (
                           <span className="flex items-center gap-1.5">
-                            <span className="w-5 h-5 rounded-full bg-indigo-600 flex items-center justify-center text-white text-[10px] font-bold">{de.name[0]}</span>
+                            <span className="w-5 h-5 rounded-full bg-dt-accent-strong flex items-center justify-center text-white text-[10px] font-bold">{de.name[0]}</span>
                             <span className="text-xs">{de.name}</span>
                           </span>
                         ) : <span className="text-xs text-dt-faint">—</span>}

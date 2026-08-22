@@ -247,23 +247,23 @@ function RosterPanel({ onSelect, setPage }: { onSelect: (de: DigitalEmployee) =>
             <label className="text-xs text-dt-support">
               Role / label (required)
               <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Account Success DE"
-                className="mt-1 w-full bg-dt-card border border-dt-border-strong rounded-lg px-2.5 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none" />
+                className="mt-1 w-full bg-dt-card border border-dt-border-strong rounded-lg px-2.5 py-1.5 text-dt-body text-xs focus:border-dt-accent focus:outline-none" />
             </label>
             <label className="text-xs text-dt-support">
               Persona name (optional)
               <input value={personaName} onChange={e => setPersonaName(e.target.value)} placeholder="e.g. Jordan"
-                className="mt-1 w-full bg-dt-card border border-dt-border-strong rounded-lg px-2.5 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none" />
+                className="mt-1 w-full bg-dt-card border border-dt-border-strong rounded-lg px-2.5 py-1.5 text-dt-body text-xs focus:border-dt-accent focus:outline-none" />
             </label>
           </div>
           <label className="text-xs text-dt-support block">
             Department
             <input value={department} onChange={e => setDepartment(e.target.value)} placeholder="e.g. Account Success"
-              className="mt-1 w-full bg-dt-card border border-dt-border-strong rounded-lg px-2.5 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none" />
+              className="mt-1 w-full bg-dt-card border border-dt-border-strong rounded-lg px-2.5 py-1.5 text-dt-body text-xs focus:border-dt-accent focus:outline-none" />
           </label>
           <label className="text-xs text-dt-support block">
             What does this Digital Employee do?
             <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2} placeholder="Plain language — what this DE is responsible for"
-              className="mt-1 w-full bg-dt-card border border-dt-border-strong rounded-lg px-2.5 py-1.5 text-dt-body text-xs focus:border-indigo-500 focus:outline-none" />
+              className="mt-1 w-full bg-dt-card border border-dt-border-strong rounded-lg px-2.5 py-1.5 text-dt-body text-xs focus:border-dt-accent focus:outline-none" />
           </label>
           <p className="text-[11px] text-dt-muted">
             Starts supervised with no data access and no playbooks — you (or an admin) grant those next, the same way for every DE.
@@ -370,11 +370,11 @@ function TeamsPanel() {
       {showCreate && (
         <div className="mb-4 rounded-xl border border-dt-border bg-dt-page p-3 space-y-2">
           <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Team name — e.g. Support Workforce"
-            className="w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+            className="w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-dt-accent" />
           <input type="text" value={purpose} onChange={e => setPurpose(e.target.value)} placeholder="Purpose (optional)"
-            className="w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500" />
+            className="w-full bg-dt-card border border-dt-border text-dt-body text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-dt-accent" />
           <button onClick={() => void createTeam()} disabled={busy || !canManage || !name.trim()}
-            className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40">
+            className="text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white disabled:opacity-40">
             Create team
           </button>
         </div>
@@ -433,7 +433,7 @@ function TeamsPanel() {
                 <div className="mt-2 flex items-center gap-2">
                   <select value={addDe[team.id] ?? ''} disabled={busy || !canManage}
                     onChange={e => setAddDe(prev => ({ ...prev, [team.id]: e.target.value }))}
-                    className="flex-1 bg-dt-card border border-dt-border text-dt-support text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
+                    className="flex-1 bg-dt-card border border-dt-border text-dt-support text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-dt-accent">
                     <option value="">Add a member…</option>
                     {des.filter(d => !memberIds.has(d.id)).map(d => (
                       <option key={d.id} value={d.id}>{d.name}</option>

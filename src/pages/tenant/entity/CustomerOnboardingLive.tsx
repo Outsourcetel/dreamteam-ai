@@ -34,8 +34,8 @@ import ProjectRequirements from './onboarding/ProjectRequirements';
 // the R1-activation upgrade — not built yet.
 // ============================================================
 
-const inputCls = 'bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-indigo-500';
-const btnPrimary = 'text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium disabled:opacity-40 transition-colors';
+const inputCls = 'bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-3 py-2 placeholder-slate-500 focus:outline-none focus:border-dt-accent';
+const btnPrimary = 'text-xs px-3 py-1.5 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white font-medium disabled:opacity-40 transition-colors';
 const btnGhost = 'text-xs px-3 py-1.5 rounded-lg border border-dt-border-strong text-dt-support hover:text-dt-body hover:border-dt-border-strong disabled:opacity-40 transition-colors';
 
 const STATUS_META: Record<OnboardingItemStatus, { label: string; cls: string }> = {
@@ -57,7 +57,7 @@ function ProgressBar({ pct }: { pct: number }) {
   return (
     <div className="flex items-center gap-2">
       <div className="flex-1 h-1.5 bg-dt-panel rounded-full overflow-hidden">
-        <div className={`h-full rounded-full ${pct >= 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{ width: `${pct}%` }} />
+        <div className={`h-full rounded-full ${pct >= 100 ? 'bg-emerald-500' : 'bg-dt-accent'}`} style={{ width: `${pct}%` }} />
       </div>
       <span className="text-xs font-medium text-dt-support w-9 text-right">{pct}%</span>
     </div>
@@ -378,7 +378,7 @@ function NewProjectModal({ accounts, versions, onClose, onCreated }: {
         {err && <p className="text-[11px] text-rose-400 mb-3">✗ {err}</p>}
         <div className="flex gap-3">
           <button onClick={() => void create()} disabled={saving || !accountId || !versionId}
-            className="flex-1 py-2 text-sm font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 transition-all">
+            className="flex-1 py-2 text-sm font-medium rounded-lg text-white bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-50 transition-all">
             {saving ? 'Creating…' : 'Create project'}
           </button>
           <button onClick={onClose} className="flex-1 py-2 text-sm rounded-lg border border-dt-border-strong text-dt-support hover:border-dt-border-strong transition-all">Cancel</button>
@@ -672,12 +672,12 @@ export default function CustomerOnboardingLive({ setPage }: { setPage?: (p: Page
         {!missingTables && !loading && !detail && (
           <div className="flex gap-2">
             {tab === 'projects' && hasPublished && accounts.length > 0 && (
-              <button onClick={() => setShowNew(true)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 transition-colors">+ New project</button>
+              <button onClick={() => setShowNew(true)} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-dt-accent-strong hover:bg-dt-accent-hover transition-colors">+ New project</button>
             )}
             {tab === 'templates' && (
               <>
                 <button onClick={() => void installStarter()} disabled={busy} className={btnGhost}>Install starter template</button>
-                <button onClick={() => void createBlankTemplate()} disabled={busy} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 transition-colors disabled:opacity-40">+ New template</button>
+                <button onClick={() => void createBlankTemplate()} disabled={busy} className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-dt-accent-strong hover:bg-dt-accent-hover transition-colors disabled:opacity-40">+ New template</button>
               </>
             )}
           </div>
@@ -696,7 +696,7 @@ export default function CustomerOnboardingLive({ setPage }: { setPage?: (p: Page
             {(['projects', 'templates'] as const).map(t => (
               <button key={t} onClick={() => setTab(t)}
                 className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                  tab === t ? 'border-indigo-500 text-dt-title' : 'border-transparent text-dt-muted hover:text-dt-support'
+                  tab === t ? 'border-dt-accent text-dt-title' : 'border-transparent text-dt-muted hover:text-dt-support'
                 }`}>
                 {t === 'projects' ? `Projects (${projects.length})` : `Templates (${templates.length})`}
               </button>

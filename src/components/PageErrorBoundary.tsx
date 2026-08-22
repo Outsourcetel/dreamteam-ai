@@ -40,7 +40,7 @@ export default class PageErrorBoundary extends React.Component<Props, State> {
           </p>
           <button
             onClick={() => this.setState({ error: null })}
-            className="text-xs px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+            className="text-xs px-4 py-2 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white transition-colors"
           >
             Try again
           </button>

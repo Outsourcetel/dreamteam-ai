@@ -138,7 +138,7 @@ const LoginPage = ({
     <div className="hidden lg:flex lg:w-1/2 flex-col justify-between p-12 relative overflow-hidden"
       style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e1b4b 100%)' }}>
       <div className="absolute inset-0 opacity-10">
-        <div className="absolute top-20 left-20 w-64 h-64 rounded-full bg-indigo-500 blur-3xl" />
+        <div className="absolute top-20 left-20 w-64 h-64 rounded-full bg-dt-accent blur-3xl" />
         <div className="absolute bottom-20 right-20 w-48 h-48 rounded-full bg-purple-500 blur-3xl" />
       </div>
       <div className="relative">
@@ -146,7 +146,7 @@ const LoginPage = ({
           <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-white font-bold">DT</div>
           <div>
             <div className="text-white font-bold text-lg">DreamTeam AI</div>
-            <div className="text-indigo-300 text-xs">Digital Workforce Platform</div>
+            <div className="text-dt-accent-text text-xs">Digital Workforce Platform</div>
           </div>
         </div>
         <h1 className="text-4xl font-bold text-white mb-4 leading-tight">
@@ -162,10 +162,10 @@ const LoginPage = ({
             { label: 'Human-in-the-Loop', desc: 'Approval flows and confidence gates built in' },
           ].map((f, i) => (
             <div key={i} className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-indigo-300 flex-shrink-0 font-bold">{i + 1}</div>
+              <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-dt-accent-text flex-shrink-0 font-bold">{i + 1}</div>
               <div>
                 <div className="text-white text-sm font-medium">{f.label}</div>
-                <div className="text-indigo-300 text-xs">{f.desc}</div>
+                <div className="text-dt-accent-text text-xs">{f.desc}</div>
               </div>
             </div>
           ))}
@@ -181,18 +181,18 @@ const LoginPage = ({
       <div className="flex-1 flex flex-col justify-center p-8 lg:p-16">
         <div className="max-w-sm mx-auto w-full">
           <div className="lg:hidden flex items-center gap-2 mb-8">
-            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white text-xs font-bold">DT</div>
+            <div className="w-8 h-8 rounded-lg bg-dt-accent-strong flex items-center justify-center text-white text-xs font-bold">DT</div>
             <span className="text-dt-title font-bold">DreamTeam AI</span>
           </div>
 
           {/* Tab switcher */}
           <div className="flex gap-1 bg-dt-panel rounded-xl p-1 mb-6">
             <button onClick={() => setTab('signin')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'signin' ? 'bg-indigo-600 text-white' : 'text-dt-support hover:text-dt-title'}`}>
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'signin' ? 'bg-dt-accent-strong text-white' : 'text-dt-support hover:text-dt-title'}`}>
               Sign In
             </button>
             <button onClick={() => setTab('signup')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'signup' ? 'bg-indigo-600 text-white' : 'text-dt-support hover:text-dt-title'}`}>
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${tab === 'signup' ? 'bg-dt-accent-strong text-white' : 'text-dt-support hover:text-dt-title'}`}>
               Create Account
             </button>
           </div>
@@ -211,7 +211,7 @@ const LoginPage = ({
                 <div>
                   <label className="text-xs font-medium text-dt-support block mb-1.5">Email</label>
                   <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="you@company.com"
-                    className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-dt-accent" />
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
@@ -222,11 +222,11 @@ const LoginPage = ({
                     </button>
                   </div>
                   <input value={password} onChange={e => setPassword(e.target.value)} type="password" placeholder="..."
-                    className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-dt-accent" />
                 </div>
                 {error && <Banner tone="danger">{error}</Banner>}
                 <button type="submit" disabled={loading}
-                  className="w-full py-3 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 transition-all flex items-center justify-center gap-2">
+                  className="w-full py-3 text-white text-sm font-medium rounded-xl bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-60 transition-all flex items-center justify-center gap-2">
                   {loading ? <><Spinner /> Signing in...</> : 'Sign In'}
                 </button>
               </form>
@@ -252,7 +252,7 @@ const LoginPage = ({
                     If an account exists for {forgotEmail}, a password reset link is on its way.
                   </p>
                   <button onClick={() => setShowForgot(false)}
-                    className="w-full py-3 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 transition-all">
+                    className="w-full py-3 text-white text-sm font-medium rounded-xl bg-dt-accent-strong hover:bg-dt-accent-hover transition-all">
                     Back to sign in
                   </button>
                 </div>
@@ -264,11 +264,11 @@ const LoginPage = ({
                     <div>
                       <label className="text-xs font-medium text-dt-support block mb-1.5">Email</label>
                       <input value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} type="email" placeholder="you@company.com" autoFocus
-                        className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                        className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-dt-accent" />
                     </div>
                     {forgotError && <Banner tone="danger" className="text-xs">{forgotError}</Banner>}
                     <button type="submit" disabled={forgotLoading}
-                      className="w-full py-3 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 transition-all flex items-center justify-center gap-2">
+                      className="w-full py-3 text-white text-sm font-medium rounded-xl bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-60 transition-all flex items-center justify-center gap-2">
                       {forgotLoading ? <><Spinner /> Sending...</> : 'Send reset link'}
                     </button>
                     <button type="button" onClick={() => setShowForgot(false)}
@@ -290,21 +290,21 @@ const LoginPage = ({
                 <div>
                   <label className="text-xs font-medium text-dt-support block mb-1.5">Full Name</label>
                   <input value={suFullName} onChange={e => setSuFullName(e.target.value)} type="text" placeholder="Sarah Mitchell"
-                    className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-dt-accent" />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-dt-support block mb-1.5">Work Email</label>
                   <input value={suEmail} onChange={e => setSuEmail(e.target.value)} type="email" placeholder="you@company.com"
-                    className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-dt-accent" />
                 </div>
                 <div>
                   <label className="text-xs font-medium text-dt-support block mb-1.5">Password</label>
                   <input value={suPassword} onChange={e => setSuPassword(e.target.value)} type="password" placeholder="8+ characters"
-                    className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+                    className="w-full bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-3 placeholder-slate-500 focus:outline-none focus:border-dt-accent" />
                 </div>
                 {suError && <Banner tone="danger">{suError}</Banner>}
                 <button type="submit" disabled={suLoading}
-                  className="w-full py-3 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 transition-all flex items-center justify-center gap-2">
+                  className="w-full py-3 text-white text-sm font-medium rounded-xl bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-60 transition-all flex items-center justify-center gap-2">
                   {suLoading ? <><Spinner /> Creating your account…</> : 'Create my account'}
                 </button>
                 <p className="text-xs text-dt-faint text-center">
@@ -327,7 +327,7 @@ const LoginPage = ({
                 straight back here to finish setting up your workspace.
               </p>
               <button onClick={() => { setTab('signin'); setSuSuccess(false); setEmail(suEmail); }}
-                className="w-full py-3 text-white text-sm font-medium rounded-xl bg-indigo-600 hover:bg-indigo-500 transition-all">
+                className="w-full py-3 text-white text-sm font-medium rounded-xl bg-dt-accent-strong hover:bg-dt-accent-hover transition-all">
                 Go to Sign In
               </button>
               {/* A lost/spam-filtered confirmation email must not strand the

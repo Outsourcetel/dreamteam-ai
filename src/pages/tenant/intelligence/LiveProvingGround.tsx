@@ -222,7 +222,7 @@ const LiveProvingGround = () => {
       <div className="flex items-center gap-3 mb-4">
         <button
           onClick={() => setEditor({ ...emptyEditor })}
-          className="text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+          className="text-sm px-4 py-2 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover text-white transition-colors"
         >
           + Add question
         </button>
@@ -250,7 +250,7 @@ const LiveProvingGround = () => {
             <button
               onClick={() => void generateStarters()}
               disabled={generating}
-              className="text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white transition-colors"
+              className="text-sm px-4 py-2 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-40 text-white transition-colors"
             >
               {generating ? 'Generating…' : 'Generate 5 starter questions'}
             </button>
@@ -443,14 +443,14 @@ const LiveProvingGround = () => {
               value={editor.question}
               onChange={(e) => setEditor({ ...editor, question: e.target.value })}
               placeholder="e.g. What is our refund window?"
-              className="w-full mb-3 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              className="w-full mb-3 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body placeholder-slate-600 focus:outline-none focus:border-dt-accent"
             />
             <label className="block text-xs text-dt-muted mb-1">Expected fragments (comma-separated — the answer must contain ALL, case-insensitive)</label>
             <input
               value={editor.fragments}
               onChange={(e) => setEditor({ ...editor, fragments: e.target.value })}
               placeholder="30 days, full refund"
-              className="w-full mb-3 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              className="w-full mb-3 text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body placeholder-slate-600 focus:outline-none focus:border-dt-accent"
             />
             <div className="flex gap-3 mb-5">
               <div className="flex-1">
@@ -467,7 +467,7 @@ const LiveProvingGround = () => {
                 <select
                   value={editor.category}
                   onChange={(e) => setEditor({ ...editor, category: e.target.value as GoldenCategory })}
-                  className="text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body focus:outline-none focus:border-indigo-500"
+                  className="text-sm bg-dt-page border border-dt-border-strong rounded-lg px-3 py-2 text-dt-body focus:outline-none focus:border-dt-accent"
                 >
                   {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
@@ -484,7 +484,7 @@ const LiveProvingGround = () => {
               <button
                 onClick={() => void save()}
                 disabled={saving || !editor.question.trim() || !editor.fragments.trim()}
-                className="text-sm px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white transition-colors"
+                className="text-sm px-4 py-2 rounded-lg bg-dt-accent-strong hover:bg-dt-accent-hover disabled:opacity-40 text-white transition-colors"
               >
                 {saving ? 'Saving…' : editor.id ? 'Save changes' : 'Add question'}
               </button>

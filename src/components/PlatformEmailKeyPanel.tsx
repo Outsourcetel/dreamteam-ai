@@ -84,12 +84,12 @@ export default function PlatformEmailKeyPanel() {
           value={value}
           onChange={(e) => { setValue(e.target.value); setStatus('idle'); setError(null); }}
           placeholder={isSet ? 'Enter new key to replace existing…' : 're_…'}
-          className="flex-1 bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+          className="flex-1 bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-dt-accent font-mono"
         />
         <button
           onClick={() => void save()}
           disabled={saving || !value.trim()}
-          className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl disabled:opacity-40 transition-all"
+          className="px-5 py-2.5 bg-dt-accent-strong hover:bg-dt-accent-hover text-white text-sm font-medium rounded-xl disabled:opacity-40 transition-all"
         >
           {saving ? 'Saving…' : isSet ? 'Replace key' : 'Save key'}
         </button>
@@ -177,12 +177,12 @@ function InboundSecretField() {
           value={value}
           onChange={(e) => { setValue(e.target.value); setStatus('idle'); setError(null); }}
           placeholder={isSet ? 'Enter new secret to replace existing…' : 'whsec_…'}
-          className="flex-1 bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 font-mono"
+          className="flex-1 bg-dt-panel border border-dt-border-strong text-dt-body text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:border-dt-accent font-mono"
         />
         <button
           onClick={() => void save()}
           disabled={saving || !value.trim()}
-          className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl disabled:opacity-40 transition-all"
+          className="px-5 py-2.5 bg-dt-accent-strong hover:bg-dt-accent-hover text-white text-sm font-medium rounded-xl disabled:opacity-40 transition-all"
         >
           {saving ? 'Saving…' : isSet ? 'Replace secret' : 'Save secret'}
         </button>
